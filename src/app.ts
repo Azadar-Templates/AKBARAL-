@@ -1,7 +1,7 @@
 import express from 'express';
 import http from 'node:http';
 import path from 'node:path';
-import { env } from './config/env';
+import { env, validateEnvironment } from './config/env';
 import { authRouter } from './routes/auth';
 import { agentsRouter } from './routes/agents';
 import { meRouter } from './routes/me';
@@ -31,6 +31,9 @@ export interface ApiServer {
 }
 
 export function createApiServer(): ApiServer {
+  // Embedded/test callers get the same mandatory-config validation. The
+  // production SESSION_SECRET requirement is enforced by validateEnvironment().
+  validateEnvironment();
   const app = express();
   const server = http.createServer(app);
   const stream = new ExecutionStream(server);

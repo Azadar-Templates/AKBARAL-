@@ -6,6 +6,7 @@ import { requireRole } from '../server/middleware/rbac';
 import { HttpError } from '../server/http';
 import { getBody, requireString } from '../server/middleware/validation';
 import { discoverAgents, countAgentRegistry } from '../agents/registry';
+import { getConfigStatus } from '../config/credentials';
 
 export function createAdminRouter(): Router {
   const router = Router();
@@ -63,7 +64,21 @@ export function createAdminRouter(): Router {
   });
 
   router.get('/models', (_req, res) => {
-    res.status(200).json({ models: listModels(), providers: listEnabledProviders() });
+    res.status(200).json({
+      models: listModels().map(safeModelView),
+      providers: listEnabledProviders().map(safeProviderView),
+    });
+  });
+
+  /**
+   * Admin-only production configuration status.
+   *
+   * Returns configured booleans and required env var NAMES only. It never
+   * returns a credential value, a bearer token, a database URL with a password
+   * or any other secret.
+   */
+  router.get('/config/status', (_req: AuthenticatedRequest, res) => {
+    res.status(200).json(getConfigStatus());
   });
 
   router.post('/models/:key/status', (req: AuthenticatedRequest, res) => {
@@ -121,4 +136,54 @@ export function createAdminRouter(): Router {
   });
 
   return router;
+}
+
+function safeModelView(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    providerKey: row.provider_key,
+    capability: row.capability,
+    modality: row.modality,
+    contextTokens: row.context_tokens,
+    maxOutputTokens: row.max_output_tokens,
+    costInputPerMillionCents: row.cost_input_per_million_cents,
+    costOutputPerMillionCents: row.cost_output_per_million_cents,
+    costPerImageCents: row.cost_per_image_cents,
+    latencyMs: row.latency_ms,
+    reliability: row.reliability,
+    strengths: safeStringArray(row.strengths),
+    weaknesses: safeStringArray(row.weaknesses),
+    status: row.status,
+    isDefault: row.is_default,
+  };
+}
+
+function safeProviderView(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    type: row.type,
+    baseUrl: row.base_url,
+    docsUrl: row.docs_url,
+    // The env var NAME is exposed so an operator knows what to configure; the
+    // value is intentionally never read into this response.
+    requiredEnvVar: row.env_key,
+    capabilities: safeStringArray(row.capabilities),
+    status: row.status,
+  };
+}
+
+function safeStringArray(value: unknown): string[] {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

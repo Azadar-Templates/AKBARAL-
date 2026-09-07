@@ -38,7 +38,7 @@ export interface ResearchReport {
   provider: string;
 }
 
-import { assertPublicHttpUrl, assertProviderHttpUrl } from '../security/ssrf';
+import { assertProviderHttpUrl, assertAllowedSourceUrl } from '../security/ssrf';
 
 export interface WebSearchResult {
   title: string;
@@ -199,20 +199,15 @@ function parseJsonResults(body: string, limit: number): WebSearchResult[] {
  */
 export async function fetchPage(sourceUrl: string): Promise<{ title: string; text: string }> {
   const base = pageFetchBase();
-  const allowPrivateProxy = Boolean(base && process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER === '1');
-  // Always validate the source URL. With a trusted internal proxy the source may
-  // be a local fixture/internal document, so use the provider validation path;
-  // production with no trusted proxy keeps the public-only deny-by-default rule.
-  if (allowPrivateProxy) {
-    assertProviderHttpUrl(sourceUrl);
-  } else {
-    assertPublicHttpUrl(sourceUrl);
-  }
+  // The source URL is always validated. The provider flag may only relax access
+  // to a source on the SAME host as the trusted internal search/fetch provider;
+  // it never turns arbitrary private URLs into allowed targets.
+  const safeSourceUrl = assertAllowedSourceUrl(sourceUrl, base);
   const target = base
     ? new URL(assertProviderHttpUrl(base))
-    : new URL(sourceUrl);
+    : new URL(safeSourceUrl);
   if (base) {
-    target.searchParams.set('url', sourceUrl);
+    target.searchParams.set('url', safeSourceUrl);
   }
 
   const html = await httpText(target.toString(), 20_000);

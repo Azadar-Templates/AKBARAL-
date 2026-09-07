@@ -3,7 +3,8 @@ import path from 'node:path';
 import { searchKnowledge, db } from '../db';
 import { assertPublicHttpUrl } from '../security/ssrf';
 import { searchWeb, fetchPage } from '../agents';
-import { extractTextFromFile, UPLOAD_DIR } from '../services/files';
+import { extractTextFromFile, UPLOAD_DIR, resolveStoredFilePath } from '../services/files';
+import { externalHttpRequest } from '../integrations/http';
 
 /**
  * AKBARAL! Tool System.
@@ -88,9 +89,13 @@ function findUploadedFile(fileIdOrKey: string, userId: string): string {
     [userId, fileIdOrKey, fileIdOrKey, fileIdOrKey],
   );
   if (row?.storage_key) {
-    const fsPath = path.join(UPLOAD_DIR, row.storage_key);
-    if (fs.existsSync(fsPath) && fs.statSync(fsPath).isFile()) {
-      return fsPath;
+    try {
+      const fsPath = resolveStoredFilePath(row.storage_key);
+      if (fs.existsSync(fsPath) && fs.statSync(fsPath).isFile()) {
+        return fsPath;
+      }
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'file_parse_text refused: invalid storage key');
     }
   }
   throw new Error(`file_parse_text refused: file "${fileIdOrKey}" not found or not owned by the current user`);
@@ -122,23 +127,15 @@ function requireCredential(envKey: string, tool: string): void {
 }
 
 async function externalJsonRequest(url: string, options: { method?: string; headers?: Record<string, string>; body?: string }): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45_000);
-  try {
-    const response = await fetch(url, {
-      method: options.method ?? 'GET',
-      headers: options.headers,
-      body: options.body,
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`external API HTTP ${response.status}: ${text.slice(0, 300)}`);
-    }
-    return text;
-  } finally {
-    clearTimeout(timeout);
-  }
+  // External HTTP errors are redacted by the shared helper; provider body text
+  // is never echoed back to clients or logs.
+  const result = await externalHttpRequest('external', url, {
+    method: options.method ?? 'GET',
+    headers: options.headers,
+    body: options.body,
+    timeoutMs: 45_000,
+  });
+  return result.text;
 }
 
 function requireTwoCredentials(envKeys: string[], tool: string): void {
@@ -232,7 +229,7 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
     try {
       requireCredential('OPENAI_API_KEY', 'image_render');
       const prompt = requireStringInput(input, 'prompt', 'image_render');
-      const response = await fetch('https://api.openai.com/v1/images/generations', {
+      const text = await externalJsonRequest('https://api.openai.com/v1/images/generations', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -240,10 +237,6 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
         },
         body: JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size: '1024x1024' }),
       });
-      const text = await response.text();
-      if (!response.ok) {
-        return fail('image_render', `image provider HTTP ${response.status}: ${text.slice(0, 300)}`, 'tool_failed');
-      }
       const json = JSON.parse(text) as { data?: Array<{ url?: string; b64_json?: string }> };
       const item = json.data?.[0];
       if (!item) {

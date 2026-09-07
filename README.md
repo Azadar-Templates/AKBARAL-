@@ -143,6 +143,29 @@ See [`docs/deployment.md`](./docs/deployment.md). Dockerfile, entrypoint and bac
 
 ---
 
+## Production configuration
+
+- `src/config/env.ts` validates mandatory runtime config at startup; the app
+  refuses to start with an invalid `DATABASE_URL`, `PORT`, or a missing/weak
+  `SESSION_SECRET` in production.
+- In development/test a cryptographically secure `SESSION_SECRET` is generated
+  automatically for the process lifetime. Production requires an explicit
+  random value of at least 32 characters.
+- All provider credentials are optional. When a provider key is absent the
+  platform returns `provider_not_configured` with the required env var name;
+  no result is fabricated and a task credit is refunded/never consumed.
+- `GET /api/admin/config/status` (admin-only) reports whether each integration
+  is configured and which env var NAMES it needs. It never returns credential
+  values. `GET /api/auth/oauth/providers` reports the same for OAuth.
+- Outbound provider calls use a shared HTTP helper with timeouts and redacted
+  errors; provider response bodies are never echoed to clients or logs.
+- `AKBARAL_ALLOW_PRIVATE_PROVIDER=1` only relaxes validation for URLs on the
+  same trusted internal search/fetch host; arbitrary private source URLs remain
+  blocked by SSRF protection.
+- Uploads are confined to `AKBARAL_UPLOAD_DIR`; storage keys are server
+  generated and `..`/absolute/separator keys are rejected before any FS path is
+  built.
+
 ## Security policy
 
 - Passwords: salted scrypt.

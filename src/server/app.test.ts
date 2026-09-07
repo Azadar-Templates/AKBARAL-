@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createApiServer, type ApiServer } from '../app';
 import { startResearchFixture, type ResearchFixtureServer } from '../test-support/research-fixture';
-import { db } from '../db';
+import { db, createUser } from '../db';
+import { hashPassword } from '../security';
 
 const suffix = randomBytes(6).toString('hex');
 const email = `app-${suffix}@akbaral.test`;
@@ -124,6 +125,53 @@ describe('HTTP API integration', () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     assert.equal(meAfterLogoutAccess.status, 401);
+  });
+
+  it('serves admin config status without leaking secrets and is admin-only', async () => {
+    const adminEmail = `config-admin-${suffix}@akbaral.test`;
+    const admin = createUser({
+      email: adminEmail,
+      name: 'Config Admin',
+      role: 'admin',
+      passwordHash: await hashPassword(password),
+    });
+    tempUsers.push(admin.id);
+    const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: adminEmail, password }),
+    });
+    assert.equal(loginResponse.status, 200);
+    const loginBody = (await loginResponse.json()) as { accessToken: string };
+    const statusResponse = await fetch(`${baseUrl}/api/admin/config/status`, {
+      headers: { authorization: `Bearer ${loginBody.accessToken}` },
+    });
+    assert.equal(statusResponse.status, 200);
+    const body = (await statusResponse.json()) as {
+      integrations: Array<{ key: string; configured: boolean; requiredEnvVars: string[] }>;
+    };
+    assert.ok(Array.isArray(body.integrations));
+    assert.ok(body.integrations.length >= 15);
+    const raw = JSON.stringify(body);
+    // No credential values, no bearer tokens, no provider-style opaque secrets.
+    for (const needle of ['sk-', 'ghp_', 'AKIA', 'AIza', 'xoxb', 'Bearer ', 'SECRET_MASK']) {
+      assert.ok(!raw.includes(needle), `config status leaked a secret-shaped value: ${needle}`);
+    }
+    const stripe = body.integrations.find((item) => item.key === 'stripe');
+    assert.ok(stripe);
+    assert.deepEqual(stripe.requiredEnvVars, ['STRIPE_SECRET_KEY']);
+
+    // Non-admin is rejected before the status payload is produced.
+    const nonAdminLogin = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const nonAdminToken = ((await nonAdminLogin.json()) as { accessToken: string }).accessToken;
+    const denied = await fetch(`${baseUrl}/api/admin/config/status`, {
+      headers: { authorization: `Bearer ${nonAdminToken}` },
+    });
+    assert.equal(denied.status, 403);
   });
 });
 

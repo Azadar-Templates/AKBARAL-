@@ -14,6 +14,10 @@ import {
   setUserPasswordHash,
   db,
 } from '../db';
+import { getConfigStatus } from '../config/credentials';
+import { sendEmail, smtpConfigured, EmailDeliveryNotConfiguredError } from '../integrations/smtp';
+import { env } from '../config/env';
+import { redactSecrets } from '../config/secrets';
 
 export const authRouter = Router();
 
@@ -101,28 +105,53 @@ authRouter.post(
 authRouter.get(
   '/oauth/providers',
   (_req, res) => {
-    const providers = [
-      { key: 'google', configured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), required: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'] },
-      { key: 'github', configured: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET), required: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'] },
-      { key: 'apple', configured: Boolean(process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET), required: ['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'] },
-      { key: 'microsoft', configured: Boolean(process.env.MS_CLIENT_ID && process.env.MS_CLIENT_SECRET), required: ['MS_CLIENT_ID', 'MS_CLIENT_SECRET'] },
-    ];
+    const oauthKeys = ['oauth_google', 'oauth_github', 'oauth_apple', 'oauth_microsoft'];
+    const providers = getConfigStatus().integrations
+      .filter((item) => oauthKeys.includes(item.key))
+      .map((item) => ({
+        key: item.key.replace(/^oauth_/, ''),
+        configured: item.configured,
+        required: item.requiredEnvVars,
+      }));
     res.status(200).json({ providers });
   },
 );
 
 authRouter.post(
   '/request-password-reset',
-  (req, res) => {
+  asyncRoute(async (req, res) => {
     const body = getBody(req);
     const email = requireString(body, 'email', 'email').trim().toLowerCase();
     const user = findUserById(findIdByEmail(email) ?? '');
-    const emailConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD);
-    const devToken = process.env.NODE_ENV !== 'production' ? user ? createAuthToken({ userId: user.id, purpose: 'password_reset', ip: req.ip ?? null }).token : null : null;
-    if (user && process.env.NODE_ENV !== 'production') {
-      // In non-production the token is returned so the flow is testable without
-      // configuring an SMTP transport. In production it must be emailed.
+    const emailConfigured = smtpConfigured();
+    if (process.env.NODE_ENV === 'production' && !emailConfigured) {
+      throw new HttpError(
+        503,
+        'email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD',
+        'provider_not_configured',
+        { requiredCredential: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] },
+      );
     }
+
+    const devToken = process.env.NODE_ENV !== 'production' && user ? createAuthToken({ userId: user.id, purpose: 'password_reset', ip: req.ip ?? null }).token : null;
+
+    if (user && emailConfigured) {
+      const reset = createAuthToken({ userId: user.id, purpose: 'password_reset', ip: req.ip ?? null });
+      const resetUrl = `${env.publicWebUrl.replace(/\/$/, '')}/#/reset-password?token=${encodeURIComponent(reset.token)}`;
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: 'AKBARAL password reset',
+          text: `You requested a password reset.\n\nUse this link to set a new password (expires in 30 minutes):\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
+        });
+      } catch (error) {
+        if (error instanceof EmailDeliveryNotConfiguredError) {
+          throw new HttpError(503, error.message, 'provider_not_configured', { requiredCredential: error.requiredCredential });
+        }
+        throw new HttpError(502, 'email delivery failed; no secret or credential was logged', 'email_delivery_failed', { detail: redactSecrets(error instanceof Error ? error.message : String(error)) });
+      }
+    }
+
     res.status(202).json({
       status: 'requested',
       emailDelivery: emailConfigured ? 'configured' : 'not_configured',
@@ -130,7 +159,7 @@ authRouter.post(
       // Only present in development/test environments.
       ...(devToken ? { devToken } : {}),
     });
-  },
+  }),
 );
 
 authRouter.post(
@@ -157,17 +186,45 @@ authRouter.post(
 
 authRouter.post(
   '/request-email-verification',
-  (req, res) => {
+  asyncRoute(async (req, res) => {
     const body = getBody(req);
     const email = requireString(body, 'email', 'email').trim().toLowerCase();
     const user = findUserById(findIdByEmail(email) ?? '');
+    const emailConfigured = smtpConfigured();
+    if (process.env.NODE_ENV === 'production' && !emailConfigured) {
+      throw new HttpError(
+        503,
+        'email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD',
+        'provider_not_configured',
+        { requiredCredential: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] },
+      );
+    }
     const devToken = process.env.NODE_ENV !== 'production' && user ? createAuthToken({ userId: user.id, purpose: 'email_verify', ip: req.ip ?? null }).token : null;
+
+    if (user && emailConfigured) {
+      const verification = createAuthToken({ userId: user.id, purpose: 'email_verify', ip: req.ip ?? null });
+      const verifyUrl = `${env.publicWebUrl.replace(/\/$/, '')}/#/verify-email?token=${encodeURIComponent(verification.token)}`;
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: 'Verify your AKBARAL email address',
+          text: `Welcome to AKBARAL.\n\nVerify your email address (expires in 30 minutes):\n${verifyUrl}`,
+        });
+      } catch (error) {
+        if (error instanceof EmailDeliveryNotConfiguredError) {
+          throw new HttpError(503, error.message, 'provider_not_configured', { requiredCredential: error.requiredCredential });
+        }
+        throw new HttpError(502, 'email delivery failed; no secret or credential was logged', 'email_delivery_failed', { detail: redactSecrets(error instanceof Error ? error.message : String(error)) });
+      }
+    }
+
     res.status(202).json({
       status: 'requested',
+      emailDelivery: emailConfigured ? 'configured' : 'not_configured',
       emailDeliveryRequired: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'],
       ...(devToken ? { devToken } : {}),
     });
-  },
+  }),
 );
 
 authRouter.post(

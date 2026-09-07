@@ -1,6 +1,6 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractText, createResearchReport, searchWeb } from './web-research';
+import { extractText, createResearchReport, searchWeb, fetchPage } from './web-research';
 import { startResearchFixture, type ResearchFixtureServer } from '../test-support/research-fixture';
 
 describe('web research agent', () => {
@@ -43,5 +43,12 @@ describe('web research agent', () => {
     } finally {
       await badFixture.close();
     }
+  });
+
+  it('does not let AKBARAL_ALLOW_PRIVATE_PROVIDER open arbitrary private source URLs', async () => {
+    // The trusted internal provider flag relaxes only URLs on the provider's own
+    // host; a different private host must still be refused.
+    await assert.rejects(() => fetchPage('http://10.0.0.1/private'), /private host|trusted provider host|SSRF/);
+    await assert.rejects(() => fetchPage('http://169.254.169.254/latest'), /private host|trusted provider host|SSRF/);
   });
 });

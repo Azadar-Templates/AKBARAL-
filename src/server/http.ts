@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { logErrorSafe, redactSecrets } from '../config/secrets';
 
 /**
  * HttpError carries an HTTP status that the response layer maps to a JSON body.
@@ -57,13 +58,14 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return;
   }
 
-  const message = err instanceof Error ? err.message : 'internal server error';
-  // Keep implementation detail out of production responses.
-  console.error('[server] unhandled error:', err);
+  const rawMessage = err instanceof Error ? err.message : String(err);
+  const message = process.env.NODE_ENV === 'production' ? 'internal server error' : redactSecrets(rawMessage);
+  // Log the redacted message only (never a raw stack that can embed secrets).
+  logErrorSafe('request.error', err);
   res.status(500).json({
     error: {
       code: 'internal_error',
-      message: process.env.NODE_ENV === 'production' ? 'internal server error' : message,
+      message,
     },
   });
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { runTool, listImplementedTools } from './index';
 import { createUser, createFile, db, indexKnowledgeItem } from '../db';
-import { UPLOAD_DIR } from '../services/files';
+import { UPLOAD_DIR, resolveStoredFilePath } from '../services/files';
 
 describe('tool system', () => {
   let userId = '';
@@ -80,6 +80,14 @@ describe('tool system', () => {
     const result = await runTool('knowledge_search', { query: suffix }, { userId });
     assert.ok(result.ok);
     assert.ok((result.data?.results as Array<{ content: string }>).some((row) => String(row.content).includes('unique phrase')));
+  });
+
+  it('confines upload storage keys inside the configured upload directory', () => {
+    const valid = resolveStoredFilePath(`safe-${suffix}.txt`);
+    assert.equal(path.dirname(valid), path.resolve(UPLOAD_DIR));
+    for (const bad of ['../escape.txt', '..', '.', 'a/b.txt', '/etc/passwd']) {
+      assert.throws(() => resolveStoredFilePath(bad), /storage key|escapes upload directory/);
+    }
   });
 
   it('fails honestly when image credential is missing', async () => {

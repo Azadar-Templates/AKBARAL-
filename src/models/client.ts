@@ -1,4 +1,5 @@
 import { PROVIDER_SPECS, type ModelSpec } from './catalog';
+import { externalHttpRequest, ExternalHttpError } from '../integrations/http';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -62,33 +63,19 @@ async function runJsonRequest(
   headers: Record<string, string>,
   body: unknown,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
-    const response = await fetch(url, {
+    const result = await externalHttpRequest(key, url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: controller.signal,
+      timeoutMs: 60_000,
     });
-    const text = await response.text();
-    let json: Record<string, unknown> = {};
-    try {
-      json = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      json = { raw: text };
-    }
-    if (!response.ok) {
-      throw new ProviderCallError(key, `HTTP ${response.status}: ${text}`, response.status);
-    }
-    return { status: response.status, json };
+    return { status: result.status, json: result.json };
   } catch (error) {
-    if (error instanceof ProviderCallError) {
-      throw error;
+    if (error instanceof ExternalHttpError) {
+      throw new ProviderCallError(key, error.message, error.status);
     }
     throw new ProviderCallError(key, error instanceof Error ? error.message : 'network error');
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

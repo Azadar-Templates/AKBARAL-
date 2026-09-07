@@ -4,7 +4,7 @@
  * Starts the API server (auth, agents, tasks), the SQLite database layer, and
  * the WebSocket execution-log stream.
  */
-import { env } from './config/env';
+import { env, validateEnvironment } from './config/env';
 import { createApiServer } from './app';
 import { db } from './db';
 import { syncModelCatalog } from './models';
@@ -24,23 +24,16 @@ function checkDatabase(): void {
   );
 }
 
-function validateProductionConfig(): void {
-  if (env.isProduction) {
-    if (!env.sessionSecret || env.sessionSecret === 'change-me-in-production' || env.sessionSecret.length < 32) {
-      throw new Error(
-        'production requires SESSION_SECRET to be set to a random string of at least 32 characters',
-      );
-    }
-  }
-}
-
 async function start(): Promise<void> {
-  validateProductionConfig();
+  // Validates mandatory runtime config before the DB/server starts. Provider
+  // credentials remain optional and are surfaced only as configured booleans.
+  validateEnvironment();
+
   try {
     ensureBootstrapPlans();
     syncModelCatalog();
   } catch (error) {
-    console.error('[akbaral] failed to sync catalog:', error);
+    console.error('[akbaral] failed to sync catalog:', error instanceof Error ? error.message : String(error));
   }
   checkDatabase();
 
@@ -51,7 +44,9 @@ async function start(): Promise<void> {
 }
 
 start().catch((error) => {
-  console.error('[akbaral] failed to start:', error);
+  const message = error instanceof Error ? error.message : String(error);
+  // Never dump raw exceptions that could carry sensitive values.
+  console.error(`[akbaral] failed to start: ${message}`);
   db.close();
   process.exit(1);
 });

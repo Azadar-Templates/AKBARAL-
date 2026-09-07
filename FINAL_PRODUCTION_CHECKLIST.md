@@ -20,6 +20,7 @@ Legend: ✅ PASS · ❌ FAIL · ⛔ BLOCKED-BY-EXTERNAL-CREDENTIAL
 | `npm run build` | ✅ | Clean `tsc -p tsconfig.json`. |
 | `npm test` | ✅ | 12 suites / 0 failures (repeatable; test runner now resets `test.db`). Orchestrator suite includes emergency-stop credit-safety. |
 | `npm run audit:registry` | ✅ | 4,000 definitions, 4,000 unique slugs, 4,000 unique instructions, 4,000 unique full contracts, 4,000 unique workflows. |
+| `npm run scan:secrets` | ✅ | No high-signal credential markers in the working tree (values never printed). |
 | Mobile `tsc --noEmit` | ✅ | Expo/React Native source clean. |
 
 ---
@@ -49,6 +50,14 @@ Legend: ✅ PASS · ❌ FAIL · ⛔ BLOCKED-BY-EXTERNAL-CREDENTIAL
 | Admin | ✅ | Stats/analytics/agent/model status, feature flags, emergency stop **+ resume**; admin/super_admin gate; `emergency_stop` rejects new work with `503` and never consumes credits. |
 | Seed idempotence | ✅ | Re-running `db:seed` preserves admin-disabled model/provider status (`src/models/catalog.ts`), so operator choices survive re-seeding. |
 | Security controls | ✅ | SSRF guard, WS/SSE auth, tenant isolation (execution/tool/CRM), rate limits, audit logs, signed webhooks, no secrets in client; production refuses the placeholder `SESSION_SECRET` on startup. |
+| Production config validation | ✅ | `NODE_ENV`, `PORT`, `DATABASE_URL` (`file:`/`:memory:` only), `HOST`, `AKBARAL_UPLOAD_DIR` validated at startup; dev/test `SESSION_SECRET` auto-generated cryptographically; production requires explicit ≥32 chars. |
+| Admin config/status endpoint | ✅ | `GET /api/admin/config/status` (admin-only) returns configured booleans + required env-var NAMES only; live check: non-admin `403`, admin `200`, no credential values/tokens in payload. |
+| Secret redaction in errors/logs | ✅ | Shared HTTP helper + `redactSecrets` mask provider bodies/bearers/api keys; user-facing errors never echo raw third-party bodies. |
+| Missing provider credentials | ✅ | Live generic agent without `OPENAI_API_KEY` → `provider_not_configured` (`set OPENAI_API_KEY`), credit 5→5 (refunded); SMTP-missing in production → `503 provider_not_configured` with required var names. |
+| SMTP/email | ✅ | SMTP client implemented (TLS/STARTTLS, AUTH PLAIN/LOGIN, timeout, secret-free errors); password-reset/verification/campaign send call it; production missing SMTP returns `provider_not_configured`. |
+| `AKBARAL_ALLOW_PRIVATE_PROVIDER` | ✅ | Cannot become a generic SSRF bypass: private source URLs are accepted only on the same host as the trusted internal provider; different private host/169.254.169.254 rejected (tested). |
+| Upload confinement | ✅ | `AKBARAL_UPLOAD_DIR` validated; server-generated storage keys checked (`..`, absolute, separators) before any path is built (tested). |
+| Secret scan / history | ✅ | `scripts/scan-secrets.ts` PASS on working tree; `git ls-files`/`git log --all` contain no high-signal secret markers; `.env`/`.env.*` ignored, `.dockerignore` excludes env files. |
 | Web frontend | ✅ | Premium responsive SPA with 3D robot identity; all routes live; deduped realtime log rows. |
 | Mobile build | ✅ | `tsc --noEmit` clean; Android/iOS Metro bundles export cleanly. |
 | Deployment | ✅ | Multi-stage Dockerfile (`node:22-slim`), persistent `/data`, entrypoint migrations/seed, Docker `HEALTHCHECK` on `/api/health`, backup script, docs. |

@@ -67,6 +67,36 @@ export function assertProviderHttpUrl(raw: string): string {
   return url.toString();
 }
 
+/**
+ * Validate a user-influenced source URL that is fetched through a trusted
+ * provider proxy.
+ *
+ * `AKBARAL_ALLOW_PRIVATE_PROVIDER=1` relaxes validation ONLY for the operator's
+ * configured internal provider. It must never turn arbitrary user-supplied
+ * source URLs into a generic SSRF bypass: a private source URL is accepted only
+ * when it is on the SAME host as the trusted internal search/fetch provider.
+ * Public URLs are always allowed.
+ */
+export function assertAllowedSourceUrl(raw: string, providerBase?: string): string {
+  const url = assertHttpUrl(raw, 'page_fetch');
+  if (!isPrivateHostname(url.hostname)) {
+    return url.toString();
+  }
+  const allowPrivate = process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER === '1';
+  if (!allowPrivate || !providerBase) {
+    throw new Error(
+      `page_fetch refused: private host "${url.hostname}" is blocked (SSRF protection)`,
+    );
+  }
+  const base = assertHttpUrl(providerBase, 'provider');
+  if (base.hostname !== url.hostname) {
+    throw new Error(
+      `page_fetch refused: private source "${url.hostname}" is not on the trusted provider host "${base.hostname}"`,
+    );
+  }
+  return url.toString();
+}
+
 export function isPrivateHttpUrl(raw: string): boolean {
   try {
     const url = assertHttpUrl(raw, 'url');

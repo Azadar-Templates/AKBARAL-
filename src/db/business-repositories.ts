@@ -167,6 +167,10 @@ export function updateCampaignStatus(campaignId: string, status: string): void {
   db.run('UPDATE campaigns SET status = ?, updated_at = ? WHERE id = ?', [status, NOW(), campaignId]);
 }
 
+export function updateCampaignMessageStatus(id: string, status: 'queued' | 'sent' | 'failed', errorMessage?: string | null): void {
+  db.run('UPDATE campaign_messages SET status = ?, error_message = ? WHERE id = ?', [status, errorMessage ?? null, id]);
+}
+
 export function queueCampaignMessage(input: {
   campaignId: string;
   userId: string;

@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import { Database } from './database';
 import { applyMigrations } from './migrate';
 import { resolveDatabasePath } from './path';
-import { env } from '../config/env';
 
 /**
  * SQLite development reset.
@@ -26,9 +25,10 @@ function resetDatabase(): void {
   const database = new Database();
   try {
     const applied = applyMigrations(database);
+    // Log the resolved file path only; never echo DATABASE_URL (it may contain
+    // a custom user/password in future connection formats).
     console.log(`[db:reset] removed ${filePath}`);
     console.log(`[db:reset] recreated schema (${applied.join(', ')})`);
-    console.log(`[db:reset] database url: ${env.databaseUrl}`);
   } finally {
     database.close();
   }

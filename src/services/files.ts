@@ -7,6 +7,26 @@ import { env } from '../config/env';
 
 export const UPLOAD_DIR = path.resolve(process.cwd(), env.uploadDir);
 
+const SAFE_STORAGE_KEY = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Resolve a server-generated storage key to an absolute path, and prove that
+ * the result is still inside the configured upload directory. This is the
+ * defense-in-depth guard for file tooling and downloads; it rejects NUL bytes,
+ * separators, `.`/`..` traversal and every absolute path.
+ */
+export function resolveStoredFilePath(storageKey: string): string {
+  if (!storageKey || storageKey.includes('\0') || !SAFE_STORAGE_KEY.test(storageKey) || storageKey === '.' || storageKey === '..') {
+    throw new Error('file_parse_text refused: invalid storage key');
+  }
+  const target = path.resolve(UPLOAD_DIR, storageKey);
+  const root = path.resolve(UPLOAD_DIR);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error('file_parse_text refused: storage key escapes upload directory');
+  }
+  return target;
+}
+
 export interface FileUploadResult {
   fileId: string;
   storageKey: string;
@@ -139,7 +159,12 @@ export function getStoredFile(id: string) {
     return undefined;
   }
   const storageKey = String(file.storage_key ?? '');
-  const filePath = path.join(UPLOAD_DIR, storageKey);
+  let filePath: string;
+  try {
+    filePath = resolveStoredFilePath(storageKey);
+  } catch {
+    return undefined;
+  }
   if (!fs.existsSync(filePath)) {
     return undefined;
   }

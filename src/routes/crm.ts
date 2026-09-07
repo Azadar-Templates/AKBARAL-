@@ -9,6 +9,7 @@ import {
   createCampaign,
   listCampaigns,
   updateCampaignStatus,
+  updateCampaignMessageStatus,
   queueCampaignMessage,
   listCampaignMessages,
   createAutomation,
@@ -19,8 +20,9 @@ import {
   db,
 } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
-import { HttpError } from '../server/http';
+import { HttpError, asyncRoute } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
+import { sendEmail, smtpConfigured } from '../integrations/smtp';
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
@@ -124,19 +126,45 @@ export function createCrmRouter(): Router {
       }),
     });
   });
-  router.post('/campaigns/:id/send', (req: AuthenticatedRequest, res) => {
-    const campaign = listCampaigns(req.auth!.userId).find((row) => String(row.id) === req.params.id);
-    if (!campaign) {
-      throw new HttpError(404, 'campaign not found', 'not_found');
-    }
-    const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD);
-    if (!smtpConfigured) {
-      updateCampaignStatus(req.params.id, 'paused');
-      throw new HttpError(409, 'email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD', 'email_delivery_not_configured');
-    }
-    updateCampaignStatus(req.params.id, 'running');
-    res.status(202).json({ status: 'queued_for_delivery', required: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] });
-  });
+  router.post(
+    '/campaigns/:id/send',
+    asyncRoute(async (req: AuthenticatedRequest, res) => {
+      const campaign = listCampaigns(req.auth!.userId).find((row) => String(row.id) === req.params.id);
+      if (!campaign) {
+        throw new HttpError(404, 'campaign not found', 'not_found');
+      }
+      if (!smtpConfigured()) {
+        updateCampaignStatus(req.params.id, 'paused');
+        throw new HttpError(
+          503,
+          'email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD',
+          'provider_not_configured',
+          { requiredCredential: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] },
+        );
+      }
+
+      updateCampaignStatus(req.params.id, 'running');
+      const messages = listCampaignMessages(req.params.id).filter((row) => String(row.channel ?? 'email') === 'email' && String(row.status ?? '') !== 'sent');
+      let sent = 0;
+      let failed = 0;
+      for (const message of messages) {
+        const id = String(message.id);
+        const recipient = String(message.recipient ?? '');
+        const subject = String(message.subject ?? 'AKBARAL campaign update');
+        const body = String(message.body ?? '');
+        try {
+          await sendEmail({ to: recipient, subject, text: body });
+          updateCampaignMessageStatus(id, 'sent');
+          sent += 1;
+        } catch (error) {
+          updateCampaignMessageStatus(id, 'failed', error instanceof Error ? error.message : String(error));
+          failed += 1;
+        }
+      }
+      updateCampaignStatus(req.params.id, failed > 0 ? 'paused' : 'completed');
+      res.status(200).json({ status: 'completed', sent, failed, queued: messages.length - sent - failed, required: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] });
+    }),
+  );
   router.get('/campaigns/:id/messages', (req: AuthenticatedRequest, res) => {
     const campaign = listCampaigns(req.auth!.userId).find((row) => String(row.id) === req.params.id);
     if (!campaign) {

@@ -22,6 +22,7 @@
     "db:push": "tsx src/db/migrate.ts",
     "verify:db": "npm run db:migrate && tsx src/db/verify.ts",
     "audit:registry": "tsx scripts/audit-registry.ts",
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
     "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
