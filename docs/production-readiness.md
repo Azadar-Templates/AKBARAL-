@@ -42,6 +42,9 @@ Generated after the final quality gate (`npm run typecheck`, `npm run build`, `n
   - Business/auth recovery (auth tokens, CRM/CRUD, timing-safe webhook signature).
   - HTTP API integration (health, register, login, agents, background research task with streaming, refresh/logout).
 - `cd mobile && npx tsc --noEmit` — clean (Expo/React Native source typechecks).
+- `cd mobile && npx expo config --type public --json` — valid app config (`AKBARAL!`, `ai.akbaral.mobile` for iOS/Android).
+- `cd mobile && npx expo export --platform android --output-dir /tmp/akbaral-mobile-export` — Android Metro bundle built (730 modules, ~1.87 MB Hermes bundle).
+- `cd mobile && npx expo export --platform ios --output-dir /tmp/akbaral-mobile-export-ios` — iOS Metro bundle built (731 modules, ~1.86 MB Hermes bundle).
 
 Manual end-to-end verification against the running API plus local compliant search/fetch provider:
 - Register/login/refresh, `/api/me` (5 credits, 30-day trial), password reset + re-login with new password.
@@ -92,7 +95,7 @@ When a credential is missing, the platform returns an honest error (e.g. `provid
 
 - No external model/API keys are present in this sandbox, so generic agent execution and external integrations fail honestly instead of producing fake output.
 - `node:sqlite` is used for the file database; a larger deployment should swap the repository layer to PostgreSQL. No code in agents/routes depends on the specific SQL driver.
-- Mobile app is a real cross-platform source implementation; it passes `tsc --noEmit` here but an Expo build (EAS/local) was outside this sandbox's toolchain.
+- Mobile app is a real cross-platform source implementation; it passes `tsc --noEmit` and both Android and iOS Metro bundles export cleanly here. Full native app-store builds (signing, provisioning) still require an EAS/developer account.
 - Campaign delivery, OAuth identity exchange and payment settlement require their respective external providers.
 
 ## 6. Current Counts
@@ -131,7 +134,7 @@ When a credential is missing, the platform returns an honest error (e.g. `provid
 - [x] Agent Factory marketplace/admin
 - [x] Security (rate limits, audit, webhooks, secrets)
 - [x] Web frontend
-- [x] Mobile source architecture (typecheck clean)
+- [x] Mobile source architecture (typecheck + Android/iOS Metro export clean)
 - [ ] Add real provider keys/secrets
 - [ ] Configure SMTP
 - [ ] Configure object storage + jobs queue for large-scale deployment
