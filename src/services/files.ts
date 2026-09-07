@@ -74,6 +74,20 @@ export function processUpload(input: {
   const storageKey = `${Date.now()}-${sha256.slice(0, 18)}`;
   const kind = detectKind(mimeType);
 
+  // Persist the upload under the key stored in the `files` table so downloads
+  // and file_parse_text can resolve it deterministically, then remove the
+  // multer temporary file if it lives elsewhere.
+  const targetPath = path.join(UPLOAD_DIR, storageKey);
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  fs.writeFileSync(targetPath, buffer);
+  if (path.resolve(input.file.path) !== path.resolve(targetPath)) {
+    try {
+      fs.unlinkSync(input.file.path);
+    } catch {
+      // Best-effort cleanup; the target file is already written.
+    }
+  }
+
   const created = createFile({
     userId: input.userId,
     projectId: input.projectId ?? null,
@@ -92,7 +106,7 @@ export function processUpload(input: {
     sizeBytes: input.file.size,
   });
 
-  const text = extractTextFromFile(input.file.path, mimeType);
+  const text = extractTextFromFile(targetPath, mimeType);
   let knowledgeItemId: string | undefined;
   if (text.length > 0) {
     const item = indexKnowledgeItem({

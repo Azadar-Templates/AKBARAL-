@@ -301,7 +301,10 @@ export function syncModelCatalog(): void {
       docsUrl: provider.docsUrl ?? null,
       envKey: provider.envKey,
       capabilities: provider.capabilities,
-      status: providerEnabled(provider) ? 'enabled' : 'disabled',
+      // Status encodes operator enable/disable, not credential availability.
+      // Credential absence is surfaced by the router as provider_not_configured
+      // so the platform stays honest and never reports "no models registered".
+      status: 'enabled',
     });
   }
   for (const model of MODEL_SPECS) {
@@ -320,7 +323,7 @@ export function syncModelCatalog(): void {
       reliability: model.reliability ?? 0.95,
       strengths: model.capabilities,
       weaknesses: [],
-      status: modelAvailable(model) ? 'enabled' : 'disabled',
+      status: 'enabled',
       isDefault: model.isDefault ?? false,
     });
   }

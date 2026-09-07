@@ -56,8 +56,8 @@ Target: 4,000+ genuinely distinct specialist agents, agent factory, marketplace,
 - `GET /api/admin/stats` (users, tasks, agents, models, revenue, credits, failed jobs, security events), agent/model status control, feature flags, manual payment settlement and emergency stop.
 
 ### Real-time
-- WebSocket `/ws/executions/:executionId` streams persisted execution logs with reconnect replay via `?after=<ISO>`.
-- SSE fallback `GET /api/executions/:id/events`.
+- WebSocket `/ws/executions/:executionId?token=<accessToken>` streams persisted execution logs with reconnect replay via `?after=<ISO>`. The token is required and the stream only serves the owning user.
+- SSE fallback `GET /api/executions/:id/events` (bearer token; owner-only).
 
 ### Web Frontend
 - Premium responsive SPA in `public/` preserving the AKBARAL! visual identity and animated 3D robot.

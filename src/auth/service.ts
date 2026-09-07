@@ -19,6 +19,7 @@ import {
   signAccessToken,
 } from '../security';
 import { UserStatus } from '../db/constants';
+import { HttpError } from '../server/http';
 
 export interface AuthUserView {
   id: string;
@@ -45,7 +46,7 @@ export interface LoginOutput {
 
 function toUserView(user: Awaited<ReturnType<typeof findUserById>>): AuthUserView {
   if (!user) {
-    throw new Error('user not found');
+    throw new HttpError(404, 'user not found', 'not_found');
   }
   const account = getCreditAccount(user.id);
   return {
@@ -62,13 +63,13 @@ function toUserView(user: Awaited<ReturnType<typeof findUserById>>): AuthUserVie
 export async function register(input: RegisterInput): Promise<AuthUserView> {
   const email = input.email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error('invalid email');
+    throw new HttpError(400, 'invalid email', 'validation_error');
   }
   if (!input.password || input.password.length < 8) {
-    throw new Error('password must be at least 8 characters');
+    throw new HttpError(400, 'password must be at least 8 characters', 'validation_error');
   }
   if (findUserByEmail(email)) {
-    throw new Error('email already registered');
+    throw new HttpError(409, 'email already registered', 'conflict');
   }
 
   const passwordHash = await hashPassword(input.password);
@@ -106,7 +107,7 @@ export async function login(input: { email: string; password: string; ipAddress?
       description: 'login failed: invalid credentials',
       metadata: { email },
     });
-    throw new Error('invalid email or password');
+    throw new HttpError(401, 'invalid email or password', 'invalid_credentials');
   }
 
   const valid = await verifyPassword(input.password, user.password_hash);
@@ -120,7 +121,7 @@ export async function login(input: { email: string; password: string; ipAddress?
       description: 'login failed: invalid password',
       metadata: { email },
     });
-    throw new Error('invalid email or password');
+    throw new HttpError(401, 'invalid email or password', 'invalid_credentials');
   }
 
   if (user.status !== UserStatus.ACTIVE) {
@@ -133,7 +134,7 @@ export async function login(input: { email: string; password: string; ipAddress?
       description: 'login blocked: account not active',
       metadata: { status: user.status },
     });
-    throw new Error('account is not active');
+    throw new HttpError(403, 'account is not active', 'account_not_active');
   }
 
   const now = Date.now();
@@ -194,7 +195,7 @@ export function validateRefreshToken(refreshToken: string): string | null {
 export function rotateRefreshSession(userId: string): { refreshToken: string; sessionId: string; user: AuthUserView } {
   const user = findUserById(userId);
   if (!user) {
-    throw new Error('user not found');
+    throw new HttpError(404, 'user not found', 'not_found');
   }
   const refreshToken = newBearerToken();
   const session = createSession({
