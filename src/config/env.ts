@@ -17,6 +17,7 @@ export const env = {
   isTest: (process.env.NODE_ENV ?? 'development') === 'test',
   searchEndpoint: process.env.AKBARAL_SEARCH_ENDPOINT ?? '',
   pageFetchEndpoint: process.env.AKBARAL_PAGE_FETCH_ENDPOINT ?? '',
+  uploadDir: process.env.AKBARAL_UPLOAD_DIR ?? 'data/uploads',
 } as const;
 
 export type AppEnvironment = Pick<
@@ -30,4 +31,5 @@ export type AppEnvironment = Pick<
   | 'isTest'
   | 'searchEndpoint'
   | 'pageFetchEndpoint'
+  | 'uploadDir'
 >;

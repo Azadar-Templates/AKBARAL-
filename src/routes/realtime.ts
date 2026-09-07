@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listExecutionLogsAfter, listExecutionLogs, getAgentExecution } from '../db';
+import { listExecutionLogsAfter, listExecutionLogs, getAgentExecution, getExecutionOwnerId } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
 
@@ -16,6 +16,10 @@ export function createRealtimeRouter(): Router {
     const execution = getAgentExecution(req.params.id);
     if (!execution) {
       throw new HttpError(404, 'execution not found', 'not_found');
+    }
+    const ownerId = getExecutionOwnerId(execution.id);
+    if (!ownerId || ownerId !== req.auth!.userId) {
+      throw new HttpError(403, 'you do not have access to this execution', 'forbidden');
     }
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');

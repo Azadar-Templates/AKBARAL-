@@ -38,6 +38,8 @@ export interface ResearchReport {
   provider: string;
 }
 
+import { assertPublicHttpUrl, assertProviderHttpUrl } from '../security/ssrf';
+
 export interface WebSearchResult {
   title: string;
   url: string;
@@ -110,7 +112,7 @@ export function extractText(html: string): string {
  * compliant proxy without changing the agent code.
  */
 export async function searchWeb(query: string, limit = 5): Promise<WebSearchResult[]> {
-  const endpoint = searchEndpoint();
+  const endpoint = assertProviderHttpUrl(searchEndpoint());
   const url = new URL(endpoint);
   url.searchParams.set('q', query);
 
@@ -197,8 +199,12 @@ function parseJsonResults(body: string, limit: number): WebSearchResult[] {
  */
 export async function fetchPage(sourceUrl: string): Promise<{ title: string; text: string }> {
   const base = pageFetchBase();
+  const allowPrivateProxy = Boolean(base && process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER === '1');
+  if (!allowPrivateProxy) {
+    assertPublicHttpUrl(sourceUrl);
+  }
   const target = base
-    ? new URL(base)
+    ? new URL(assertProviderHttpUrl(base))
     : new URL(sourceUrl);
   if (base) {
     target.searchParams.set('url', sourceUrl);

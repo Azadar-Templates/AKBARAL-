@@ -5,7 +5,7 @@ import multer from 'multer';
 import { createFile, createFileVersion, indexKnowledgeItem, getFile } from '../db';
 import { env } from '../config/env';
 
-export const UPLOAD_DIR = path.resolve(process.cwd(), env.isProduction ? '/tmp/akbaral-uploads' : 'data/uploads');
+export const UPLOAD_DIR = path.resolve(process.cwd(), env.uploadDir);
 
 export interface FileUploadResult {
   fileId: string;

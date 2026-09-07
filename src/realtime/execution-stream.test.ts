@@ -4,21 +4,26 @@ import http from 'node:http';
 import { WebSocket } from 'ws';
 import { randomBytes } from 'node:crypto';
 import { ExecutionStream } from './execution-stream';
-import { createUser, createAgent, createAgentExecution, db, listExecutionLogsAfter } from '../db';
+import { createUser, createAgent, createAgentExecution, createTask, db, listExecutionLogsAfter } from '../db';
+import { signAccessToken } from '../security';
 
 describe('execution stream + replay', () => {
   let executionId = '';
+  let userId = '';
+  let accessToken = '';
   const suffix = randomBytes(6).toString('hex');
 
   before(() => {
     const user = createUser({ email: `ws-${suffix}@akbaral.test`, name: 'WS Test User' });
+    userId = user.id;
+    accessToken = signAccessToken({ sub: userId, email: user.email, role: 'user', sid: `ses-${suffix}` });
     const agent = createAgent({ name: 'WS Test Agent', slug: `ws-agent-${suffix}` });
-    executionId = createAgentExecution({ agentId: agent.id, taskId: null, id: `exe_zh-${suffix}` }).id;
-    void user;
+    const task = createTask({ userId, title: `WS test ${suffix}`, type: 'test' });
+    executionId = createAgentExecution({ agentId: agent.id, taskId: task.id, id: `exe_zh-${suffix}` }).id;
   });
 
   after(() => {
-    db.run('DELETE FROM users WHERE email = ?', [`ws-${suffix}@akbaral.test`]);
+    db.run('DELETE FROM users WHERE email = ? OR email = ?', [`ws-${suffix}@akbaral.test`, `ws-other-${suffix}@akbaral.test`]);
     db.close();
   });
 
@@ -30,7 +35,27 @@ describe('execution stream + replay', () => {
     const port = address.port;
 
     try {
-      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/executions/${executionId}`);
+      // Unauthenticated sockets must be rejected at the upgrade boundary.
+      const unauthorized = await new Promise<boolean>((resolve) => {
+        const bad = new WebSocket(`ws://127.0.0.1:${port}/ws/executions/${executionId}`);
+        const timer = setTimeout(() => resolve(true), 1000);
+        bad.once('error', () => { clearTimeout(timer); resolve(true); });
+        bad.once('open', () => { clearTimeout(timer); resolve(false); });
+      });
+      assert.equal(unauthorized, true, 'unauthenticated WebSocket connection must be rejected');
+
+      // Another user's token must not reach another tenant's execution stream.
+      const other = createUser({ email: `ws-other-${suffix}@akbaral.test`, name: 'WS Other User' });
+      const otherToken = signAccessToken({ sub: other.id, email: other.email, role: 'user', sid: `ses-other-${suffix}` });
+      const crossTenant = await new Promise<boolean>((resolve) => {
+        const bad = new WebSocket(`ws://127.0.0.1:${port}/ws/executions/${executionId}?token=${otherToken}`);
+        const timer = setTimeout(() => resolve(true), 1000);
+        bad.once('error', () => { clearTimeout(timer); resolve(true); });
+        bad.once('open', () => { clearTimeout(timer); resolve(false); });
+      });
+      assert.equal(crossTenant, true, 'cross-tenant WebSocket connection must be rejected');
+
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/executions/${executionId}?token=${accessToken}`);
       await new Promise<void>((resolve, reject) => {
         socket.once('open', resolve);
         socket.once('error', reject);

@@ -575,6 +575,22 @@ export function getAgentExecution(id: string): AgentExecutionMinimal | undefined
   return db.get<AgentExecutionMinimal>('SELECT * FROM agent_executions WHERE id = ?', [id]);
 }
 
+/**
+ * Resolve the owning user id for an execution.
+ *
+ * Executions are created from user tasks, so the owner is the task owner. A
+ * null result means the execution is either unknown or not tied to any user
+ * task and must not be exposed through tenant-scoped realtime/public routes.
+ */
+export function getExecutionOwnerId(executionId: string): string | null {
+  const execution = getAgentExecution(executionId);
+  if (!execution || !execution.task_id) {
+    return null;
+  }
+  const task = findTaskById(execution.task_id);
+  return task ? String(task.user_id) : null;
+}
+
 export function listTaskExecutions(taskId: string, limit = 100): AgentExecutionMinimal[] {
   return db.all<AgentExecutionMinimal>(
     'SELECT * FROM agent_executions WHERE task_id = ? ORDER BY created_at DESC LIMIT ?',

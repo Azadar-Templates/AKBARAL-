@@ -16,6 +16,7 @@ import {
   recordAutomationRun,
   createAiEmployee,
   listAiEmployees,
+  db,
 } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
@@ -23,6 +24,27 @@ import { getBody, optionalString, requireString } from '../server/middleware/val
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function assertOwnedProject(projectId: string, userId: string): void {
+  const row = db.get<{ id: string }>('SELECT id FROM projects WHERE id = ? AND owner_id = ?', [projectId, userId]);
+  if (!row) {
+    throw new HttpError(403, 'project does not belong to the current user', 'forbidden');
+  }
+}
+
+function assertOwnedPipeline(pipelineId: string, userId: string): void {
+  const row = db.get<{ id: string }>('SELECT id FROM crm_pipelines WHERE id = ? AND user_id = ?', [pipelineId, userId]);
+  if (!row) {
+    throw new HttpError(403, 'pipeline does not belong to the current user', 'forbidden');
+  }
+}
+
+function assertOwnedContact(contactId: string, userId: string): void {
+  const row = db.get<{ id: string }>('SELECT id FROM crm_contacts WHERE id = ? AND user_id = ?', [contactId, userId]);
+  if (!row) {
+    throw new HttpError(403, 'contact does not belong to the current user', 'forbidden');
+  }
 }
 
 export function createCrmRouter(): Router {
@@ -35,9 +57,11 @@ export function createCrmRouter(): Router {
   });
   router.post('/contacts', (req: AuthenticatedRequest, res) => {
     const body = getBody(req);
+    const projectId = optionalString(body, 'project_id') ?? null;
+    if (projectId) assertOwnedProject(projectId, req.auth!.userId);
     const created = createCrmContact({
       userId: req.auth!.userId,
-      projectId: optionalString(body, 'project_id') ?? null,
+      projectId,
       firstName: optionalString(body, 'first_name') ?? null,
       lastName: optionalString(body, 'last_name') ?? null,
       email: optionalString(body, 'email') ?? null,
@@ -66,12 +90,16 @@ export function createCrmRouter(): Router {
   router.post('/deals', (req: AuthenticatedRequest, res) => {
     const body = getBody(req);
     const title = requireString(body, 'title', 'title');
+    const pipelineId = optionalString(body, 'pipeline_id') ?? null;
+    const contactId = optionalString(body, 'contact_id') ?? null;
+    if (pipelineId) assertOwnedPipeline(pipelineId, req.auth!.userId);
+    if (contactId) assertOwnedContact(contactId, req.auth!.userId);
     res.status(201).json({
       deal: createCrmDeal({
         userId: req.auth!.userId,
         title,
-        pipelineId: optionalString(body, 'pipeline_id') ?? null,
-        contactId: optionalString(body, 'contact_id') ?? null,
+        pipelineId,
+        contactId,
         stage: optionalString(body, 'stage'),
         amountCents: Number(body.amount_cents ?? 0),
         probability: Number(body.probability ?? 0),
@@ -171,13 +199,17 @@ export function createCrmRouter(): Router {
     const body = getBody(req);
     const name = requireString(body, 'name', 'name');
     const role = requireString(body, 'role', 'role');
+    const assignedTo = optionalString(body, 'assigned_to') ?? null;
+    if (assignedTo && assignedTo !== req.auth!.userId) {
+      throw new HttpError(403, 'assigned_to must be the current user', 'forbidden');
+    }
     res.status(201).json({
       employee: createAiEmployee({
         userId: req.auth!.userId,
         name,
         role,
         agentSlug: optionalString(body, 'agent_slug') ?? null,
-        assignedTo: optionalString(body, 'assigned_to') ?? null,
+        assignedTo,
       }),
     });
   });

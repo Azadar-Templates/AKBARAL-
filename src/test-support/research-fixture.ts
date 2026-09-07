@@ -78,6 +78,8 @@ export async function startResearchFixture(options?: {
 
   process.env.AKBARAL_SEARCH_ENDPOINT = `${baseUrl}/search`;
   process.env.AKBARAL_PAGE_FETCH_ENDPOINT = `${baseUrl}/fetch`;
+  // Test-only: allow the local trusted fixture to act as the search/fetch proxy.
+  process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = '1';
 
   return {
     baseUrl,
@@ -85,6 +87,7 @@ export async function startResearchFixture(options?: {
     close(): Promise<void> {
       delete process.env.AKBARAL_SEARCH_ENDPOINT;
       delete process.env.AKBARAL_PAGE_FETCH_ENDPOINT;
+      delete process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER;
       return new Promise((resolve) => server.close(() => resolve()));
     },
   };

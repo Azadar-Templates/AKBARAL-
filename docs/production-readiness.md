@@ -30,12 +30,13 @@ Generated after the final quality gate (`npm run typecheck`, `npm run build`, `n
 
 - `npm run typecheck` — clean.
 - `npm run build` — clean TypeScript production build.
-- `npm test` — **11 suites / 0 failures**.
+- `npm run audit:registry` — 4,000 definitions / 4,000 unique slugs / 4,000 unique instructions / 4,000 unique workflow contracts (see `scripts/audit-registry.ts`).
+- `npm test` — **12 suites / 0 failures** (repeatable: the test script resets `test.db`).
   - Web research agent (real fetch/search, verified report, honest provider failure).
   - Auth service (register/login/refresh/logout, wrong password, session rotation).
   - Database foundation (users, credits consume/refund, tasks/logs, agents, usage/audit/security).
   - Orchestrator free-task credits (success consumes, failure refunds, exhausted → requires_pro).
-  - Execution stream (WebSocket broadcast + persisted replay; test uses a hyphenated execution id).
+  - Execution stream (WebSocket broadcast + persisted replay; test uses a hyphenated execution id and asserts unauthenticated + cross-tenant connections are rejected).
   - Password/token security.
   - Agent Factory (create/security/benchmark/version/rollback/update/duplicate/status).
   - Tool system (repo read, path traversal block, text parse, CSV build, knowledge search, honest missing credentials).
@@ -58,6 +59,8 @@ Manual end-to-end verification against the running API plus local compliant sear
 - Marketplace browse + install; admin stats/analytics/feature-flags with role gating.
 - WebSocket `/ws/executions/:id` delivered 6 frames (start → planning → specialist → research complete → task completed → verification passed).
 - SSE `/api/executions/:id/events` delivered all 5 persisted log frames.
+- Unauthenticated WebSocket → rejected; cross-tenant WebSocket → rejected; cross-tenant execution GET / SSE / tool context → `403`.
+- Manual E2E snapshot: factory create + security/benchmark/version (non-owner mutation denied), marketplace install, CRM all entities, admin RBAC denied, mobile `tsc --noEmit` clean.
 
 Failure cases are explicitly covered: provider not configured, network failure, provider outage, credit exhaustion, duplicate slug, invalid path traversal, invalid webhook signature, invalid/consumed reset token.
 

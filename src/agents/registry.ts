@@ -20,6 +20,7 @@ export interface AgentView {
   id: string;
   name: string;
   slug: string;
+  ownerId: string | null;
   specialization: string;
   description: string;
   category: string;
@@ -188,6 +189,7 @@ function toAgentView(row: Record<string, unknown>): AgentView {
     id: String(row.id),
     name: String(row.name),
     slug: String(row.slug),
+    ownerId: row.owner_id ? String(row.owner_id) : null,
     specialization: String(row.description ?? ''),
     description: String(row.description ?? ''),
     category: String(row.category_name ?? ''),

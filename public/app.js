@@ -399,14 +399,14 @@
   async function loadMasterExecution(executionId) {
     const out = $('#master-output');
     out.textContent = `Streaming execution ${executionId}…\n`;
-    let cursor = '';
+    const seen = new Set();
     const poll = async () => {
       try {
         const body = await api(`/api/tasks/execution/${executionId}`).catch(() => null);
         if (body && body.logs) {
           for (const log of body.logs) {
-            if (log.id > cursor) {
-              cursor = log.id;
+            if (log.id && !seen.has(log.id)) {
+              seen.add(log.id);
               out.textContent += `[${log.created_at || ''}] ${log.message}\n`;
             }
           }
@@ -483,10 +483,9 @@
   }
 
   async function loadFactory() {
-    const body = await api('/api/agents?limit=100');
+    const body = await api('/api/agents?limit=200&status=active');
     const mine = (body.agents || []).filter((a) => a.ownerId === state.user.id);
-    const agents = mine.length ? mine : (body.agents || []).slice(0, 20);
-    renderFactoryAgents(agents);
+    renderFactoryAgents(mine);
   }
 
   function renderFactoryAgents(agents) {
@@ -551,11 +550,15 @@
 
   function renderMarketplace(agents) {
     const root = $('#marketplace-list');
+    const tagsOf = (value) => {
+      if (Array.isArray(value)) return value;
+      try { return value ? JSON.parse(String(value)) : []; } catch { return []; }
+    };
     root.innerHTML = agents.length ? agents.map((a) => `
       <article class="agent-card">
         <h3>${esc(a.name)}</h3>
         <p>${esc(a.description || a.specialization || a.slug)}</p>
-        <div class="tags"><span>PKR ${Number(a.price_cents || 0) / 100}</span><span>${esc(a.install_count || 0)} installs</span>${(a.tags ? JSON.parse(a.tags).slice(0, 4).map((t) => `<span>${esc(t)}</span>`).join('') : '')}</div>
+        <div class="tags"><span>PKR ${Number(a.price_cents || 0) / 100}</span><span>${esc(a.install_count || 0)} installs</span>${tagsOf(a.tags).slice(0, 4).map((t) => `<span>${esc(t)}</span>`).join('')}</div>
         <div class="actions">
           <button class="btn btn-primary" data-install="${esc(a.slug)}">Install</button>
           <button class="btn btn-ghost" data-publish="${esc(a.slug)}">Publish</button>

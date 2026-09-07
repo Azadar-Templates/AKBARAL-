@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { runTool, listImplementedTools } from './index';
-import { createUser, db, indexKnowledgeItem } from '../db';
+import { createUser, createFile, db, indexKnowledgeItem } from '../db';
 import { UPLOAD_DIR } from '../services/files';
 
 describe('tool system', () => {
@@ -43,7 +43,16 @@ describe('tool system', () => {
 
   it('parses a text file from uploads', async () => {
     const filename = `tool-test-${suffix}.txt`;
-    fs.writeFileSync(path.join(UPLOAD_DIR, filename), 'hello akbaral tools\nsecond line', 'utf8');
+    const content = 'hello akbaral tools\nsecond line';
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), content, 'utf8');
+    createFile({
+      userId,
+      originalName: filename,
+      storageKey: filename,
+      mimeType: 'text/plain',
+      sizeBytes: Buffer.byteLength(content),
+      kind: 'document',
+    });
     const result = await runTool('file_parse_text', { file: filename, mime_type: 'text/plain' }, { userId });
     assert.ok(result.ok);
     assert.match(result.content, /hello akbaral tools/);

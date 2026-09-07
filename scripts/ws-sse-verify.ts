@@ -23,8 +23,8 @@ async function main() {
   const executionId = created.task.executionId;
   console.log(`executionId=${executionId}`);
 
-  // --- WebSocket live capture ---
-  const ws = new WebSocket(`ws://127.0.0.1:3000/ws/executions/${executionId}`);
+  // --- WebSocket live capture (authenticated via ?token=) ---
+  const ws = new WebSocket(`ws://127.0.0.1:3000/ws/executions/${executionId}?token=${encodeURIComponent(TOKEN)}`);
   await new Promise<void>((resolve, reject) => {
     ws.once('open', resolve);
     ws.once('error', reject);

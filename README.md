@@ -132,10 +132,10 @@ npm run start           # run compiled production server
 | POST | `/api/marketplace/:slug/install` | bearer | Install agent |
 | GET | `/api/billing/plans` | none | Public plan pricing |
 | GET | `/api/admin/stats` | admin | Admin statistics |
-| WS | `/ws/executions/:executionId` | none* | Live execution logs |
-| SSE | `/api/executions/:id/events` | bearer | SSE execution logs |
+| WS | `/ws/executions/:executionId?token=<accessToken>` | bearer via query | Live execution logs (owner-only) |
+| SSE | `/api/executions/:id/events` | bearer | SSE execution logs (owner-only) |
 
-> *WebSocket stream is keyed by opaque execution id; add token auth here for multi-tenant edge deployments.
+> The WebSocket stream requires a valid access token and only streams executions owned by the current user. Unauthenticated or cross-tenant connections are rejected.
 
 ## Deployment
 

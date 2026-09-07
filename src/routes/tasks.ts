@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   findTaskById,
   getAgentExecution,
+  getExecutionOwnerId,
   listExecutionLogs,
   listTaskEvents,
   listTaskExecutions,
@@ -71,6 +72,10 @@ export function createTasksRouter(stream: ExecutionStream): Router {
     const execution = getAgentExecution(req.params.id);
     if (!execution) {
       throw new HttpError(404, 'execution not found', 'not_found');
+    }
+    const ownerId = getExecutionOwnerId(execution.id);
+    if (!ownerId || ownerId !== req.auth!.userId) {
+      throw new HttpError(403, 'you do not have access to this execution', 'forbidden');
     }
     const logs = listExecutionLogs(execution.id);
     res.status(200).json({ execution, logs });

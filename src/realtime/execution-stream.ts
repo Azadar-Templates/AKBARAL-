@@ -1,7 +1,8 @@
 import type { Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { appendAgentExecutionLog, listExecutionLogs, listExecutionLogsAfter, type ExecutionLogRow } from '../db';
+import { appendAgentExecutionLog, getExecutionOwnerId, listExecutionLogs, listExecutionLogsAfter, type ExecutionLogRow } from '../db';
+import { verifyAccessToken } from '../security';
 
 /**
  * Real-time execution log transport.
@@ -61,6 +62,18 @@ export class ExecutionStream {
         return;
       }
 
+      const token = url.searchParams.get('token') ?? '';
+      const payload = verifyAccessToken(token);
+      if (!payload) {
+        socket.close(1008, 'unauthorized');
+        return;
+      }
+      const ownerId = getExecutionOwnerId(executionId);
+      if (!ownerId || ownerId !== payload.sub) {
+        socket.close(1008, 'forbidden');
+        return;
+      }
+
       const after = url.searchParams.get('after') ?? '';
       const entry: ClientEntry = {
         socket,
@@ -106,6 +119,22 @@ export class ExecutionStream {
     server.on('upgrade', (request, socket, head) => {
       const url = new URL(request.url ?? '/', 'http://localhost');
       if (!url.pathname.startsWith('/ws/executions/')) {
+        socket.write('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      const token = url.searchParams.get('token') ?? '';
+      const payload = verifyAccessToken(token);
+      if (!payload) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      const match = url.pathname.match(/^\/ws\/executions\/([A-Za-z0-9_-]+)$/);
+      const executionId = match?.[1] ?? null;
+      const ownerId = executionId ? getExecutionOwnerId(executionId) : null;
+      if (!executionId || !ownerId || ownerId !== payload.sub) {
+        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         socket.destroy();
         return;
       }

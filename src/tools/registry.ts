@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { searchKnowledge } from '../db';
+import { searchKnowledge, db } from '../db';
+import { assertPublicHttpUrl } from '../security/ssrf';
 import { searchWeb, fetchPage } from '../agents';
 import { extractTextFromFile, UPLOAD_DIR } from '../services/files';
 
@@ -58,24 +59,8 @@ class ToolInputError extends Error {
   }
 }
 
-const PRIVATE_HOST_RE =
-  /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|::1$|localhost$)/i;
-
 function assertPublicUrl(raw: string): string {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error('page_fetch refused: invalid URL');
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('page_fetch refused: only http/https URLs are allowed');
-  }
-  const host = url.hostname;
-  if (PRIVATE_HOST_RE.test(host)) {
-    throw new Error(`page_fetch refused: private host "${host}" is blocked (SSRF protection)`);
-  }
-  return url.toString();
+  return assertPublicHttpUrl(raw);
 }
 
 function readRepoFile(repoRoot: string, requestedPath: string): string {
@@ -95,16 +80,20 @@ function readRepoFile(repoRoot: string, requestedPath: string): string {
   return fs.readFileSync(target, 'utf8').slice(0, 200_000);
 }
 
-function findUploadedFile(fileIdOrKey: string): string {
-  const fsPath = path.join(UPLOAD_DIR, fileIdOrKey);
-  if (fs.existsSync(fsPath) && fs.statSync(fsPath).isFile()) {
-    return fsPath;
+function findUploadedFile(fileIdOrKey: string, userId: string): string {
+  const row = db.get<{ storage_key: string }>(
+    `SELECT storage_key FROM files
+     WHERE user_id = ? AND (id = ? OR storage_key = ? OR original_name = ?)
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId, fileIdOrKey, fileIdOrKey, fileIdOrKey],
+  );
+  if (row?.storage_key) {
+    const fsPath = path.join(UPLOAD_DIR, row.storage_key);
+    if (fs.existsSync(fsPath) && fs.statSync(fsPath).isFile()) {
+      return fsPath;
+    }
   }
-  const matches = fs.readdirSync(UPLOAD_DIR).filter((name) => name.includes(fileIdOrKey));
-  if (matches.length === 1) {
-    return path.join(UPLOAD_DIR, matches[0]);
-  }
-  throw new Error(`file_parse_text refused: file "${fileIdOrKey}" not found`);
+  throw new Error(`file_parse_text refused: file "${fileIdOrKey}" not found or not owned by the current user`);
 }
 
 function toCsv(rows: Array<Record<string, unknown>>): string {
@@ -197,10 +186,10 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
     }
   },
 
-  async file_parse_text(input) {
+  async file_parse_text(input, ctx) {
     try {
       const fileKey = requireStringInput(input, 'file', 'file_parse_text');
-      const filePath = findUploadedFile(fileKey);
+      const filePath = findUploadedFile(fileKey, ctx.userId);
       const mime = typeof input.mime_type === 'string' ? input.mime_type : 'text/plain';
       const text = extractTextFromFile(filePath, mime);
       return ok('file_parse_text', text, { bytes: text.length, parsed: true });

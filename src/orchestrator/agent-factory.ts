@@ -187,7 +187,9 @@ function bumpVersion(version: string): string {
 }
 
 function hasOwner(agent: { owner_id?: string | null }, userId: string): boolean {
-  return !agent.owner_id || String(agent.owner_id) === userId;
+  // Built-in/system agents are never owned by a regular user, so mutating or
+  // versioning them is intentionally forbidden.
+  return Boolean(agent.owner_id) && String(agent.owner_id) === userId;
 }
 
 export class AgentFactory {

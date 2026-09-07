@@ -75,7 +75,7 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
     type: 'llm',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     docsUrl: 'https://ai.google.dev',
-    envKey: 'GOOGLE_AI_API_KEY',
+    envKey: 'GOOGLE_API_KEY',
     capabilities: ['text', 'reasoning', 'vision', 'multimodal', 'embedding'],
   },
 ];

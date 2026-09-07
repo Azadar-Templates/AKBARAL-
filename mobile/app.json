@@ -20,7 +20,7 @@
       }
     },
     "extra": {
-      "apiBaseUrl": "https://your-akbaral-api.example.com"
+      "apiBaseUrl": "https://api.akbaral.ai"
     }
   }
 }

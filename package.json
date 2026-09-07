@@ -13,7 +13,7 @@
     "serve": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "cross-env DATABASE_URL=file:./test.db npm run db:migrate && for f in $(find src -name \"*.test.ts\" | sort); do cross-env DATABASE_URL=file:./test.db tsx --test --test-concurrency=1 --test-force-exit \"$f\" || exit 1; done",
+    "test": "rm -f test.db && cross-env DATABASE_URL=file:./test.db npm run db:migrate && for f in $(find src -name \"*.test.ts\" | sort); do cross-env DATABASE_URL=file:./test.db tsx --test --test-concurrency=1 --test-force-exit \"$f\" || exit 1; done",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:migrate:dev": "tsx src/db/migrate.ts",
     "db:status": "tsx src/db/migrate.ts --status",
@@ -21,6 +21,7 @@
     "db:reset": "tsx src/db/reset.ts",
     "db:push": "tsx src/db/migrate.ts",
     "verify:db": "npm run db:migrate && tsx src/db/verify.ts",
+    "audit:registry": "tsx scripts/audit-registry.ts",
     "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

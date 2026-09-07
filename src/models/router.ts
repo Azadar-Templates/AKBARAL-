@@ -33,7 +33,9 @@ export class ModelRouter {
     if (rows.length === 0) {
       return MODEL_SPECS;
     }
-    return rows.map((row) => ({
+    return rows
+      .filter((row) => String(row.status ?? 'enabled') !== 'disabled')
+      .map((row) => ({
       key: String(row.key),
       name: String(row.name),
       providerKey: String(row.provider_key),
@@ -178,15 +180,25 @@ export class ModelRouter {
 
   private fallbackChain(primary: RoutingDecision, requirements: ModelRequirements): RoutingDecision[] {
     const preferred = requirements.fallbackModelKeys ?? [];
-    const all = preferred
-      .map((key) => getModel(key))
-      .filter(Boolean)
-      .map((row) => this.toSpec(row as Record<string, unknown>));
-    all.push(primary.model);
-    // De-dup by key.
+    const candidates = this.dbModels()
+      .filter((model) => model.capability !== 'embedding')
+      .map((model) => ({ model, score: this.score(model, requirements) }))
+      .sort((a, b) => b.score - a.score);
+
+    const ordered: ModelSpec[] = [];
+    for (const key of preferred) {
+      const row = getModel(key);
+      if (row) ordered.push(this.toSpec(row as Record<string, unknown>));
+    }
+    ordered.push(primary.model);
+    for (const candidate of candidates) {
+      ordered.push(candidate.model);
+    }
+
+    // De-dup by key while preserving preference order, then score order.
     const seen = new Set<string>();
     const chain: RoutingDecision[] = [];
-    for (const model of all) {
+    for (const model of ordered) {
       if (seen.has(model.key)) {
         continue;
       }
