@@ -38,7 +38,7 @@ Legend: ✅ PASS · ❌ FAIL · ⛔ BLOCKED-BY-EXTERNAL-CREDENTIAL
 | Model routing | ✅ | OpenAI/Anthropic/Google adapters, capability scoring, fallback chain, disabled-model filtering, honest `provider_not_configured`. |
 | Tools | ✅ | 14 registered; credential-gated tools fail honestly; SSRF + path guards; user-scoped file/knowledge. |
 | File upload | ✅ | Upload + text parse + versioning + ownership-scoped `file_parse_text`. |
-| Knowledge search | ✅ | FTS search scoped to the caller; FTS mirror cleanup trigger. |
+| Knowledge search | ✅ | FTS search scoped to the caller; FTS mirror cleanup trigger; `POST /api/files/:id/knowledge` → `{knowledge:{id}}`, search `results[]` carry item `id` (live: `kno_…` full round-trip). |
 | Credits (honest billing) | ✅ | 5 free / 30-day trial reserved atomically; success consumes; failure refunds; exhausted → `402 requires_pro`; no consumption for provider-not-configured. |
 | Billing | ✅ | Plans, subscription, invoice, credit purchase, manual settlement, signed webhook. |
 | Marketplace | ✅ | Browse 4,000, install/publish/unpublish, install economy. |

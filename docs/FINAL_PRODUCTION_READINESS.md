@@ -77,7 +77,7 @@
 | page_fetch | ✅ PASS | real HTTP fetch through the agent path; direct-tool call to private IP is **correctly blocked** by SSRF (SSRF security check) |
 | code_repository_read | ✅ PASS | path traversal guard; non-repo/binary refused |
 | file_parse_text | ✅ PASS | owner `ok=true`, content parsed; cross-tenant refused |
-| knowledge_search | ✅ PASS | owner results=1, other tenant results=0 |
+| knowledge_search | ✅ PASS | owner results=1, other tenant results=0; `POST /api/files/:id/knowledge` returns `{knowledge:{id}}`; search `results[]` carry item `id` |
 | excel_build | ✅ PASS | CSV export `ok=true` |
 | image_render | ✅ PASS | `provider_not_configured` / `OPENAI_API_KEY` required |
 | New user 5 free / 30-day trial | ✅ PASS | `/api/me`: `freeCredits=5`, `trial.active=true` |
