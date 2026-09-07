@@ -24,6 +24,7 @@ export interface PurchaseOrder {
   provider: string;
   status: 'pending' | 'requires_external_payment' | 'provider_not_configured';
   requiredCredential?: string;
+  requiredCredentials?: string[];
 }
 
 export class BillingService {
@@ -76,7 +77,8 @@ export class BillingService {
       throw new Error('amount_cents must be a positive integer');
     }
     const provider = input.provider ?? 'manual';
-    if (provider !== 'manual' && !process.env[`${provider.toUpperCase()}_SECRET_KEY`]) {
+    const credentialKeys = paymentCredentialKeys(provider);
+    if (provider !== 'manual' && credentialKeys.some((key) => !process.env[key])) {
       return {
         invoiceId: '',
         invoiceNumber: '',
@@ -85,7 +87,8 @@ export class BillingService {
         credits: input.credits,
         provider,
         status: 'provider_not_configured',
-        requiredCredential: `${provider.toUpperCase()}_SECRET_KEY`,
+        requiredCredential: credentialKeys.join(', '),
+        requiredCredentials: credentialKeys,
       };
     }
 
@@ -150,3 +153,10 @@ export class BillingService {
 }
 
 export const billingService = new BillingService();
+
+function paymentCredentialKeys(provider: string): string[] {
+  if (provider.toLowerCase() === 'razorpay') {
+    return ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'];
+  }
+  return [`${provider.toUpperCase()}_SECRET_KEY`];
+}

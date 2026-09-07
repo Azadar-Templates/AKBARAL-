@@ -47,6 +47,7 @@ export interface ToolSpec {
   kind: string;
   requiresCredential?: boolean;
   requiredCredentialEnvKey?: string;
+  requiredCredentialEnvKeys?: string[];
   supportsStreaming?: boolean;
   securityPermissions: string[];
 }
@@ -242,7 +243,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     description: 'Manage products through the Shopify Admin API.',
     kind: 'commerce',
     requiresCredential: true,
-    requiredCredentialEnvKey: 'SHOPIFY_ACCESS_TOKEN',
+    requiredCredentialEnvKeys: ['SHOPIFY_STORE_DOMAIN', 'SHOPIFY_ACCESS_TOKEN'],
     securityPermissions: ['api:call', 'write:commerce'],
   },
   {
@@ -251,7 +252,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     description: 'Send messages through the Twilio API.',
     kind: 'messaging',
     requiresCredential: true,
-    requiredCredentialEnvKey: 'TWILIO_AUTH_TOKEN',
+    requiredCredentialEnvKeys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'],
     securityPermissions: ['api:call', 'send:message'],
   },
   {
@@ -345,7 +346,7 @@ export function syncModelCatalog(): void {
       description: tool.description,
       kind: tool.kind,
       requiresCredential: tool.requiresCredential ?? false,
-      requiredCredentialEnvKey: tool.requiredCredentialEnvKey ?? null,
+      requiredCredentialEnvKey: tool.requiredCredentialEnvKeys?.join(', ') ?? tool.requiredCredentialEnvKey ?? null,
       supportsStreaming: tool.supportsStreaming ?? false,
       securityPermissions: tool.securityPermissions,
     });
