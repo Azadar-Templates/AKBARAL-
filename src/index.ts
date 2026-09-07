@@ -1,14 +1,14 @@
 /**
  * AKBARAL! / MASTER AI — application bootstrap.
  *
- * Phase 1 wires the database foundation. Later phases will mount the
- * authentication service, web-research agent, credit system and WebSocket
- * real-time log transport on top of this entrypoint.
+ * Starts the API server (auth, agents, tasks), the SQLite database layer, and
+ * the WebSocket execution-log stream.
  */
 import { env } from './config/env';
+import { createApiServer } from './app';
 import { db } from './db';
 
-function main(): void {
+function checkDatabase(): void {
   const [userCount, taskCount, agentCount, projectCount] = [
     db.get<{ count: number }>('SELECT COUNT(*) AS count FROM users')?.count ?? 0,
     db.get<{ count: number }>('SELECT COUNT(*) AS count FROM tasks')?.count ?? 0,
@@ -20,14 +20,19 @@ function main(): void {
   console.log(
     `[akbaral] users=${userCount} tasks=${taskCount} agents=${agentCount} projects=${projectCount}`,
   );
-  console.log(`[akbaral] env=${env.nodeEnv} database=${db.filePath}`);
 }
 
-try {
-  main();
-  db.close();
-} catch (error) {
+async function start(): Promise<void> {
+  checkDatabase();
+
+  const api = createApiServer();
+  const { port } = await api.listen();
+  console.log(`[akbaral] api listening on ${env.host}:${port}`);
+  console.log(`[akbaral] realtime logs at /ws/executions/:executionId`);
+}
+
+start().catch((error) => {
   console.error('[akbaral] failed to start:', error);
   db.close();
   process.exit(1);
-}
+});

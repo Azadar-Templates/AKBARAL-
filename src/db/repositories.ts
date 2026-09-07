@@ -87,6 +87,20 @@ export interface AgentRow {
   updated_at: string;
 }
 
+export interface AgentExecutionMinimal {
+  id: string;
+  agent_id: string;
+  task_id: string | null;
+  status: string;
+  input_data: string | null;
+  error_message: string | null;
+  duration_ms: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const NOW = () => new Date().toISOString();
 
 // ---------------------------------------------------------------------------
@@ -145,6 +159,10 @@ export function findUserByEmail(email: string): UserRow | undefined {
 
 export function findUserById(id: string): UserRow | undefined {
   return db.get<UserRow>('SELECT * FROM users WHERE id = ?', [id]);
+}
+
+export function updateUserLastLogin(id: string, when: string): void {
+  db.run('UPDATE users SET last_login_at = ? WHERE id = ?', [when, id]);
 }
 
 export function createSession(input: {
@@ -442,6 +460,21 @@ export function findTaskById(id: string): TaskRow | undefined {
   return db.get<TaskRow>('SELECT * FROM tasks WHERE id = ?', [id]);
 }
 
+export function listTasksByUser(
+  userId: string,
+  result: { limit: number; offset: number },
+): Array<TaskRow & { agent_name: string | null }> {
+  return db.all<TaskRow & { agent_name: string | null }>(
+    `SELECT tasks.*, agents.name AS agent_name
+     FROM tasks
+     LEFT JOIN agents ON agents.id = tasks.agent_id
+     WHERE tasks.user_id = ?
+     ORDER BY tasks.created_at DESC
+     LIMIT ? OFFSET ?`,
+    [userId, result.limit, result.offset],
+  );
+}
+
 export function updateTaskStatus(input: {
   id: string;
   status: string;
@@ -458,6 +491,13 @@ export function updateTaskStatus(input: {
      WHERE id = ?`,
     [input.status, input.startedAt ?? null, input.completedAt ?? null, input.errorMessage ?? null, input.id],
   );
+}
+
+export function updateTaskOutput(input: { id: string; outputData: Record<string, unknown> | null }): void {
+  db.run('UPDATE tasks SET output_data = ? WHERE id = ?', [
+    input.outputData ? JSON.stringify(input.outputData) : null,
+    input.id,
+  ]);
 }
 
 export function appendTaskEvent(input: {
@@ -500,6 +540,17 @@ export function createAgentExecution(input: {
     [id, input.agentId, input.taskId ?? null, input.inputData ? JSON.stringify(input.inputData) : null, NOW(), NOW()],
   );
   return { id };
+}
+
+export function getAgentExecution(id: string): AgentExecutionMinimal | undefined {
+  return db.get<AgentExecutionMinimal>('SELECT * FROM agent_executions WHERE id = ?', [id]);
+}
+
+export function listTaskExecutions(taskId: string, limit = 100): AgentExecutionMinimal[] {
+  return db.all<AgentExecutionMinimal>(
+    'SELECT * FROM agent_executions WHERE task_id = ? ORDER BY created_at DESC LIMIT ?',
+    [taskId, limit],
+  );
 }
 
 export function updateAgentExecutionStatus(input: {
@@ -552,6 +603,43 @@ export function listExecutionLogs(executionId: string, limit = 500): Array<Recor
   return db.all<Record<string, unknown>>(
     'SELECT * FROM agent_execution_logs WHERE execution_id = ? ORDER BY created_at ASC LIMIT ?',
     [executionId, limit],
+  );
+}
+
+export interface ExecutionLogRow {
+  id: string;
+  execution_id: string;
+  level: string;
+  type: string;
+  message: string;
+  data: string | null;
+  created_at: string;
+}
+
+/**
+ * Return logs newer than the `after` cursor.
+ * The cursor is `created_at` (ISO string) because log ids are opaque.
+ */
+export function listExecutionLogsAfter(
+  executionId: string,
+  afterCreatedAt: string | null,
+  limit = 500,
+): ExecutionLogRow[] {
+  if (!afterCreatedAt) {
+    return db.all<ExecutionLogRow>(
+      `SELECT * FROM agent_execution_logs
+       WHERE execution_id = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT ?`,
+      [executionId, limit],
+    );
+  }
+  return db.all<ExecutionLogRow>(
+    `SELECT * FROM agent_execution_logs
+     WHERE execution_id = ? AND created_at > ?
+     ORDER BY created_at ASC, id ASC
+     LIMIT ?`,
+    [executionId, afterCreatedAt, limit],
   );
 }
 
