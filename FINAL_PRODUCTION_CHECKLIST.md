@@ -18,7 +18,7 @@ Legend: ✅ PASS · ❌ FAIL · ⛔ BLOCKED-BY-EXTERNAL-CREDENTIAL
 | `npm run db:seed` | ✅ | 4,000 agents / 80 categories / 5 models / 14 tools / 4 plans. |
 | `npm run typecheck` | ✅ | 0 errors. |
 | `npm run build` | ✅ | Clean `tsc -p tsconfig.json`. |
-| `npm test` | ✅ | 12 suites / 0 failures (repeatable; test runner now resets `test.db`). |
+| `npm test` | ✅ | 12 suites / 0 failures (repeatable; test runner now resets `test.db`). Orchestrator suite includes emergency-stop credit-safety. |
 | `npm run audit:registry` | ✅ | 4,000 definitions, 4,000 unique slugs, 4,000 unique instructions, 4,000 unique full contracts, 4,000 unique workflows. |
 | Mobile `tsc --noEmit` | ✅ | Expo/React Native source clean. |
 
@@ -46,11 +46,12 @@ Legend: ✅ PASS · ❌ FAIL · ⛔ BLOCKED-BY-EXTERNAL-CREDENTIAL
 | WebSocket logs | ✅ | Owner-only: `?token=` verified at upgrade (401 bad token), non-owner → 1008/closed. |
 | SSE logs | ✅ | Owner-only: non-owner → 403; owner stream verified (`REALTIME_OK`). |
 | CRM | ✅ | Contacts, pipelines, deals, campaigns, automations, AI employees; ownership + assignee checks. |
-| Admin | ✅ | Stats/analytics/agent/model status, feature flags, emergency stop; admin/super_admin gate. |
-| Security controls | ✅ | SSRF guard, WS/SSE auth, tenant isolation (execution/tool/CRM), rate limits, audit logs, signed webhooks, no secrets in client. |
+| Admin | ✅ | Stats/analytics/agent/model status, feature flags, emergency stop **+ resume**; admin/super_admin gate; `emergency_stop` rejects new work with `503` and never consumes credits. |
+| Seed idempotence | ✅ | Re-running `db:seed` preserves admin-disabled model/provider status (`src/models/catalog.ts`), so operator choices survive re-seeding. |
+| Security controls | ✅ | SSRF guard, WS/SSE auth, tenant isolation (execution/tool/CRM), rate limits, audit logs, signed webhooks, no secrets in client; production refuses the placeholder `SESSION_SECRET` on startup. |
 | Web frontend | ✅ | Premium responsive SPA with 3D robot identity; all routes live; deduped realtime log rows. |
 | Mobile build | ✅ | `tsc --noEmit` clean; Android/iOS Metro bundles export cleanly. |
-| Deployment | ✅ | Dockerfile, persistent `/data`, entrypoint migrations, backup script, docs. |
+| Deployment | ✅ | Multi-stage Dockerfile (`node:22-slim`), persistent `/data`, entrypoint migrations/seed, Docker `HEALTHCHECK` on `/api/health`, backup script, docs. |
 
 ---
 
@@ -82,6 +83,7 @@ Legend: ✅ PASS · ❌ FAIL · ⛔ BLOCKED-BY-EXTERNAL-CREDENTIAL
 - Marketplace browse `4,000`, install → order id.
 - CRM contact/campaign/automation/employee all created.
 - Non-admin `/api/admin/stats` → `403 insufficient permissions`.
+- `emergency_stop` flag → live `POST /api/tasks/research` returns `503 emergency_stop` and credit balance is unchanged; clearing via `/api/admin/system/resume` restores execution (`202`, credit consumed).
 
 ---
 
@@ -153,6 +155,8 @@ SHOPIFY_ACCESS_TOKEN=
 PORT=3000
 NODE_ENV=production
 DATABASE_URL=file:/data/akbaral.db
+# REQUIRED in production: random, >=32 chars. Startup aborts if missing/placeholder.
+SESSION_SECRET=
 ```
 
 For local development without secrets, keep `.env.example` and commit only key-free
@@ -162,7 +166,8 @@ For local development without secrets, keep `.env.example` and commit only key-f
 
 ## 6. Exact Remaining Deployment Steps
 
-1. Provision a managed secret store; set the env vars in §5 in production.
+1. Provision a managed secret store; set the env vars in §5 in production
+   (`SESSION_SECRET` is mandatory and the server refuses `change-me-in-production`).
 2. `docker build -t akbaral .` and mount a persistent volume at `/data`
    (Dockerfile already sets `DATABASE_URL=file:/data/akbaral.db` and
    `AKBARAL_UPLOAD_DIR=/data/uploads`).

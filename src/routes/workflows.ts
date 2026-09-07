@@ -1,10 +1,10 @@
 import { Router } from 'express';
+import { HttpError, asyncRoute, businessErrorToHttp } from '../server/http';
 import { createExecutionPlan } from '../orchestrator/planner';
 import { runWorkflow } from '../orchestrator/workflow-runner';
-import { createAgentTask, dispatchAgentExecution } from '../orchestrator/executor';
+import { createAgentTask, dispatchAgentExecution, assertEmergencyStopDisabled } from '../orchestrator/executor';
 import { getWorkflow, listWorkflowSteps, db } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
-import { asyncRoute, HttpError } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
@@ -26,6 +26,11 @@ export function createWorkflowsRouter(stream: ExecutionStream): Router {
       const body = getBody(req);
       const goal = requireString(body, 'goal', 'goal');
       const projectId = optionalString(body, 'project_id');
+      try {
+        assertEmergencyStopDisabled();
+      } catch (error) {
+        throw businessErrorToHttp(error);
+      }
       const plan = createExecutionPlan({
         userId: req.auth!.userId,
         projectId: projectId ?? null,
@@ -48,6 +53,11 @@ export function createWorkflowsRouter(stream: ExecutionStream): Router {
       const workflow = getWorkflow(req.params.id);
       if (!workflow || String(workflow.user_id) !== req.auth!.userId) {
         throw new HttpError(404, 'workflow not found', 'not_found');
+      }
+      try {
+        assertEmergencyStopDisabled();
+      } catch (error) {
+        throw businessErrorToHttp(error);
       }
       void runWorkflow(req.params.id, stream);
       res.status(202).json({ workflow: { id: req.params.id, status: 'running' } });
@@ -81,11 +91,7 @@ export function createWorkflowsRouter(stream: ExecutionStream): Router {
           projectId: projectId ?? null,
         });
       } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (code === 'requires_pro') {
-          throw new HttpError(402, (error as Error).message, 'requires_pro');
-        }
-        throw new HttpError(400, (error as Error).message, 'agent_dispatch_failed');
+        throw businessErrorToHttp(error, 400, 'agent_dispatch_failed');
       }
       void dispatchAgentExecution(dispatched.executionId, agentSlug, stream);
       res.status(202).json({

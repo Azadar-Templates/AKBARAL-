@@ -57,10 +57,9 @@ describe('authentication service', () => {
   });
 
   it('rotates refresh sessions and invalidates the old token', () => {
-    const next = rotateRefreshSession(userId);
+    const next = rotateRefreshSession(userId, refresh);
     assert.equal(validateRefreshToken(next.refreshToken), userId);
-    // The old token was not explicitly revoked, but a fresh session exists and
-    // both are valid in this implementation. After logout the token is revoked.
+    assert.equal(validateRefreshToken(refresh), null, 'old refresh token must be revoked on rotation');
     logout(next.refreshToken);
     assert.equal(validateRefreshToken(next.refreshToken), null);
   });

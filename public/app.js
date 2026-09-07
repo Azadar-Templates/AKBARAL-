@@ -159,6 +159,7 @@
     $('#credit-form').addEventListener('submit', purchaseCredits);
     $('#flag-form').addEventListener('submit', setFlag);
     $('#emergency-stop').addEventListener('click', emergencyStop);
+    $('#system-resume').addEventListener('click', systemResume);
   }
 
   async function navigate() {
@@ -716,6 +717,11 @@
 
   async function emergencyStop() {
     try { await api('/api/admin/emergency-stop', { method: 'POST', body: JSON.stringify({}) }); toast('Emergency stop engaged', 'ok'); }
+    catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function systemResume() {
+    try { await api('/api/admin/system/resume', { method: 'POST', body: JSON.stringify({}) }); toast('System resumed', 'ok'); }
     catch (e) { toast(e.message, 'err'); }
   }
 

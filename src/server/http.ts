@@ -28,6 +28,23 @@ export function notFound(req: Request, _res: Response, next: NextFunction): void
   next(new HttpError(404, `route not found: ${req.method} ${req.path}`, 'not_found'));
 }
 
+/**
+ * Map business errors from the orchestration layer to HTTP responses. Codes are
+ * attached by the domain functions (e.g. `requires_pro`, `emergency_stop`) and
+ * must never be interpreted as secrets or leak internal stack frames.
+ */
+export function businessErrorToHttp(error: unknown, fallbackStatus = 400, fallbackCode = 'business_error'): HttpError {
+  const message = error instanceof Error ? error.message : 'business error';
+  const code = (error as { code?: string }).code;
+  if (code === 'emergency_stop') {
+    return new HttpError(503, message, 'emergency_stop');
+  }
+  if (code === 'requires_pro') {
+    return new HttpError(402, message, 'requires_pro');
+  }
+  return new HttpError(fallbackStatus, message, fallbackCode);
+}
+
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof HttpError) {
     res.status(err.statusCode).json({

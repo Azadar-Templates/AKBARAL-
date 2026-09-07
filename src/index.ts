@@ -24,7 +24,18 @@ function checkDatabase(): void {
   );
 }
 
+function validateProductionConfig(): void {
+  if (env.isProduction) {
+    if (!env.sessionSecret || env.sessionSecret === 'change-me-in-production' || env.sessionSecret.length < 32) {
+      throw new Error(
+        'production requires SESSION_SECRET to be set to a random string of at least 32 characters',
+      );
+    }
+  }
+}
+
 async function start(): Promise<void> {
+  validateProductionConfig();
   try {
     ensureBootstrapPlans();
     syncModelCatalog();

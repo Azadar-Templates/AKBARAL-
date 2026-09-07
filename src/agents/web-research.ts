@@ -200,7 +200,12 @@ function parseJsonResults(body: string, limit: number): WebSearchResult[] {
 export async function fetchPage(sourceUrl: string): Promise<{ title: string; text: string }> {
   const base = pageFetchBase();
   const allowPrivateProxy = Boolean(base && process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER === '1');
-  if (!allowPrivateProxy) {
+  // Always validate the source URL. With a trusted internal proxy the source may
+  // be a local fixture/internal document, so use the provider validation path;
+  // production with no trusted proxy keeps the public-only deny-by-default rule.
+  if (allowPrivateProxy) {
+    assertProviderHttpUrl(sourceUrl);
+  } else {
     assertPublicHttpUrl(sourceUrl);
   }
   const target = base

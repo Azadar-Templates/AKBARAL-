@@ -4,7 +4,7 @@ import { findAgentBySlug } from '../db';
 import { listCategories } from '../agents/registry';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
-import { HttpError, asyncRoute } from '../server/http';
+import { HttpError, asyncRoute, businessErrorToHttp } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 
 export function createFactoryRouter(): Router {
@@ -49,8 +49,12 @@ export function createFactoryRouter(): Router {
       const agent = assertManageable(req, req.params.slug);
       const body = getBody(req);
       const goal = requireString(body, 'goal', 'goal');
-      const test = await agentFactory.test({ userId: req.auth!.userId, slug: agent.slug, goal });
-      res.status(200).json(test);
+      try {
+        const test = await agentFactory.test({ userId: req.auth!.userId, slug: agent.slug, goal });
+        res.status(200).json(test);
+      } catch (error) {
+        throw businessErrorToHttp(error);
+      }
     }),
   );
 

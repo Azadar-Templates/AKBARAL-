@@ -216,6 +216,18 @@ export function findSessionByTokenHash(tokenHash: string): { id: string; user_id
   );
 }
 
+/** True when a JWT session id still refers to a live, unrevoked session. */
+export function activeSessionExists(sessionId: string, userId: string): boolean {
+  const row = db.get<{ revoked_at: string | null; expires_at: string; user_id: string }>(
+    `SELECT user_id, expires_at, revoked_at FROM sessions WHERE id = ?`,
+    [sessionId],
+  );
+  if (!row || String(row.user_id) !== userId || row.revoked_at) {
+    return false;
+  }
+  return new Date(row.expires_at).getTime() > Date.now();
+}
+
 export function revokeSession(id: string): void {
   db.run('UPDATE sessions SET revoked_at = ? WHERE id = ?', [NOW(), id]);
 }
@@ -291,6 +303,15 @@ export function consumeFreeCredit(input: {
   reason?: string;
 }): CreditTransactionRow | undefined {
   return db.transaction((tx) => {
+    // Idempotence: if this task already reserved a free credit, do not consume again.
+    const existing = tx.get<{ id: string }>(
+      "SELECT id FROM credit_transactions WHERE task_id = ? AND type = 'consume_task' AND status = 'completed'",
+      [input.taskId],
+    );
+    if (existing) {
+      return tx.get<CreditTransactionRow>('SELECT * FROM credit_transactions WHERE id = ?', [existing.id]);
+    }
+
     const account = tx.get<CreditAccountRow>('SELECT * FROM credit_accounts WHERE user_id = ?', [input.userId]);
     if (!account || account.status !== 'active' || account.free_credits <= 0) {
       return undefined;
@@ -329,6 +350,15 @@ export function refundCredit(input: {
   reason?: string;
 }): CreditTransactionRow | undefined {
   return db.transaction((tx) => {
+    // Idempotence: a task can only be refunded once.
+    const existing = tx.get<{ id: string }>(
+      "SELECT id FROM credit_transactions WHERE task_id = ? AND type = 'refund_task' AND status = 'completed'",
+      [input.taskId],
+    );
+    if (existing) {
+      return tx.get<CreditTransactionRow>('SELECT * FROM credit_transactions WHERE id = ?', [existing.id]);
+    }
+
     const account = tx.get<CreditAccountRow>('SELECT * FROM credit_accounts WHERE user_id = ?', [input.userId]);
     if (!account) {
       return undefined;

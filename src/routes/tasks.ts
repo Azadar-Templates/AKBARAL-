@@ -10,7 +10,7 @@ import {
 } from '../db';
 import { createResearchTask, runWebResearchExecution } from '../orchestrator/executor';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
-import { HttpError } from '../server/http';
+import { HttpError, businessErrorToHttp } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
@@ -37,11 +37,7 @@ export function createTasksRouter(stream: ExecutionStream): Router {
         projectId: projectId ?? null,
       });
     } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (code === 'requires_pro') {
-        throw new HttpError(402, (error as Error).message, 'requires_pro');
-      }
-      throw new HttpError(400, (error as Error).message, 'task_creation_failed');
+      throw businessErrorToHttp(error, 400, 'task_creation_failed');
     }
 
     // Run in the background so the client gets handles immediately and can

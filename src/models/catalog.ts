@@ -1,4 +1,5 @@
 import {
+  db,
   upsertModel,
   upsertModelProvider,
   registerTool,
@@ -288,6 +289,16 @@ export function modelRequiredCredential(spec: ModelSpec): string | null {
 }
 
 /**
+ * Keep the operator's current status when re-seeding; only absent rows default
+ * to enabled. The router reports provider_not_configured when credentials are
+ * missing, so `disabled` is reserved for an explicit admin decision.
+ */
+function preserveStatus(table: 'models' | 'model_providers', key: string): string {
+  const row = db.get<{ status: string }>(`SELECT status FROM ${table} WHERE key = ?`, [key]);
+  return row?.status === 'disabled' ? 'disabled' : 'enabled';
+}
+
+/**
  * Register the catalog into the database so runtime routing reads the same
  * definitions used by the admin/control surfaces.
  */
@@ -304,7 +315,7 @@ export function syncModelCatalog(): void {
       // Status encodes operator enable/disable, not credential availability.
       // Credential absence is surfaced by the router as provider_not_configured
       // so the platform stays honest and never reports "no models registered".
-      status: 'enabled',
+      status: preserveStatus('model_providers', provider.key),
     });
   }
   for (const model of MODEL_SPECS) {
@@ -323,7 +334,7 @@ export function syncModelCatalog(): void {
       reliability: model.reliability ?? 0.95,
       strengths: model.capabilities,
       weaknesses: [],
-      status: 'enabled',
+      status: preserveStatus('models', model.key),
       isDefault: model.isDefault ?? false,
     });
   }

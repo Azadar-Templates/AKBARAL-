@@ -4,7 +4,7 @@ import http from 'node:http';
 import { WebSocket } from 'ws';
 import { randomBytes } from 'node:crypto';
 import { ExecutionStream } from './execution-stream';
-import { createUser, createAgent, createAgentExecution, createTask, db, listExecutionLogsAfter } from '../db';
+import { createSession, createUser, createAgent, createAgentExecution, createTask, db, listExecutionLogsAfter } from '../db';
 import { signAccessToken } from '../security';
 
 describe('execution stream + replay', () => {
@@ -16,7 +16,12 @@ describe('execution stream + replay', () => {
   before(() => {
     const user = createUser({ email: `ws-${suffix}@akbaral.test`, name: 'WS Test User' });
     userId = user.id;
-    accessToken = signAccessToken({ sub: userId, email: user.email, role: 'user', sid: `ses-${suffix}` });
+    const session = createSession({
+      userId,
+      tokenHash: `ws-test-token-${suffix}`,
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    accessToken = signAccessToken({ sub: userId, email: user.email, role: 'user', sid: session.id });
     const agent = createAgent({ name: 'WS Test Agent', slug: `ws-agent-${suffix}` });
     const task = createTask({ userId, title: `WS test ${suffix}`, type: 'test' });
     executionId = createAgentExecution({ agentId: agent.id, taskId: task.id, id: `exe_zh-${suffix}` }).id;
@@ -46,7 +51,12 @@ describe('execution stream + replay', () => {
 
       // Another user's token must not reach another tenant's execution stream.
       const other = createUser({ email: `ws-other-${suffix}@akbaral.test`, name: 'WS Other User' });
-      const otherToken = signAccessToken({ sub: other.id, email: other.email, role: 'user', sid: `ses-other-${suffix}` });
+      const otherSession = createSession({
+        userId: other.id,
+        tokenHash: `ws-other-token-${suffix}`,
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      const otherToken = signAccessToken({ sub: other.id, email: other.email, role: 'user', sid: otherSession.id });
       const crossTenant = await new Promise<boolean>((resolve) => {
         const bad = new WebSocket(`ws://127.0.0.1:${port}/ws/executions/${executionId}?token=${otherToken}`);
         const timer = setTimeout(() => resolve(true), 1000);

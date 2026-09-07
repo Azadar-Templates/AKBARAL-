@@ -1235,3 +1235,8 @@ export function setFeatureFlag(input: { key: string; value?: string | null; desc
 export function listFeatureFlags(): Array<Record<string, unknown>> {
   return db.all('SELECT * FROM feature_flags ORDER BY key') as Array<Record<string, unknown>>;
 }
+
+export function isFeatureFlagEnabled(key: string): boolean {
+  const row = db.get<{ enabled: number }>('SELECT enabled FROM feature_flags WHERE key = ?', [key]);
+  return Boolean(row && Number(row.enabled) === 1);
+}

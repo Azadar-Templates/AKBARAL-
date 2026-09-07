@@ -117,6 +117,13 @@ describe('HTTP API integration', () => {
       headers: { authorization: `Bearer ${refreshed.refreshToken}` },
     });
     assert.equal(meAfterLogout.status, 401);
+
+    // The old access token belongs to the now-rotated session and must also be
+    // rejected by the session check in requireAuth.
+    const meAfterLogoutAccess = await fetch(`${baseUrl}/api/me`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(meAfterLogoutAccess.status, 401);
   });
 });
 

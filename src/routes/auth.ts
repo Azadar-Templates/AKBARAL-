@@ -73,7 +73,7 @@ authRouter.post(
       next(new HttpError(401, 'invalid or expired refresh token', 'unauthorized'));
       return;
     }
-    const { refreshToken: nextRefresh, sessionId, user } = rotateRefreshSession(userId);
+    const { refreshToken: nextRefresh, sessionId, user } = rotateRefreshSession(userId, refreshToken);
     const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role, sid: sessionId });
     res.status(200).json({ accessToken, refreshToken: nextRefresh, user });
   },

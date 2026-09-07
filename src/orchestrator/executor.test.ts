@@ -9,6 +9,7 @@ import {
   getAgentExecution,
   listExecutionLogs,
   listTaskEvents,
+  setFeatureFlag,
 } from '../db';
 import { createResearchTask, runWebResearchExecution } from './executor';
 import { startResearchFixture, type ResearchFixtureServer } from '../test-support/research-fixture';
@@ -89,6 +90,21 @@ describe('orchestrator + free-task credits', () => {
       assert.equal(account?.free_credits_used, 1);
     } finally {
       await badFixture.close();
+    }
+  });
+
+  it('rejects execution while emergency stop is engaged and does not consume credits', async () => {
+    const before = getCreditAccount(userId)?.free_credits;
+    setFeatureFlag({ key: 'emergency_stop', value: 'true', enabled: true });
+    try {
+      assert.throws(
+        () => createResearchTask({ userId, goal: 'must not run' }),
+        (error: Error & { code?: string }) => error.code === 'emergency_stop',
+      );
+      // Because the task was never created/executed, no credit can be consumed.
+      assert.equal(getCreditAccount(userId)?.free_credits, before);
+    } finally {
+      setFeatureFlag({ key: 'emergency_stop', value: 'false', enabled: false });
     }
   });
 

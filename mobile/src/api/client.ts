@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:3000';
+const extraBase = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined;
+const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? extraBase ?? 'https://api.akbaral.ai';
 
 interface LoginResponse {
   accessToken: string;

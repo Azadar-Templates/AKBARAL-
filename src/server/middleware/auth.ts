@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { verifyAccessToken } from '../../security';
+import { activeSessionExists } from '../../db';
 import { HttpError } from '../http';
 
 export interface AuthenticatedRequest extends Request {
@@ -29,6 +30,10 @@ export function requireAuth(req: AuthenticatedRequest, _res: Response, next: Nex
   const payload = verifyAccessToken(token);
   if (!payload) {
     next(new HttpError(401, 'invalid or expired token', 'unauthorized'));
+    return;
+  }
+  if (!payload.sid || !activeSessionExists(payload.sid, payload.sub)) {
+    next(new HttpError(401, 'session is no longer active', 'unauthorized'));
     return;
   }
 

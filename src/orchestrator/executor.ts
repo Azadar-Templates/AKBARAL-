@@ -16,6 +16,7 @@ import {
   updateTaskOutput,
   updateTaskStatus,
   listExecutionLogs,
+  isFeatureFlagEnabled,
 } from '../db';
 import { createResearchReport } from '../agents';
 import { getAgentBySlug } from '../agents/registry';
@@ -47,6 +48,14 @@ export interface DispatchedTask {
   freeCredits: number;
 }
 
+export function assertEmergencyStopDisabled(): void {
+  if (isFeatureFlagEnabled('emergency_stop')) {
+    const error = new Error('System is temporarily paused by the administrator. Please try again later.') as Error & { code?: string };
+    error.code = 'emergency_stop';
+    throw error;
+  }
+}
+
 export function getWebResearchAgentOrDefault(userId: string, projectId: string | null) {
   const existing = findAgentBySlug(WEB_RESEARCH_AGENT_SLUG);
   if (existing) {
@@ -76,6 +85,7 @@ export function createResearchTask(input: {
   description?: string | null;
   projectId?: string | null;
 }): DispatchedTask {
+  assertEmergencyStopDisabled();
   if (!input.goal.trim()) {
     throw new Error('research goal is required');
   }
@@ -154,6 +164,7 @@ export function createAgentTask(input: {
   goal: string;
   projectId?: string | null;
 }): DispatchedTask {
+  assertEmergencyStopDisabled();
   const account = getCreditAccount(input.userId);
   if (!account) {
     throw new Error('credit account not found');
@@ -228,6 +239,7 @@ export function dispatchAgentExecution(
   agentSlug: string,
   stream?: ExecutionStream,
 ): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  assertEmergencyStopDisabled();
   if (agentSlug === WEB_RESEARCH_AGENT_SLUG) {
     return runWebResearchExecution(executionId, stream);
   }
@@ -244,6 +256,7 @@ export async function runGenericAgentExecution(
   agentSlug: string,
   stream?: ExecutionStream,
 ): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  assertEmergencyStopDisabled();
   const execution = getExecutionSafe(executionId);
   const start = Date.now();
   updateAgentExecutionStatus({ id: executionId, status: 'running', startedAt: new Date().toISOString() });
@@ -362,6 +375,7 @@ export async function runWebResearchExecution(
   executionId: string,
   stream?: ExecutionStream,
 ): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  assertEmergencyStopDisabled();
   const execution = getExecutionSafe(executionId);
   const start = Date.now();
   const runStartedAt = new Date().toISOString();

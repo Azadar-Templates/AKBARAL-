@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { appendAgentExecutionLog, getExecutionOwnerId, listExecutionLogs, listExecutionLogsAfter, type ExecutionLogRow } from '../db';
+import { activeSessionExists, appendAgentExecutionLog, getExecutionOwnerId, listExecutionLogs, listExecutionLogsAfter, type ExecutionLogRow } from '../db';
 import { verifyAccessToken } from '../security';
 
 /**
@@ -64,7 +64,7 @@ export class ExecutionStream {
 
       const token = url.searchParams.get('token') ?? '';
       const payload = verifyAccessToken(token);
-      if (!payload) {
+      if (!payload || !payload.sid || !activeSessionExists(payload.sid, payload.sub)) {
         socket.close(1008, 'unauthorized');
         return;
       }
@@ -125,7 +125,7 @@ export class ExecutionStream {
       }
       const token = url.searchParams.get('token') ?? '';
       const payload = verifyAccessToken(token);
-      if (!payload) {
+      if (!payload || !payload.sid || !activeSessionExists(payload.sid, payload.sub)) {
         socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         socket.destroy();
         return;

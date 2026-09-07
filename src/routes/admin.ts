@@ -114,5 +114,11 @@ export function createAdminRouter(): Router {
     res.status(200).json({ emergencyStop: true });
   });
 
+  router.post('/system/resume', (req: AuthenticatedRequest, res) => {
+    setFeatureFlag({ key: 'emergency_stop', value: 'false', description: 'Global execution emergency stop', enabled: false });
+    logAdminAction({ actorUserId: req.auth!.userId, action: 'system.emergency_stop_cleared' });
+    res.status(200).json({ emergencyStop: false });
+  });
+
   return router;
 }

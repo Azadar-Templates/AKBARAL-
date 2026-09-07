@@ -26,6 +26,9 @@ function main(): void {
   const uniqueWorkflowSets = uniqueCount(definitions.map((d) => d.workflow));
   const uniqueVerificationSets = uniqueCount(definitions.map((d) => d.verificationRules));
   const uniqueModelRequirementSets = uniqueCount(definitions.map((d) => d.modelRequirements));
+  const uniqueCostSets = uniqueCount(definitions.map((d) => d.costUsage));
+  const uniqueFallbackSets = uniqueCount(definitions.map((d) => d.fallbackStrategy));
+  const uniqueApiRequirementSets = uniqueCount(definitions.map((d) => d.apiRequirements));
   const uniqueFullContracts = uniqueCount(
     definitions.map((d) => ({
       capabilities: d.capabilities,
@@ -35,8 +38,14 @@ function main(): void {
       security: d.securityPermissions,
       model: d.modelRequirements,
       api: d.apiRequirements,
+      cost: d.costUsage,
+      fallback: d.fallbackStrategy,
+      inputs: d.inputs,
+      outputs: d.outputs,
     })),
   );
+  const versionCount = db.get<{ count: number }>('SELECT COUNT(*) AS count FROM agent_versions')?.count ?? 0;
+  const dbSlugCount = db.get<{ count: number }>('SELECT COUNT(DISTINCT slug) AS count FROM agents')?.count ?? 0;
 
   const distinctDomains = new Set(definitions.map((d) => d.categorySlug)).size;
   const distinctSpecializations = new Set(definitions.map((d) => `${d.categorySlug}|${d.specialization}`)).size;
@@ -55,10 +64,15 @@ function main(): void {
   console.log(`  unique workflow sets        : ${uniqueWorkflowSets}`);
   console.log(`  unique verification sets    : ${uniqueVerificationSets}`);
   console.log(`  unique model-requirement sets: ${uniqueModelRequirementSets}`);
+  console.log(`  unique cost-metadata sets    : ${uniqueCostSets}`);
+  console.log(`  unique fallback sets         : ${uniqueFallbackSets}`);
+  console.log(`  unique api-requirement sets  : ${uniqueApiRequirementSets}`);
   console.log(`  unique full agent contracts : ${uniqueFullContracts}`);
   console.log(`  distinct domain blueprints  : ${distinctDomains}`);
   console.log(`  distinct specializations    : ${distinctSpecializations}`);
   console.log(`  all definitions non-empty   : ${allNonEmpty}`);
+  console.log(`  database distinct slugs      : ${dbSlugCount}`);
+  console.log(`  agent version rows          : ${versionCount}`);
   console.log(`  provider env keys           : ${PROVIDER_SPECS.map((p) => `${p.key}=${p.envKey}`).join(', ')}`);
   console.log(`  model catalog               : ${MODEL_SPECS.length} models (${MODEL_SPECS.map((m) => m.key).join(', ')})`);
 
@@ -68,7 +82,7 @@ function main(): void {
     console.log(`    ${d.slug} | ${d.name} | tools=${d.toolPermissions.join(',')} | model=${d.modelRequirements.join(',')} | workflow=${d.workflow.length} steps`);
   }
 
-  const ok = definitions.length >= 4000 && dbCount >= 4000 && uniqueSlugs === definitions.length && uniqueFullContracts === definitions.length && allNonEmpty;
+  const ok = definitions.length >= 4000 && dbCount >= 4000 && dbSlugCount >= 4000 && uniqueSlugs === definitions.length && uniqueFullContracts === definitions.length && allNonEmpty && definitions.every((d) => Boolean(d.fallbackStrategy) && d.costUsage?.estimatedCents >= 0 && d.evaluationConfig?.metrics?.length > 0);
   console.log(`\n[audit:registry] ${ok ? 'PASS' : 'FAIL'}`);
   db.close();
   if (!ok) process.exit(1);
