@@ -90,5 +90,9 @@ export type IntegrationStatusValue =
 
 /**
  * The default number of free-task credits granted to a new user.
+ * Trust rule: a free task is only consumed on success; failures and Pro
+ * requirements restore/keep the balance.
  */
-export const DEFAULT_FREE_CREDITS = 3;
+export const DEFAULT_FREE_CREDITS = 5;
+
+export const FREE_TRIAL_DAYS = 30;

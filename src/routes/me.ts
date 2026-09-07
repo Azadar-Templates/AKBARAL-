@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { findUserById, getCreditAccount } from '../db';
+import { findUserById, getCreditAccount, getTrialStatus, getActiveSubscription } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
 
@@ -24,5 +24,7 @@ meRouter.get('/', (req: AuthenticatedRequest, res) => {
       freeCredits: account?.free_credits ?? 0,
       createdAt: user.created_at,
     },
+    trial: getTrialStatus(userId),
+    subscription: getActiveSubscription(userId),
   });
 });

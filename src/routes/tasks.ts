@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   findTaskById,
+  getAgentExecution,
   listExecutionLogs,
   listTaskEvents,
   listTaskExecutions,
@@ -64,6 +65,15 @@ export function createTasksRouter(stream: ExecutionStream): Router {
     const offset = Math.max(Number(req.query.offset ?? 0), 0);
     const rows = listTasksByUser(userId, { limit, offset });
     res.status(200).json({ tasks: rows });
+  });
+
+  router.get('/execution/:id', (req: AuthenticatedRequest, res) => {
+    const execution = getAgentExecution(req.params.id);
+    if (!execution) {
+      throw new HttpError(404, 'execution not found', 'not_found');
+    }
+    const logs = listExecutionLogs(execution.id);
+    res.status(200).json({ execution, logs });
   });
 
   router.get('/:id', (req: AuthenticatedRequest, res) => {

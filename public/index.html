@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AKBARAL! — Master AI Operating Platform</title>
+  <meta name="description" content="AKBARAL! / MASTER AI — 4,000+ specialist agents, Agent Factory, Marketplace, workspaces, credits and revenue automation." />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="toast-root" aria-live="polite"></div>
+
+  <header class="site-header" id="site-header">
+    <a class="brand" href="#/">
+      <span class="brand-mark">A!</span>
+      <span class="brand-text">AKBARAL!</span>
+    </a>
+    <nav class="main-nav" id="main-nav">
+      <a href="#/dashboard">Dashboard</a>
+      <a href="#/master">MASTER AI</a>
+      <a href="#/agents">Agent World</a>
+      <a href="#/factory">Agent Factory</a>
+      <a href="#/marketplace">Marketplace</a>
+      <a href="#/workspace">Workspace</a>
+      <a href="#/crm">CRM</a>
+      <a href="#/billing">Billing</a>
+      <a href="#/admin" class="admin-only" hidden>Admin</a>
+    </nav>
+    <div class="header-actions">
+      <span class="credit-pill" id="credit-pill">…</span>
+      <span class="menu-toggle" id="menu-toggle">☰</span>
+      <button class="btn btn-outline" id="logout-btn" hidden>Log out</button>
+      <button class="btn btn-primary" id="login-btn" data-route="login">Sign in</button>
+    </div>
+  </header>
+
+  <main id="app-root">
+    <!-- Landing -->
+    <section class="screen" id="screen-landing">
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Master AI • 4,000+ specialists • Real execution</p>
+          <h1>Your goal becomes<br /><span class="gradient">a working agent team</span>.</h1>
+          <p class="lead">AKBARAL! plans, selects specialist agents, executes through real tools, verifies results and keeps an honest ledger of every credit.</p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" data-route="register">Create free account</button>
+            <button class="btn btn-ghost btn-lg" id="explore-agents">Explore 4,000+ agents</button>
+          </div>
+        </div>
+        <div class="hero-robot">
+          <div class="robot-stage" id="robot-stage">
+            <div class="planet"></div>
+            <svg class="robot-svg" viewBox="0 0 220 240" role="img" aria-label="AKBARAL! robot">
+              <defs>
+                <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#ffd166"/>
+                  <stop offset="100%" stop-color="#f9a826"/>
+                </linearGradient>
+                <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#20324b"/>
+                  <stop offset="100%" stop-color="#0b1022"/>
+                </linearGradient>
+              </defs>
+              <g class="robot-grp">
+                <ellipse cx="110" cy="225" rx="70" ry="9" fill="#000" opacity="0.35"/>
+                <rect x="60" y="52" width="100" height="86" rx="22" fill="url(#bodyGrad)" stroke="url(#goldGrad)" stroke-width="3"/>
+                <rect x="78" y="70" width="64" height="34" rx="10" fill="#07101f" stroke="#2e4c70" stroke-width="2"/>
+                <circle cx="95" cy="87" r="9" fill="url(#goldGrad)"/>
+                <circle cx="125" cy="87" r="9" fill="url(#goldGrad)"/>
+                <circle cx="95" cy="87" r="4" fill="#07101f"/>
+                <circle cx="125" cy="87" r="4" fill="#07101f"/>
+                <path d="M90 118 L130 118" stroke="#4d6c99" stroke-width="2"/>
+                <rect x="104" y="138" width="12" height="42" fill="url(#goldGrad)"/>
+                <circle cx="110" cy="120" r="8" fill="url(#goldGrad)"/>
+                <rect x="30" y="78" width="36" height="18" rx="9" fill="url(#bodyGrad)" stroke="url(#goldGrad)" stroke-width="2"/>
+                <circle cx="39" cy="87" r="4" fill="url(#goldGrad)"/>
+                <rect x="154" y="78" width="36" height="18" rx="9" fill="url(#bodyGrad)" stroke="url(#goldGrad)" stroke-width="2"/>
+                <circle cx="181" cy="87" r="4" fill="url(#goldGrad)"/>
+                <rect x="78" y="164" width="64" height="52" rx="14" fill="url(#bodyGrad)" stroke="url(#goldGrad)" stroke-width="2"/>
+                <circle cx="110" cy="190" r="12" fill="url(#goldGrad)"/>
+                <path d="M94 166 L94 216" stroke="#2e4c70" stroke-width="3"/>
+                <path d="M126 166 L126 216" stroke="#2e4c70" stroke-width="3"/>
+              </g>
+            </svg>
+            <div class="orbit"></div>
+          </div>
+        </div>
+      </div>
+      <div class="feature-grid">
+        <article><h3>4,000+ specialists</h3><p>Genuinely distinct agents across software, sales, science, research, marketing, finance, security and more.</p></article>
+        <article><h3>Honest credits</h3><p>30-day trial, 5 free tasks, consumed only on success. Failures refund automatically.</p></article>
+        <article><h3>Real tools</h3><p>Web search, page fetch, file parsing, knowledge retrieval, repository reads and image rendering with credential checks.</p></article>
+        <article><h3>Agent Factory</h3><p>Create, test, security review, benchmark, version, deploy, disable and rollback your own agents.</p></article>
+      </div>
+      <section class="pricing" id="pricing">
+        <h2>Simple, transparent pricing</h2>
+        <div class="price-grid" id="landing-plans"></div>
+      </section>
+    </section>
+
+    <!-- Auth -->
+    <section class="screen auth-screen" id="screen-auth" hidden>
+      <div class="auth-card">
+        <h2 id="auth-title">Sign in</h2>
+        <form id="auth-form">
+          <label>Email<input type="email" id="auth-email" autocomplete="email" required /></label>
+          <label>Password<input type="password" id="auth-password" minlength="8" autocomplete="current-password" required /></label>
+          <label id="auth-name-wrap" hidden>Name<input type="text" id="auth-name" autocomplete="name" /></label>
+          <button class="btn btn-primary btn-block" id="auth-submit" type="submit">Continue</button>
+        </form>
+        <p class="auth-switch" id="auth-switch">No account? <a href="#/register">Create one</a></p>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section class="screen" id="screen-dashboard" hidden>
+      <div class="page-head"><h1>Dashboard</h1><button class="btn btn-ghost" id="refresh-dashboard">Refresh</button></div>
+      <div class="stat-grid" id="dashboard-stats"></div>
+      <div class="cols-2">
+        <div class="panel"><h3>Recent tasks</h3><div id="dashboard-tasks" class="list"></div></div>
+        <div class="panel"><h3>My agents</h3><div id="dashboard-agents" class="list"></div></div>
+      </div>
+    </section>
+
+    <!-- MASTER AI -->
+    <section class="screen" id="screen-master" hidden>
+      <div class="page-head"><h1>MASTER AI</h1><p>Describe a goal. MASTER plans, picks specialists and runs the workflow.</p></div>
+      <div class="panel">
+        <form id="master-form">
+          <label>Goal<textarea id="master-goal" rows="4" placeholder="e.g. Research the Pakistani AI market and build a go-to-market plan." required></textarea></label>
+          <div class="form-row">
+            <label>Project <select id="master-project"><option value="">— none —</option></select></label>
+            <button class="btn btn-primary" id="master-plan-btn" type="submit">Plan & run</button>
+          </div>
+        </form>
+      </div>
+      <div id="master-output" class="output"></div>
+    </section>
+
+    <!-- Agent World -->
+    <section class="screen" id="screen-agents" hidden>
+      <div class="page-head"><h1>Agent World</h1><p>Browse 4,000+ genuinely distinct specialists.</p></div>
+      <div class="toolbar">
+        <input id="agent-search" placeholder="Search agents…" />
+        <select id="agent-category"><option value="">All categories</option></select>
+        <button class="btn btn-ghost" id="refresh-agents">Refresh</button>
+      </div>
+      <div id="agent-list" class="agent-grid"></div>
+    </section>
+
+    <!-- Agent Factory -->
+    <section class="screen" id="screen-factory" hidden>
+      <div class="page-head"><h1>Agent Factory</h1><p>Create, test, benchmark and version your own agents.</p></div>
+      <div class="cols-2">
+        <form id="factory-form" class="panel">
+          <h3>Create custom agent</h3>
+          <label>Name<input name="name" required /></label>
+          <label>Specialization<input name="specialization" required /></label>
+          <label>Description<textarea name="description" required></textarea></label>
+          <label>System instructions<textarea name="system_instructions" rows="6" required></textarea></label>
+          <label>Capabilities (comma separated)<input name="capabilities" /></label>
+          <label>Tool permissions (comma separated)<input name="tool_permissions" placeholder="web_search, page_fetch, knowledge_search" /></label>
+          <label>Verification rules (comma separated)<input name="verification_rules" /></label>
+          <label>Price (PKR, optional)<input type="number" name="price_cents" placeholder="0" /></label>
+          <button class="btn btn-primary" type="submit">Create agent</button>
+        </form>
+        <div>
+          <div class="panel"><h3>My agents</h3><div id="factory-agents" class="list"></div></div>
+          <div id="factory-detail" class="panel"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Marketplace -->
+    <section class="screen" id="screen-marketplace" hidden>
+      <div class="page-head"><h1>Marketplace</h1><p>Discover, install and publish agents.</p></div>
+      <div class="toolbar"><button class="btn btn-ghost" id="refresh-marketplace">Refresh</button></div>
+      <div id="marketplace-list" class="agent-grid"></div>
+    </section>
+
+    <!-- Workspace -->
+    <section class="screen" id="screen-workspace" hidden>
+      <div class="page-head"><h1>Workspace</h1><p>Projects, files and knowledge.</p></div>
+      <div class="cols-2">
+        <div class="panel">
+          <h3>Projects</h3>
+          <form id="project-form"><input placeholder="Project name" required /><button class="btn btn-primary" type="submit">Create</button></form>
+          <div id="project-list" class="list"></div>
+        </div>
+        <div class="panel">
+          <h3>Knowledge search</h3>
+          <form id="knowledge-form"><input placeholder="Search your knowledge" required /><button class="btn btn-primary" type="submit">Search</button></form>
+          <div id="knowledge-results" class="list"></div>
+        </div>
+      </div>
+      <div class="panel" id="project-workspace"></div>
+    </section>
+
+    <!-- CRM -->
+    <section class="screen" id="screen-crm" hidden>
+      <div class="page-head"><h1>CRM & Automation</h1><p>Contacts, pipelines, campaigns, automations and AI employees.</p></div>
+      <div class="cols-2">
+        <div class="panel">
+          <h3>Contacts</h3>
+          <form id="contact-form"><input name="first_name" placeholder="First name" /><input name="email" placeholder="Email" /><button class="btn btn-primary" type="submit">Add contact</button></form>
+          <div id="contact-list" class="list"></div>
+        </div>
+        <div class="panel">
+          <h3>Campaigns</h3>
+          <form id="campaign-form"><input name="name" placeholder="Campaign name" required /><button class="btn btn-primary" type="submit">Create</button></form>
+          <div id="campaign-list" class="list"></div>
+        </div>
+      </div>
+      <div class="cols-2">
+        <div class="panel">
+          <h3>Automations</h3>
+          <form id="automation-form"><input name="name" placeholder="Automation name" required /><input name="trigger_key" placeholder="Trigger (e.g. deal.won)" required /><button class="btn btn-primary" type="submit">Create</button></form>
+          <div id="automation-list" class="list"></div>
+        </div>
+        <div class="panel">
+          <h3>AI Employees</h3>
+          <form id="employee-form"><input name="name" placeholder="Employee name" required /><input name="role" placeholder="Role" required /><button class="btn btn-primary" type="submit">Hire</button></form>
+          <div id="employee-list" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Billing -->
+    <section class="screen" id="screen-billing" hidden>
+      <div class="page-head"><h1>Billing & credits</h1></div>
+      <div class="stat-grid" id="billing-stats"></div>
+      <div class="cols-2">
+        <div class="panel"><h3>Plans</h3><div id="billing-plans" class="list"></div></div>
+        <div class="panel"><h3>Custom credits</h3>
+          <form id="credit-form">
+            <label>Credits<input type="number" name="credits" min="1" value="10" required /></label>
+            <label>Amount (PKR)<input type="number" name="amount_cents" min="1" value="2500" required /></label>
+            <button class="btn btn-primary" type="submit">Request purchase</button>
+          </form>
+          <div id="credit-order"></div>
+        </div>
+      </div>
+      <div class="panel"><h3>Invoices</h3><div id="invoice-list" class="list"></div></div>
+    </section>
+
+    <!-- Admin -->
+    <section class="screen" id="screen-admin" hidden>
+      <div class="page-head"><h1>Admin Control Center</h1></div>
+      <div class="stat-grid" id="admin-stats"></div>
+      <div class="panel">
+        <h3>Feature flags</h3>
+        <form id="flag-form">
+          <input name="key" placeholder="feature key" required />
+          <input name="value" placeholder="value" />
+          <button class="btn btn-primary" type="submit">Set / enable</button>
+        </form>
+        <div id="flag-list" class="list"></div>
+      </div>
+      <div class="panel"><h3>Emergency controls</h3><button class="btn btn-danger" id="emergency-stop">Emergency stop</button></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>AKBARAL! / MASTER AI — production operating platform. No fabrications, no hidden charges.</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

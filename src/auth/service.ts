@@ -191,18 +191,18 @@ export function validateRefreshToken(refreshToken: string): string | null {
 /**
  * Rotate a refresh token: revoke old, mint a new one for the same user.
  */
-export function rotateRefreshSession(userId: string): { refreshToken: string; user: AuthUserView } {
+export function rotateRefreshSession(userId: string): { refreshToken: string; sessionId: string; user: AuthUserView } {
   const user = findUserById(userId);
   if (!user) {
     throw new Error('user not found');
   }
   const refreshToken = newBearerToken();
-  createSession({
+  const session = createSession({
     userId,
     tokenHash: hashToken(refreshToken),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   });
-  return { refreshToken, user: toUserView(user) };
+  return { refreshToken, sessionId: session.id, user: toUserView(user) };
 }
 
 export function logout(refreshToken: string): void {

@@ -1,6 +1,12 @@
 import { db } from './database';
 import { createId } from './id';
 import { DEFAULT_FREE_CREDITS } from './constants';
+import {
+  ensureBootstrapPlans,
+  ensureEntitlement,
+  ensureProfile,
+  createSubscription,
+} from './platform-repositories';
 
 /**
  * Typed repository layer for Phase 1.
@@ -145,6 +151,21 @@ export function createUser(input: {
       [createId('crd'), id, input.freeCredits ?? DEFAULT_FREE_CREDITS, now, now],
     );
 
+    ensureBootstrapPlans();
+    ensureProfile(id);
+    createSubscription({
+      userId: id,
+      planKey: 'free',
+      status: 'trialing',
+      billingProvider: 'manual',
+      trialDays: 30,
+    });
+    ensureEntitlement(id, 'trial', `30 days`);
+    ensureEntitlement(id, 'free_tasks', `${input.freeCredits ?? DEFAULT_FREE_CREDITS}`);
+    ensureEntitlement(id, 'custom_credits', 'false');
+    ensureEntitlement(id, 'agent_world', 'true');
+    ensureEntitlement(id, 'agent_factory', 'true');
+
     const row = tx.get<UserRow>('SELECT * FROM users WHERE id = ?', [id]);
     if (!row) {
       throw new Error(`failed to read created user ${id}`);
@@ -159,6 +180,13 @@ export function findUserByEmail(email: string): UserRow | undefined {
 
 export function findUserById(id: string): UserRow | undefined {
   return db.get<UserRow>('SELECT * FROM users WHERE id = ?', [id]);
+}
+
+export function setUserPasswordHash(userId: string, passwordHash: string): void {
+  db.run(
+    `UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
+    [passwordHash, userId],
+  );
 }
 
 export function updateUserLastLogin(id: string, when: string): void {

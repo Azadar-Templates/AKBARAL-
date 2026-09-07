@@ -3,3 +3,5 @@ export { resolveDatabasePath } from './path';
 export { createId } from './id';
 export * from './constants';
 export * from './repositories';
+export * from './platform-repositories';
+export * from './business-repositories';

@@ -36,7 +36,7 @@ describe('HTTP API integration', () => {
   });
 
   it('health check', async () => {
-    const response = await fetch(`${baseUrl}/`);
+    const response = await fetch(`${baseUrl}/api/health`);
     assert.equal(response.status, 200);
     const body = (await response.json()) as { status: string };
     assert.equal(body.status, 'ok');
@@ -88,7 +88,7 @@ describe('HTTP API integration', () => {
     assert.equal(createResponse.status, 202);
     const created = (await createResponse.json()) as { task: { id: string; executionId: string }; freeCredits: number };
     assert.ok(created.task.id);
-    assert.equal(created.freeCredits, 2);
+    assert.equal(created.freeCredits, 4);
 
     const task = await waitForTask(baseUrl, accessToken, created.task.id);
     assert.equal(task.status, 'completed');

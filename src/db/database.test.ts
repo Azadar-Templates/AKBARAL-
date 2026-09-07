@@ -193,7 +193,7 @@ describe('database foundation', () => {
 
     const account = getCreditAccount(userId);
     assert.ok(account);
-    assert.equal(account.free_credits, 3);
+    assert.equal(account.free_credits, 5);
     assert.equal(account.free_credits_used, 0);
   });
 
@@ -209,7 +209,7 @@ describe('database foundation', () => {
     assert.equal(refund.amount, 1);
 
     const account = getCreditAccount(userId);
-    assert.equal(account?.free_credits, 3);
+    assert.equal(account?.free_credits, 5);
     assert.equal(account?.free_credits_used, 0);
   });
 

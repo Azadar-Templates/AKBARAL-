@@ -4,63 +4,90 @@ Master AI operating platform:
 
 `User Goal -> AI Core/Orchestrator -> Plan -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result`
 
-Long-term target: 3,000+ specialist agents organized into ~30 major categories.
+Target: 4,000+ genuinely distinct specialist agents, agent factory, marketplace, workspaces, honest credits, billing, admin, real-time logs and a premium responsive web application.
 
 ---
 
-## Implemented phases
+## Implemented Platform
 
-### Phase 1 — Database Foundation
-- Node 22+ built-in `node:sqlite` database layer with real SQL migrations.
-- 17 core tables: users, sessions, api_keys, credit accounts/transactions, projects,
-  agent categories/agents, tasks, task events, agent executions/logs, tool
-  integrations, agent integrations, usage records, audit logs, security logs.
-- Typed repository layer (`src/db/repositories.ts`) and migration runner.
-- Migration command: `npm run db:migrate`.
+### Agent Registry (4,000+ specialists)
+- `src/agents/catalog.ts` generates 4,000+ genuinely differentiated agents from a combinatorial matrix of 80 professional domain blueprints × 50 specialist archetypes.
+- Every agent has a unique id/slug, name, specialization, system instructions, capabilities, inputs/outputs, model requirements, tool permissions, API requirements, workflow, verification rules, security permissions, cost metadata, fallback strategy, version, health and evaluation config.
+- `src/agents/registry.ts` synchronizes the full catalog into the database idempotently with SHA-256 checksums and version history (`agent_versions`).
+- Discovery via `GET /api/agents`, categories via `GET /api/agents/categories`.
 
-### Phase 2 — Authentication
-- Register / login / refresh / logout / current-user endpoints.
-- Passwords hashed with salted `scrypt` (never plaintext, no bcrypt native dep).
-- Sessions stored as SHA-256 hashes of opaque refresh tokens.
-- Short-lived signed JWT access tokens (HS256, self-contained).
-- Security audit logs for failed/successful logins.
+### MASTER AI Orchestrator
+- `src/orchestrator/planner.ts` detects intents from a natural-language goal, selects real specialist agents from the DB registry, and persists a `workflows` + `workflow_steps` task graph.
+- `src/orchestrator/workflow-runner.ts` executes the graph respecting `depends_on`, skipping blocked steps and aggregating results.
+- `src/orchestrator/executor.ts` dispatches structured tasks/executions, routes Agent #001 to the real web-research pipeline and every other agent through the model router using that agent's genuine instructions.
 
-### Phase 3 — Agent #001 (Web Research Agent)
-- Real HTTP-based search + page fetch + HTML-to-text extraction.
-- Default provider: DuckDuckGo HTML search and direct source fetch; overridable
-  via `AKBARAL_SEARCH_ENDPOINT` / `AKBARAL_PAGE_FETCH_ENDPOINT` for proxies or
-  private search APIs.
-- Produces a structured `ResearchReport` with sources, facts, verified-source
-  count, timing and provider metadata. No fake/mock results.
+### Model Router
+- Provider abstraction (`openai`, `anthropic`, `google`) with honest credentials checks.
+- Router scores models by capability, cost, latency, reliability, health and default preference, then uses a primary + fallback chain.
+- Every run is recorded in `model_runs` for cost/latency observability.
+- Missing credentials surface `provider_not_configured` + `requiredEnvKey`, never a fake result.
 
-### Phase 4 — Free-task credit system
-- New users get 3 free credits (`credit_account`).
-- A research task reserves one free credit atomically.
-- Success leaves the credit consumed.
-- Failure automatically refunds the credit and records a `refund_task` transaction.
-- Zero credits → HTTP `402 requires_pro`; no task/credit side effects.
+### Tool System
+- Real tools: `web_search`, `page_fetch`, `code_repository_read`, `file_parse_text`, `knowledge_search`, `excel_build`, `image_render`.
+- SSRF guard blocks private hosts; repository reads stay inside the repo; file parsing is limited to the uploads directory; image rendering requires `OPENAI_API_KEY`.
+- Tool catalog is registered in DB and linked to agents through `agent_tools`.
 
-### Phase 5 — WebSocket real-time execution logs
-- `/ws/executions/:executionId` streams persisted execution logs live.
-- Logs are also stored in `agent_execution_logs` so clients can reconnect and
-  replay with `?after=<ISO timestamp>`.
-- Task/agent workflow: create → queued → running → completed/failed, with
-  status + log events broadcast over the socket.
+### Agent Factory
+- Create, test, security review (injection/secret/permission checks), benchmark (specialization/workflow/verification/safety scoring), version, update, publish, disable and rollback your own agents.
+- `POST /api/factory/agents`, `/security`, `/benchmark`, `/version`, `/rollback`, `/status`, `PATCH /:slug`, `/audit`.
+
+### Marketplace / Agent World
+- Published agent marketplace with install counts, save/favorite relations and purchase orders.
+- `GET /api/marketplace`, `/:slug/install`, `/:slug/publish`, `/:slug/unpublish`.
+
+### Workspace + Knowledge
+- Projects CRUD and project detail (files/tasks/workflows).
+- File upload (multer), text/CSV/JSON extraction, file versions, knowledge indexing and FTS search.
+- `POST /api/projects/:projectId/files`, `GET /api/files/:id`, `POST /api/files/:id/knowledge`, `POST /api/files/knowledge/search`.
+
+### Honest Credit & Billing
+- Every user gets a 30-day trial with 5 free tasks.
+- A free credit is reserved atomically when a task starts; it is consumed only on success and automatically refunded on failure.
+- When no free credit exists the API returns `402 requires_pro` with no hidden charge or task side effect.
+- Plans (free/pro/enterprise), subscriptions, entitlements, invoices, payments, billing events and custom credit purchase are wired.
+- `GET/POST /api/billing/*` and admin manual settlement.
+
+### Admin Control Center
+- `GET /api/admin/stats` (users, tasks, agents, models, revenue, credits, failed jobs, security events), agent/model status control, feature flags, manual payment settlement and emergency stop.
+
+### Real-time
+- WebSocket `/ws/executions/:executionId` streams persisted execution logs with reconnect replay via `?after=<ISO>`.
+- SSE fallback `GET /api/executions/:id/events`.
+
+### Web Frontend
+- Premium responsive SPA in `public/` preserving the AKBARAL! visual identity and animated 3D robot.
+- Landing, sign in/register, Dashboard, MASTER AI workspace, Agent World, Agent Factory, Marketplace, Workspace, CRM, Billing and Admin.
+
+### Mobile
+- Cross-platform Expo/React Native app in `mobile/` connected to the same backend.
+- Login, dashboard, MASTER chat, agent discovery, workspace, billing and settings. Build with `cd mobile && npm install && npm start`.
+
+### Business / CRM / Automation
+- Contacts, pipelines, deals, campaigns, campaign messages, automations, AI employees, through `GET/POST /api/crm/*`.
+- Campaign delivery requires SMTP credentials; the API fails honestly with `email_delivery_not_configured` when missing.
+
+### Account Recovery + OAuth
+- Password reset and email verification tokens are stored as hashes with expiry (`auth_tokens`).
+- OAuth provider catalog reports configured status and required env vars through `/api/auth/oauth/providers`.
+- Billing webhooks are verified with timing-safe HMAC signatures.
+
+### Security / Observability
+- RBAC roles (`user`, `admin`, `super_admin`), scrypt password hashing, session/refresh token hashing, short-lived JWTs, rate limiting, structured logs, system metrics, audit and security logs.
+- Secrets never leave env vars; no credentials are returned to clients.
 
 ---
 
 ## Stack
 
-- Node.js 22+ (built-in `node:sqlite` module)
-- TypeScript
-- SQLite file database (migration-based schema)
-- Express 4 HTTP API
-- `ws` WebSocket transport
-- `dotenv`, `tsx`
-
-The built-in SQLite driver runs with zero external services on any machine.
-The repository layer isolates queries so a future PostgreSQL migration is
-contained to the data tier.
+- Node.js 22+ (built-in `node:sqlite`, no native SQLite deps)
+- TypeScript, Express 4, `ws`, `multer`
+- SQLite file database with real SQL migrations (`db/migrations/`)
+- `tsx` for dev, `tsc` for production build
 
 ---
 
@@ -75,47 +102,51 @@ npm install
 
 ```bash
 npm run db:migrate      # apply all migrations
-npm run db:status       # show applied/pending migrations
-npm run db:seed         # idempotent dev seed (service user + Web Research Agent #001)
-npm run db:reset        # delete local dev DB and reapply migrations
-npm run verify:db       # migrate + verify all tables
-
+npm run db:seed         # seed plans, model/tool catalog, 4,000-agent registry
 npm run typecheck       # strict TypeScript type-check
-npm run build           # compile TypeScript to dist/
-npm test                # full test suite (uses test.db)
-npm run start           # build + run compiled server (node dist/src/index.js)
-npm run dev             # run API server with tsx watch
-npm run serve           # run API server with tsx
+npm run build           # compile to dist/
+npm test                # full test suite
+npm run dev             # run API + web app with tsx watch (port 3000)
+npm run start           # run compiled production server
 ```
 
-## API overview
+## API Overview
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| GET | `/` | none | Health/status |
+| GET | `/api/health` | none | Health/status |
 | POST | `/api/auth/register` | none | Create account |
 | POST | `/api/auth/login` | none | Login, returns access + refresh tokens |
-| GET | `/api/auth/me` | refresh token | Current user (refresh-token auth) |
-| POST | `/api/auth/refresh` | refresh token | Rotate refresh session |
-| POST | `/api/auth/logout` | refresh token | Revoke session |
-| GET | `/api/me` | bearer access token | Current user + free credits |
-| GET | `/api/agents` | bearer access token | List registered agents |
-| GET | `/api/agents/:slug` | bearer access token | Agent detail |
-| POST | `/api/tasks/research` | bearer access token | Create research task (202) |
-| GET | `/api/tasks` | bearer access token | List user tasks |
-| GET | `/api/tasks/:id` | bearer access token | Task detail + events + logs |
-| WS | `/ws/executions/:executionId` | none* | Live execution logs (with optional `?after=<ISO>`) |
+| GET | `/api/me` | bearer | Current user + trial + subscription |
+| GET | `/api/agents` | bearer | List/discover agents |
+| GET | `/api/agents/categories` | bearer | Category list |
+| POST | `/api/workflows/master` | bearer | MASTER plan |
+| POST | `/api/workflows/:id/run` | bearer | Execute plan |
+| POST | `/api/workflows/agent` | bearer | Dispatch a specialist agent |
+| POST | `/api/projects` | bearer | Create project |
+| POST | `/api/projects/:id/files` | bearer | Upload file |
+| POST | `/api/files/knowledge/search` | bearer | Search knowledge |
+| GET | `/api/tools` | bearer | Tool catalog |
+| POST | `/api/tools/:key/run` | bearer | Run a tool |
+| POST | `/api/factory/agents` | bearer | Create custom agent |
+| POST | `/api/marketplace/:slug/install` | bearer | Install agent |
+| GET | `/api/billing/plans` | none | Public plan pricing |
+| GET | `/api/admin/stats` | admin | Admin statistics |
+| WS | `/ws/executions/:executionId` | none* | Live execution logs |
+| SSE | `/api/executions/:id/events` | bearer | SSE execution logs |
 
-> *WebSocket stream is keyed by opaque execution id. When production hardening
-> is enabled, add auth to this socket too.
+> *WebSocket stream is keyed by opaque execution id; add token auth here for multi-tenant edge deployments.
 
-## Database secrets policy
+## Deployment
+
+See [`docs/deployment.md`](./docs/deployment.md). Dockerfile, entrypoint and backup script are included.
+
+---
+
+## Security policy
+
 - Passwords: salted scrypt.
-- Sessions/API keys: SHA-256 hashes of raw tokens + visible prefixes.
-- Tool integrations: encrypted config blob + key reference (never plaintext).
-
-## Next phases (not started)
-- 3,000+ agent registry expansion (categories/agents/tools/verification).
-- Production PostgreSQL/Prisma adapter migration.
-- Pro/paid credit plans.
-- Orchestrator planning/verification layer beyond Agent #001.
+- Sessions/refresh tokens: SHA-256 hashes.
+- API keys/tokens: hashed, prefix-only display.
+- Provider credentials: environment variables only, never DB/client.
+- Files: size-limited; SSRF/path traversal guards in the tool layer.

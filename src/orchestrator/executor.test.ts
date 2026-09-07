@@ -40,8 +40,8 @@ describe('orchestrator + free-task credits', () => {
       description: 'verifies Agent #001 and the credit system',
     });
 
-    assert.equal(dispatched.freeCredits, 2);
-    assert.equal(getCreditAccount(userId)?.free_credits, 2);
+    assert.equal(dispatched.freeCredits, 4);
+    assert.equal(getCreditAccount(userId)?.free_credits, 4);
 
     const result = await runWebResearchExecution(dispatched.executionId);
     assert.equal(result.status, 'completed');
@@ -62,7 +62,7 @@ describe('orchestrator + free-task credits', () => {
     assert.ok(events.some((event) => (event as { message: string }).message.includes('completed successfully')));
 
     // Credit remains consumed on success.
-    assert.equal(getCreditAccount(userId)?.free_credits, 2);
+    assert.equal(getCreditAccount(userId)?.free_credits, 4);
   });
 
   it('refunds the free credit automatically on failure', async () => {
@@ -85,7 +85,7 @@ describe('orchestrator + free-task credits', () => {
       const account = getCreditAccount(userId);
       // One credit was consumed by the earlier successful task and remains
       // consumed. The failing task's reserved credit was refunded.
-      assert.equal(account?.free_credits, 2);
+      assert.equal(account?.free_credits, 4);
       assert.equal(account?.free_credits_used, 1);
     } finally {
       await badFixture.close();

@@ -7,6 +7,8 @@
 import { env } from './config/env';
 import { createApiServer } from './app';
 import { db } from './db';
+import { syncModelCatalog } from './models';
+import { ensureBootstrapPlans } from './db';
 
 function checkDatabase(): void {
   const [userCount, taskCount, agentCount, projectCount] = [
@@ -23,6 +25,12 @@ function checkDatabase(): void {
 }
 
 async function start(): Promise<void> {
+  try {
+    ensureBootstrapPlans();
+    syncModelCatalog();
+  } catch (error) {
+    console.error('[akbaral] failed to sync catalog:', error);
+  }
   checkDatabase();
 
   const api = createApiServer();

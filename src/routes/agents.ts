@@ -1,53 +1,52 @@
 import { Router } from 'express';
-import { listAgents, findAgentBySlug } from '../db';
+import { discoverAgents, getAgentBySlug, listCategories, countAgentRegistry } from '../agents/registry';
+import { saveUserAgent, findAllUserAgents } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
+import { getBody } from '../server/middleware/validation';
 
 export const agentsRouter = Router();
 
 agentsRouter.use(requireAuth);
 
-agentsRouter.get('/', (_req: AuthenticatedRequest, res) => {
-  const rows = listAgents(200, 0);
+agentsRouter.get('/categories', (_req, res) => {
   res.status(200).json({
-    agents: rows.map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      slug: agent.slug,
-      description: agent.description,
-      version: agent.version,
-      categoryId: agent.category_id,
-      runtime: agent.runtime,
-      status: agent.status,
-      config: agent.config ? safeParse(agent.config) : null,
-    })),
+    categories: listCategories(),
+    total: countAgentRegistry(),
   });
 });
 
-agentsRouter.get('/:slug', (req: AuthenticatedRequest, res) => {
-  const agent = findAgentBySlug(req.params.slug);
+agentsRouter.get('/', (req: AuthenticatedRequest, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const limit = Number(req.query.limit ?? 50);
+  const offset = Number(req.query.offset ?? 0);
+  const result = discoverAgents({ query, category, status, limit, offset });
+  res.status(200).json(result);
+});
+
+agentsRouter.post('/:slug/save', (req: AuthenticatedRequest, res) => {
+  const body = getBody(req);
+  const favorite = Boolean(body.favorite);
+  const saved = Boolean(body.saved);
+  const agent = getAgentBySlug(req.params.slug);
   if (!agent) {
     throw new HttpError(404, 'agent not found', 'not_found');
   }
-  res.status(200).json({
-    agent: {
-      id: agent.id,
-      name: agent.name,
-      slug: agent.slug,
-      description: agent.description,
-      version: agent.version,
-      categoryId: agent.category_id,
-      runtime: agent.runtime,
-      status: agent.status,
-      config: agent.config ? safeParse(agent.config) : null,
-    },
-  });
+  saveUserAgent({ userId: req.auth!.userId, agentId: agent.id, saved, favorite });
+  res.status(204).send();
 });
 
-function safeParse(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
+agentsRouter.get('/:slug', (req: AuthenticatedRequest, res) => {
+  const agent = getAgentBySlug(req.params.slug);
+  if (!agent) {
+    throw new HttpError(404, 'agent not found', 'not_found');
   }
-}
+  const rows = findAllUserAgents(req.auth!.userId, agent.id);
+  res.status(200).json({
+    agent,
+    saved: rows.length > 0 ? Boolean(rows[0].saved) : false,
+    favorite: rows.length > 0 ? Boolean(rows[0].favorite) : false,
+  });
+});

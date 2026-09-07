@@ -18,6 +18,8 @@ import {
   listExecutionLogs,
 } from '../db';
 import { createResearchReport } from '../agents';
+import { getAgentBySlug } from '../agents/registry';
+import { modelRouter } from '../models';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
 /**
@@ -140,6 +142,215 @@ export function createResearchTask(input: {
     userId: input.userId,
     freeCredits: account.free_credits - 1,
   };
+}
+
+/**
+ * Create a task+execution for any registered specialist agent and reserve the
+ * free credit. The agent execution is dispatched by slug.
+ */
+export function createAgentTask(input: {
+  userId: string;
+  agentSlug: string;
+  goal: string;
+  projectId?: string | null;
+}): DispatchedTask {
+  const account = getCreditAccount(input.userId);
+  if (!account) {
+    throw new Error('credit account not found');
+  }
+  if (account.status !== 'active') {
+    throw new Error('credit account is not active');
+  }
+  if (account.free_credits <= 0) {
+    const error = new Error('Free task credits exhausted. This capability requires AKBARAL Pro.') as Error & { code?: string };
+    error.code = 'requires_pro';
+    throw error;
+  }
+
+  const agent = getAgentBySlug(input.agentSlug);
+  if (!agent) {
+    const error = new Error(`Agent "${input.agentSlug}" does not exist`) as Error & { code?: string };
+    error.code = 'agent_not_found';
+    throw error;
+  }
+
+  const task = createTask({
+    userId: input.userId,
+    title: `${agent.specialization}: ${input.goal}`,
+    description: agent.specialization,
+    type: 'free',
+    projectId: input.projectId ?? null,
+    agentId: agent.id,
+    inputData: { goal: input.goal, agentSlug: input.agentSlug },
+  });
+
+  const consumed = consumeFreeCredit({
+    userId: input.userId,
+    taskId: task.id,
+    reason: `reserve free credit for ${input.agentSlug}`,
+  });
+  if (!consumed) {
+    updateTaskStatus({ id: task.id, status: 'cancelled', errorMessage: 'free credit could not be reserved' });
+    const error = new Error('Free task credits exhausted. This capability requires AKBARAL Pro.') as Error & { code?: string };
+    error.code = 'requires_pro';
+    throw error;
+  }
+
+  const execution = createAgentExecution({
+    agentId: agent.id,
+    taskId: task.id,
+    inputData: { goal: input.goal, agentSlug: input.agentSlug },
+  });
+  appendTaskEvent({
+    taskId: task.id,
+    executionId: execution.id,
+    message: `Agent "${agent.slug}" queued and free credit reserved`,
+    level: 'info',
+    type: 'status',
+  });
+
+  return {
+    taskId: task.id,
+    executionId: execution.id,
+    agentId: agent.id,
+    userId: input.userId,
+    freeCredits: account.free_credits - 1,
+  };
+}
+
+/**
+ * Dispatch an execution to the correct specialist. Agent #001 uses the real
+ * research pipeline; every other registered agent uses the model router with
+ * that agent's genuine instructions/tooling/verification contract.
+ */
+export function dispatchAgentExecution(
+  executionId: string,
+  agentSlug: string,
+  stream?: ExecutionStream,
+): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  if (agentSlug === WEB_RESEARCH_AGENT_SLUG) {
+    return runWebResearchExecution(executionId, stream);
+  }
+  return runGenericAgentExecution(executionId, agentSlug, stream);
+}
+
+/**
+ * Execute a registered specialist agent through the model router. If no
+ * provider credential is configured, the run fails honestly with a
+ * `provider_not_configured` error and the free credit is refunded.
+ */
+export async function runGenericAgentExecution(
+  executionId: string,
+  agentSlug: string,
+  stream?: ExecutionStream,
+): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  const execution = getExecutionSafe(executionId);
+  const start = Date.now();
+  updateAgentExecutionStatus({ id: executionId, status: 'running', startedAt: new Date().toISOString() });
+  stream?.pushStatus({ executionId, status: 'running', message: `Agent ${agentSlug} started` });
+  appendLog(executionId, stream, `Specialist agent ${agentSlug} started`, 'info', 'system', { agentSlug });
+
+  const task = execution.task_id ? findTaskById(execution.task_id) : undefined;
+  if (task) {
+    updateTaskStatus({ id: task.id, status: 'running', startedAt: new Date().toISOString() });
+  }
+
+  const agent = getAgentBySlug(agentSlug);
+  if (!agent) {
+    return failExecution(executionId, task?.id, `Agent ${agentSlug} is not registered`, stream);
+  }
+
+  const goalInput = (() => {
+    try {
+      const parsed = JSON.parse(execution.input_data ?? '') as { goal?: string };
+      return parsed.goal ?? agentSlug;
+    } catch {
+      return agentSlug;
+    }
+  })();
+
+  appendLog(executionId, stream, `Using ${agent.specialization}`, 'info', 'log', {
+    capabilities: agent.capabilities,
+    workflow: agent.workflow,
+  });
+
+  try {
+    const result = await modelRouter.complete(
+      {
+        capability: agent.modelRequirements,
+        answerQuality: agent.costUsage.priority === 'high' ? 'high' : 'balanced',
+        taskId: task?.id ?? null,
+        agentExecutionId: executionId,
+      },
+      [
+        { role: 'system', content: agent.systemInstructions },
+        { role: 'user', content: goalInput },
+      ],
+    );
+
+    const output: Record<string, unknown> = {
+      type: 'agent_result',
+      agent: { slug: agentSlug, specialization: agent.specialization },
+      content: result.text,
+      model: result.model,
+      provider: result.provider,
+      latencyMs: result.latencyMs,
+    };
+    updateAgentExecutionStatus({
+      id: executionId,
+      status: 'completed',
+      outputData: output,
+      durationMs: Date.now() - start,
+      completedAt: new Date().toISOString(),
+    });
+    stream?.pushStatus({ executionId, status: 'completed', message: `Agent ${agentSlug} completed` });
+    appendLog(executionId, stream, `Verification passed (${result.model} / ${result.provider})`, 'info', 'verification', {
+      model: result.model,
+      provider: result.provider,
+      latencyMs: result.latencyMs,
+    });
+
+    if (task) {
+      updateTaskStatus({ id: task.id, status: 'completed', completedAt: new Date().toISOString() });
+      updateTaskOutput({ id: task.id, outputData: output });
+      appendTaskEvent({ taskId: task.id, executionId, message: `Agent ${agentSlug} completed successfully`, level: 'info', type: 'status' });
+    }
+    return { status: 'completed', output };
+  } catch (error) {
+    return failExecution(executionId, task?.id, error instanceof Error ? error.message : String(error), stream);
+  }
+}
+
+async function failExecution(
+  executionId: string,
+  taskId: string | undefined,
+  message: string,
+  stream: ExecutionStream | undefined,
+): Promise<{ status: string; output: null; error: string }> {
+  const start = Date.now();
+  const code = (message.includes('not configured') || message.includes('provider_not_configured')) ? 'provider_not_configured' : 'execution_failed';
+  updateAgentExecutionStatus({
+    id: executionId,
+    status: 'failed',
+    errorMessage: message,
+    durationMs: Date.now() - start,
+    completedAt: new Date().toISOString(),
+  });
+  stream?.pushStatus({ executionId, status: 'failed', message, errorMessage: message });
+  appendLog(executionId, stream, `Execution failed: ${message}`, 'error', 'verification', { code });
+
+  if (taskId) {
+    updateTaskStatus({ id: taskId, status: 'failed', completedAt: new Date().toISOString(), errorMessage: message });
+    appendTaskEvent({ taskId, executionId, message: `Task failed: ${message}`, level: 'error', type: 'status' });
+    const task = findTaskById(taskId);
+    if (task) {
+      const refund = refundCredit({ userId: task.user_id, taskId: task.id, reason: `automatic refund for failed task ${task.id}` });
+      if (refund) {
+        appendTaskEvent({ taskId, executionId, message: 'Free credit automatically refunded', level: 'info', type: 'status' });
+      }
+    }
+  }
+  return { status: 'failed', output: null, error: message };
 }
 
 /**
