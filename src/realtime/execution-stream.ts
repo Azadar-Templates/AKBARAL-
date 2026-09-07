@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { appendAgentExecutionLog, listExecutionLogsAfter } from '../db';
+import { appendAgentExecutionLog, listExecutionLogs, listExecutionLogsAfter, type ExecutionLogRow } from '../db';
 
 /**
  * Real-time execution log transport.
@@ -43,12 +43,18 @@ interface ClientEntry {
 export class ExecutionStream {
   private readonly wss: WebSocketServer;
   private readonly clients = new Map<string, ClientEntry[]>();
+  private readonly rawSockets = new Set<WebSocket>();
 
   constructor(server: HttpServer) {
     this.wss = new WebSocketServer({ noServer: true });
     this.wss.on('connection', (socket, request) => {
+      this.rawSockets.add(socket);
+      socket.on('close', () => this.rawSockets.delete(socket));
+      socket.on('error', () => {
+        // A malformed/closed socket should not crash the stream.
+      });
       const url = new URL(request.url ?? '/', 'http://localhost');
-      const match = url.pathname.match(/^\/ws\/executions\/([A-Za-z0-9_]+)$/);
+      const match = url.pathname.match(/^\/ws\/executions\/([A-Za-z0-9_-]+)$/);
       const executionId = match?.[1] ?? null;
       if (!executionId) {
         socket.close(1008, 'invalid execution id');
@@ -64,22 +70,27 @@ export class ExecutionStream {
       list.push(entry);
       this.clients.set(executionId, list);
 
-      // Replay any persisted logs requested after the client cursor.
-      if (entry.lastLogAt) {
-        for (const row of listExecutionLogsAfter(executionId, entry.lastLogAt, 500)) {
-          if (socket.readyState === WebSocket.OPEN) {
-            const message: ExecutionStreamMessage = {
-              type: 'log',
-              id: row.id,
-              executionId: row.execution_id,
-              logType: row.type,
-              level: row.level,
-              message: row.message,
-              data: row.data ? JSON.parse(row.data) : null,
-              createdAt: row.created_at,
-            };
-            socket.send(JSON.stringify(message));
-          }
+      // Replay persisted logs. A reconnect with an explicit cursor resumes from
+      // that point; a first-time subscriber also receives any logs that were
+      // appended between task creation and the socket being registered so the
+      // WebSocket channel stays consistent with the SSE fallback.
+      const rowsToReplay: ExecutionLogRow[] = entry.lastLogAt
+        ? listExecutionLogsAfter(executionId, entry.lastLogAt, 500)
+        : (listExecutionLogs(executionId, 500) as unknown as ExecutionLogRow[]);
+      for (const row of rowsToReplay) {
+        if (socket.readyState === WebSocket.OPEN) {
+          const message: ExecutionStreamMessage = {
+            type: 'log',
+            id: row.id,
+            executionId: row.execution_id,
+            logType: row.type,
+            level: row.level,
+            message: row.message,
+            data: row.data ? JSON.parse(row.data) : null,
+            createdAt: row.created_at,
+          };
+          socket.send(JSON.stringify(message));
+          entry.lastLogAt = String(row.created_at);
         }
       }
 
@@ -164,11 +175,20 @@ export class ExecutionStream {
   }
 
   close(): void {
+    for (const socket of this.rawSockets) {
+      try {
+        socket.terminate();
+      } catch {
+        // already closed
+      }
+    }
+    this.rawSockets.clear();
     for (const list of this.clients.values()) {
       for (const entry of list) {
         entry.socket.close(1001, 'server shutting down');
       }
     }
+    this.clients.clear();
     this.wss.close();
   }
 }

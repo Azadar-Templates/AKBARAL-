@@ -11,7 +11,8 @@ data/
 *.db-shm
 *.db-wal
 
-# Environment files (commit only .env / .env.example for local dev without secrets)
+# Environment files (commit only .env.example; real .env stays local)
+.env
 .env.local
 .env.*.local
 .env.test

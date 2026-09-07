@@ -8,7 +8,7 @@ Generated after the final quality gate (`npm run typecheck`, `npm run build`, `n
 
 | Area | Status | Details |
 | --- | --- | --- |
-| Database | ✅ | Migrations 0001–0003; users, profiles, plans, subscriptions, entitlements, credits, invoices, payments, agents, agent_versions, agent_marketplace, user_agents, models, model_providers, model_runs, tools, agent_tools, files, file_versions, knowledge_items, workflows, workflow_steps, notifications, audit/security logs, auth_tokens, oauth_accounts, CRM, campaigns, automations, AI employees. |
+| Database | ✅ | Migrations 0001–0004; users, profiles, plans, subscriptions, entitlements, credits, invoices, payments, agents, agent_versions, agent_marketplace, user_agents, models, model_providers, model_runs, tools, agent_tools, files, file_versions, knowledge_items, workflows, workflow_steps, notifications, audit/security logs, auth_tokens, oauth_accounts, CRM, campaigns, automations, AI employees. Migration 0004 keeps the knowledge FTS mirror in sync when knowledge rows are removed. |
 | Authentication | ✅ | Register/login/logout/refresh, scrypt hashing, session token hashing, signed JWTs, RBAC (user/admin/super_admin), password reset + email verification token flow, OAuth provider catalog. |
 | Agent Registry | ✅ | 4,000 machine-generated specialist agents across 80 domains and 50 specialist archetypes; every agent is differentiated by slug, specialization, instructions, capabilities, inputs/outputs, model requirements, tools, workflow, verification, security, cost, fallback, version and evaluation config. |
 | MASTER AI Orchestrator | ✅ | Intent detection, role-based specialist selection, `workflows` + `workflow_steps` graph, dependency-aware execution, retry/refund on failure. |
@@ -17,7 +17,7 @@ Generated after the final quality gate (`npm run typecheck`, `npm run build`, `n
 | Agent Factory | ✅ | Create, test, security review, benchmark, version, update, publish, disable, rollback, audit. |
 | Agent World / Marketplace | ✅ | Search/filter/save/favorite/detail, published marketplace, install/publish/unpublish. |
 | Workspace / Files / Knowledge | ✅ | Projects, uploads, text extraction (CSV/JSON/TXT), file versions, knowledge FTS search. |
-| Real-time | ✅ | WebSocket `/ws/executions/:id` with persisted replay cursor; SSE fallback `/api/executions/:id/events`. |
+| Real-time | ✅ | WebSocket `/ws/executions/:id` (supports `-` and `_` in execution ids, replays persisted logs on first connect or from a cursor) and SSE fallback `/api/executions/:id/events`. Both channels were exercised live end-to-end. |
 | Credit + Billing | ✅ | 30-day trial, 5 free tasks; free credit reserved atomically, consumed only on success, refunded on failure; `402 requires_pro` when exhausted; plans/subscriptions/invoices/payments/custom credit purchase/manual settlement/manual billing webhook. |
 | Admin | ✅ | Stats (users/tasks/agents/models/revenue/credits/failed jobs/security events), analytics (revenue/cost/margin/cost-per-task), agent/model status, feature flags, emergency stop. |
 | Business / CRM | ✅ | Contacts, pipelines, deals, campaigns, campaign messages, automations, AI employees. |
@@ -30,19 +30,33 @@ Generated after the final quality gate (`npm run typecheck`, `npm run build`, `n
 
 - `npm run typecheck` — clean.
 - `npm run build` — clean TypeScript production build.
-- `npm test` — **43 tests / 11 suites / 0 failures**.
+- `npm test` — **11 suites / 0 failures**.
   - Web research agent (real fetch/search, verified report, honest provider failure).
   - Auth service (register/login/refresh/logout, wrong password, session rotation).
   - Database foundation (users, credits consume/refund, tasks/logs, agents, usage/audit/security).
   - Orchestrator free-task credits (success consumes, failure refunds, exhausted → requires_pro).
-  - Execution stream (WebSocket broadcast + persisted replay).
+  - Execution stream (WebSocket broadcast + persisted replay; test uses a hyphenated execution id).
   - Password/token security.
   - Agent Factory (create/security/benchmark/version/rollback/update/duplicate/status).
   - Tool system (repo read, path traversal block, text parse, CSV build, knowledge search, honest missing credentials).
   - Business/auth recovery (auth tokens, CRM/CRUD, timing-safe webhook signature).
   - HTTP API integration (health, register, login, agents, background research task with streaming, refresh/logout).
+- `cd mobile && npx tsc --noEmit` — clean (Expo/React Native source typechecks).
 
-Failure cases are explicitly covered: provider not configured, network failure, credit exhaustion, duplicate slug, invalid path traversal, invalid webhook signature, invalid/consumed reset token.
+Manual end-to-end verification against the running API plus local compliant search/fetch provider:
+- Register/login/refresh, `/api/me` (5 credits, 30-day trial), password reset + re-login with new password.
+- 4,000+ agent registry + 80 categories.
+- Research task success consumes a credit; provider outage fails and auto-refunds; exhaustion returns `402 requires_pro`.
+- MASTER workflow plan + honest generic-agent `openai is not configured` failure with refund.
+- Agent #001 real HTTP search/fetch with citation-verified output.
+- Agent Factory create/security/benchmark/version/update/rollback/disable.
+- File upload + knowledge FTS search (both `/files/knowledge/search` and alias).
+- Billing plans/account/credit invoice; CRM contact/campaign/automation/employee.
+- Marketplace browse + install; admin stats/analytics/feature-flags with role gating.
+- WebSocket `/ws/executions/:id` delivered 6 frames (start → planning → specialist → research complete → task completed → verification passed).
+- SSE `/api/executions/:id/events` delivered all 5 persisted log frames.
+
+Failure cases are explicitly covered: provider not configured, network failure, provider outage, credit exhaustion, duplicate slug, invalid path traversal, invalid webhook signature, invalid/consumed reset token.
 
 ## 3. External Credentials Still Required
 
@@ -78,7 +92,7 @@ When a credential is missing, the platform returns an honest error (e.g. `provid
 
 - No external model/API keys are present in this sandbox, so generic agent execution and external integrations fail honestly instead of producing fake output.
 - `node:sqlite` is used for the file database; a larger deployment should swap the repository layer to PostgreSQL. No code in agents/routes depends on the specific SQL driver.
-- Mobile app is a real cross-platform source implementation but was not compiled in this environment.
+- Mobile app is a real cross-platform source implementation; it passes `tsc --noEmit` here but an Expo build (EAS/local) was outside this sandbox's toolchain.
 - Campaign delivery, OAuth identity exchange and payment settlement require their respective external providers.
 
 ## 6. Current Counts
@@ -117,7 +131,7 @@ When a credential is missing, the platform returns an honest error (e.g. `provid
 - [x] Agent Factory marketplace/admin
 - [x] Security (rate limits, audit, webhooks, secrets)
 - [x] Web frontend
-- [x] Mobile source architecture
+- [x] Mobile source architecture (typecheck clean)
 - [ ] Add real provider keys/secrets
 - [ ] Configure SMTP
 - [ ] Configure object storage + jobs queue for large-scale deployment

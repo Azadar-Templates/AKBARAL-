@@ -55,7 +55,7 @@ export class ApiClient {
   }
 
   async request<T = any>(path: string, options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
-    const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
+    const headers: Record<string, string> = { 'content-type': 'application/json', ...(options.headers || {}) };
     if (this.accessToken) headers.authorization = `Bearer ${this.accessToken}`;
     const response = await fetch(`${BASE_URL}${path}`, {
       method: options.method ?? 'GET',

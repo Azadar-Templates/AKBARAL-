@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { findProjectById, getFile, indexKnowledgeItem, searchKnowledge } from '../db';
 import { upload, processUpload, getStoredFile } from '../services/files';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
@@ -62,12 +62,17 @@ export function createFilesRouter(): Router {
     res.status(201).json({ knowledge: item });
   });
 
-  router.post('/knowledge/search', requireAuth, (req: AuthenticatedRequest, res) => {
+  function knowledgeSearch(req: AuthenticatedRequest, res: Response): void {
     const body = getBody(req);
     const query = requireString(body, 'query', 'query');
     const results = searchKnowledge(req.auth!.userId, query, 20);
     res.status(200).json({ results });
-  });
+  }
+
+  // Documented client path.
+  router.post('/files/knowledge/search', requireAuth, knowledgeSearch);
+  // Backwards-compatible alias.
+  router.post('/knowledge/search', requireAuth, knowledgeSearch);
 
   return router;
 }

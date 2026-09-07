@@ -1128,6 +1128,10 @@ export function indexKnowledgeItem(input: {
   );
   const row = db.get<{ rowid: number }>('SELECT rowid FROM knowledge_items WHERE id = ?', [id]);
   if (row) {
+    // Guard against a stale FTS row that may reuse this rowid after the
+    // underlying knowledge_item was removed by a cascade before the cleanup
+    // trigger was created. Removing it first keeps the FTS mirror idempotent.
+    db.run('DELETE FROM knowledge_fts WHERE rowid = ?', [row.rowid]);
     db.run('INSERT INTO knowledge_fts(rowid, content) VALUES (?, ?)', [row.rowid, input.content]);
   }
   return { id };

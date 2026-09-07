@@ -13,7 +13,7 @@ describe('execution stream + replay', () => {
   before(() => {
     const user = createUser({ email: `ws-${suffix}@akbaral.test`, name: 'WS Test User' });
     const agent = createAgent({ name: 'WS Test Agent', slug: `ws-agent-${suffix}` });
-    executionId = createAgentExecution({ agentId: agent.id, taskId: null }).id;
+    executionId = createAgentExecution({ agentId: agent.id, taskId: null, id: `exe_zh-${suffix}` }).id;
     void user;
   });
 
@@ -55,7 +55,11 @@ describe('execution stream + replay', () => {
       socket.terminate();
     } finally {
       stream.close();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      const closeServer = server.close.bind(server);
+      if (typeof (server as { closeAllConnections?: () => void }).closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+      await new Promise<void>((resolve) => closeServer(() => resolve()));
     }
   });
 });

@@ -560,8 +560,9 @@ export function createAgentExecution(input: {
   agentId: string;
   taskId?: string | null;
   inputData?: Record<string, unknown> | null;
+  id?: string;
 }): { id: string } {
-  const id = createId('exe');
+  const id = input.id ?? createId('exe');
   db.run(
     `INSERT INTO agent_executions (id, agent_id, task_id, status, input_data, attempts, created_at, updated_at)
      VALUES (?, ?, ?, 'queued', ?, 0, ?, ?)`,
