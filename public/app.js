@@ -14,10 +14,51 @@
     plan: null,
     executionStream: null,
     view: 'landing',
+    theme: localStorage.getItem('ak_theme') || 'dark',
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  /* ----- Design-system helpers ----- */
+
+  function applyTheme() {
+    document.documentElement.dataset.theme = state.theme;
+    const toggle = $('#theme-toggle');
+    const settingsToggle = $('#settings-theme-toggle');
+    if (toggle) {
+      toggle.setAttribute('aria-pressed', String(state.theme === 'light'));
+      toggle.setAttribute('aria-label', state.theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme');
+      toggle.querySelector('.theme-toggle-icon').textContent = state.theme === 'light' ? '☾' : '◐';
+    }
+    if (settingsToggle) settingsToggle.textContent = state.theme === 'light' ? 'Switch to dark' : 'Switch to light';
+  }
+
+  function setTheme(next) {
+    state.theme = next === 'light' ? 'light' : 'dark';
+    localStorage.setItem('ak_theme', state.theme);
+    applyTheme();
+  }
+
+  function setRobotState(next, label) {
+    const stage = $('#robot-stage');
+    const status = $('#robot-status');
+    if (stage) stage.dataset.state = next;
+    if (status) status.textContent = label || next;
+  }
+
+  function setCoreState(next, label) {
+    const core = $('#master-core');
+    const labelEl = $('#master-core-label');
+    if (core) core.dataset.state = next;
+    if (labelEl) labelEl.textContent = label || next;
+  }
+
+  function skeleton(rootSelector, count = 3) {
+    const root = $(rootSelector);
+    if (!root) return;
+    root.innerHTML = Array.from({ length: count }).map(() => '<div class="skeleton"></div>').join('');
+  }
 
   function toast(message, kind = 'info') {
     const el = document.createElement('div');
@@ -87,11 +128,18 @@
   }
 
   async function boot() {
+    applyTheme();
     bindMenu();
     bindAuth();
     bindGeneral();
+    bindTheme();
     window.addEventListener('hashchange', navigate);
     await navigate();
+  }
+
+  function bindTheme() {
+    $('#theme-toggle')?.addEventListener('click', () => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
+    $('#settings-theme-toggle')?.addEventListener('click', () => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
   }
 
   function bindMenu() {
@@ -137,9 +185,26 @@
       state.refreshToken = null;
       state.user = null;
       location.hash = '#/';
+      setRobotState('idle', 'online');
+      setCoreState('idle', 'idle');
+    });
+
+    $('#settings-logout')?.addEventListener('click', async () => {
+      try {
+        if (state.refreshToken) await api('/api/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: state.refreshToken }) });
+      } catch {}
+      localStorage.removeItem('ak_access');
+      localStorage.removeItem('ak_refresh');
+      state.accessToken = null;
+      state.refreshToken = null;
+      state.user = null;
+      location.hash = '#/';
+      setRobotState('idle', 'online');
+      setCoreState('idle', 'idle');
     });
 
     $('#login-btn').addEventListener('click', () => { location.hash = '#/login'; });
+    $$('[data-route]').forEach((btn) => btn.addEventListener('click', () => { location.hash = `#/${btn.dataset.route}`; }));
     $('#explore-agents').addEventListener('click', () => {
       if (!state.accessToken) { location.hash = '#/login'; return; }
       location.hash = '#/agents';
@@ -198,6 +263,7 @@
     if (view === 'workspace') { showScreen('workspace'); await loadWorkspace(); return; }
     if (view === 'crm') { showScreen('crm'); await loadCrm(); return; }
     if (view === 'billing') { showScreen('billing'); await loadBilling(); return; }
+    if (view === 'settings') { showScreen('settings'); await loadSettings(); return; }
     if (view === 'admin') {
       if (!['admin', 'super_admin'].includes(state.user?.role || '')) { toast('Admin access required', 'err'); showScreen('dashboard'); return; }
       showScreen('admin');
@@ -222,6 +288,7 @@
       crm: 'screen-crm',
       billing: 'screen-billing',
       admin: 'screen-admin',
+      settings: 'screen-settings',
     };
     const screen = document.getElementById(map[name]);
     if (screen) screen.hidden = false;
@@ -247,6 +314,19 @@
     $('#credit-pill').textContent = label;
   }
 
+  async function loadSettings() {
+    try {
+      await loadMe();
+    } catch {}
+    const name = state.user?.name || state.user?.email || '—';
+    $('#settings-name').textContent = name;
+    $('#settings-email').textContent = state.user?.email || '—';
+    $('#settings-credits').textContent = `${state.user?.freeCredits ?? 0} free tasks`;
+    $('#settings-plan').textContent = state.subscription?.status || 'free/trial';
+    $('#settings-trial').textContent = state.trial?.isActive ? `active · ${state.trial.daysRemaining}d remaining` : 'inactive';
+    $('#settings-role').textContent = state.user?.role || 'user';
+  }
+
   async function loadLanding() {
     try {
       const body = await api('/api/billing/plans').catch(() => null);
@@ -264,6 +344,8 @@
       ['Role', state.user?.role || 'user'],
     ];
     renderStats(stats, '#dashboard-stats');
+    skeleton('#dashboard-tasks', 3);
+    skeleton('#dashboard-agents', 2);
     const tasks = await api('/api/tasks').catch(() => ({ tasks: [] }));
     renderTaskList(tasks.tasks || [], '#dashboard-tasks');
 
@@ -318,6 +400,7 @@
     select.innerHTML = '<option value="">All categories</option>' + state.categories.map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`).join('');
     const q = new URLSearchParams();
     if (select.value) q.set('category', select.value);
+    skeleton('#agent-list', 8);
     const body = await api(`/api/agents?limit=40&${q}`);
     renderAgentCards(body.agents || [], '#agent-list');
     select.addEventListener('change', () => navigate());
@@ -376,18 +459,24 @@
     if (!goal) return;
     const projectId = $('#master-project').value || null;
     $('#master-output').textContent = 'Planning…';
+    setRobotState('thinking', 'planning');
+    setCoreState('thinking', 'planning');
     try {
       const plan = await api('/api/workflows/master', { method: 'POST', body: JSON.stringify({ goal, project_id: projectId }) });
       renderPlan(plan);
       $('#master-output').innerHTML += `\n\nStarting workflow ${plan.workflowId}…`;
+      setCoreState('executing', 'executing');
       const run = await api(`/api/workflows/${plan.workflowId}/run`, { method: 'POST', body: JSON.stringify({}) });
       if (run.executionId) {
+        setCoreState('executing', 'executing');
         await loadMasterExecution(run.executionId);
       } else {
         showWorkflow(run);
       }
     } catch (e) {
       $('#master-output').textContent = `Error: ${e.message}`;
+      setRobotState('error', 'error');
+      setCoreState('error', 'error');
       toast(e.message, 'err');
     }
   }
@@ -419,6 +508,9 @@
             try { out.textContent += JSON.stringify(JSON.parse(exec.output_data), null, 2); }
             catch { out.textContent += String(exec.output_data); }
           }
+          const ok = exec.status === 'completed';
+          setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
+          setRobotState(ok ? 'success' : 'error', ok ? 'success' : 'error');
           return;
         }
         setTimeout(poll, 1200);
@@ -545,6 +637,7 @@
   }
 
   async function loadMarketplace() {
+    skeleton('#marketplace-list', 6);
     const body = await api('/api/marketplace');
     renderMarketplace(body.agents || []);
   }
@@ -584,6 +677,7 @@
   }
 
   async function loadCrm() {
+    ['#contact-list', '#campaign-list', '#automation-list', '#employee-list'].forEach((sel) => skeleton(sel, 3));
     const [contacts, campaigns, automations, employees] = await Promise.all([
       api('/api/crm/contacts').catch(() => ({ contacts: [] })),
       api('/api/crm/campaigns').catch(() => ({ campaigns: [] })),
@@ -640,6 +734,8 @@
   }
 
   async function loadBilling() {
+    skeleton('#billing-plans', 3);
+    skeleton('#invoice-list', 3);
     const account = await api('/api/billing/account');
     renderStats([
       ['Plan', state.subscription?.status || account.subscription?.status || 'free/trial'],
@@ -689,6 +785,7 @@
   }
 
   async function loadAdmin() {
+    skeleton('#flag-list', 3);
     const stats = await api('/api/admin/stats');
     const analytics = await api('/api/admin/analytics').catch(() => null);
     renderStats([

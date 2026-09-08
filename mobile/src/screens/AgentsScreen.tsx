@@ -1,54 +1,117 @@
 import React, { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
+import { palette, spacing } from '../theme';
+import { Badge, Button, Card, EmptyState, Field, LoadingState, PageHeader } from '../components/ui';
 
 export function AgentsScreen() {
   const [query, setQuery] = useState('');
   const [agents, setAgents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busySlug, setBusySlug] = useState<string | null>(null);
 
   const load = async () => {
+    setLoading(true);
     const params = new URLSearchParams({ limit: '50' });
     if (query) params.set('q', query);
-    const body = await api.get(`/api/agents?${params}`);
-    setAgents(body.agents || []);
+    try {
+      const body = await api.get(`/api/agents?${params}`);
+      setAgents(body.agents || []);
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Could not load agents');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
+  const save = async (slug: string) => {
+    setBusySlug(slug);
+    try {
+      await api.post(`/api/agents/${slug}/save`, { saved: true, favorite: true });
+      Alert.alert('Agent World', `${slug} saved to your library.`);
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Save failed');
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
+  const run = async (slug: string, goal: string) => {
+    setBusySlug(slug);
+    try {
+      const body = await api.post('/api/workflows/agent', { agent_slug: slug, goal });
+      Alert.alert('Dispatched', `${slug} started. Execution ${body.executionId}.`);
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Dispatch failed');
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
   return (
     <View style={styles.screen}>
-      <Text style={styles.title}>Agent World</Text>
-      <View style={styles.searchRow}>
-        <TextInput style={styles.input} placeholder="Search agents…" value={query} onChangeText={setQuery} />
-        <TouchableOpacity style={styles.smallButton} onPress={load}><Text style={styles.smallButtonText}>Go</Text></TouchableOpacity>
-      </View>
-      <FlatList
-        data={agents}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            <Text style={styles.muted}>{item.specialization || item.description || item.slug}</Text>
-            <View style={styles.cardActions}>
-              <TouchableOpacity style={styles.smallButton} onPress={() => api.post('/api/agents/' + item.slug + '/save', { saved: true, favorite: true }).catch(() => null)}><Text style={styles.smallButtonText}>Save</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.smallButton} onPress={() => api.post('/api/workflows/agent', { agent_slug: item.slug, goal: item.specialization }).catch(() => null)}><Text style={styles.smallButtonText}>Run</Text></TouchableOpacity>
-            </View>
+      <View style={styles.header}>
+        <PageHeader kicker="Specialist intelligence" title="Agent World" />
+        <View style={styles.searchRow}>
+          <View style={styles.searchField}>
+            <Field placeholder="Search agents…" value={query} onChangeText={setQuery} />
           </View>
-        )}
-      />
+          <Button label="Go" onPress={load} />
+        </View>
+      </View>
+
+      {loading ? <LoadingState text="Loading agents…" /> : (
+        <FlatList
+          data={agents}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={<EmptyState text="No agents found." />}
+          renderItem={({ item }) => (
+            <Card accent="none" style={styles.card}>
+              <View style={styles.cardHead}>
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardTitle}>{item.name}</Text>
+                  <Text style={styles.muted} numberOfLines={2}>{item.specialization || item.description || item.slug}</Text>
+                </View>
+                <Badge status={item.status || 'active'} />
+              </View>
+              {(item.capabilities || []).slice(0, 4).map((cap: string) => (
+                <View key={cap} style={styles.tag}><Text style={styles.tagText}>{cap}</Text></View>
+              ))}
+              <View style={styles.cardActions}>
+                <Button label="Save" tone="ghost" onPress={() => save(item.slug)} disabled={busySlug === item.slug} />
+                <Button label="Run" tone="secondary" onPress={() => run(item.slug, item.specialization || `${item.slug} task`)} disabled={busySlug === item.slug} />
+              </View>
+            </Card>
+          )}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#070b16', padding: 16 },
-  title: { color: '#fff', fontSize: 28, fontWeight: '800', marginBottom: 12 },
-  searchRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  input: { flex: 1, backgroundColor: '#101b38', color: '#eaf0ff', borderRadius: 10, padding: 12 },
-  smallButton: { backgroundColor: '#20324b', padding: 10, borderRadius: 10 },
-  smallButtonText: { color: '#ffcf5c', fontWeight: '800' },
-  card: { backgroundColor: '#0b1124', borderRadius: 12, padding: 12, marginBottom: 10 },
-  cardTitle: { color: '#eaf0ff', fontWeight: '700' },
-  muted: { color: '#93a5c9' },
-  cardActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  screen: { flex: 1, backgroundColor: palette.bg },
+  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  searchField: { flex: 1 },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+  card: { padding: spacing.lg },
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  cardBody: { flex: 1 },
+  cardTitle: { color: palette.text, fontWeight: '800', fontSize: 16 },
+  muted: { color: palette.textDim, marginTop: 2 },
+  tag: {
+    alignSelf: 'flex-start',
+    backgroundColor: palette.bg3,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+    marginRight: 6,
+  },
+  tagText: { color: palette.textSoft, fontSize: 11 },
+  cardActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
 });
