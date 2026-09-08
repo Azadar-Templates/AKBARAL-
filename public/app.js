@@ -300,6 +300,19 @@
     if (year) year.textContent = String(new Date().getFullYear());
   }
 
+  function bindLandingNav() {
+    // Landing section shortcuts stay inside the premium landing without
+    // triggering the location-hash router (which owns the real app routes).
+    $$('[data-scroll-to]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = document.getElementById(button.dataset.scrollTo);
+        if (!target) return;
+        if (target.scrollIntoView) target.scrollIntoView({ behavior: motionPrefersReduced() ? 'auto' : 'smooth', block: 'start' });
+        else target.scrollIntoView?.(true);
+      });
+    });
+  }
+
   async function boot() {
     applyTheme();
     bindMenu();
@@ -307,6 +320,7 @@
     bindGeneral();
     bindTheme();
     bindMotion();
+    bindLandingNav();
     bindLegalModal();
     bindFooter();
     window.addEventListener('hashchange', navigate);

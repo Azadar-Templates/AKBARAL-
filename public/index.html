@@ -7,7 +7,7 @@
   <title>AKBARAL! — Master AI Operating Platform</title>
   <meta name="description" content="AKBARAL! / MASTER AI — 4,000+ specialist agents, Agent Factory, Marketplace, workspaces, credits and revenue automation." />
   <meta name="theme-color" content="#070b16" />
-  <link rel="stylesheet" href="/styles.css?v=cd63ef0" />
+  <link rel="stylesheet" href="/styles.css?v=premium-landing-v2" />
 </head>
 <body>
   <div id="toast-root" aria-live="polite" aria-atomic="false"></div>
@@ -49,6 +49,17 @@
           <p class="eyebrow" data-kicker="Master AI · 4,000+ specialists · Real execution"></p>
           <h1 class="hero-title">Your goal becomes<br /><span class="gradient-text">a working agent team</span>.</h1>
           <p class="lead">AKBARAL! plans, selects specialist agents, executes through real tools, verifies results and keeps an honest ledger of every credit.</p>
+          <nav class="platform-nav" aria-label="Landing sections">
+            <button type="button" data-scroll-to="master-ai">MASTER AI</button>
+            <button type="button" data-scroll-to="agent-world">Agent World</button>
+            <button type="button" data-scroll-to="factory">Agent Factory</button>
+            <button type="button" data-scroll-to="workspace">Workspace</button>
+            <button type="button" data-scroll-to="automation">Automation</button>
+            <button type="button" data-scroll-to="creative">Creative AI</button>
+            <button type="button" data-scroll-to="integrations">Integrations</button>
+            <button type="button" data-scroll-to="trust">Trust</button>
+            <button type="button" data-scroll-to="pricing">Pricing</button>
+          </nav>
           <div class="hero-actions">
             <button class="btn btn-primary btn-lg magnetic" data-route="register" data-magnet><span class="btn-label">Create free account</span><span class="btn-ico" aria-hidden="true">→</span></button>
             <button class="btn btn-ghost btn-lg" id="explore-agents" data-magnet>Explore 4,000+ agents</button>
@@ -145,7 +156,7 @@
         </div>
       </div>
 
-      <div class="aw-container landing-section dark-panel" data-reveal>
+      <div class="aw-container landing-section dark-panel" id="master-ai" data-reveal>
         <div class="section-head"><p class="eyebrow" data-kicker="Orchestration"></p><h2>MASTER AI turns one goal into an execution pipeline</h2><p class="sub">MASTER decomposes intent, assigns the best specialist, runs real tools, verifies the output and streams every step back to your workspace.</p></div>
         <div class="orchestration-flow" role="list" aria-label="MASTER AI execution pipeline">
           <div class="flow-step" role="listitem"><span class="flow-index">01</span><b>Understand</b><small>Natural-language goal</small></div>
@@ -160,35 +171,49 @@
         </div>
       </div>
 
-      <div class="aw-container landing-section" data-reveal>
+      <div class="aw-container landing-section" id="agent-world" data-reveal>
         <div class="landing-split">
           <div class="landing-copy"><p class="eyebrow" data-kicker="Agent World"></p><h2>Agent World</h2><p class="sub">Browse, search and install from a genuinely distinct catalog of 4,000+ specialist agents. No duplicate filler — every contract carries its own tools, workflow and verification rules.</p><div class="stat-row"><div class="inline-stat"><b class="stat-count" data-count="4000">0</b><small>registered specialists</small></div><div class="inline-stat"><b>80</b><small>capability domains</small></div></div></div>
           <div class="landing-visual agent-world-visual"><div class="visual-orbit o1"></div><div class="visual-orbit o2"></div><div class="visual-node n1">Research</div><div class="visual-node n2">Engineering</div><div class="visual-node n3">Revenue</div><div class="visual-node n4">Creative</div><div class="visual-core">AKBARAL</div></div>
         </div>
       </div>
 
-      <div class="aw-container landing-section" data-reveal>
+      <div class="aw-container landing-section" id="factory" data-reveal>
         <div class="landing-split reverse">
           <div class="landing-copy"><p class="eyebrow" data-kicker="Agent Factory"></p><h2>Build agents like a product team</h2><p class="sub">Write system instructions, define tool permissions and workflow, run security checks, benchmark, version and deploy. The Factory keeps an audit trail and refuses unsafe instructions.</p><div class="chip-row"><span class="mini-chip">Security review</span><span class="mini-chip">Benchmark</span><span class="mini-chip">Versioning</span><span class="mini-chip">Rollback</span></div></div>
           <div class="landing-visual factory-visual"><div class="factory-card card-a"><b>Define</b><small>Instructions · tools · rules</small></div><div class="factory-card card-b"><b>Test</b><small>Live execution run</small></div><div class="factory-card card-c"><b>Release</b><small>Version & deploy</small></div><div class="factory-line"></div></div>
         </div>
       </div>
 
-      <div class="aw-container landing-section" data-reveal>
+      <div class="aw-container landing-section" id="workspace" data-reveal>
         <div class="landing-split">
           <div class="landing-copy"><p class="eyebrow" data-kicker="Workspace"></p><h2>Work happens in a private tenant</h2><p class="sub">Projects, persistent files, knowledge search and execution history live in your account. Everything is isolated, versioned and auditable.</p><ul class="feature-list"><li>Persistent uploads with safe storage keys</li><li>Searchable project knowledge</li><li>Task, execution and workflow history</li></ul></div>
           <div class="landing-visual workspace-visual"><div class="visual-window"><div class="visual-window-bar"><i></i><i></i><i></i></div><div class="visual-window-body"><div class="sk-row"></div><div class="sk-row short"></div><div class="sk-row mid"></div><div class="knowledge-pill">knowledge</div></div></div></div>
         </div>
       </div>
 
-      <div class="aw-container landing-section" data-reveal>
+      <div class="aw-container landing-section" id="automation" data-reveal>
         <div class="landing-split reverse">
           <div class="landing-copy"><p class="eyebrow" data-kicker="Automation"></p><h2>AI employees & revenue operations</h2><p class="sub">Automations trigger on real business events. Campaigns send through configured SMTP and never pretend a message was delivered. AI employees are scoped to your workspace.</p><div class="chip-row"><span class="mini-chip">Campaigns</span><span class="mini-chip">Automations</span><span class="mini-chip">AI employees</span></div></div>
           <div class="landing-visual automation-visual"><div class="auto-node trigger">Trigger</div><div class="auto-line"></div><div class="auto-node action">Automation</div><div class="auto-line"></div><div class="auto-node employee">AI employee</div></div>
         </div>
       </div>
 
-      <div class="aw-container landing-section" data-reveal>
+      <div class="aw-container landing-section" id="creative" data-reveal>
+        <div class="landing-split">
+          <div class="landing-copy"><p class="eyebrow" data-kicker="Creative AI"></p><h2>Creative AI for real deliverables</h2><p class="sub">Generate on-brand copy, briefs, campaign concepts, visual directions and content structures that a specialist agent can verify, refine and package into your workspace.</p><div class="chip-row"><span class="mini-chip">Copy & messaging</span><span class="mini-chip">Campaign concepts</span><span class="mini-chip">Visual direction</span><span class="mini-chip">Content structure</span></div></div>
+          <div class="landing-visual creative-visual"><div class="creative-canvas"><div class="creative-swatch s1"></div><div class="creative-swatch s2"></div><div class="creative-swatch s3"></div><div class="creative-stroke"></div><div class="creative-type">A!</div></div></div>
+        </div>
+      </div>
+
+      <div class="aw-container landing-section" id="integrations" data-reveal>
+        <div class="landing-split reverse">
+          <div class="landing-copy"><p class="eyebrow" data-kicker="Integrations"></p><h2>Connect to the tools your work already uses</h2><p class="sub">Credential-backed tooling and real APIs. Missing credentials are reported honestly instead of producing a fake success.</p><div class="integration-grid" aria-label="AKBARAL integration surface"><span class="integration-chip">Web search</span><span class="integration-chip">Page fetch</span><span class="integration-chip">File parsing</span><span class="integration-chip">Knowledge search</span><span class="integration-chip">Repository reads</span><span class="integration-chip">Image rendering</span><span class="integration-chip">SMTP campaigns</span><span class="integration-chip">Webhooks</span></div></div>
+          <div class="landing-visual integration-visual"><div class="integration-node hub">AKBARAL</div><div class="integration-node n1">Web</div><div class="integration-node n2">Files</div><div class="integration-node n3">CRM</div><div class="integration-node n4">SMTP</div><div class="integration-ring"></div></div>
+        </div>
+      </div>
+
+      <div class="aw-container landing-section" id="trust" data-reveal>
         <div class="landing-split">
           <div class="landing-copy"><p class="eyebrow" data-kicker="Trust"></p><h2>Built to be trusted</h2><p class="sub">No fabricated results, no fake reviews and no secret billing. Missing provider credentials are surfaced honestly, credits refund on failure and every admin action is logged.</p><div class="chip-row"><span class="mini-chip">Provider honesty</span><span class="mini-chip">Rate limits</span><span class="mini-chip">CSP + security headers</span><span class="mini-chip">Session rotation</span></div></div>
           <div class="landing-visual trust-visual"><div class="trust-shield">✓</div><div class="trust-bars"><span></span><span></span><span></span><span></span></div></div>
@@ -501,6 +526,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=cd63ef0"></script>
+  <script src="/app.js?v=premium-landing-v2"></script>
 </body>
 </html>
