@@ -11,6 +11,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
     "declaration": false,
     "sourceMap": true,
     "noUnusedLocals": true,
@@ -20,6 +21,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.tsx",
     "src/**/*.test.ts",
     "scripts/**/*.ts",
     "prisma/**/*.ts"

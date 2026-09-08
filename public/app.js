@@ -68,7 +68,7 @@
     plan: null,
     executionStream: null,
     view: 'landing',
-    theme: storageGet('ak_theme') || 'dark',
+    theme: storageGet('ak_theme') || 'light',
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -92,13 +92,6 @@
     state.theme = next === 'light' ? 'light' : 'dark';
     storageSet('ak_theme', state.theme);
     applyTheme();
-  }
-
-  function setRobotState(next, label) {
-    const stage = $('#robot-stage');
-    const status = $('#robot-status');
-    if (stage) stage.dataset.state = next;
-    if (status) status.textContent = label || next;
   }
 
   function setCoreState(next, label) {
@@ -200,25 +193,20 @@
     }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
     revealEls.forEach((el) => io.observe(el));
 
-    // Subtle pointer parallax on the hero copy/robot.
+    // Subtle pointer parallax on the hero copy.
     const hero = $('#hero');
     const copy = $('.hero-copy');
-    const robot = $('.hero-robot');
-    if (hero && copy && robot && !motionPrefersReduced()) {
+    if (hero && copy && !motionPrefersReduced()) {
       hero.addEventListener('pointermove', (event) => {
         const rect = hero.getBoundingClientRect();
         const x = ((event.clientX - rect.left) / rect.width - 0.5) * 10;
         const y = ((event.clientY - rect.top) / rect.height - 0.5) * 8;
         copy.style.setProperty('--px', `${x}px`);
         copy.style.setProperty('--py', `${y}px`);
-        robot.style.setProperty('--px', `${-x}px`);
-        robot.style.setProperty('--py', `${-y}px`);
       });
       hero.addEventListener('pointerleave', () => {
         copy.style.setProperty('--px', '0px');
         copy.style.setProperty('--py', '0px');
-        robot.style.setProperty('--px', '0px');
-        robot.style.setProperty('--py', '0px');
       });
     }
 
@@ -240,12 +228,6 @@
       });
     });
 
-    // Landing robot hover/attention states.
-    const stage = $('#robot-stage');
-    if (stage) {
-      stage.addEventListener('pointerenter', () => setRobotState('thinking', 'listening'));
-      stage.addEventListener('pointerleave', () => setRobotState('idle', 'online'));
-    }
   }
 
   function animateCounts(root) {
@@ -375,7 +357,6 @@
       state.refreshToken = null;
       state.user = null;
       location.hash = '#/';
-      setRobotState('idle', 'online');
       setCoreState('idle', 'idle');
     });
 
@@ -389,7 +370,6 @@
       state.refreshToken = null;
       state.user = null;
       location.hash = '#/';
-      setRobotState('idle', 'online');
       setCoreState('idle', 'idle');
     });
 
@@ -705,7 +685,6 @@
     if (!goal) return;
     const projectId = $('#master-project').value || null;
     $('#master-output').textContent = 'Planning…';
-    setRobotState('thinking', 'planning');
     setCoreState('thinking', 'planning');
     try {
       const plan = await api('/api/workflows/master', { method: 'POST', body: JSON.stringify({ goal, project_id: projectId }) });
@@ -721,7 +700,6 @@
       }
     } catch (e) {
       $('#master-output').textContent = `Error: ${e.message}`;
-      setRobotState('error', 'error');
       setCoreState('error', 'error');
       toast(e.message, 'err');
     }
@@ -756,7 +734,6 @@
           }
           const ok = exec.status === 'completed';
           setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
-          setRobotState(ok ? 'success' : 'error', ok ? 'success' : 'error');
           return;
         }
         setTimeout(poll, 1200);

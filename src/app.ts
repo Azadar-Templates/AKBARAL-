@@ -23,6 +23,7 @@ import { errorHandler, notFound } from './server/http';
 import { ExecutionStream } from './realtime/execution-stream';
 import { rateLimit } from './server/middleware/rate-limit';
 import { requestLog } from './server/middleware/observability';
+import { renderPage } from './app/page';
 
 export interface ApiServer {
   app: express.Express;
@@ -108,13 +109,21 @@ export function createApiServer(): ApiServer {
   app.use(requestLog());
   app.use(rateLimit({ prefix: 'api', max: 300, windowMs: 60_000 }));
   app.use('/api/auth', rateLimit({ prefix: 'auth', max: 30, windowMs: 60_000 }));
+  // The premium AKBARAL! landing is the authoritative production root. It is
+  // rendered from src/app/page.tsx (not from a static HTML entrypoint) so the
+  // page at `/` and the source in the repository are the same file.
+  app.get('/', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.type('html').send(renderPage());
+  });
+
   const publicDir = path.resolve(process.cwd(), 'public');
   app.use(express.static(publicDir, {
     setHeaders(resObject, filePath) {
       // Never let an embedded/preview browser keep a stale entrypoint or a
       // stale version of the redesigned stylesheet/script. Static assets are
       // versioned in the markup (?v=...), so max-age=0 + must-revalidate is
-      // enough for them; the HTML shell itself is always re-fetched.
+      // enough for them.
       if (String(filePath).endsWith('.html')) {
         resObject.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       } else {
@@ -122,10 +131,6 @@ export function createApiServer(): ApiServer {
       }
     },
   }));
-  app.get('/', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(path.join(publicDir, 'index.html'));
-  });
 
   app.use('/api/auth', authRouter);
   app.get('/api/health', (_req, res) => {
