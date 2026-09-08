@@ -2,9 +2,63 @@
 (() => {
   'use strict';
 
+  try { document.documentElement.classList.add('js'); } catch {}
+
+  /* Safe browser storage.
+   *
+   * A sandboxed/embedded preview may not allow `localStorage` access. Accessing
+   * it at the top of the bundle then throws a SecurityError and the whole SPA
+   * renders as a blank screen. This wrapper falls back to process-memory storage
+   * so authentication, theme and navigation keep working in every embedding
+   * context without exposing anything to disk.
+   */
+  const memoryStore = new Map();
+  const storage = (() => {
+    try {
+      window.localStorage.setItem('__akbaral_probe__', '1');
+      window.localStorage.removeItem('__akbaral_probe__');
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
+
+  function storageGet(key) {
+    if (!storage) return memoryStore.get(key) ?? null;
+    try {
+      return storage.getItem(key);
+    } catch {
+      return memoryStore.get(key) ?? null;
+    }
+  }
+
+  function storageSet(key, value) {
+    if (!storage) {
+      memoryStore.set(key, String(value));
+      return;
+    }
+    try {
+      storage.setItem(key, value);
+    } catch {
+      memoryStore.set(key, String(value));
+    }
+  }
+
+  function storageRemove(key) {
+    if (!storage) {
+      memoryStore.delete(key);
+      return;
+    }
+    try {
+      storage.removeItem(key);
+    } catch {
+      memoryStore.delete(key);
+    }
+  }
+
   const state = {
-    accessToken: localStorage.getItem('ak_access') || null,
-    refreshToken: localStorage.getItem('ak_refresh') || null,
+    accessToken: storageGet('ak_access') || null,
+    refreshToken: storageGet('ak_refresh') || null,
     user: null,
     trial: null,
     subscription: null,
@@ -14,7 +68,7 @@
     plan: null,
     executionStream: null,
     view: 'landing',
-    theme: localStorage.getItem('ak_theme') || 'dark',
+    theme: storageGet('ak_theme') || 'dark',
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -36,7 +90,7 @@
 
   function setTheme(next) {
     state.theme = next === 'light' ? 'light' : 'dark';
-    localStorage.setItem('ak_theme', state.theme);
+    storageSet('ak_theme', state.theme);
     applyTheme();
   }
 
@@ -119,8 +173,8 @@
       const body = await res.json();
       state.accessToken = body.accessToken;
       state.refreshToken = body.refreshToken;
-      localStorage.setItem('ak_access', state.accessToken);
-      localStorage.setItem('ak_refresh', state.refreshToken);
+      storageSet('ak_access', state.accessToken);
+      storageSet('ak_refresh', state.refreshToken);
       return true;
     } catch {
       return false;
@@ -301,8 +355,8 @@
       try {
         if (state.refreshToken) await api('/api/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: state.refreshToken }) });
       } catch {}
-      localStorage.removeItem('ak_access');
-      localStorage.removeItem('ak_refresh');
+      storageRemove('ak_access');
+      storageRemove('ak_refresh');
       state.accessToken = null;
       state.refreshToken = null;
       state.user = null;
@@ -315,8 +369,8 @@
       try {
         if (state.refreshToken) await api('/api/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: state.refreshToken }) });
       } catch {}
-      localStorage.removeItem('ak_access');
-      localStorage.removeItem('ak_refresh');
+      storageRemove('ak_access');
+      storageRemove('ak_refresh');
       state.accessToken = null;
       state.refreshToken = null;
       state.user = null;
