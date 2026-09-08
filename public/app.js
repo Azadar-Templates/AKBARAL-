@@ -127,12 +127,134 @@
     }
   }
 
+  /* ----- Landing motion system ----- */
+  const motionPrefersReduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function bindMotion() {
+    const revealEls = $$('[data-reveal]');
+    if (!('IntersectionObserver' in window) || motionPrefersReduced()) {
+      revealEls.forEach((el) => el.classList.add('is-visible'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add('is-visible');
+        animateCounts(entry.target);
+        io.unobserve(entry.target);
+      }
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    revealEls.forEach((el) => io.observe(el));
+
+    // Subtle pointer parallax on the hero copy/robot.
+    const hero = $('#hero');
+    const copy = $('.hero-copy');
+    const robot = $('.hero-robot');
+    if (hero && copy && robot && !motionPrefersReduced()) {
+      hero.addEventListener('pointermove', (event) => {
+        const rect = hero.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width - 0.5) * 10;
+        const y = ((event.clientY - rect.top) / rect.height - 0.5) * 8;
+        copy.style.setProperty('--px', `${x}px`);
+        copy.style.setProperty('--py', `${y}px`);
+        robot.style.setProperty('--px', `${-x}px`);
+        robot.style.setProperty('--py', `${-y}px`);
+      });
+      hero.addEventListener('pointerleave', () => {
+        copy.style.setProperty('--px', '0px');
+        copy.style.setProperty('--py', '0px');
+        robot.style.setProperty('--px', '0px');
+        robot.style.setProperty('--py', '0px');
+      });
+    }
+
+    // Magnetic primary CTAs.
+    $$('[data-magnet]').forEach((el) => {
+      if (motionPrefersReduced()) return;
+      el.addEventListener('pointermove', (event) => {
+        const rect = el.getBoundingClientRect();
+        const mx = (event.clientX - rect.left - rect.width / 2) / 8;
+        const my = (event.clientY - rect.top - rect.height / 2) / 10;
+        el.style.setProperty('--mx', `${mx}px`);
+        el.style.setProperty('--my', `${my}px`);
+        el.classList.add('is-magnetic');
+      });
+      el.addEventListener('pointerleave', () => {
+        el.style.setProperty('--mx', '0px');
+        el.style.setProperty('--my', '0px');
+        el.classList.remove('is-magnetic');
+      });
+    });
+
+    // Landing robot hover/attention states.
+    const stage = $('#robot-stage');
+    if (stage) {
+      stage.addEventListener('pointerenter', () => setRobotState('thinking', 'listening'));
+      stage.addEventListener('pointerleave', () => setRobotState('idle', 'online'));
+    }
+  }
+
+  function animateCounts(root) {
+    $$('.stat-count[data-count]', root).forEach((el) => {
+      const target = Number(el.dataset.count || 0);
+      if (!target || motionPrefersReduced()) { el.textContent = target.toLocaleString(); return; }
+      const start = performance.now();
+      const duration = 1400;
+      const tick = (now) => {
+        const eased = 1 - Math.pow(1 - Math.min(1, (now - start) / duration), 3);
+        el.textContent = Math.round(target * eased).toLocaleString();
+        if (eased < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  function bindLegalModal() {
+    const modal = $('#legal-modal');
+    const close = $('#legal-close');
+    if (!modal || !close) return;
+    const content = {
+      privacy: {
+        title: 'Privacy',
+        body: '<h3>What we store</h3><p>AKBARAL stores only what is required to run your account: encrypted password hashes, hashed session tokens, your projects, files, knowledge, tasks and execution history. Provider API keys are never stored in the database and never sent to the browser.</p><h3>What we do not do</h3><p>We do not fabricate reviews, ratings, statistics or AI results. We do not sell your data. Missing provider credentials are reported honestly.</p>',
+      },
+      terms: {
+        title: 'Terms',
+        body: '<h3>Use of the platform</h3><p>You keep ownership of the work you create. You are responsible for the requests you submit and for complying with applicable law in your own workspace.</p><h3>Credits</h3><p>Free trial credits are consumed only by successful tasks and refunded on failure. Purchase and entitlement records are transparent in your billing history.</p>',
+      },
+      security: {
+        title: 'Security',
+        body: '<h3>Controls</h3><p>Passwords use salted scrypt hashing. Refresh tokens are stored as SHA-256 hashes and rotated. Sessions are checked on every authenticated request, WebSocket upgrade and tool context.</p><h3>Isolation</h3><p>Tasks, files, projects, knowledge and execution streams are scoped to the authenticated owner. SSRF, path traversal, upload size and rate-limit guards are enforced server-side.</p>',
+      },
+    };
+    const open = (key) => {
+      const item = content[key];
+      if (!item) return;
+      $('#legal-title').textContent = item.title;
+      $('#legal-body').innerHTML = item.body;
+      modal.hidden = false;
+      close.focus();
+    };
+    $$('[data-legal]').forEach((btn) => btn.addEventListener('click', () => open(btn.dataset.legal)));
+    close.addEventListener('click', () => { modal.hidden = true; });
+    modal.addEventListener('click', (event) => { if (event.target === modal) modal.hidden = true; });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') modal.hidden = true; });
+  }
+
+  function bindFooter() {
+    const year = $('#footer-year');
+    if (year) year.textContent = String(new Date().getFullYear());
+  }
+
   async function boot() {
     applyTheme();
     bindMenu();
     bindAuth();
     bindGeneral();
     bindTheme();
+    bindMotion();
+    bindLegalModal();
+    bindFooter();
     window.addEventListener('hashchange', navigate);
     await navigate();
   }

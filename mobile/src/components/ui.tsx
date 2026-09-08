@@ -104,6 +104,43 @@ export function LoadingState({ text = 'Loading…' }: { text?: string }) {
   );
 }
 
+export function Pill({ label, tone }: { label: string; tone?: 'gold' | 'cyan' | 'blue' | 'violet' | 'green' | 'red' | 'neutral' }) {
+  const colorMap: Record<string, string> = {
+    gold: palette.gold, cyan: palette.cyan, blue: palette.blue, violet: palette.violet, green: palette.green, red: palette.red, neutral: palette.textDim,
+  };
+  const bgMap: Record<string, string> = {
+    gold: palette.goldSoft, cyan: palette.cyanSoft, blue: palette.blueSoft, violet: palette.violetSoft, green: palette.greenSoft, red: palette.redSoft, neutral: palette.surface2,
+  };
+  const color = colorMap[tone ?? 'neutral'] ?? palette.textDim;
+  return (
+    <View style={[styles.pill, { backgroundColor: bgMap[tone ?? 'neutral'], borderColor: `${color}44` }]}>
+      <Text style={[styles.pillText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+export function BrandMark() {
+  return (
+    <View style={styles.brandMark}>
+      <View style={styles.brandSheen} />
+      <Text style={styles.brandMarkText}>A!</Text>
+    </View>
+  );
+}
+
+export function HeroCard({ eyebrow, title, text, accent = 'gold' }: { eyebrow: string; title: string; text: string; accent?: 'gold' | 'cyan' | 'blue' | 'violet' }) {
+  const accentColor = accent === 'gold' ? palette.gold : accent === 'cyan' ? palette.cyan : accent === 'violet' ? palette.violet : palette.blue;
+  return (
+    <View style={[styles.heroCard, { borderColor: `${accentColor}66` }]}>
+      <View style={[styles.heroGlow, { backgroundColor: `${accentColor}20` }]} />
+      <Text style={styles.heroEyebrow}>{eyebrow}</Text>
+      <Text style={styles.heroTitle}>{title}</Text>
+      <Text style={styles.heroText}>{text}</Text>
+    </View>
+  );
+}
+
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
   screenContent: { padding: spacing.lg, paddingBottom: spacing.xxl },
@@ -161,4 +198,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   emptyText: { color: palette.textDim, textAlign: 'center' },
+
+  pill: { alignSelf: 'flex-start', borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 5, marginBottom: spacing.sm, marginRight: spacing.xs },
+  pillText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  brandMark: { width: 46, height: 46, borderRadius: 14, backgroundColor: palette.gold, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: spacing.lg, shadowColor: palette.gold, shadowOpacity: 0.25, shadowRadius: 18, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+  brandSheen: { position: 'absolute', top: -14, left: -20, width: 90, height: 90, backgroundColor: 'rgba(255,255,255,0.45)', transform: [{ rotate: '18deg' }] },
+  brandMarkText: { color: '#231200', fontSize: 19, fontWeight: '900' },
+  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: spacing.xl, marginBottom: spacing.lg, overflow: 'hidden', backgroundColor: palette.surface },
+  heroGlow: { position: 'absolute', top: -50, right: -46, width: 160, height: 160, borderRadius: 80 },
+  heroEyebrow: { color: palette.cyan, fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', marginBottom: spacing.sm },
+  heroTitle: { color: palette.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.5, marginBottom: spacing.sm },
+  heroText: { color: palette.textSoft, fontSize: 14, lineHeight: 20 },
+
 });

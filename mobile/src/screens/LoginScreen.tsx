@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, radius, spacing, shadow } from '../theme';
-import { Button, Card, Field } from '../components/ui';
+import { Button, BrandMark, Card, Field, Pill } from '../components/ui';
 
 export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: string; freeCredits: number; role: string }) => void }) {
   const [email, setEmail] = useState('');
@@ -37,8 +37,14 @@ export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: 
     <KeyboardAvoidingView style={styles.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.brandWrap}>
+          <BrandMark />
           <Text style={styles.brand}>AKBARAL<Text style={styles.brandMark}>!</Text></Text>
           <Text style={styles.eyebrow}>MASTER AI OPERATING PLATFORM</Text>
+          <View style={styles.pillRow}>
+            <Pill label="4,000+ agents" tone="gold" />
+            <Pill label="Real execution" tone="cyan" />
+            <Pill label="Honest credits" tone="green" />
+          </View>
         </View>
 
         <Card accent="gold" style={styles.card}>
@@ -67,6 +73,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, backgroundColor: palette.bg },
   scroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   brandWrap: { alignItems: 'center', marginBottom: spacing.xl },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'center', marginTop: spacing.md },
   brand: { color: palette.text, fontSize: 34, fontWeight: '900', letterSpacing: -1 },
   brandMark: { color: palette.gold },
   eyebrow: { color: palette.cyan, fontSize: 10, fontWeight: '800', letterSpacing: 2.4, marginTop: 4 },

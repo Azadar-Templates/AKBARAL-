@@ -23,6 +23,12 @@ export const palette = {
   line: 'rgba(128,156,217,0.14)',
   lineStrong: 'rgba(128,156,217,0.28)',
   lineGold: 'rgba(255,207,92,0.35)',
+  goldSoft: 'rgba(255,207,92,0.14)',
+  cyanSoft: 'rgba(94,231,255,0.14)',
+  blueSoft: 'rgba(74,140,255,0.16)',
+  violetSoft: 'rgba(187,164,255,0.16)',
+  greenSoft: 'rgba(52,211,153,0.16)',
+  redSoft: 'rgba(255,107,126,0.16)',
 };
 
 export const radius = {

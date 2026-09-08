@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
 import { Button, Card, Field, PageHeader, ScreenShell } from '../components/ui';
@@ -19,6 +19,22 @@ export function MasterScreen() {
   const [output, setOutput] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [busy, setBusy] = useState(false);
+  const orbPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (phase === 'idle' || phase === 'success' || phase === 'error') {
+      orbPulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(orbPulse, { toValue: 1.18, duration: 620, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(orbPulse, { toValue: 0.92, duration: 620, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [phase, orbPulse]);
 
   const submit = async () => {
     if (!goal.trim()) return;
@@ -56,7 +72,7 @@ export function MasterScreen() {
 
       <Card accent="cyan" style={styles.core}>
         <View style={styles.coreRow}>
-          <View style={[styles.coreOrb, { borderColor: state.tone, shadowColor: state.tone }]} />
+          <Animated.View style={[styles.coreOrb, { borderColor: state.tone, shadowColor: state.tone, transform: [{ scale: orbPulse }] }]} />
           <View style={styles.coreText}>
             <Text style={[styles.phaseLabel, { color: state.tone }]}>{state.label}</Text>
             <Text style={styles.phaseMessage}>{state.message}</Text>

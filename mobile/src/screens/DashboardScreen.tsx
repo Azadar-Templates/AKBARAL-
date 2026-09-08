@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
-import { Card, EmptyState, LoadingState, PageHeader, ScreenShell, Stat } from '../components/ui';
+import { Badge, Card, EmptyState, HeroCard, LoadingState, PageHeader, ScreenShell, Stat } from '../components/ui';
 
 export function DashboardScreen({ user }: { user: { id: string; email: string; freeCredits: number; role: string } }) {
   const [tasks, setTasks] = useState<any[]>([]);
@@ -21,10 +21,11 @@ export function DashboardScreen({ user }: { user: { id: string; email: string; f
         <Stat label="Tasks" value={tasks.length} accent={palette.violet} />
       </View>
 
-      <Card accent="gold" style={styles.hero}>
-        <Text style={styles.heroEyebrow}>MASTER AI</Text>
-        <Text style={styles.heroTitle}>Tell AKBARAL what to build.</Text>
-        <Text style={styles.heroText}>MASTER plans the mission, selects specialist agents, streams execution and returns verified output — all inside your private workspace.</Text>
+      <HeroCard eyebrow="MASTER AI" title="Tell AKBARAL what to build." text="MASTER plans the mission, selects specialist agents, streams execution and returns verified output — all inside your private workspace." accent="gold" />
+
+      <Card accent="cyan" style={styles.recommend}>
+        <Text style={styles.recommendTitle}>Recommended next</Text>
+        <Text style={styles.muted}>Open MASTER AI and describe your next goal. It will choose specialists, reserve one credit atomically and refund it if the run fails.</Text>
       </Card>
 
       <Text style={styles.heading}>Recent tasks</Text>
@@ -35,7 +36,7 @@ export function DashboardScreen({ user }: { user: { id: string; email: string; f
               <Text style={styles.itemTitle}>{task.title || task.goal || task.id}</Text>
               <Text style={styles.muted}>{task.status}</Text>
             </View>
-            <View style={styles.statusDot} />
+            <Badge status={task.status} />
           </View>
         </Card>
       ))}
@@ -49,6 +50,8 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: palette.gold, fontSize: 11, fontWeight: '900', letterSpacing: 2 },
   heroTitle: { color: palette.text, fontSize: 19, fontWeight: '900', marginTop: 6, marginBottom: 4 },
   heroText: { color: palette.textDim, lineHeight: 20 },
+  recommend: { marginBottom: spacing.md },
+  recommendTitle: { color: palette.text, fontWeight: '800', marginBottom: 4 },
   heading: { color: palette.textSoft, fontWeight: '800', marginTop: spacing.sm, marginBottom: spacing.md },
   item: { padding: spacing.md },
   itemRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
