@@ -23,7 +23,6 @@ import { errorHandler, notFound } from './server/http';
 import { ExecutionStream } from './realtime/execution-stream';
 import { rateLimit } from './server/middleware/rate-limit';
 import { requestLog } from './server/middleware/observability';
-import { renderPage } from './app/page';
 
 export interface ApiServer {
   app: express.Express;
@@ -109,12 +108,11 @@ export function createApiServer(): ApiServer {
   app.use(requestLog());
   app.use(rateLimit({ prefix: 'api', max: 300, windowMs: 60_000 }));
   app.use('/api/auth', rateLimit({ prefix: 'auth', max: 30, windowMs: 60_000 }));
-  // The premium AKBARAL! landing is the authoritative production root. It is
-  // rendered from src/app/page.tsx (not from a static HTML entrypoint) so the
-  // page at `/` and the source in the repository are the same file.
+  // The Express service is the API/backend. The premium homepage and SPA shell
+  // are served by the Next.js App Router on :3000; proxies in next.config.mjs
+  // route /api and /uploads back to this server.
   app.get('/', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.type('html').send(renderPage());
+    res.redirect('http://localhost:3000/');
   });
 
   const publicDir = path.resolve(process.cwd(), 'public');

@@ -58,7 +58,10 @@ describe('env', () => {
   });
 
   it('requires an explicit strong SESSION_SECRET in production', () => {
-    process.env.NODE_ENV = 'production';
+    const previousNodeEnv = process.env.NODE_ENV;
+    // Next.js augments the NodeJS.ProcessEnv type and marks NODE_ENV readonly.
+    // Use Object.assign as a runtime-safe way to switch modes in this fixture.
+    Object.assign(process.env, { NODE_ENV: 'production' });
     process.env.SESSION_SECRET = 'short';
     const previousDatabases = process.env.DATABASE_URL;
     process.env.DATABASE_URL = previousDatabases || 'file:./data/akbaral.db';
@@ -67,6 +70,7 @@ describe('env', () => {
     assert.doesNotThrow(() => validateEnvironment());
     process.env.SESSION_SECRET = 'replace-with-a-long-random-secret';
     assert.throws(() => validateEnvironment(), /SESSION_SECRET/);
+    Object.assign(process.env, { NODE_ENV: previousNodeEnv || 'test' });
   });
 });
 
