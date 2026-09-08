@@ -35,6 +35,24 @@ export interface ApiServer {
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 
+/**
+ * Cache-control for the SPA and its static assets.
+ *
+ * The HTML entrypoint and the versioned stylesheet/script are keyed to each
+ * commit (see public/index.html ?v=...). We intentionally avoid long-lived
+ * caching so an embedded preview that previously loaded an older build at the
+ * same URL is forced to revalidate instead of showing a stale black theme.
+ */
+function cacheHeaders(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const isHtml = req.method === 'GET' && (req.path === '/' || req.path.endsWith('.html') || !req.path.includes('.'));
+  if (isHtml) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  }
+  next();
+}
+
 function securityHeaders(_req: express.Request, res: express.Response, next: express.NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -84,14 +102,28 @@ export function createApiServer(): ApiServer {
 
   app.set('trust proxy', env.trustProxy);
   app.use(securityHeaders);
+  app.use(cacheHeaders);
   app.use(corsHeaders);
   app.use(express.json({ limit: '2mb' }));
   app.use(requestLog());
   app.use(rateLimit({ prefix: 'api', max: 300, windowMs: 60_000 }));
   app.use('/api/auth', rateLimit({ prefix: 'auth', max: 30, windowMs: 60_000 }));
   const publicDir = path.resolve(process.cwd(), 'public');
-  app.use(express.static(publicDir));
+  app.use(express.static(publicDir, {
+    setHeaders(resObject, filePath) {
+      // Never let an embedded/preview browser keep a stale entrypoint or a
+      // stale version of the redesigned stylesheet/script. Static assets are
+      // versioned in the markup (?v=...), so max-age=0 + must-revalidate is
+      // enough for them; the HTML shell itself is always re-fetched.
+      if (String(filePath).endsWith('.html')) {
+        resObject.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      } else {
+        resObject.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      }
+    },
+  }));
   app.get('/', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(publicDir, 'index.html'));
   });
 
