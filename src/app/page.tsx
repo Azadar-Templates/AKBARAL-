@@ -109,10 +109,10 @@ export default function Home() {
           
             agent-builder</b><span className="preview-status">factory ready</span></div><div className="preview-grid"><label>
             
-              Name<input value="Revenue Analyst" aria-label="Agent name" /></label><label>
-              Specialization<input value="Pipeline research, revenue briefs, CRM automation" aria-label="Specialization" /></label><label>
-              Tool permissions<textarea rows={ 4 } aria-label="Tool permissions">web_search, page_fetch, knowledge_search</textarea></label><label>
-              Verification<textarea rows={ 4 } aria-label="Verification rules">source evidence, no fabricated numbers</textarea></label></div><div className="preview-actions"><button type="button" className="btn btn-outline btn-sm">
+              Name<input defaultValue="Revenue Analyst" aria-label="Agent name" /></label><label>
+              Specialization<input defaultValue="Pipeline research, revenue briefs, CRM automation" aria-label="Specialization" /></label><label>
+              Tool permissions<textarea rows={ 4 } aria-label="Tool permissions" defaultValue="web_search, page_fetch, knowledge_search" /></label><label>
+              Verification<textarea rows={ 4 } aria-label="Verification rules" defaultValue="source evidence, no fabricated numbers" /></label></div><div className="preview-actions"><button type="button" className="btn btn-outline btn-sm">
             
             Security review</button><button type="button" className="btn btn-ghost btn-sm">Benchmark</button><button type="button" className="btn btn-primary btn-sm">Deploy v1</button></div></div></div></div><div className="aw-container landing-section" id="workspace" data-reveal><div className="section-head"><p className="eyebrow" data-kicker="Workspace"></p><h2>
 
@@ -213,7 +213,7 @@ export default function Home() {
 
             idle</span></div></div><div className="panel master-panel"><form id="master-form"><label>
 
-            Goal<textarea id="master-goal" rows={ 4 } placeholder="e.g. Research the Pakistani AI market and build a go-to-market plan." required></textarea></label><div className="form-row"><label>
+            Goal<textarea id="master-goal" rows={ 4 } placeholder="e.g. Research the Pakistani AI market and build a go-to-market plan." required defaultValue="" /></label><div className="form-row"><label>
             
               Project <select id="master-project"><option value="">— none —</option></select></label><button className="btn btn-primary" id="master-plan-btn" type="submit">
               Plan &amp; run</button></div></form></div><div id="master-output" className="output" aria-live="polite"></div></div></section>{/* Agent World */}<section className="screen screen-default" id="screen-agents" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Registry"></p><h1>
@@ -228,8 +228,8 @@ export default function Home() {
             Create custom agent</h3><label>
             Name<input name="name" required /></label><label>
             Specialization<input name="specialization" required /></label><label>
-            Description<textarea name="description" required></textarea></label><label>
-            System instructions<textarea name="system_instructions" rows={ 6 } required></textarea></label><label>
+            Description<textarea name="description" required defaultValue="" /></label><label>
+            System instructions<textarea name="system_instructions" rows={ 6 } required defaultValue="" /></label><label>
             Capabilities (comma separated)<input name="capabilities" /></label><label>
             Tool permissions (comma separated)<input name="tool_permissions" placeholder="web_search, page_fetch, knowledge_search" /></label><label>
             Verification rules (comma separated)<input name="verification_rules" /></label><label>
@@ -268,8 +268,8 @@ export default function Home() {
           Plans</h3><div id="billing-plans" className="list"></div></div><div className="panel"><h3>
           Custom credits</h3><form id="credit-form"><label>
             
-              Credits<input type="number" name="credits" min="1" value="10" required /></label><label>
-              Amount (PKR)<input type="number" name="amount_cents" min="1" value="2500" required /></label><button className="btn btn-primary" type="submit">
+              Credits<input type="number" name="credits" min="1" defaultValue="10" required /></label><label>
+              Amount (PKR)<input type="number" name="amount_cents" min="1" defaultValue="2500" required /></label><button className="btn btn-primary" type="submit">
               Request purchase</button></form><div id="credit-order"></div></div></div><div className="panel"><h3>
 
         Invoices</h3><div id="invoice-list" className="list"></div></div></div></section>{/* Admin */}<section className="screen screen-default" id="screen-admin" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Control"></p><h1>
@@ -317,7 +317,7 @@ export default function Home() {
                   Report abuse</option></select></label><label>
 
               Subject<input id="feedback-subject" maxLength={ 200 } required /></label><label>
-              Details<textarea id="feedback-body" rows={ 4 } maxLength={ 10000 } required></textarea></label><button className="btn btn-primary" type="submit">
+              Details<textarea id="feedback-body" rows={ 4 } maxLength={ 10000 } required defaultValue="" /></label><button className="btn btn-primary" type="submit">
               Send report</button></form><div id="feedback-list" className="list"></div></div></div></div></section></main><footer className="site-footer"><div className="aw-container footer-inner"><div className="footer-brand"><p className="brand-lockup"><span className="brand-mark" aria-hidden="true">
 
       A!</span> AKBARAL!</p><p className="footer-tagline">Master AI operating platform. No fabrications, no hidden charges.</p></div><nav className="footer-nav" aria-label="Footer"><a href="#/" data-route-landing>
