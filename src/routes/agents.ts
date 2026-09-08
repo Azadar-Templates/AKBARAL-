@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { discoverAgents, getAgentBySlug, listCategories, countAgentRegistry } from '../agents/registry';
+import { discoverAgents, getAgentBySlug, isAgentVisibleToUser, listCategories, countAgentRegistry } from '../agents/registry';
 import { saveUserAgent, findAllUserAgents } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
@@ -22,7 +22,7 @@ agentsRouter.get('/', (req: AuthenticatedRequest, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
-  const result = discoverAgents({ query, category, status, limit, offset });
+  const result = discoverAgents({ query, category, status, limit, offset, userId: req.auth!.userId });
   res.status(200).json(result);
 });
 
@@ -40,7 +40,7 @@ agentsRouter.post('/:slug/save', (req: AuthenticatedRequest, res) => {
 
 agentsRouter.get('/:slug', (req: AuthenticatedRequest, res) => {
   const agent = getAgentBySlug(req.params.slug);
-  if (!agent) {
+  if (!agent || !isAgentVisibleToUser(agent, req.auth!.userId)) {
     throw new HttpError(404, 'agent not found', 'not_found');
   }
   const rows = findAllUserAgents(req.auth!.userId, agent.id);

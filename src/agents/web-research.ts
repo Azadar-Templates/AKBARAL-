@@ -58,22 +58,44 @@ function pageFetchBase(): string | undefined {
   return process.env.AKBARAL_PAGE_FETCH_ENDPOINT || undefined;
 }
 
-async function httpText(url: string, timeoutMs = 15_000): Promise<string> {
+/**
+ * Fetch HTTP text without blindly following redirects. Each hop passes through
+ * the supplied URL validator so a public source cannot redirect into a private
+ * network (or off a trusted provider host). This is the SSRF-safe fetch used by
+ * both the search endpoint and page-fetch path.
+ */
+async function httpText(
+  url: string,
+  timeoutMs = 15_000,
+  validate: (candidate: string) => string = (candidate) => candidate,
+): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let current = validate(url);
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': DEFAULT_USER_AGENT,
-        Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    if (!response.ok) {
-      throw new Error(`request failed with status ${response.status}`);
+    for (let hop = 0; hop <= 5; hop += 1) {
+      const response = await fetch(current, {
+        headers: {
+          'User-Agent': DEFAULT_USER_AGENT,
+          Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
+        },
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) {
+          throw new Error('request failed: redirect without location');
+        }
+        current = validate(new URL(location, current).toString());
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`request failed with status ${response.status}`);
+      }
+      return await response.text();
     }
-    return await response.text();
+    throw new Error('request failed: too many redirects');
   } finally {
     clearTimeout(timeout);
   }
@@ -116,7 +138,7 @@ export async function searchWeb(query: string, limit = 5): Promise<WebSearchResu
   const url = new URL(endpoint);
   url.searchParams.set('q', query);
 
-  const body = await httpText(url.toString());
+  const body = await httpText(url.toString(), 15_000, assertProviderHttpUrl);
   const contentType = body.trimStart().startsWith('{') ? 'json' : 'html';
 
   if (contentType === 'json') {
@@ -210,7 +232,7 @@ export async function fetchPage(sourceUrl: string): Promise<{ title: string; tex
     target.searchParams.set('url', safeSourceUrl);
   }
 
-  const html = await httpText(target.toString(), 20_000);
+  const html = await httpText(target.toString(), 20_000, (candidate) => assertAllowedSourceUrl(candidate, base));
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return {
     title: titleMatch ? extractText(titleMatch[1]) : '',

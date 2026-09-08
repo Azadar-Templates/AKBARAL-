@@ -59,27 +59,18 @@ export function createFactoryRouter(): Router {
   );
 
   router.get('/agents/:slug/security', (req: AuthenticatedRequest, res) => {
-    const agent = findAgentBySlug(req.params.slug);
-    if (!agent) {
-      throw new HttpError(404, 'agent not found', 'not_found');
-    }
-    res.status(200).json({ findings: agentFactory.securityReview(req.params.slug), slug: req.params.slug });
+    const agent = assertManageable(req, req.params.slug);
+    res.status(200).json({ findings: agentFactory.securityReview(agent.slug), slug: agent.slug });
   });
 
   router.get('/agents/:slug/benchmark', (req: AuthenticatedRequest, res) => {
-    const agent = findAgentBySlug(req.params.slug);
-    if (!agent) {
-      throw new HttpError(404, 'agent not found', 'not_found');
-    }
-    res.status(200).json({ benchmark: agentFactory.benchmark(req.params.slug), slug: req.params.slug });
+    const agent = assertManageable(req, req.params.slug);
+    res.status(200).json({ benchmark: agentFactory.benchmark(agent.slug), slug: agent.slug });
   });
 
   router.get('/agents/:slug/versions', (req: AuthenticatedRequest, res) => {
-    const agent = findAgentBySlug(req.params.slug);
-    if (!agent) {
-      throw new HttpError(404, 'agent not found', 'not_found');
-    }
-    res.status(200).json({ versions: agentFactory.listVersions(req.params.slug) });
+    const agent = assertManageable(req, req.params.slug);
+    res.status(200).json({ versions: agentFactory.listVersions(agent.slug) });
   });
 
   router.post('/agents/:slug/version', (req: AuthenticatedRequest, res) => {

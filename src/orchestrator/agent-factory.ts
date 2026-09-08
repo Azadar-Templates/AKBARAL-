@@ -5,6 +5,7 @@ import {
   createTask,
   db,
   findAgentBySlug,
+  findProjectById,
   insertAgentVersion,
   linkAgentTool,
   listAgentVersions,
@@ -196,6 +197,14 @@ export class AgentFactory {
   create(input: CustomAgentInput): FactoryResult {
     if (!input.name.trim() || !input.specialization.trim() || !input.systemInstructions.trim()) {
       throw new Error('name, specialization and system_instructions are required');
+    }
+    if (input.projectId) {
+      const project = findProjectById(input.projectId);
+      if (!project || String(project.owner_id) !== input.userId) {
+        const error = new Error('project does not belong to the current user') as Error & { code?: string };
+        error.code = 'forbidden';
+        throw error;
+      }
     }
     const slug = input.slug ? slugify(input.slug) : `${slugify(input.specialization)}-${createId('agt').slice(-6)}`;
     if (findAgentBySlug(slug)) {

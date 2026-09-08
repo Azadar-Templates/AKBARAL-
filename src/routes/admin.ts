@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, listModels, listEnabledProviders, setFeatureFlag, listFeatureFlags, logAdminAction } from '../db';
+import { db, listModels, listEnabledProviders, setFeatureFlag, listFeatureFlags, logAdminAction, feedbackStats } from '../db';
 import { billingService } from '../billing/service';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
@@ -26,6 +26,7 @@ export function createAdminRouter(): Router {
       activeSubscriptions: db.get<{ count: number }>('SELECT COUNT(*) AS count FROM subscriptions WHERE status IN (\'trialing\',\'active\')')?.count ?? 0,
       failedTasks: db.get<{ count: number }>('SELECT COUNT(*) AS count FROM tasks WHERE status = \'failed\'')?.count ?? 0,
       securityEvents: db.get<{ count: number }>('SELECT COUNT(*) AS count FROM security_logs')?.count ?? 0,
+      ...feedbackStats(),
     };
     res.status(200).json({ stats });
   });

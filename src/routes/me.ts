@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { findUserById, getCreditAccount, getTrialStatus, getActiveSubscription } from '../db';
+import { findUserById, getAvailableCredits, getCreditAccount, getTrialStatus, getActiveSubscription } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
 
@@ -21,7 +21,7 @@ meRouter.get('/', (req: AuthenticatedRequest, res) => {
       name: user.name,
       role: user.role,
       status: user.status,
-      freeCredits: account?.free_credits ?? 0,
+      freeCredits: account ? getAvailableCredits(account) : 0,
       createdAt: user.created_at,
     },
     trial: getTrialStatus(userId),

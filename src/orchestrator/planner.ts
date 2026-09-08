@@ -1,5 +1,6 @@
 import { discoverAgents, getAgentBySlug } from '../agents/registry';
-import { createWorkflow, createWorkflowStep } from '../db';
+import { createWorkflow, createWorkflowStep, findProjectById } from '../db';
+import { HttpError } from '../server/http';
 
 /**
  * Master AI Planner.
@@ -68,11 +69,11 @@ function detectIntents(goal: string): PlanIntent[] {
   return found;
 }
 
-function agentSlugFor(categorySlug: string, roleKey: string): string | null {
+function agentSlugFor(categorySlug: string, roleKey: string, userId: string): string | null {
   // Agent slugs are `${categorySlug}-${specialization.key}-NNN`; find the
   // specialist whose specialization key matches the role, then fall back to a
   // workflow/description match, then to the first agent in the category.
-  const categoryAgents = discoverAgents({ category: categorySlug, limit: 200 });
+  const categoryAgents = discoverAgents({ category: categorySlug, limit: 200, userId });
   const slugPrefix = `${categorySlug}-${roleKey}-`;
   const exact = categoryAgents.agents.find((agent) => agent.slug.startsWith(slugPrefix));
   if (exact) {
@@ -91,6 +92,13 @@ export function createExecutionPlan(input: {
   projectId?: string | null;
   goal: string;
 }): { workflowId: string; plan: ExecutionPlan } {
+  if (input.projectId) {
+    const project = findProjectById(input.projectId);
+    if (!project || String(project.owner_id) !== input.userId) {
+      throw new HttpError(403, 'project does not belong to the current user', 'forbidden');
+    }
+  }
+
   const intents = detectIntents(input.goal);
   if (intents.length === 0) {
     // Default plan: one research/analysis workflow is always useful and real.
@@ -118,7 +126,7 @@ export function createExecutionPlan(input: {
   for (const intent of intents) {
     const categorySteps: number[] = [];
     for (const roleKey of intent.roleKeys) {
-      const agentSlug = agentSlugFor(intent.categorySlug, roleKey);
+      const agentSlug = agentSlugFor(intent.categorySlug, roleKey, input.userId);
       const agent = agentSlug ? getAgentBySlug(agentSlug) : undefined;
       const dependsOn = [
         ...(previousIntentStepByCategory.has(intent.categorySlug)

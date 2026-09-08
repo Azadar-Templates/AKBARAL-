@@ -131,6 +131,10 @@ npm run start           # run compiled production server
 | POST | `/api/factory/agents` | bearer | Create custom agent |
 | POST | `/api/marketplace/:slug/install` | bearer | Install agent |
 | GET | `/api/billing/plans` | none | Public plan pricing |
+| POST | `/api/tasks/:id/rating` | bearer | Rate an owned, completed task |
+| POST | `/api/feedback` | bearer | Submit feedback / bug / feature / abuse |
+| GET | `/api/feedback/mine` | bearer | List own feedback reports |
+| GET | `/api/admin/feedback` | admin | Admin feedback review queue |
 | GET | `/api/admin/stats` | admin | Admin statistics |
 | WS | `/ws/executions/:executionId?token=<accessToken>` | bearer via query | Live execution logs (owner-only) |
 | SSE | `/api/executions/:id/events` | bearer | SSE execution logs (owner-only) |
@@ -165,6 +169,14 @@ See [`docs/deployment.md`](./docs/deployment.md). Dockerfile, entrypoint and bac
 - Uploads are confined to `AKBARAL_UPLOAD_DIR`; storage keys are server
   generated and `..`/absolute/separator keys are rejected before any FS path is
   built.
+- `TRUST_PROXY` is `0` unless the API sits behind exactly one trusted TLS proxy;
+  `CORS_ORIGINS` is an optional comma-separated allowlist (native mobile clients
+  do not need CORS).
+- Security headers (CSP, X-Frame-Options DENY, nosniff, COOP, Permissions-Policy)
+  are set for every HTTP response. `/api/health` reports DB, upload dir and
+  uptime; SIGTERM/SIGINT triggers graceful shutdown.
+- Rate limiting uses per-route and per-IP global buckets; audit logs cover auth,
+  admin, factory, session, ratings and feedback actions.
 
 ## Security policy
 
@@ -173,3 +185,7 @@ See [`docs/deployment.md`](./docs/deployment.md). Dockerfile, entrypoint and bac
 - API keys/tokens: hashed, prefix-only display.
 - Provider credentials: environment variables only, never DB/client.
 - Files: size-limited; SSRF/path traversal guards in the tool layer.
+- Unpublished custom agents are private to their owner (list/detail/install/save
+  and execution all check visibility); published marketplace agents are public.
+- Every fetch hop (including redirects) is re-validated before network access so
+  a public source cannot redirect into a private address.

@@ -389,6 +389,10 @@
           </form>
           <div id="flag-list" class="list"></div>
         </div>
+        <div class="panel">
+          <h3>Feedback &amp; reports queue</h3>
+          <div id="admin-feedback" class="list"></div>
+        </div>
         <div class="panel danger-panel">
           <h3>Emergency controls</h3>
           <p class="sub">Immediately pause all new agent execution without cancelling existing work.</p>
@@ -423,6 +427,24 @@
             </div>
             <p class="auth-trust" role="note"><span aria-hidden="true">🔒</span> Provider credentials are never exposed in the UI; the API reports only configured/unconfigured.</p>
             <button class="btn btn-danger btn-block" id="settings-logout">Log out</button>
+          </div>
+          <div class="panel">
+            <h3>Feedback &amp; reports</h3>
+            <p class="sub">Report a bug, request a feature, send feedback or report abuse. Reports go to a real admin review queue.</p>
+            <form id="feedback-form">
+              <label>Type
+                <select id="feedback-type">
+                  <option value="feedback">Feedback</option>
+                  <option value="bug">Bug report</option>
+                  <option value="feature">Feature request</option>
+                  <option value="abuse">Report abuse</option>
+                </select>
+              </label>
+              <label>Subject<input id="feedback-subject" maxlength="200" required /></label>
+              <label>Details<textarea id="feedback-body" rows="4" maxlength="10000" required></textarea></label>
+              <button class="btn btn-primary" type="submit">Send report</button>
+            </form>
+            <div id="feedback-list" class="list"></div>
           </div>
         </div>
       </div>

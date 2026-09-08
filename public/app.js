@@ -225,6 +225,7 @@
     $('#flag-form').addEventListener('submit', setFlag);
     $('#emergency-stop').addEventListener('click', emergencyStop);
     $('#system-resume').addEventListener('click', systemResume);
+    $('#feedback-form').addEventListener('submit', submitFeedback);
   }
 
   async function navigate() {
@@ -325,6 +326,36 @@
     $('#settings-plan').textContent = state.subscription?.status || 'free/trial';
     $('#settings-trial').textContent = state.trial?.isActive ? `active · ${state.trial.daysRemaining}d remaining` : 'inactive';
     $('#settings-role').textContent = state.user?.role || 'user';
+    loadMyFeedback();
+  }
+
+  async function loadMyFeedback() {
+    const body = await api('/api/feedback/mine').catch(() => ({ feedback: [] }));
+    renderFeedbackList(body.feedback || [], '#feedback-list');
+  }
+
+  async function submitFeedback(event) {
+    event.preventDefault();
+    const type = $('#feedback-type').value;
+    const subject = $('#feedback-subject').value.trim();
+    const body = $('#feedback-body').value.trim();
+    if (!subject || !body) return;
+    try {
+      await api('/api/feedback', { method: 'POST', body: JSON.stringify({ type, subject, body }) });
+      toast('Feedback submitted for review', 'ok');
+      event.target.reset();
+      await loadMyFeedback();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  }
+
+  function renderFeedbackList(items, selector) {
+    const root = $(selector);
+    if (!root) return;
+    root.innerHTML = items.length
+      ? items.map((item) => `<div class="list-item"><div><b>${esc(item.subject)}</b><small>${esc(item.type)} · ${esc(item.status)} · ${esc(item.created_at)}</small></div>${badge(item.status)}</div>`).join('')
+      : '<div class="list-item"><small>No reports submitted yet.</small></div>';
   }
 
   async function loadLanding() {
@@ -367,7 +398,16 @@
       <div class="list-item">
         <div><b>${esc(task.title || task.goal || task.id)}</b><small>${esc(task.status || '')} · ${esc(task.created_at || '')}</small></div>
         <span>${badge(task.status)}</span>
-      </div>`).join('');
+      </div>
+      ${task.status === 'completed' ? `<div class="list-item"><small>Rate this result:</small><div class="actions">${[1,2,3,4,5].map((r) => `<button class="btn btn-ghost btn-sm" data-rate="${r}" data-task="${esc(task.id)}">${r}</button>`).join('')}</div></div>` : ''}`).join('');
+    $$('[data-rate]', root).forEach((btn) => btn.addEventListener('click', async () => {
+      try {
+        await api(`/api/tasks/${btn.dataset.task}/rating`, { method: 'POST', body: JSON.stringify({ rating: Number(btn.dataset.rate) }) });
+        toast(`Rated ${btn.dataset.rate}/5`, 'ok');
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    }));
   }
 
   function renderAgentCards(agents, rootSelector, allowDetail = true) {
@@ -802,6 +842,34 @@
     ], '#admin-stats');
     const flags = await api('/api/admin/feature-flags');
     $('#flag-list').innerHTML = (flags.flags || []).map((f) => `<div class="list-item"><div><b>${esc(f.key)}</b><small>${esc(f.description || '')}</small></div>${badge(f.enabled ? 'enabled' : 'disabled')}</div>`).join('');
+
+    const feedback = await api('/api/admin/feedback').catch(() => ({ feedback: [] }));
+    renderAdminFeedback(feedback.feedback || []);
+  }
+
+  function renderAdminFeedback(items) {
+    const root = $('#admin-feedback');
+    if (!root) return;
+    root.innerHTML = items.length
+      ? items.map((item) => `
+        <div class="list-item">
+          <div><b>${esc(item.subject)}</b><small>${esc(item.user_email || '')} · ${esc(item.type)} · ${esc(item.status)}</small><small>${esc(item.body).slice(0, 140)}</small></div>
+          <div class="actions">
+            <button class="btn btn-ghost btn-sm" data-fb-status="under_review" data-fb-id="${esc(item.id)}">Review</button>
+            <button class="btn btn-ghost btn-sm" data-fb-status="resolved" data-fb-id="${esc(item.id)}">Resolve</button>
+            <button class="btn btn-ghost btn-sm" data-fb-status="dismissed" data-fb-id="${esc(item.id)}">Dismiss</button>
+          </div>
+        </div>`).join('')
+      : '<div class="list-item"><small>No feedback in the queue.</small></div>';
+    $$('[data-fb-status]', root).forEach((btn) => btn.addEventListener('click', async () => {
+      try {
+        await api(`/api/admin/feedback/${btn.dataset.fbId}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.fbStatus }) });
+        toast(`Feedback marked ${btn.dataset.fbStatus}`, 'ok');
+        await loadAdmin();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    }));
   }
 
   async function setFlag(event) {

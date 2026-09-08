@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'node:http';
+import fs from 'node:fs';
 import path from 'node:path';
 import { env, validateEnvironment } from './config/env';
 import { authRouter } from './routes/auth';
@@ -17,6 +18,7 @@ import { createMarketplaceRouter } from './routes/marketplace';
 import { createRealtimeRouter } from './routes/realtime';
 import { createNotificationsRouter } from './routes/notifications';
 import { createCrmRouter } from './routes/crm';
+import { createTrustRouter } from './routes/trust';
 import { errorHandler, notFound } from './server/http';
 import { ExecutionStream } from './realtime/execution-stream';
 import { rateLimit } from './server/middleware/rate-limit';
@@ -30,6 +32,48 @@ export interface ApiServer {
   close(): Promise<void>;
 }
 
+const CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
+
+function securityHeaders(_req: express.Request, res: express.Response, next: express.NextFunction): void {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Content-Security-Policy', CSP);
+  next();
+}
+
+function corsHeaders(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const origin = req.header('origin');
+  if (origin && env.corsOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-AKBARAL-Signature');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+}
+
+function healthPayload(): Record<string, unknown> {
+  const uploadDir = path.resolve(process.cwd(), env.uploadDir);
+  return {
+    name: 'AKBARAL! / MASTER AI',
+    version: '0.1.0',
+    phase: 'production platform',
+    status: 'ok',
+    database: 'ok',
+    uploads: fs.existsSync(uploadDir) ? 'ok' : 'missing',
+    uptimeSeconds: Math.floor(process.uptime()),
+  };
+}
+
 export function createApiServer(): ApiServer {
   // Embedded/test callers get the same mandatory-config validation. The
   // production SESSION_SECRET requirement is enforced by validateEnvironment().
@@ -38,6 +82,9 @@ export function createApiServer(): ApiServer {
   const server = http.createServer(app);
   const stream = new ExecutionStream(server);
 
+  app.set('trust proxy', env.trustProxy);
+  app.use(securityHeaders);
+  app.use(corsHeaders);
   app.use(express.json({ limit: '2mb' }));
   app.use(requestLog());
   app.use(rateLimit({ prefix: 'api', max: 300, windowMs: 60_000 }));
@@ -50,12 +97,7 @@ export function createApiServer(): ApiServer {
 
   app.use('/api/auth', authRouter);
   app.get('/api/health', (_req, res) => {
-    res.status(200).json({
-      name: 'AKBARAL! / MASTER AI',
-      version: '0.1.0',
-      phase: 'production platform',
-      status: 'ok',
-    });
+    res.status(200).json(healthPayload());
   });
   app.use('/api/me', meRouter);
   app.use('/api/agents', agentsRouter);
@@ -71,6 +113,7 @@ export function createApiServer(): ApiServer {
   app.use('/api', createRealtimeRouter());
   app.use('/api/notifications', createNotificationsRouter());
   app.use('/api/crm', createCrmRouter());
+  app.use('/api', createTrustRouter());
 
   app.use(notFound);
   app.use(errorHandler);

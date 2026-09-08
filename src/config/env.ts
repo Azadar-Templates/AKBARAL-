@@ -82,6 +82,12 @@ function resolveUploadDir(): string {
   return trimOrEmpty(process.env.AKBARAL_UPLOAD_DIR) || 'data/uploads';
 }
 
+function resolveTrustProxy(): number {
+  const raw = trimOrEmpty(process.env.TRUST_PROXY) || '0';
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 10 ? parsed : 0;
+}
+
 export const env = {
   nodeEnv,
   isProduction,
@@ -97,6 +103,8 @@ export const env = {
   uploadDir: resolveUploadDir(),
   publicWebUrl: trimOrEmpty(process.env.AKBARAL_PUBLIC_WEB_URL) || 'http://localhost:3000',
   smtpFrom: trimOrEmpty(process.env.SMTP_FROM) || 'Akbaral <no-reply@akbaral.ai>',
+  trustProxy: resolveTrustProxy(),
+  corsOrigins: trimOrEmpty(process.env.CORS_ORIGINS).split(',').map((value) => value.trim()).filter(Boolean),
 } as const;
 
 /**
@@ -210,4 +218,6 @@ export type AppEnvironment = Pick<
   | 'uploadDir'
   | 'publicWebUrl'
   | 'smtpFrom'
+  | 'trustProxy'
+  | 'corsOrigins'
 >;

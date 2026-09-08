@@ -60,8 +60,10 @@ export function getTrialStatus(userId: string): TrialStatus {
     free_credits_used: number;
     free_credits_used_total: number | null;
     paid_credits: number;
+    bonus_credits: number;
   }>(
-    `SELECT ca.free_credits, ca.free_credits_used AS free_credits_used, 0 AS free_credits_used_total, ca.paid_credits
+    `SELECT ca.free_credits, ca.free_credits_used AS free_credits_used, 0 AS free_credits_used_total,
+            ca.paid_credits, ca.bonus_credits
      FROM credit_accounts ca WHERE ca.user_id = ?`,
     [userId],
   );
@@ -69,15 +71,16 @@ export function getTrialStatus(userId: string): TrialStatus {
   const trialEndsAt = (profile?.trial_ends_at as string | undefined) ?? newDate(FREE_TRIAL_DAYS);
   const trialStartedAt = (profile?.trial_started_at as string | undefined) ?? NOW();
   const active = new Date(trialEndsAt).getTime() > Date.now();
+  const total = (account?.free_credits ?? 0) + (account?.paid_credits ?? 0) + (account?.bonus_credits ?? 0);
 
   return {
     active,
     trialStartedAt,
     trialEndsAt,
     freeCredits: DEFAULT_FREE_CREDITS,
-    freeCreditsRemaining: account?.free_credits ?? 0,
+    freeCreditsRemaining: total,
     freeCreditsUsed: account?.free_credits_used ?? 0,
-    requiresPro: !active && (account?.free_credits ?? 0) <= 0,
+    requiresPro: total <= 0,
   };
 }
 
@@ -268,6 +271,15 @@ export function createSubscription(input: {
   return { id };
 }
 
+export function cancelActiveSubscriptions(userId: string): void {
+  db.run(
+    `UPDATE subscriptions
+     SET status = 'cancelled', updated_at = ?, cancel_at_period_end = 1
+     WHERE user_id = ? AND status IN ('trialing','active')`,
+    [NOW(), userId],
+  );
+}
+
 export function getActiveSubscription(userId: string): Record<string, unknown> | undefined {
   return db.get(
     `SELECT s.*, p.key AS plan_key, p.name AS plan_name, p.price_cents, p.currency, p.monthly_credits
@@ -286,8 +298,19 @@ export interface EntitlementRow {
 }
 
 export function ensureEntitlement(userId: string, feature: string, value?: string | null, enabled = true): void {
-  const id = createId('ent');
+  const existing = db.get<{ id: string }>(
+    'SELECT id FROM entitlements WHERE user_id = ? AND feature = ?',
+    [userId, feature],
+  );
   const now = NOW();
+  if (existing) {
+    db.run(
+      `UPDATE entitlements SET value = ?, enabled = ?, updated_at = ? WHERE id = ?`,
+      [value ?? null, enabled ? 1 : 0, now, existing.id],
+    );
+    return;
+  }
+  const id = createId('ent');
   db.run(
     `INSERT INTO entitlements (id, user_id, feature, value, enabled, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,

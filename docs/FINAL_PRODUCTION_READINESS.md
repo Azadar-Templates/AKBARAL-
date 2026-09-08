@@ -1,7 +1,7 @@
 # AKBARAL! — Final Production Readiness
 
-**Branch:** `arena/01a07c3c-akbaral` · **Base commit:** `6c3a544` → latest local `1a2572d`+hardening
-**Date:** 2026-09-07
+**Branch:** `arena/01a07c3c-akbaral` · **Base commit:** `6c3a544` → latest local hardening + trust/feedback
+**Date:** 2026-09-08 (re-verified after trust/feedback, agent-visibility, rate-limit and SSRF redirect hardening)
 
 > This file is the single verification record. It is updated after the real quality
 > gate and the live end-to-end suite. Every row either PASSED against this checkout
@@ -14,11 +14,11 @@
 | Step | Result | Exact evidence |
 | --- | --- | --- |
 | `npm install` | ✅ PASS | `up to date, audited 107 packages`, `0 vulnerabilities` |
-| `npm run db:migrate` | ✅ PASS | `database is up to date` (migrations 0001–0004) |
-| `npm run db:seed` | ✅ PASS | 4,000 definitions; plans/models/tools/agents/admin synced |
+| `npm run db:migrate` | ✅ PASS | `database is up to date` (migrations 0001–0005) |
+| `npm run db:seed` | ✅ PASS | 4,000 definitions; plans/models/tools/agents/admin synced; idempotent re-run keeps operator state |
 | `npm run typecheck` | ✅ PASS | 0 errors |
 | `npm run build` | ✅ PASS | clean `tsc -p tsconfig.json` |
-| `npm test` | ✅ PASS | 12 suites / 0 failures |
+| `npm test` | ✅ PASS | 18 suites / 65 tests / 0 failures |
 | `npm run audit:registry` | ✅ PASS | 4,000 unique slugs / instructions / full contracts / workflows |
 | Mobile `npm install` | ✅ PASS | installed (37 npm audit advisories in the Expo dependency graph) |
 | Mobile `npx tsc --noEmit` | ✅ PASS | clean |
@@ -101,7 +101,15 @@
 | Path traversal + upload security | ✅ PASS | repo path guard, 25 MB limit, multer disk storage, hidden storage keys, user-scoped reads |
 | Prompt-injection defenses | ✅ PASS | agent instructions include verification/security rules; SSRF guards |
 | Webhook security | ✅ PASS | HMAC signature verify |
-| Audit logs | ✅ PASS | auth/factory/admin/session events write to audit table; `/api/factory/audit` admin-only |
+| Audit logs | ✅ PASS | auth/factory/admin/session/trust events write to audit table; `/api/factory/audit` admin-only |
+| Task ratings | ✅ PASS | `POST/GET /api/tasks/:id/rating`; owner-only, completed-only, 1–5 validation, unique per (user, task) |
+| Feedback / bug / feature / abuse | ✅ PASS | `POST /api/feedback`, `GET /api/feedback/mine`; user-owned rows only |
+| Admin feedback moderation | ✅ PASS | `GET /api/admin/feedback`, `PATCH /api/admin/feedback/:id/status`; admin/super_admin only; audit logged |
+| No fake trust data | ✅ PASS | ratings/feedback created only from real authenticated user actions; schema has no seed/review rows |
+| Agent privacy / IDOR guard | ✅ PASS | unpublished custom agents are hidden from list/detail/install/save and cannot be dispatched by other users; owner and published marketplace agents remain visible |
+| SSRF redirect safety | ✅ PASS | page/search fetches now validate every redirect hop; a public source cannot redirect into a private address or off the trusted provider host |
+| Rate-limit global-bypass guard | ✅ PASS | per-route AND per-IP global buckets; spraying many paths cannot exceed a layer's combined budget |
+| Prompt-injection defense | ✅ PASS | every model call wraps the user request as untrusted data behind a trusted system guard; Factory security review flags override language |
 
 ---
 
@@ -182,6 +190,24 @@
 6. Schedule `scripts/backup.sh`.
 7. For multi-instance, swap the SQLite repository layer to PostgreSQL and move
    background execution to a queue.
+
+---
+
+## 6.5 Remaining (implemented but needs external credential / operator decision)
+
+| Item | Status | Why it is not claimed "hot" today |
+| --- | --- | --- |
+| Real OpenAI / Anthropic / Google model calls | IMPLEMENTED, needs credential | Adapters are real; `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` must be supplied. Missing key returns `provider_not_configured`, refunds the task credit, never fabricates output. |
+| Real email reset / verification / campaigns | IMPLEMENTED, needs credential | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`; dev token path verified, production returns `provider_not_configured`. |
+| Stripe / Razorpay settlement | IMPLEMENTED, needs credential | `STRIPE_SECRET_KEY` / `RAZORPAY_KEY_ID`+`RAZORPAY_KEY_SECRET`; without them orders stay `pending` and are settled by admin/manual path only. |
+| OAuth login | IMPLEMENTED, needs credential | `GOOGLE/GITHUB/APPLE/MS_*` client ids/secrets; email/password path verified. |
+| Social / commerce / messaging tools | IMPLEMENTED, needs credential | YouTube, Instagram, X, Shopify, Twilio return `provider_not_configured` until tokens are supplied. |
+| Multi-instance scaling | REMAINING | SQLite is single-writer; replace repositories with PostgreSQL and move background execution to a queue before running multiple replicas. |
+| Shared rate-limit / metrics store | REMAINING | Current limiter is in-memory per process; swap `src/server/middleware/rate-limit.ts` to Redis for multi-instance. |
+| Realtime fan-out across replicas | REMAINING | WebSocket + SSE live in-process; use a shared stream bus (Redis pub/sub) for multi-replica. |
+| Production secret store | OPERATOR DECISION | Surface values through the deployment secret manager; nothing is committed or client-exposed. |
+
+No remaining item is faked or dressed as complete — the code deliberately reports `provider_not_configured` / `webhook_not_configured` / `requires_pro` where its external dependency is missing.
 
 ---
 

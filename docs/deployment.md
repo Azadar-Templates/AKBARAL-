@@ -55,9 +55,14 @@ For a single-instance SQLite deployment, snapshot the database file and the uplo
 
 ## Operations
 
-- Health: `GET /api/health`
-- Realtime logs: WebSocket `/ws/executions/:executionId`, SSE `/api/executions/:id/events`
+- Health: `GET /api/health` (DB, upload dir, uptime)
+- Realtime logs: WebSocket `/ws/executions/:executionId?token=<accessToken>`, SSE `/api/executions/:id/events`
 - Admin control center: `/api/admin/*`
+- Logging: structured JSON `http.request` events on stdout; tokens/secrets are never logged
+- Shutdown: SIGTERM/SIGINT run a graceful drain
+- Rate limiting: per-route and per-IP global buckets (in-memory, single instance)
+- Security: `TRUST_PROXY` must be set to the exact number of trusted reverse-proxy hops; `CORS_ORIGINS` should list only the browser origins that may call the API cross-origin. Native mobile clients do not require CORS.
+- Headers: CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Cross-Origin-Opener-Policy` and `Permissions-Policy` are applied automatically.
 
 ## Scaling
 

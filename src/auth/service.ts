@@ -2,6 +2,7 @@ import {
   createUser,
   findUserByEmail,
   findUserById,
+  getAvailableCredits,
   getCreditAccount,
   updateUserLastLogin,
   createSession,
@@ -55,7 +56,7 @@ function toUserView(user: Awaited<ReturnType<typeof findUserById>>): AuthUserVie
     name: user.name,
     role: user.role,
     status: user.status,
-    freeCredits: account?.free_credits ?? 0,
+    freeCredits: account ? getAvailableCredits(account) : 0,
     createdAt: user.created_at,
   };
 }

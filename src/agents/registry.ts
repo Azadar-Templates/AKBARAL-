@@ -49,6 +49,12 @@ export interface AgentSearchFilter {
   status?: string;
   limit?: number;
   offset?: number;
+  /**
+   * When set, the result excludes agents that are private to another user
+   * (custom agents that are not published). Built-ins and published marketplace
+   * agents remain visible.
+   */
+  userId?: string;
 }
 
 /**
@@ -134,6 +140,12 @@ export function discoverAgents(filter: AgentSearchFilter = {}): { agents: AgentV
     where.push('(a.name LIKE ? OR a.slug LIKE ? OR a.description LIKE ? OR c.name LIKE ?)');
     params.push(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`);
   }
+  if (filter.userId) {
+    where.push(
+      '(a.owner_id IS NULL OR a.owner_id = ? OR EXISTS (SELECT 1 FROM agent_marketplace m WHERE m.agent_id = a.id AND m.status = \'published\'))',
+    );
+    params.push(filter.userId);
+  }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
   const rows = db.all(
@@ -149,6 +161,25 @@ export function discoverAgents(filter: AgentSearchFilter = {}): { agents: AgentV
   )?.count ?? 0;
 
   return { agents: rows.map((row) => toAgentView(row)), total };
+}
+
+/**
+ * Agent visibility rule used by all public APIs.
+ *
+ * Built-in/system agents and published marketplace agents are public. A custom
+ * agent that is not published is private to its owner. This is what prevents a
+ * user from reading, installing, saving or executing another user's unpublished
+ * agent by guessing a slug.
+ */
+export function isAgentVisibleToUser(agent: AgentView, userId: string): boolean {
+  if (!agent.ownerId || agent.ownerId === userId) {
+    return true;
+  }
+  const published = db.get<{ id: string }>(
+    "SELECT id FROM agent_marketplace WHERE agent_id = ? AND status = 'published'",
+    [agent.id],
+  );
+  return Boolean(published);
 }
 
 export function getAgentBySlug(slug: string): AgentView | undefined {

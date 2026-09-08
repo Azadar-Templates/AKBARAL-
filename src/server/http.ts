@@ -43,6 +43,12 @@ export function businessErrorToHttp(error: unknown, fallbackStatus = 400, fallba
   if (code === 'requires_pro') {
     return new HttpError(402, message, 'requires_pro');
   }
+  if (code === 'forbidden') {
+    return new HttpError(403, message, 'forbidden');
+  }
+  if (code === 'not_found') {
+    return new HttpError(404, message, 'not_found');
+  }
   return new HttpError(fallbackStatus, message, fallbackCode);
 }
 

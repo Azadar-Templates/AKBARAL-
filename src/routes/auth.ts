@@ -6,6 +6,7 @@ import { getBody, optionalString, requireString } from '../server/middleware/val
 import {
   appendAuditLog,
   findUserById,
+  getAvailableCredits,
   getCreditAccount,
   createAuthToken,
   verifyAuthToken,
@@ -256,7 +257,7 @@ function toMeView(user: NonNullable<ReturnType<typeof findUserById>>): AuthUserV
     name: user.name,
     role: user.role,
     status: user.status,
-    freeCredits: account?.free_credits ?? 0,
+    freeCredits: account ? getAvailableCredits(account) : 0,
     createdAt: user.created_at,
   };
 }

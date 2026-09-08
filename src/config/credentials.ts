@@ -119,7 +119,7 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
     defaultMode: 'manual admin settlement only',
   },
   {
-    key: 'razerpay',
+    key: 'razorpay',
     name: 'Razorpay',
     kind: 'payment',
     description: 'Custom credit purchase via Razorpay.',

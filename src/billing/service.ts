@@ -1,4 +1,5 @@
 import {
+  cancelActiveSubscriptions,
   createInvoice,
   createPayment,
   ensureBootstrapPlans,
@@ -14,6 +15,7 @@ import {
   listInvoicesForUser,
   listPaymentsForUser,
 } from '../db';
+import { HttpError } from '../server/http';
 
 export interface PurchaseOrder {
   invoiceId: string;
@@ -53,15 +55,14 @@ export class BillingService {
     ensureBootstrapPlans();
     const plan = getPlanByKey(planKey);
     if (!plan) {
-      throw new Error(`plan ${planKey} not found`);
+      throw new HttpError(404, `plan ${planKey} not found`, 'not_found');
     }
-    const existing = getActiveSubscription(userId);
-    if (existing) {
-      // Single-subscription model: keep current row, treat plan switch as a new
-      // active entitlement in production. For Foundation, we create a new row.
-    }
-    const subscription = createSubscription({ userId, planKey, status: planKey === 'free' ? 'trialing' : 'active' });
-    return { subscriptionId: subscription.id, planKey, status: planKey === 'free' ? 'trialing' : 'active' };
+    // Keep exactly one live subscription per account. Cancelling the previous
+    // live row prevents silent double-billing and keeps entitlements auditable.
+    cancelActiveSubscriptions(userId);
+    const status = planKey === 'free' ? 'trialing' : 'active';
+    const subscription = createSubscription({ userId, planKey, status });
+    return { subscriptionId: subscription.id, planKey, status };
   }
 
   purchaseCustomCredits(input: {
@@ -71,10 +72,10 @@ export class BillingService {
     provider?: string;
   }): PurchaseOrder {
     if (!Number.isInteger(input.credits) || input.credits <= 0) {
-      throw new Error('credits must be a positive integer');
+      throw new HttpError(400, 'credits must be a positive integer', 'validation_error');
     }
     if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
-      throw new Error('amount_cents must be a positive integer');
+      throw new HttpError(400, 'amount_cents must be a positive integer', 'validation_error');
     }
     const provider = input.provider ?? 'manual';
     const credentialKeys = paymentCredentialKeys(provider);
@@ -135,6 +136,16 @@ export class BillingService {
     credits: number;
     reference?: string;
   }): { invoiceId: string; credits: number } {
+    const invoice = listInvoicesForUser(input.userId).find((row) => String(row.id) === input.invoiceId);
+    if (!invoice) {
+      throw new HttpError(403, 'invoice does not belong to the specified user', 'forbidden');
+    }
+    if (String(invoice.status) === 'paid') {
+      throw new HttpError(409, 'invoice is already paid', 'conflict');
+    }
+    if (Number(invoice.total_cents) !== input.amountCents) {
+      throw new HttpError(400, 'settlement amount does not match the invoice total', 'validation_error');
+    }
     markInvoicePaid(input.invoiceId, new Date().toISOString());
     const grant = grantCustomCredits({
       userId: input.userId,

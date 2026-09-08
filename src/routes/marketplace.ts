@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, listMarketplaceAgents, createAgentOrder, findAllUserAgents, saveUserAgent, findAgentBySlug, recordAnalyticsEvent, createNotification } from '../db';
-import { getAgentBySlug } from '../agents/registry';
+import { getAgentBySlug, isAgentVisibleToUser } from '../agents/registry';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
 import { getBody, optionalString } from '../server/middleware/validation';
@@ -17,7 +17,7 @@ export function createMarketplaceRouter(): Router {
 
   router.get('/:slug', (req: AuthenticatedRequest, res) => {
     const agent = getAgentBySlug(req.params.slug);
-    if (!agent) {
+    if (!agent || !isAgentVisibleToUser(agent, req.auth!.userId)) {
       throw new HttpError(404, 'agent not found', 'not_found');
     }
     const market = db.get('SELECT * FROM agent_marketplace WHERE agent_id = ?', [agent.id]) as Record<string, unknown> | undefined;
@@ -32,6 +32,10 @@ export function createMarketplaceRouter(): Router {
   });
 
   router.post('/:slug/install', (req: AuthenticatedRequest, res) => {
+    const view = getAgentBySlug(req.params.slug);
+    if (!view || !isAgentVisibleToUser(view, req.auth!.userId)) {
+      throw new HttpError(404, 'agent not found', 'not_found');
+    }
     const agent = findAgentBySlug(req.params.slug);
     if (!agent) {
       throw new HttpError(404, 'agent not found', 'not_found');
@@ -95,6 +99,10 @@ export function createMarketplaceRouter(): Router {
 
   router.post('/:slug/save', (req: AuthenticatedRequest, res) => {
     const body = getBody(req);
+    const view = getAgentBySlug(req.params.slug);
+    if (!view || !isAgentVisibleToUser(view, req.auth!.userId)) {
+      throw new HttpError(404, 'agent not found', 'not_found');
+    }
     const agent = findAgentBySlug(req.params.slug);
     if (!agent) {
       throw new HttpError(404, 'agent not found', 'not_found');

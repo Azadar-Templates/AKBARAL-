@@ -261,6 +261,141 @@ export function getCreditAccount(userId: string): CreditAccountRow | undefined {
   return db.get<CreditAccountRow>('SELECT * FROM credit_accounts WHERE user_id = ?', [userId]);
 }
 
+export function getAvailableCredits(account: CreditAccountRow): number {
+  return Math.max(0, (account.free_credits ?? 0) + (account.paid_credits ?? 0) + (account.bonus_credits ?? 0));
+}
+
+export function getAvailableCreditsForUser(userId: string): number {
+  const account = getCreditAccount(userId);
+  return account ? getAvailableCredits(account) : 0;
+}
+
+/**
+ * Consume exactly one task credit from any pool (paid → bonus → free).
+ *
+ * The update is guarded by the exact account balance, so concurrent requests
+ * cannot double-spend the last credit. The pool (`free`/`bonus`/`paid`) is
+ * stored on the transaction `reference` so a failure refund restores the same
+ * pool.
+ */
+export function consumeTaskCredit(input: {
+  userId: string;
+  taskId: string;
+  reason?: string;
+}): CreditTransactionRow | undefined {
+  return db.transaction((tx) => {
+    const existing = tx.get<{ id: string }>(
+      "SELECT id FROM credit_transactions WHERE task_id = ? AND type = 'consume_task' AND status = 'completed'",
+      [input.taskId],
+    );
+    if (existing) {
+      return tx.get<CreditTransactionRow>('SELECT * FROM credit_transactions WHERE id = ?', [existing.id]);
+    }
+
+    const account = tx.get<CreditAccountRow>('SELECT * FROM credit_accounts WHERE user_id = ?', [input.userId]);
+    if (!account || account.status !== 'active' || getAvailableCredits(account) <= 0) {
+      return undefined;
+    }
+
+    let nextFree = account.free_credits;
+    let nextPaid = account.paid_credits;
+    let nextBonus = account.bonus_credits;
+    let pool = 'free';
+    if (account.paid_credits > 0) {
+      nextPaid -= 1;
+      pool = 'paid';
+    } else if (account.bonus_credits > 0) {
+      nextBonus -= 1;
+      pool = 'bonus';
+    } else {
+      nextFree -= 1;
+    }
+
+    const result = tx.run(
+      `UPDATE credit_accounts
+       SET free_credits = ?, paid_credits = ?, bonus_credits = ?,
+           free_credits_used = free_credits_used + CASE WHEN ? = 'free' THEN 1 ELSE 0 END,
+           last_credit_at = ?
+       WHERE user_id = ? AND free_credits = ? AND paid_credits = ? AND bonus_credits = ?`,
+      [nextFree, nextPaid, nextBonus, pool, NOW(), input.userId, account.free_credits, account.paid_credits, account.bonus_credits],
+    );
+    if (result.changes !== 1) {
+      return undefined;
+    }
+
+    const totalAfter = nextFree + nextPaid + nextBonus;
+    const id = createId('crx');
+    tx.run(
+      `INSERT INTO credit_transactions (id, type, amount, balance_after, user_id, task_id, reason, status, reference, created_at)
+       VALUES (?, 'consume_task', -1, ?, ?, ?, ?, 'completed', ?, ?)`,
+      [id, totalAfter, input.userId, input.taskId, input.reason ?? null, pool, NOW()],
+    );
+    return tx.get<CreditTransactionRow>('SELECT * FROM credit_transactions WHERE id = ?', [id]);
+  });
+}
+
+/**
+ * Refund a consumed task credit back to the pool it came from. Idempotent per
+ * task so a failed execution can never refund twice.
+ */
+export function refundTaskCredit(input: {
+  userId: string;
+  taskId: string;
+  reason?: string;
+}): CreditTransactionRow | undefined {
+  return db.transaction((tx) => {
+    const existing = tx.get<{ id: string }>(
+      "SELECT id FROM credit_transactions WHERE task_id = ? AND type = 'refund_task' AND status = 'completed'",
+      [input.taskId],
+    );
+    if (existing) {
+      return tx.get<CreditTransactionRow>('SELECT * FROM credit_transactions WHERE id = ?', [existing.id]);
+    }
+
+    const account = tx.get<CreditAccountRow>('SELECT * FROM credit_accounts WHERE user_id = ?', [input.userId]);
+    const consume = tx.get<{ reference: string | null }>(
+      "SELECT reference FROM credit_transactions WHERE task_id = ? AND type = 'consume_task' AND status = 'completed'",
+      [input.taskId],
+    );
+    if (!account || !consume) {
+      return undefined;
+    }
+
+    const pool = consume.reference ?? 'free';
+    let nextFree = account.free_credits;
+    let nextPaid = account.paid_credits;
+    let nextBonus = account.bonus_credits;
+    if (pool === 'paid') {
+      nextPaid += 1;
+    } else if (pool === 'bonus') {
+      nextBonus += 1;
+    } else {
+      nextFree += 1;
+    }
+
+    const result = tx.run(
+      `UPDATE credit_accounts
+       SET free_credits = ?, paid_credits = ?, bonus_credits = ?,
+           free_credits_used = MAX(0, free_credits_used - CASE WHEN ? = 'free' THEN 1 ELSE 0 END),
+           last_credit_at = ?
+       WHERE user_id = ? AND free_credits = ? AND paid_credits = ? AND bonus_credits = ?`,
+      [nextFree, nextPaid, nextBonus, pool, NOW(), input.userId, account.free_credits, account.paid_credits, account.bonus_credits],
+    );
+    if (result.changes !== 1) {
+      return undefined;
+    }
+
+    const totalAfter = nextFree + nextPaid + nextBonus;
+    const id = createId('crx');
+    tx.run(
+      `INSERT INTO credit_transactions (id, type, amount, balance_after, user_id, task_id, reason, status, reference, created_at)
+       VALUES (?, 'refund_task', 1, ?, ?, ?, ?, 'completed', ?, ?)`,
+      [id, totalAfter, input.userId, input.taskId, input.reason ?? null, pool, NOW()],
+    );
+    return tx.get<CreditTransactionRow>('SELECT * FROM credit_transactions WHERE id = ?', [id]);
+  });
+}
+
 export function grantCredit(input: {
   userId: string;
   amount: number;

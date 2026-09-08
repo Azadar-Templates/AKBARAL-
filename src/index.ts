@@ -24,6 +24,27 @@ function checkDatabase(): void {
   );
 }
 
+let activeServer: ReturnType<typeof createApiServer> | null = null;
+
+function shutdown(signal: string): void {
+  console.log(`[akbaral] received ${signal}, shutting down`);
+  if (activeServer) {
+    activeServer.close()
+      .then(() => {
+        db.close();
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error(`[akbaral] shutdown error: ${error instanceof Error ? error.message : String(error)}`);
+        db.close();
+        process.exit(1);
+      });
+    return;
+  }
+  db.close();
+  process.exit(0);
+}
+
 async function start(): Promise<void> {
   // Validates mandatory runtime config before the DB/server starts. Provider
   // credentials remain optional and are surfaced only as configured booleans.
@@ -38,9 +59,13 @@ async function start(): Promise<void> {
   checkDatabase();
 
   const api = createApiServer();
+  activeServer = api;
   const { port } = await api.listen();
   console.log(`[akbaral] api listening on ${env.host}:${port}`);
   console.log(`[akbaral] realtime logs at /ws/executions/:executionId`);
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 start().catch((error) => {

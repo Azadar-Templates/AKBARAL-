@@ -5,3 +5,4 @@ export * from './constants';
 export * from './repositories';
 export * from './platform-repositories';
 export * from './business-repositories';
+export * from './trust-repositories';
