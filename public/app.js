@@ -339,8 +339,8 @@
         const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
         state.accessToken = result.accessToken;
         state.refreshToken = result.refreshToken;
-        localStorage.setItem('ak_access', result.accessToken);
-        localStorage.setItem('ak_refresh', result.refreshToken);
+        storageSet('ak_access', result.accessToken);
+        storageSet('ak_refresh', result.refreshToken);
         state.user = result.user;
         toast(`Welcome, ${result.user.name || result.user.email}`, 'ok');
         location.hash = '#/dashboard';
@@ -418,8 +418,25 @@
       return;
     }
 
+    // The premium AKBARAL landing is the authoritative production root. It is
+    // always the first thing a user sees at `#/` regardless of whether a prior
+    // session exists. Authenticated users still get their real account context
+    // in the header, then continue from the landing CTAs into the live app.
+    if (view === '' || view === 'landing') {
+      if (state.accessToken) {
+        try {
+          await loadMe();
+        } catch {
+          // A stale/revoked token should not hide the premium landing. It is
+          // cleared by the normal login/logout flow when the user acts.
+        }
+      }
+      showScreen('landing');
+      await loadLanding();
+      return;
+    }
+
     if (!state.accessToken) {
-      if (view === '') { showScreen('landing'); await loadLanding(); return; }
       location.hash = '#/login';
       return;
     }
@@ -431,7 +448,6 @@
       return;
     }
 
-    if (view === '' || view === 'landing') { showScreen('dashboard'); await loadDashboard(); return; }
     if (view === 'dashboard') { showScreen('dashboard'); await loadDashboard(); return; }
     if (view === 'master') { showScreen('master'); await loadProjects(); return; }
     if (view === 'agents') { showScreen('agents'); await loadAgentWorld(); return; }
