@@ -12,11 +12,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <meta name="color-scheme" content="light dark" />
         <meta name="theme-color" content="#f3f5fb" />
-        <link rel="stylesheet" href="/styles.css?v=page-tsx-premium-v4" />
+        <link rel="stylesheet" href="/styles.css?v=page-tsx-premium-v5" />
       </head>
       <body>
         {children}
-        <script src="/app.js?v=page-tsx-premium-v4" />
+        <script src="/app.js?v=page-tsx-premium-v5" />
       </body>
     </html>
   );
