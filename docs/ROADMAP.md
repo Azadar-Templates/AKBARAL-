@@ -470,13 +470,58 @@ admin action with actor email (non-admin 403); 26 MiB upload answered with
 clean upload with a `../../evil.sh` filename stored only under the
 server-generated key inside the upload directory.
 
-### Milestone 10 — Production deployment/scaling (PLANNED)
+### Milestone 10 — Production deployment/scaling (DONE — implemented, tested, verified)
 
-Docker hardening (base exists), horizontal-scale DB story, health/readiness
-probes, backup/restore, zero-downtime migration policy, monitoring. Business
-target: support beyond $500k–$1M/month across revenue streams (Pro subs,
-custom credits, premium agents, marketplace commission, team plans, API/usage
-revenue).
+- [x] Real liveness + readiness probes: `GET /api/health` now performs an
+      actual database round trip (the old payload reported `database:'ok'`
+      unconditionally — a fake signal; 503 `degraded` when the DB is down).
+      `GET /api/ready` verifies database, migrations currency (files vs
+      `_migrations`), upload-directory writability and execution-queue
+      worker liveness; load balancers/orchestrators gate traffic on it.
+- [x] Prometheus metrics endpoint: `GET /api/metrics` (admin-only) exposes
+      real measurements in text format 0.0.4 — process uptime/RSS/heap,
+      HTTP request rate + average duration over 5 minutes from
+      `system_metrics`, queue jobs by status (canonical statuses always
+      emit, 0 for an empty queue), active workers, database size, and
+      business counters (users/agents/tasks).
+- [x] Verified backups: `src/scripts/backup-db.ts` replaces the unsafe
+      `cp`-based backup.sh — `VACUUM INTO` (transactionally consistent
+      online snapshot), independent verification (integrity_check + row
+      counts for users/tasks/agents/invoices/credit_transactions/projects
+      vs the live DB; failures delete the artifact and exit non-zero),
+      sha256, retention (keep-N, default 30). `npm run db:backup`.
+- [x] Verified restore: `src/scripts/restore-db.ts` refuses unverified
+      backups, takes a safety snapshot of the current DB, atomically
+      renames the snapshot into place and clears stale WAL sidecars;
+      restart required after (documented). `npm run db:restore`.
+- [x] Production container: Dockerfile now ships the full stack (Next
+      `.next` + API `dist` + `next.config.mjs` — previously the runtime
+      image had no web build), healthcheck moved to `/api/ready`, nightly
+      verified backup cron at 01:17 UTC with retention inside the volume
+      (env-tunable, disableable). FIX: `scripts/start-prod.mjs` ran the API
+      with `NODE_ENV=development`, silently relaxing the production
+      SESSION_SECRET startup guard — now production.
+- [x] `docker-compose.production.yml`: single-node production composition
+      (restart policy, resource limits, json-file log rotation, env-file
+      secrets, named volume for DB/uploads/backups) with the honest
+      single-node scaling story documented — no faked horizontal scaling.
+- [x] Graceful shutdown now drains the execution queue before closing HTTP
+      and the database.
+- [x] `docs/DEPLOYMENT.md`: complete honest runbook — architecture, first
+      deployment, required env, probes/monitoring, backup + restore
+      procedures, restore-drill requirement, off-host backup note,
+      scaling table (launch posture vs POST-LAUNCH), security operations,
+      launch checklist.
+
+**Milestone 10 verification record (2026-09-09):** 8 new tests —
+`src/scripts/backup.test.ts` (verified snapshot of a live DB, corrupt and
+drifted files rejected, retention keep-N, full restore round-trip proving
+exact snapshot state incl. integrity check and post-backup rows rolled
+back) and `src/server/health.test.ts` (liveness actually checks the DB,
+readiness checks all four dependencies, migration check fails honestly on
+pending files, Prometheus metrics admin-only + valid text format + real
+non-zero measurements). Full suite **200/200**, typecheck clean, build
+green. Live-verified on the dev server (see commit message).
 
 ### Milestone 11 — Launch readiness QA (PLANNED — target 18 September 2026)
 

@@ -1,6 +1,5 @@
 import express from 'express';
 import http from 'node:http';
-import fs from 'node:fs';
 import path from 'node:path';
 import { env, validateEnvironment } from './config/env';
 import { authRouter } from './routes/auth';
@@ -24,6 +23,9 @@ import { createNotificationsRouter } from './routes/notifications';
 import { createCrmRouter } from './routes/crm';
 import { createTrustRouter } from './routes/trust';
 import { errorHandler, notFound } from './server/http';
+import { livenessPayload, readinessPayload, prometheusMetrics } from './server/health';
+import { requireAuth } from './server/middleware/auth';
+import { requireRole } from './server/middleware/rbac';
 import { ExecutionStream } from './realtime/execution-stream';
 import { rateLimit } from './server/middleware/rate-limit';
 import { requestLog } from './server/middleware/observability';
@@ -83,19 +85,6 @@ function corsHeaders(req: express.Request, res: express.Response, next: express.
   next();
 }
 
-function healthPayload(): Record<string, unknown> {
-  const uploadDir = path.resolve(process.cwd(), env.uploadDir);
-  return {
-    name: 'AKBARAL! / MASTER AI',
-    version: '0.1.0',
-    phase: 'production platform',
-    status: 'ok',
-    database: 'ok',
-    uploads: fs.existsSync(uploadDir) ? 'ok' : 'missing',
-    uptimeSeconds: Math.floor(process.uptime()),
-  };
-}
-
 export function createApiServer(): ApiServer {
   // Embedded/test callers get the same mandatory-config validation. The
   // production SESSION_SECRET requirement is enforced by validateEnvironment().
@@ -141,7 +130,22 @@ export function createApiServer(): ApiServer {
 
   app.use('/api/auth', authRouter);
   app.get('/api/health', (_req, res) => {
-    res.status(200).json(healthPayload());
+    // Liveness: honest probe — if the database round trip fails the process
+    // is degraded, not "ok" (the old payload reported database:'ok'
+    // unconditionally).
+    const payload = livenessPayload();
+    res.status(payload.status === 'ok' ? 200 : 503).json(payload);
+  });
+  app.get('/api/ready', (_req, res) => {
+    // Readiness: DB + migrations + uploads + queue worker. Load balancers
+    // and container orchestrators gate traffic on this.
+    const payload = readinessPayload();
+    res.status(payload.status === 'ready' ? 200 : 503).json(payload);
+  });
+  app.get('/api/metrics', requireAuth, requireRole('admin', 'super_admin'), (_req, res) => {
+    // Prometheus text-format metrics for scraping. Admin-only: the series
+    // include business counters (users, revenue, queue depth).
+    res.status(200).type('text/plain; version=0.0.4').send(prometheusMetrics());
   });
   app.use('/api/me', meRouter);
   app.use('/api/agents', agentsRouter);

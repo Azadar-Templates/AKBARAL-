@@ -12,6 +12,7 @@ import { ensureBootstrapPlans } from './db';
 import { syncAgentRegistry, countAgentRegistry } from './agents/registry';
 import { agentDefinitionCount } from './agents/catalog';
 import { recoverInterruptedWork } from './orchestrator/recovery';
+import { executionQueue } from './orchestrator/queue';
 
 function checkDatabase(): void {
   const [userCount, taskCount, agentCount, projectCount] = [
@@ -31,6 +32,14 @@ let activeServer: ReturnType<typeof createApiServer> | null = null;
 
 function shutdown(signal: string): void {
   console.log(`[akbaral] received ${signal}, shutting down`);
+  // Drain the execution queue FIRST so in-flight jobs either finish or are
+  // requeued by crash recovery on the next boot; then close HTTP and the DB.
+  try {
+    executionQueue.stop();
+    console.log('[akbaral] execution queue stopped');
+  } catch (error) {
+    console.error(`[akbaral] queue stop error: ${error instanceof Error ? error.message : String(error)}`);
+  }
   if (activeServer) {
     activeServer.close()
       .then(() => {

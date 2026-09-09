@@ -30,7 +30,9 @@ function shutdown(signal = 'SIGTERM') {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-const api = launch('api', 'node', ['dist/src/index.js'], { PORT: '4000', NODE_ENV: 'development' });
+// NODE_ENV=production on the API too: the development flag would relax the
+// mandatory-SESSION_SECRET startup guard (production hardening, Milestone 10).
+const api = launch('api', 'node', ['dist/src/index.js'], { PORT: '4000', NODE_ENV: 'production' });
 const web = launch('web', 'node_modules/.bin/next', ['start', '-p', '3000'], { NODE_ENV: 'production' });
 
 api.on('exit', (code) => {
