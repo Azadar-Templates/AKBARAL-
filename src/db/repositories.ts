@@ -1012,3 +1012,19 @@ export function appendSecurityLog(input: {
   );
   return { id };
 }
+
+/**
+ * Count a user's security events of a type inside a trailing window.
+ * Powers the per-account login brute-force lockout (Milestone 9): the count
+ * comes from the durable security_logs table, so the lockout survives
+ * restarts and is auditable. The (user_id, created_at) index keeps the
+ * lookup cheap.
+ */
+export function countRecentSecurityEvents(input: { userId: string; eventType: string; windowMs: number }): number {
+  const cutoff = new Date(Date.now() - input.windowMs).toISOString();
+  const row = db.get<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM security_logs WHERE user_id = ? AND event_type = ? AND created_at >= ?',
+    [input.userId, input.eventType, cutoff],
+  );
+  return row?.count ?? 0;
+}

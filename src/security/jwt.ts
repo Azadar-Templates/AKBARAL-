@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from '../config/env';
 
 /**
@@ -57,10 +57,39 @@ export function verifyAccessToken(token: string): AccessTokenPayload | null {
   }
 
   const [header, body, signature] = parts;
-  const signingInput = `${header}.${body}`;
-  const expected = sign(signingInput, env.sessionSecret);
 
-  if (expected !== signature) {
+  // Pin the algorithm: a forged `{"alg":"none",...}` (or any non-HS256
+  // header) is rejected outright instead of relying on the signature check
+  // alone.
+  try {
+    const parsedHeader = JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as { alg?: unknown; typ?: unknown };
+    if (parsedHeader.alg !== ALGORITHM) {
+      return null;
+    }
+    if (parsedHeader.typ !== undefined && parsedHeader.typ !== 'JWT') {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const signingInput = `${header}.${body}`;
+
+  // Constant-time signature comparison (timingSafeEqual requires equal
+  // lengths, which itself must not leak the comparison result).
+  const signatureBytes = Buffer.from(signature);
+  const matchesSecret = (secret: string): boolean => {
+    const expected = Buffer.from(sign(signingInput, secret));
+    if (expected.length !== signatureBytes.length || expected.length === 0) {
+      return false;
+    }
+    return timingSafeEqual(expected, signatureBytes);
+  };
+
+  // Current secret first; the optional previous secret stays valid for one
+  // rotation cycle (SESSION_SECRET_PREVIOUS) so rotation does not hard-logout
+  // every active session.
+  if (!matchesSecret(env.sessionSecret) && !(env.sessionSecretPrevious && matchesSecret(env.sessionSecretPrevious))) {
     return null;
   }
 

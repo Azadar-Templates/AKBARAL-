@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, listModels, listEnabledProviders, setFeatureFlag, listFeatureFlags, logAdminAction, feedbackStats } from '../db';
+import { db, listModels, listEnabledProviders, setFeatureFlag, listFeatureFlags, logAdminAction, feedbackStats, searchAdminActions } from '../db';
 import { billingService } from '../billing/service';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
@@ -34,6 +34,26 @@ function registryIntegrity(): { dbAgents: number; catalogAgents: number; complet
 export function createAdminRouter(): Router {
   const router = Router();
   router.use(requireAuth, requireRole('admin', 'super_admin'));
+
+  router.get('/audit', (req: AuthenticatedRequest, res) => {
+    // Audit log search (Milestone 9): filter by actor, action prefix and an
+    // optional time range; bounded pagination, newest first.
+    const actor = typeof req.query.actor === 'string' && req.query.actor.trim() ? req.query.actor.trim() : undefined;
+    const action = typeof req.query.action === 'string' && req.query.action.trim() ? req.query.action.trim() : undefined;
+    const from = typeof req.query.from === 'string' && req.query.from.trim() ? req.query.from.trim() : undefined;
+    const to = typeof req.query.to === 'string' && req.query.to.trim() ? req.query.to.trim() : undefined;
+    const limit = Number(req.query.limit ?? 50);
+    const offset = Number(req.query.offset ?? 0);
+    const result = searchAdminActions({
+      actorUserId: actor,
+      actionPrefix: action,
+      from,
+      to,
+      limit: Number.isFinite(limit) ? limit : 50,
+      offset: Number.isFinite(offset) ? offset : 0,
+    });
+    res.status(200).json(result);
+  });
 
   router.get('/stats', (_req: AuthenticatedRequest, res) => {
     const stats = {
@@ -130,6 +150,14 @@ export function createAdminRouter(): Router {
       value: typeof body.value === 'string' ? body.value : null,
       description: typeof body.description === 'string' ? body.description : null,
       enabled: Boolean(body.enabled),
+    });
+    // Feature flag changes are privileged platform changes — audit them.
+    logAdminAction({
+      actorUserId: req.auth!.userId,
+      action: 'feature_flag.updated',
+      targetType: 'feature_flag',
+      targetId: key,
+      payload: { enabled: Boolean(body.enabled) },
     });
     res.status(200).json({ key, enabled: Boolean(body.enabled) });
   });

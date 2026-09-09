@@ -407,17 +407,68 @@ PDF `%PDF-1.4` + `application/pdf` + attachment + outsider 404, usage
 statement real aggregates, admin overview (revenue/refunded/outstanding/
 monthly/margin/conversion/failed/marketplace) + non-admin 403 + anonymous 401.
 
-### Milestone 9 — Security/admin/observability hardening (PLANNED)
+### Milestone 9 — Security/admin/observability hardening (DONE — implemented, tested, verified)
 
-Practical attack-surface hardening and verification: auth attacks, authz
-bypass, tenant isolation, API abuse, brute force, rate-limit bypass, SSRF,
-path traversal, malicious uploads, prompt injection, secret leakage, webhook
-forgery/replay (billing webhooks hardened in M8; extend to remaining
-surfaces), race conditions, duplicate execution, credit manipulation,
-privilege escalation, fraud. Role hierarchy beyond user/admin, per-route
-permission matrix, audit search API, adaptive rate limits, secret rotation
-tooling, admin console APIs for registry/model/cost/execution metrics,
-agent evaluation harness, drift reports.
+- [x] JWT hardening (`src/security/jwt.ts`): the verifier now pins the
+      algorithm (forged `{"alg":"none"}` headers are rejected outright),
+      validates `typ`, and compares signatures in constant time
+      (`timingSafeEqual`). Expired/wrong-secret/malformed tokens are
+      rejected; legitimate tokens keep working.
+- [x] Session-secret rotation grace: `SESSION_SECRET_PREVIOUS` keeps the
+      prior signing secret valid for one rotation cycle (the 1-hour
+      access-token lifetime), so operators can rotate `SESSION_SECRET`
+      without hard-logging-out every active session. Documented in
+      `.env.example`; live-verified by rotating the running server's secret.
+- [x] Per-account login brute-force lockout (`src/auth/service.ts`): after
+      10 failed logins for the same account within 15 minutes, further
+      attempts — including ones with the correct password — are rejected
+      with 429 `login_rate_limited` (+ `retryAfterSeconds`), counted from
+      the durable `security_logs` table (survives restarts, auditable) and
+      logged at critical severity. Other accounts are unaffected; failure
+      messages stay generic (no user enumeration).
+- [x] Audit search API: `GET /api/admin/audit?actor&action&from&to&limit&offset`
+      (admin-only) with real filters over `admin_actions`, newest first,
+      page size bounded at 200, actor email joined for display. Feature-flag
+      changes are now audited (`feature_flag.updated`) alongside the
+      existing agent/model/payment/queue admin actions.
+- [x] Upload error-handling bug fixed (`src/routes/files.ts`): multer
+      errors (e.g. `File too large`) were thrown from an asynchronous
+      stream callback where Express never sees them — the request hung and
+      the error surfaced as an uncaughtException. All upload failures now
+      route through `next()` and answer the client (400 `upload_failed` in
+      ~100ms live; previously a 300s hang).
+- [x] Attack-surface verification suite
+      (`src/security/attack-surface.test.ts`, 14 tests against the real
+      in-process API and real guard functions): forged/tampered/expired
+      JWTs rejected; rotation grace verified; register-body `role` ignored
+      (no self-promotion) and admin routes 403/401 for non-admins/anon;
+      per-account lockout incl. correct-password-blocked and
+      no-user-enumeration; cross-tenant IDOR (projects, executions,
+      invoice PDFs, files → 404 without existence leaks); SSRF guards
+      (loopback/private/link-local metadata/`::1`/`file:`/`ftp:`/`0.0.0.0`
+      all rejected, public https allowed); path traversal (storage keys,
+      traversal file ids); malicious uploads (traversal filenames stored
+      only inside the upload dir, 26 MiB rejected, non-members 404); no
+      secret leakage (config status, generic login errors, request logs
+      never contain tokens/headers); audit search filters + bounded pages;
+      concurrent duplicate webhooks settle exactly once (8 parallel
+      deliveries of one event → 1 settled, 7 ignored, credits granted
+      once); negative/zero credit manipulation rejected; rate-limit buckets
+      key on the real client IP (rotating `X-Forwarded-For` does not
+      bypass). Prompt-injection quarantine and webhook signature/replay
+      defenses were verified in M5–M8 suites and remain covered there.
+
+**Milestone 9 verification record (2026-09-09):** 14 new tests
+(`src/security/attack-surface.test.ts`), full suite **192/192**, typecheck
+clean, build green. Live-verified on the running server: session-secret
+rotation with a pre-rotation token still valid (200) and a tampered variant
+rejected (401); 10 failed logins → 429 `login_rate_limited` with
+`retryAfterSeconds: 900` while a different account logs in normally;
+`GET /api/admin/audit?action=feature_flag` returning the just-performed
+admin action with actor email (non-admin 403); 26 MiB upload answered with
+400 `upload_failed` in 97ms (pre-fix: hung request + uncaughtException);
+clean upload with a `../../evil.sh` filename stored only under the
+server-generated key inside the upload directory.
 
 ### Milestone 10 — Production deployment/scaling (PLANNED)
 

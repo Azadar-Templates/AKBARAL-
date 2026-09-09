@@ -8,25 +8,34 @@ import { getBody, requireString } from '../server/middleware/validation';
 export function createFilesRouter(): Router {
   const router = Router();
 
-  router.post('/projects/:projectId/files', requireAuth, (req: AuthenticatedRequest, res) => {
+  router.post('/projects/:projectId/files', requireAuth, (req: AuthenticatedRequest, res, next) => {
     const project = findProjectById(req.params.projectId);
     // Workspace members (and above) may upload; viewers cannot.
     if (!project || !hasProjectRole(project as { id: string; owner_id: string }, req.auth!.userId, 'member')) {
       throw new HttpError(404, 'project not found', 'not_found');
     }
     upload.single('file')(req, res, (error) => {
+      // Multer reports errors (size limit, bad multipart) and success from
+      // stream handlers — an asynchronous context where a thrown HttpError
+      // would escape Express entirely and hang the request. Route every
+      // failure through next() so the error handler answers the client.
       if (error) {
-        throw new HttpError(400, error.message, 'upload_failed');
+        next(new HttpError(400, error.message, 'upload_failed'));
+        return;
       }
-      if (!req.file) {
-        throw new HttpError(400, 'file is required', 'validation_error');
+      try {
+        if (!req.file) {
+          throw new HttpError(400, 'file is required', 'validation_error');
+        }
+        const result = processUpload({
+          userId: req.auth!.userId,
+          projectId: String(project.id),
+          file: { path: req.file.path, originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size },
+        });
+        res.status(201).json({ file: result });
+      } catch (processError) {
+        next(processError);
       }
-      const result = processUpload({
-        userId: req.auth!.userId,
-        projectId: String(project.id),
-        file: { path: req.file.path, originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size },
-      });
-      res.status(201).json({ file: result });
     });
   });
 

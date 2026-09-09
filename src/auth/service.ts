@@ -11,6 +11,7 @@ import {
   rotateSessionLastSeen,
   appendSecurityLog,
   appendAuditLog,
+  countRecentSecurityEvents,
 } from '../db';
 import {
   hashPassword,
@@ -95,6 +96,15 @@ export async function register(input: RegisterInput): Promise<AuthUserView> {
   return toUserView(user);
 }
 
+/**
+ * Per-account brute-force lockout (Milestone 9). Consecutive failed logins
+ * are counted from the durable security_logs table; past the threshold the
+ * account is locked for the window even with the correct password, and the
+ * block itself is logged at critical severity for operators.
+ */
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILURE_THRESHOLD = 10;
+
 export async function login(input: { email: string; password: string; ipAddress?: string | null; userAgent?: string | null }): Promise<LoginOutput> {
   const email = input.email.trim().toLowerCase();
   const user = findUserByEmail(email);
@@ -109,6 +119,29 @@ export async function login(input: { email: string; password: string; ipAddress?
       metadata: { email },
     });
     throw new HttpError(401, 'invalid email or password', 'invalid_credentials');
+  }
+
+  const recentFailures = countRecentSecurityEvents({
+    userId: user.id,
+    eventType: 'auth.login.failed',
+    windowMs: LOGIN_FAILURE_WINDOW_MS,
+  });
+  if (recentFailures >= LOGIN_FAILURE_THRESHOLD) {
+    appendSecurityLog({
+      userId: user.id,
+      eventType: 'auth.login.locked',
+      severity: 'critical',
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+      description: 'login blocked: too many failed attempts for this account',
+      metadata: { email, recentFailures },
+    });
+    throw new HttpError(
+      429,
+      'too many failed login attempts for this account; try again later',
+      'login_rate_limited',
+      { retryAfterSeconds: Math.ceil(LOGIN_FAILURE_WINDOW_MS / 1000) },
+    );
   }
 
   const valid = await verifyPassword(input.password, user.password_hash);

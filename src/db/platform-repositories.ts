@@ -1607,6 +1607,53 @@ export function logAdminAction(input: { actorUserId: string; action: string; tar
   return { id };
 }
 
+/**
+ * Audit log search (Milestone 9). Real filters over the durable admin_actions
+ * table: actor, action prefix, optional time range, keyset-friendly
+ * created_at DESC ordering, bounded page size. Returns the actor email for
+ * display without exposing any secrets from payloads.
+ */
+export function searchAdminActions(input: {
+  actorUserId?: string | null;
+  actionPrefix?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+  offset?: number;
+}): { actions: Array<Record<string, unknown>>; total: number } {
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (input.actorUserId) {
+    where.push('a.actor_user_id = ?');
+    params.push(input.actorUserId);
+  }
+  if (input.actionPrefix) {
+    where.push('a.action LIKE ?');
+    params.push(`${input.actionPrefix}%`);
+  }
+  if (input.from) {
+    where.push('a.created_at >= ?');
+    params.push(input.from);
+  }
+  if (input.to) {
+    where.push('a.created_at <= ?');
+    params.push(input.to);
+  }
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const offset = Math.max(input.offset ?? 0, 0);
+  const total = db.get<{ count: number }>(`SELECT COUNT(*) AS count FROM admin_actions a ${whereSql}`, params)?.count ?? 0;
+  const rows = db.all(
+    `SELECT a.id, a.actor_user_id, u.email AS actor_email, a.action, a.target_type, a.target_id, a.payload, a.created_at
+     FROM admin_actions a LEFT JOIN users u ON u.id = a.actor_user_id
+     ${whereSql}
+     ORDER BY a.created_at DESC, a.id DESC
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ) as Array<Record<string, unknown>>;
+  return { actions: rows, total };
+}
+
 export function setFeatureFlag(input: { key: string; value?: string | null; description?: string | null; enabled?: boolean }): void {
   const existing = db.get<{ id: string }>('SELECT id FROM feature_flags WHERE key = ?', [input.key]);
   if (existing) {

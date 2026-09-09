@@ -100,6 +100,10 @@ export const env = {
   isDevelopment: !isProduction && !isTest,
   databaseUrl: resolveDatabaseUrl(),
   sessionSecret: resolveSessionSecret(),
+  // Optional previous secret kept valid for one rotation cycle so operators
+  // can rotate SESSION_SECRET without instantly invalidating every live
+  // access token (grace window = token lifetime, 1 hour).
+  sessionSecretPrevious: trimOrEmpty(process.env.SESSION_SECRET_PREVIOUS) || null,
   port: resolvePort(),
   host: resolveHost(),
   searchEndpoint: trimOrEmpty(process.env.AKBARAL_SEARCH_ENDPOINT),
