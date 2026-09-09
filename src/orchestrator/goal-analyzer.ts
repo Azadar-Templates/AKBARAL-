@@ -91,6 +91,21 @@ const DELIVERABLE_RULES: Array<{ deliverable: string; keywords: string[] }> = [
   { deliverable: 'spreadsheet', keywords: ['spreadsheet', 'excel', 'sheet', 'model', 'forecast'] },
 ];
 
+/**
+ * Word-boundary keyword matching on hyphen-normalized text. Prevents the
+ * substring false positives of the previous implementation (e.g. "marketing"
+ * triggering the *research* intent through the keyword "market", or "happy"
+ * triggering *software* through "app") while still matching phrases like
+ * "landing page" and hyphenated variants like "e-commerce site".
+ */
+function matchesKeyword(normalizedText: string, keyword: string): boolean {
+  const pattern = keyword
+    .split(/\s+/)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+');
+  return new RegExp(`(?:^|[^a-z0-9])${pattern}(?:[^a-z0-9]|$)`).test(normalizedText);
+}
+
 const CONSTRAINT_KEYWORDS = [
   'budget', 'deadline', 'timeline', 'asap', 'within', 'cheap', 'free', 'fast',
   'mobile-first', 'responsive', 'seo', 'accessible', 'secure', 'scalable',
@@ -98,10 +113,10 @@ const CONSTRAINT_KEYWORDS = [
 ];
 
 function detectDeliverables(goal: string): string[] {
-  const lower = goal.toLowerCase();
+  const lower = goal.toLowerCase().replace(/-/g, ' ');
   const found = new Set<string>();
   for (const rule of DELIVERABLE_RULES) {
-    if (rule.keywords.some((keyword) => lower.includes(keyword))) {
+    if (rule.keywords.some((keyword) => matchesKeyword(lower, keyword))) {
       found.add(rule.deliverable);
     }
   }
@@ -109,8 +124,8 @@ function detectDeliverables(goal: string): string[] {
 }
 
 function detectConstraints(goal: string): string[] {
-  const lower = goal.toLowerCase();
-  return CONSTRAINT_KEYWORDS.filter((keyword) => lower.includes(keyword));
+  const lower = goal.toLowerCase().replace(/-/g, ' ');
+  return CONSTRAINT_KEYWORDS.filter((keyword) => matchesKeyword(lower, keyword));
 }
 
 function detectComplexity(goal: string, intents: GoalIntent[]): 'simple' | 'standard' | 'complex' {
@@ -145,10 +160,10 @@ function heuristicClarifiers(goal: string, intents: GoalIntent[]): string[] {
 
 /** Deterministic heuristic analysis. No external calls, no pretense. */
 export function analyzeGoalHeuristic(goal: string): GoalAnalysis {
-  const lower = goal.toLowerCase();
+  const lower = goal.toLowerCase().replace(/-/g, ' ');
   const intents: GoalIntent[] = [];
   for (const rule of INTENT_RULES) {
-    if (rule.keywords.some((keyword) => lower.includes(keyword))) {
+    if (rule.keywords.some((keyword) => matchesKeyword(lower, keyword))) {
       intents.push({
         key: rule.keys,
         label: rule.label,

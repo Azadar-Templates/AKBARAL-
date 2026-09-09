@@ -137,8 +137,22 @@ export function discoverAgents(filter: AgentSearchFilter = {}): { agents: AgentV
     params.push(filter.category);
   }
   if (filter.query) {
-    where.push('(a.name LIKE ? OR a.slug LIKE ? OR a.description LIKE ? OR c.name LIKE ?)');
-    params.push(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`);
+    // Match ANY query term (OR) so multi-term queries are not treated as one
+    // contiguous phrase; relevance ranking below orders the pool so agents
+    // matching more (and more specific) terms surface first.
+    const terms = searchTerms(filter.query);
+    const termPattern = terms.length > 0 ? terms : [filter.query.toLowerCase()];
+    const columns = ['a.name', 'a.slug', 'a.description', 'c.name'];
+    const likes: string[] = [];
+    for (const term of termPattern) {
+      for (const column of columns) {
+        likes.push(`${column} LIKE ?`);
+        params.push(`%${term}%`);
+      }
+    }
+    if (likes.length > 0) {
+      where.push(`(${likes.join(' OR ')})`);
+    }
   }
   if (filter.userId) {
     where.push(
@@ -148,6 +162,31 @@ export function discoverAgents(filter: AgentSearchFilter = {}): { agents: AgentV
   }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
+  const total = db.get<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM agents a LEFT JOIN agent_categories c ON c.id = a.category_id ${whereSql}`,
+    params,
+  )?.count ?? 0;
+
+  // Ranked search: when a text query is present, rank the LIKE-match pool by
+  // real relevance (specialization/role matches beat description mentions)
+  // instead of returning alphabetical order. Without a query the listing
+  // stays a stable alphabetical browse.
+  if (filter.query) {
+    const pool = db.all(
+      `SELECT a.*, c.name AS category_name, c.slug AS category_slug
+       FROM agents a LEFT JOIN agent_categories c ON c.id = a.category_id
+       ${whereSql}
+       ORDER BY a.name ASC LIMIT ?`,
+      [...params, SEARCH_RANK_POOL],
+    ) as Array<Record<string, unknown>>;
+    const ranked = pool
+      .map((row) => ({ row, score: searchRelevance(toAgentView(row), filter.query!) }))
+      .sort((a, b) => b.score - a.score || String(a.row.name).localeCompare(String(b.row.name)))
+      .slice(offset, offset + limit)
+      .map((entry) => entry.row);
+    return { agents: ranked.map((row) => toAgentView(row)), total };
+  }
+
   const rows = db.all(
     `SELECT a.*, c.name AS category_name, c.slug AS category_slug
      FROM agents a LEFT JOIN agent_categories c ON c.id = a.category_id
@@ -155,12 +194,68 @@ export function discoverAgents(filter: AgentSearchFilter = {}): { agents: AgentV
      ORDER BY a.name ASC LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   ) as Array<Record<string, unknown>>;
-  const total = db.get<{ count: number }>(
-    `SELECT COUNT(*) AS count FROM agents a LEFT JOIN agent_categories c ON c.id = a.category_id ${whereSql}`,
-    params,
-  )?.count ?? 0;
 
   return { agents: rows.map((row) => toAgentView(row)), total };
+}
+
+/** Candidate pool size for ranked search (matches above this are cut). */
+const SEARCH_RANK_POOL = 500;
+
+const SEARCH_STOPWORDS = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'best', 'ai', 'agent', 'agents']);
+
+function searchTerms(query: string): string[] {
+  const words = query.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  return [...new Set(words.filter((word) => word.length >= 2 && !SEARCH_STOPWORDS.has(word)))];
+}
+
+/**
+ * Relevance score of an agent for a search query. Weighted by where terms
+ * match: exact slug segments and names rank highest, then specialization,
+ * category, capabilities, and finally loose substring mentions.
+ */
+export function searchRelevance(agent: AgentView, query: string): number {
+  const terms = searchTerms(query);
+  if (terms.length === 0) {
+    return 0;
+  }
+  const squish = (text: string): string => text.replace(/[-\s]/g, '');
+  const lower = {
+    slug: agent.slug.toLowerCase(),
+    name: agent.name.toLowerCase(),
+    specialization: agent.specialization.toLowerCase(),
+    category: `${agent.category} ${agent.categorySlug}`.toLowerCase().replace(/-/g, ' '),
+    capabilities: agent.capabilities.join(' ').toLowerCase(),
+    outputs: agent.outputs.join(' ').toLowerCase(),
+    description: agent.description.toLowerCase(),
+  };
+  const squished = {
+    slug: squish(lower.slug),
+    category: squish(lower.category),
+    specialization: squish(lower.specialization),
+  };
+  let score = 0;
+  for (const term of terms) {
+    if (lower.slug.split('-').includes(term) || (term.length >= 4 && squished.slug.startsWith(`${term}-`))) {
+      score += 8;
+    } else if (lower.slug.includes(term) || (term.length >= 4 && squished.slug.includes(term))) {
+      score += 3;
+    }
+    if (lower.name.includes(term)) {
+      score += 6;
+    }
+    if (lower.specialization.includes(term) || (term.length >= 4 && squished.specialization.includes(term))) {
+      score += 5;
+    }
+    if (lower.category.includes(term) || (term.length >= 4 && squished.category.includes(term))) {
+      score += 4;
+    }
+    if (lower.capabilities.includes(term) || lower.outputs.includes(term)) {
+      score += 2;
+    } else if (lower.description.includes(term)) {
+      score += 1;
+    }
+  }
+  return score;
 }
 
 /**

@@ -6,7 +6,26 @@ import { requireRole } from '../server/middleware/rbac';
 import { HttpError } from '../server/http';
 import { getBody, requireString } from '../server/middleware/validation';
 import { discoverAgents, countAgentRegistry } from '../agents/registry';
+import { agentDefinitionCount } from '../agents/catalog';
 import { getConfigStatus } from '../config/credentials';
+
+/**
+ * Lightweight registry integrity summary for admin monitoring: DB count vs
+ * generated catalog count, duplicate slug/specialization detection and
+ * category coverage. The full contract-diversity audit remains
+ * `npm run audit:registry`.
+ */
+function registryIntegrity(): { dbAgents: number; catalogAgents: number; complete: boolean; duplicateSlugs: number; categoriesWithAgents: number } {
+  const dbAgents = countAgentRegistry();
+  const catalogAgents = agentDefinitionCount();
+  const duplicateSlugs = db.get<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM (SELECT slug FROM agents GROUP BY slug HAVING COUNT(*) > 1)',
+  )?.count ?? 0;
+  const categoriesWithAgents = db.get<{ count: number }>(
+    'SELECT COUNT(DISTINCT category_id) AS count FROM agents WHERE category_id IS NOT NULL',
+  )?.count ?? 0;
+  return { dbAgents, catalogAgents, complete: dbAgents >= catalogAgents, duplicateSlugs, categoriesWithAgents };
+}
 
 export function createAdminRouter(): Router {
   const router = Router();
@@ -26,6 +45,7 @@ export function createAdminRouter(): Router {
       activeSubscriptions: db.get<{ count: number }>('SELECT COUNT(*) AS count FROM subscriptions WHERE status IN (\'trialing\',\'active\')')?.count ?? 0,
       failedTasks: db.get<{ count: number }>('SELECT COUNT(*) AS count FROM tasks WHERE status = \'failed\'')?.count ?? 0,
       securityEvents: db.get<{ count: number }>('SELECT COUNT(*) AS count FROM security_logs')?.count ?? 0,
+      registryIntegrity: registryIntegrity(),
       ...feedbackStats(),
     };
     res.status(200).json({ stats });

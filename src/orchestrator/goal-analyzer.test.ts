@@ -32,6 +32,24 @@ describe('goal analyzer (heuristic mode)', () => {
     assert.equal(analysis.mode, 'heuristic');
     assert.ok(analysis.notes.some((note) => note.includes('deterministic')));
   });
+
+  it('does not fire the research intent on "marketing" (word-boundary precision)', () => {
+    const analysis = analyzeGoalHeuristic('build a marketing website for my bakery');
+    assert.ok(analysis.intents.some((intent) => intent.key === 'marketing'));
+    assert.ok(analysis.intents.some((intent) => intent.key === 'website'));
+    assert.ok(!analysis.intents.some((intent) => intent.key === 'research'), '"marketing" must not match the "market" keyword');
+  });
+
+  it('still fires the research intent for genuine market research', () => {
+    const analysis = analyzeGoalHeuristic('do market research on bakery competitors');
+    assert.ok(analysis.intents.some((intent) => intent.key === 'research'));
+  });
+
+  it('does not fire the software intent on "happy"', () => {
+    const analysis = analyzeGoalHeuristic('write a happy birthday message');
+    assert.ok(!analysis.intents.some((intent) => intent.key === 'software'), '"happy" must not match the "app" keyword');
+    assert.ok(analysis.intents.some((intent) => intent.key === 'copywriting'));
+  });
 });
 
 describe('goal analyzer (llm mode)', () => {

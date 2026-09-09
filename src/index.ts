@@ -11,6 +11,7 @@ import { syncModelCatalog } from './models';
 import { ensureBootstrapPlans } from './db';
 import { syncAgentRegistry, countAgentRegistry } from './agents/registry';
 import { agentDefinitionCount } from './agents/catalog';
+import { recoverInterruptedWork } from './orchestrator/recovery';
 
 function checkDatabase(): void {
   const [userCount, taskCount, agentCount, projectCount] = [
@@ -69,6 +70,17 @@ async function start(): Promise<void> {
     console.error('[akbaral] failed to sync catalog:', error instanceof Error ? error.message : String(error));
   }
   checkDatabase();
+
+  // Crash recovery: before accepting traffic, reconcile non-terminal
+  // workflows/tasks/executions from a previous process and refund their
+  // reserved task credits (trust policy under crashes).
+  const recovery = recoverInterruptedWork();
+  if (recovery.tasks > 0 || recovery.workflows > 0) {
+    console.log(
+      `[akbaral] crash recovery: ${recovery.workflows} workflow(s), ${recovery.tasks} task(s), ` +
+        `${recovery.executions} execution(s) marked failed; ${recovery.creditsRefunded} credit(s) refunded`,
+    );
+  }
 
   const api = createApiServer();
   activeServer = api;

@@ -101,11 +101,34 @@ Goal: make every stage of the core pipeline real, honest and observable.
 - Boot now self-heals an incomplete agent registry (4,000 specialists synced
   when missing).
 
-### Milestone 2 — Agent Registry scale-out (PLANNED)
+### Milestone 2 — Agent Registry scale-out (DONE — implemented, tested, verified)
 
-Registry search/index (FTS over 4,000 agents), category browsing API with
-pagination, agent detail endpoints exposing the full differentiation contract,
-health/status tracking, registry admin tools.
+- [x] Relevance-ranked search: multi-term OR matching + weighted in-memory
+      ranking (slug segment > name > specialization > category >
+      capabilities/outputs > description), hyphen-insensitive matching,
+      stable alphabetical browse without a query. Verified live
+      ("shopify ecommerce store" -> e-commerce specialist ranked #1).
+- [x] Word-boundary intent matching in the goal analyzer (fixes "marketing"
+      falsely triggering the research intent via the "market" substring).
+- [x] Registry integrity in `GET /api/admin/stats` (db vs catalog count,
+      duplicate slugs, category coverage). Verified live: 4000/4000, complete,
+      0 duplicates, 80 categories.
+- [x] Existing category counts, pagination and detail endpoints audited as
+      already implemented; full-contract diversity audit remains in
+      `npm run audit:registry`.
+
+### Milestone 3 — Agent execution/runtime (stage 1 DONE)
+
+- [x] Crash recovery (`src/orchestrator/recovery.ts`): boot-time
+      reconciliation fails non-terminal workflows/steps/tasks/executions
+      with an honest "interrupted by server restart" error and refunds every
+      reserved task credit exactly once (idempotent). Verified live with a
+      simulated crash: boot logged "1 workflow(s), 1 task(s), 1 execution(s)
+      marked failed; 1 credit(s) refunded"; ledger shows consume then refund;
+      account restored to 5/5.
+- [ ] Persistent execution queue (survives restarts), worker concurrency
+      limits, retries with backoff, timeout enforcement, cancellation,
+      execution metrics.
 
 ### Milestone 3 — Agent execution/runtime (PLANNED)
 
