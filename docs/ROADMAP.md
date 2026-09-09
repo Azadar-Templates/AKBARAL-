@@ -547,6 +547,50 @@ checklist in `docs/DEPLOYMENT.md`.
       (5→5) — both trust-policy behaviors live-verified.
 - [x] 200/200 tests, typecheck clean, build green at QA close.
 
+### Production-readiness pass (2026-09-10) — UI/API contract audit + honest AdSense readiness (COMPLETE)
+
+A live contract audit of every SPA loader against the real API surfaced and
+fixed real UI bugs (all verified against the running backend, not inferred):
+
+- [x] MASTER flow was broken in the client: it read `plan.workflowId` (API
+      returns `plan.workflow.id`), expected an `executionId` from the run
+      response (API returns `{workflow, job}`), and rendered intent objects
+      as `[object Object]`. Rewritten end-to-end: plan → `POST /:id/run` →
+      poll `GET /api/workflows/:id` with per-step status, terminal
+      result/error display, and credit refresh. Live-verified (plan → run →
+      poll → terminal status; specialist dispatch reads `task.executionId`).
+- [x] Admin dashboard read the wrapped `/api/admin/stats` response
+      (`{stats:{...}}`) directly — every stat rendered `undefined`. Unwrapped;
+      inner keys verified to match the renderer exactly.
+- [x] Trial UI read `trial.isActive` / `trial.daysRemaining` — fields that
+      never existed (`/api/me` returns `trial.active` and `trialEndsAt`).
+      Fixed in the credit pill, dashboard, billing and settings; days are
+      computed from `trialEndsAt` (real value, never invented).
+- [x] Auth 401-refresh race (observed live from a real browser session):
+      concurrent API calls all 401 and each refreshed independently, but the
+      server strictly rotates refresh tokens — every refresh except one was
+      rejected, producing a 401 loop. Fixed with a single-flight refresh
+      lock, cross-tab token sync via the `storage` event, and clean session
+      clearing when a refresh token is revoked. Race simulation (5 parallel
+      authenticated calls after token expiry) passes 200 across the board.
+- [x] Execution polling bounded (10-miss guard) so an unknown execution can
+      no longer poll forever.
+- [x] Plan preview now shows each step's goal (not only the agent slug).
+- [x] AdSense readiness, honest by construction: privacy policy discloses
+      cookies/advertising truthfully; Terms, Security, About and Contact
+      surfaces are real content (About/contact added to the footer nav); a
+      consent banner + clearly-labelled single ad slot exist but activate
+      ONLY when a real publisher id (`AKBARAL_ADSENSE_CLIENT`) is configured
+      AND the visitor accepts — unconfigured deployments load no ad script,
+      show no banner, render no slots and serve an honest 404 `ads.txt`.
+      No fake ads, no fake earnings, no approval claims.
+- [x] Full QA at close: 200/200 tests, `tsc --noEmit` clean, production
+      build green, fresh dev server, live verification of auth, billing
+      (plan switch 202, credit purchase order shape), feedback, knowledge
+      search, marketplace, agents, admin analytics/CRM shapes, and the
+      homepage markers (About/Contact links, hidden ad elements, v7 bundle,
+      zero ad scripts on page).
+
 ### Milestone 12 — Web/mobile integration readiness (PLANNED)
 
 Wire the web app + mobile shell fully to the MASTER API (task center, live

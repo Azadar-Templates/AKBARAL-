@@ -154,25 +154,62 @@
     return body;
   }
 
+  // Single-flight refresh lock. The server strictly rotates refresh tokens
+  // (a reused token is rejected), so two concurrent 401-retries refreshing
+  // at the same moment kill each other — observed live as a 401 loop. All
+  // concurrent callers must share ONE refresh request.
+  let refreshInFlight = null;
+
   async function refreshSession() {
-    if (!state.refreshToken) return false;
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
+      // Another tab may already have rotated the token — always start from
+      // the latest persisted copy instead of a stale in-memory value.
+      const storedRefresh = storageGet('ak_refresh');
+      if (storedRefresh) state.refreshToken = storedRefresh;
+      if (!state.refreshToken) return false;
+      try {
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refresh_token: state.refreshToken }),
+        });
+        if (!res.ok) {
+          // The refresh token is dead or was rotated out from under us.
+          // Clear the session so the router sends the user to sign-in
+          // instead of hammering the API with 401s.
+          if (res.status === 401) {
+            storageRemove('ak_access');
+            storageRemove('ak_refresh');
+            state.accessToken = null;
+            state.refreshToken = null;
+          }
+          return false;
+        }
+        const body = await res.json();
+        state.accessToken = body.accessToken;
+        state.refreshToken = body.refreshToken;
+        storageSet('ak_access', state.accessToken);
+        storageSet('ak_refresh', state.refreshToken);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
     try {
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ refresh_token: state.refreshToken }),
-      });
-      if (!res.ok) return false;
-      const body = await res.json();
-      state.accessToken = body.accessToken;
-      state.refreshToken = body.refreshToken;
-      storageSet('ak_access', state.accessToken);
-      storageSet('ak_refresh', state.refreshToken);
-      return true;
-    } catch {
-      return false;
+      return await refreshInFlight;
+    } finally {
+      refreshInFlight = null;
     }
   }
+
+  // Keep multiple tabs of the same session coherent: when one tab rotates
+  // or clears tokens, the others pick the change up immediately instead of
+  // refreshing with stale values.
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'ak_access') state.accessToken = event.newValue || null;
+    if (event.key === 'ak_refresh') state.refreshToken = event.newValue || null;
+  });
 
   /* ----- Landing motion system ----- */
   const motionPrefersReduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -245,6 +282,65 @@
     });
   }
 
+  /* ------------------------------------------------------------------ *
+   * Advertising consent (launch readiness / AdSense).
+   *
+   * HONEST BEHAVIOUR: when no publisher id is configured by the deployment
+   * (window.__AKBARAL_ADSENSE_CLIENT__ absent — the launch default), this
+   * module does NOTHING: no banner, no ad script, no slots, no cookies.
+   * With a real publisher id configured, the AdSense script loads only
+   * after the visitor accepts the consent banner; slots are clearly
+   * labelled "Advertisement" and sit outside primary content. Declining is
+   * a permanent, equally-valid choice. No ad ever pretends to be content
+   * and nothing asks or rewards clicking ads.
+   * ------------------------------------------------------------------ */
+  function initAds() {
+    const client = window.__AKBARAL_ADSENSE_CLIENT__;
+    if (!client) return; // advertising not configured -> no ads, no banner
+    const banner = $('#ads-consent');
+    if (!banner) return;
+    const choice = storageGet('ak_ads_consent');
+    if (choice === 'accepted') { enableAds(client); return; }
+    if (choice === 'declined') return;
+    banner.hidden = false;
+    $('#ads-accept')?.addEventListener('click', () => {
+      storageSet('ak_ads_consent', 'accepted');
+      banner.hidden = true;
+      enableAds(client);
+    });
+    $('#ads-decline')?.addEventListener('click', () => {
+      storageSet('ak_ads_consent', 'declined');
+      banner.hidden = true;
+    });
+    // A persistent footer control to revisit the choice — injected ONLY on
+    // deployments where advertising is configured, so unconfigured launches
+    // never show a dead button.
+    if (!$('#ads-footer-reset')) {
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'footer-link';
+      reset.id = 'ads-footer-reset';
+      reset.textContent = 'Ad choices';
+      reset.addEventListener('click', () => { banner.hidden = false; });
+      ($('.footer-nav') || document.body).appendChild(reset);
+    }
+  }
+
+  function enableAds(client) {
+    const slot = $('#ad-slot-footer');
+    if (!slot) return;
+    const script = document.createElement('script');
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}`;
+    document.head.appendChild(script);
+    slot.hidden = false;
+    // One clearly-labelled unit below the main content, above the footer.
+    slot.innerHTML = '<ins class="adsbygoogle" style="display:block" data-ad-client="'
+      + esc(client) + '" data-ad-slot="' + esc(slot.dataset.adSlot || '') + '" data-ad-format="auto" data-full-width-responsive="true"></ins>';
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch {}
+  }
+
   function bindLegalModal() {
     const modal = $('#legal-modal');
     const close = $('#legal-close');
@@ -252,7 +348,7 @@
     const content = {
       privacy: {
         title: 'Privacy',
-        body: '<h3>What we store</h3><p>AKBARAL stores only what is required to run your account: encrypted password hashes, hashed session tokens, your projects, files, knowledge, tasks and execution history. Provider API keys are never stored in the database and never sent to the browser.</p><h3>What we do not do</h3><p>We do not fabricate reviews, ratings, statistics or AI results. We do not sell your data. Missing provider credentials are reported honestly.</p>',
+        body: '<h3>What we store</h3><p>AKBARAL stores only what is required to run your account: encrypted password hashes, hashed session tokens, your projects, files, knowledge, tasks and execution history. Provider API keys are never stored in the database and never sent to the browser.</p><h3>Cookies &amp; advertising</h3><p>The platform itself sets no tracking cookies. Sign-in tokens and your theme preference are kept in your browser\'s local storage and are essential/functional only. If advertising is enabled on a deployment, third-party advertising vendors (Google AdSense) may set cookies only after you explicitly accept the advertising-consent banner; declining keeps your experience ad-free and sets no advertising cookies. You can change your choice any time from the footer.</p><h3>What we do not do</h3><p>We do not fabricate reviews, ratings, statistics or AI results. We do not sell your data. Missing provider credentials are reported honestly.</p>',
       },
       terms: {
         title: 'Terms',
@@ -261,6 +357,14 @@
       security: {
         title: 'Security',
         body: '<h3>Controls</h3><p>Passwords use salted scrypt hashing. Refresh tokens are stored as SHA-256 hashes and rotated. Sessions are checked on every authenticated request, WebSocket upgrade and tool context.</p><h3>Isolation</h3><p>Tasks, files, projects, knowledge and execution streams are scoped to the authenticated owner. SSRF, path traversal, upload size and rate-limit guards are enforced server-side.</p>',
+      },
+      about: {
+        title: 'About',
+        body: '<h3>AKBARAL! / MASTER AI</h3><p>AKBARAL is an AI operating platform: you state a goal, MASTER plans the work, specialist agents execute it through real tools, results are verified, and credits are only consumed by success. The agent registry, marketplace, execution history and billing records you see are real platform data — not demo content.</p><h3>Honesty policy</h3><p>Unconfigured integrations are reported as unconfigured. Nothing on this platform fabricates results, metrics or reviews.</p>',
+      },
+      contact: {
+        title: 'Contact',
+        body: '<h3>Support &amp; feedback</h3><p>The fastest channel is the built-in report system: Settings → “Feedback &amp; reports” (Report a bug / Request a feature / Report abuse). Reports go to a real admin review queue and are answered from there.</p><h3>Platform status</h3><p>Live service status is always visible at <a href="/api/health" target="_blank" rel="noopener">/api/health</a> and <a href="/api/ready" target="_blank" rel="noopener">/api/ready</a>.</p>',
       },
     };
     const open = (key) => {
@@ -305,6 +409,7 @@
     bindLandingNav();
     bindLegalModal();
     bindFooter();
+    initAds();
     window.addEventListener('hashchange', navigate);
     await navigate();
   }
@@ -497,8 +602,25 @@
 
   function updateCreditPill() {
     const credits = state.user?.freeCredits ?? 0;
-    const label = state.trial?.isActive ? `Trial · ${credits} free tasks` : `Credits · ${credits}`;
+    // /api/me returns trial.active (boolean) — `isActive` never existed, so
+    // the trial label silently never showed.
+    const onTrial = Boolean(state.trial?.active ?? state.trial?.isActive);
+    const label = onTrial ? `Trial · ${credits} free tasks` : `Credits · ${credits}`;
     $('#credit-pill').textContent = label;
+  }
+
+  /**
+   * Human label for the trial state. /api/me exposes trial.active plus the
+   * ISO end timestamp (there is no daysRemaining field) — days remaining are
+   * computed from trialEndsAt so the number is real, never "undefined".
+   */
+  function trialLabel(trial) {
+    const active = Boolean(trial?.active ?? trial?.isActive);
+    if (!active) return 'Inactive';
+    const endsAt = trial?.trialEndsAt ? Date.parse(trial.trialEndsAt) : NaN;
+    if (!Number.isFinite(endsAt)) return 'Active';
+    const days = Math.max(0, Math.ceil((endsAt - Date.now()) / 86400000));
+    return `${days}d remaining`;
   }
 
   async function loadSettings() {
@@ -510,7 +632,7 @@
     $('#settings-email').textContent = state.user?.email || '—';
     $('#settings-credits').textContent = `${state.user?.freeCredits ?? 0} free tasks`;
     $('#settings-plan').textContent = state.subscription?.status || 'free/trial';
-    $('#settings-trial').textContent = state.trial?.isActive ? `active · ${state.trial.daysRemaining}d remaining` : 'inactive';
+    $('#settings-trial').textContent = state.trial?.active ? `active · ${trialLabel(state.trial)}` : 'inactive';
     $('#settings-role').textContent = state.user?.role || 'user';
     loadMyFeedback();
   }
@@ -556,7 +678,7 @@
     const me = await api('/api/me');
     const stats = [
       ['Credits', state.user?.freeCredits ?? 0],
-      ['Trial', state.trial?.isActive ? `${state.trial.daysRemaining}d remaining` : 'Inactive'],
+      ['Trial', trialLabel(state.trial)],
       ['Plan', state.subscription?.status || 'free/trial'],
       ['Role', state.user?.role || 'user'],
     ];
@@ -671,9 +793,12 @@
     try {
       const projectId = $('#master-project')?.value || null;
       const body = await api('/api/workflows/agent', { method: 'POST', body: JSON.stringify({ agent_slug: slug, goal, project_id: projectId }) });
-      toast(`Dispatched ${slug}. Execution ${body.executionId}`, 'ok');
+      // Response shape: { task: { id, executionId, agentSlug, ... }, job, freeCredits }.
+      const executionId = body?.task?.executionId;
+      if (!executionId) throw new Error('Dispatch accepted but no execution id was returned');
+      toast(`Dispatched ${slug}. Execution ${executionId}`, 'ok');
       location.hash = '#/master';
-      await loadMasterExecution(body.executionId);
+      await loadMasterExecution(executionId);
     } catch (e) {
       toast(e.message, 'err');
     }
@@ -687,17 +812,15 @@
     $('#master-output').textContent = 'Planning…';
     setCoreState('thinking', 'planning');
     try {
+      // Response shape: { workflow: { id, status }, plan: { intents, steps, notes } }.
       const plan = await api('/api/workflows/master', { method: 'POST', body: JSON.stringify({ goal, project_id: projectId }) });
       renderPlan(plan);
-      $('#master-output').innerHTML += `\n\nStarting workflow ${plan.workflowId}…`;
+      const workflowId = plan?.workflow?.id;
+      if (!workflowId) throw new Error('Planning succeeded but no workflow id was returned');
+      $('#master-output').innerHTML += `\n\nStarting workflow ${esc(workflowId)}…`;
       setCoreState('executing', 'executing');
-      const run = await api(`/api/workflows/${plan.workflowId}/run`, { method: 'POST', body: JSON.stringify({}) });
-      if (run.executionId) {
-        setCoreState('executing', 'executing');
-        await loadMasterExecution(run.executionId);
-      } else {
-        showWorkflow(run);
-      }
+      await api(`/api/workflows/${workflowId}/run`, { method: 'POST', body: JSON.stringify({}) });
+      await loadWorkflowProgress(workflowId);
     } catch (e) {
       $('#master-output').textContent = `Error: ${e.message}`;
       setCoreState('error', 'error');
@@ -705,19 +828,92 @@
     }
   }
 
+  /**
+   * Live progress for a MASTER workflow run. Polls the real workflow state
+   * (`GET /api/workflows/:id` returns the workflow row plus per-step
+   * statuses) and renders each step transition until the workflow reaches a
+   * terminal status, then shows the persisted final result.
+   */
+  async function loadWorkflowProgress(workflowId) {
+    const out = $('#master-output');
+    out.textContent += `\n`;
+    let lastLines = '';
+    const render = (workflow, steps) => {
+      const lines = (steps || [])
+        .slice()
+        .sort((a, b) => (a.step_order ?? 0) - (b.step_order ?? 0))
+        .map((step) => {
+          const icon = { completed: '✓', failed: '✗', running: '▸', skipped: '–', pending: '·' }[step.status] || '·';
+          return `${icon} Step ${step.step_order}: ${step.status}${step.error_message ? ` — ${step.error_message}` : ''}`;
+        });
+      const text = lines.join('\n');
+      if (text !== lastLines) {
+        lastLines = text;
+        out.textContent = `${out.textContent.split('\n')[0]}\n${text}`;
+      }
+    };
+    let misses = 0;
+    const poll = async () => {
+      try {
+        const body = await api(`/api/workflows/${workflowId}`);
+        misses = 0;
+        const workflow = body?.workflow || {};
+        render(workflow, body?.steps);
+        if (['completed', 'failed', 'cancelled'].includes(workflow.status)) {
+          out.textContent += `\nFinal status: ${workflow.status}\n`;
+          if (workflow.result_json) {
+            try { out.textContent += JSON.stringify(JSON.parse(workflow.result_json), null, 2).slice(0, 4000); }
+            catch { out.textContent += String(workflow.result_json).slice(0, 4000); }
+          } else if (workflow.error_message) {
+            out.textContent += `${workflow.error_message}\n`;
+          }
+          const ok = workflow.status === 'completed';
+          setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
+          try { await loadMe(); } catch {}
+          return;
+        }
+        setTimeout(poll, 1500);
+      } catch (e) {
+        misses += 1;
+        if (misses >= 10) {
+          out.textContent += `\nStopped polling: ${e.message}\n`;
+          setCoreState('error', 'error');
+          return;
+        }
+        setTimeout(poll, 1500);
+      }
+    };
+    poll();
+  }
+
   function renderPlan(plan) {
-    const steps = (plan.plan?.steps || []).map((step) => `→ ${step.agentSlug || step.name || step.specialization || step.stepOrder}${step.description ? ` — ${step.description}` : ''}`).join('\n');
-    $('#master-output').textContent = `Detected intents: ${(plan.plan?.intents || []).join(', ')}\nPlan:\n${steps}`;
+    const intents = (plan.plan?.intents || []).map((intent) => intent.label || intent.key || '').filter(Boolean).join(', ');
+    const steps = (plan.plan?.steps || []).map((step) => `→ ${step.goal || step.description || step.agentSlug || step.name || step.stepOrder}${step.agentSlug ? ` (${step.agentSlug})` : ''}`).join('\n');
+    $('#master-output').textContent = `Detected intents: ${intents}\nPlan:\n${steps}`;
   }
 
   async function loadMasterExecution(executionId) {
     const out = $('#master-output');
     out.textContent = `Streaming execution ${executionId}…\n`;
     const seen = new Set();
+    let misses = 0;
     const poll = async () => {
       try {
         const body = await api(`/api/tasks/execution/${executionId}`).catch(() => null);
-        if (body && body.logs) {
+        if (!body) {
+          // The execution id is unknown (or not yet visible). Stop after a
+          // bounded number of misses instead of polling forever.
+          misses += 1;
+          if (misses >= 10) {
+            out.textContent += `Execution ${executionId} is not available.\n`;
+            setCoreState('error', 'error');
+            return;
+          }
+          setTimeout(poll, 1200);
+          return;
+        }
+        misses = 0;
+        if (body.logs) {
           for (const log of body.logs) {
             if (log.id && !seen.has(log.id)) {
               seen.add(log.id);
@@ -725,7 +921,7 @@
             }
           }
         }
-        const exec = body?.execution || {};
+        const exec = body.execution || {};
         if (exec.status === 'completed' || exec.status === 'failed') {
           out.textContent += `\nFinal status: ${exec.status}\n`;
           if (exec.output_data) {
@@ -734,6 +930,7 @@
           }
           const ok = exec.status === 'completed';
           setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
+          try { await loadMe(); } catch {}
           return;
         }
         setTimeout(poll, 1200);
@@ -963,7 +1160,7 @@
     renderStats([
       ['Plan', state.subscription?.status || account.subscription?.status || 'free/trial'],
       ['Credits', state.user?.freeCredits ?? 0],
-      ['Trial', state.trial?.isActive ? `${state.trial.daysRemaining}d remaining` : 'Inactive'],
+      ['Trial', trialLabel(state.trial)],
       ['Invoices', (account.invoices || []).length],
     ], '#billing-stats');
     const plans = await api('/api/billing/plans');
@@ -1009,7 +1206,9 @@
 
   async function loadAdmin() {
     skeleton('#flag-list', 3);
-    const stats = await api('/api/admin/stats');
+    // /api/admin/stats returns { stats: {...} } — unwrap before reading.
+    const statsBody = await api('/api/admin/stats');
+    const stats = statsBody.stats || {};
     const analytics = await api('/api/admin/analytics').catch(() => null);
     renderStats([
       ['Users', stats.users],

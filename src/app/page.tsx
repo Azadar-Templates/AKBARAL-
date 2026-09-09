@@ -318,11 +318,18 @@ export default function Home() {
 
               Subject<input id="feedback-subject" maxLength={ 200 } required /></label><label>
               Details<textarea id="feedback-body" rows={ 4 } maxLength={ 10000 } required defaultValue="" /></label><button className="btn btn-primary" type="submit">
-              Send report</button></form><div id="feedback-list" className="list"></div></div></div></div></section></main><footer className="site-footer"><div className="aw-container footer-inner"><div className="footer-brand"><p className="brand-lockup"><span className="brand-mark" aria-hidden="true">
+              Send report</button></form><div id="feedback-list" className="list"></div></div></div></div></section></main><div className="ad-slot" id="ad-slot-footer" hidden data-ad-slot="" aria-label="Advertisement"></div>
+<div className="ads-consent" id="ads-consent" hidden role="region" aria-label="Advertising consent">
+  <p>This deployment supports the free tier with third-party advertising (Google AdSense). Advertising cookies are set only if you accept.</p>
+  <div className="ads-consent-actions"><button type="button" className="btn btn-primary btn-sm" id="ads-accept">Accept ads</button><button type="button" className="btn btn-outline btn-sm" id="ads-decline">Keep ad-free</button></div>
+</div>
+<footer className="site-footer"><div className="aw-container footer-inner"><div className="footer-brand"><p className="brand-lockup"><span className="brand-mark" aria-hidden="true">
 
       A!</span> AKBARAL!</p><p className="footer-tagline">Master AI operating platform. No fabrications, no hidden charges.</p></div><nav className="footer-nav" aria-label="Footer"><a href="#/" data-route-landing>
       
-        Platform</a><button type="button" className="footer-link" data-legal="privacy">
+        Platform</a><button type="button" className="footer-link" data-legal="about">
+        About</button><button type="button" className="footer-link" data-legal="contact">
+        Contact</button><button type="button" className="footer-link" data-legal="privacy">
         Privacy</button><button type="button" className="footer-link" data-legal="terms">
         Terms</button><button type="button" className="footer-link" data-legal="security">
         Security</button><a href="/api/health" target="_blank" rel="noopener">

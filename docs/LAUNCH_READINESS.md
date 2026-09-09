@@ -185,6 +185,36 @@ runtime image, `/api/ready` healthcheck, nightly verified backup cron);
 4. (Carried from M10) **Production image had no web build** and the API ran
    `NODE_ENV=development` in production start — both fixed.
 
+## Launch blockers found during the 2026-09-10 production-readiness pass — all fixed and re-verified
+
+These were **client/UI contract bugs** found by auditing every SPA loader
+against the live API (not by tests alone — all 200 tests were green while
+these shipped broken):
+
+1. **MASTER orchestration was unusable from the web app**: wrong field reads
+   (`plan.workflowId`, `body.executionId`, no `executionId` in the run
+   response) plus `[object Object]` plan rendering. Rewritten and
+   live-verified (plan → run → per-step poll → terminal result → credit
+   refresh).
+2. **Admin dashboard showed `undefined` for every stat** — the client read
+   the wrapped `{stats:{...}}` response directly. Unwrapped; inner keys
+   verified against the renderer.
+3. **Trial state never displayed** — the client checked `trial.isActive` /
+   `trial.daysRemaining`, fields that do not exist (`trial.active`,
+   `trialEndsAt`). Fixed everywhere; days computed from the real timestamp.
+4. **Auth 401 refresh loop (observed from a real browser)** — concurrent
+   callers refreshed independently under strict refresh-token rotation and
+   killed each other's sessions. Fixed with single-flight refresh +
+   cross-tab sync; verified with a 5-way concurrent 401-storm simulation.
+5. **Unbounded execution polling** on unknown executions — bounded (10-miss
+   guard).
+
+AdSense readiness added honestly: truthful cookie/advertising disclosure in
+the privacy policy, real About/Contact surfaces, and a consent-gated ad
+architecture that is fully inert (no script, no slots, no banner, honest
+`ads.txt` 404) until a real `AKBARAL_ADSENSE_CLIENT` publisher id is
+configured. No approval is claimed or implied.
+
 ## Go/No-Go verdict
 
 **GO for 18 September 2026**, contingent on the deployment checklist in
