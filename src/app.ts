@@ -18,6 +18,7 @@ import { createToolsRouter } from './routes/tools';
 import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createMarketplaceRouter } from './routes/marketplace';
+import { createWorldRouter } from './routes/world';
 import { createRealtimeRouter } from './routes/realtime';
 import { createNotificationsRouter } from './routes/notifications';
 import { createCrmRouter } from './routes/crm';
@@ -155,6 +156,7 @@ export function createApiServer(): ApiServer {
   app.use('/api/models', createModelsRouter());
   app.use('/api/factory', createFactoryRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
+  app.use('/api/world', createWorldRouter());
   app.use('/api', createRealtimeRouter());
   app.use('/api/notifications', createNotificationsRouter());
   app.use('/api/crm', createCrmRouter());

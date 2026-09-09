@@ -731,7 +731,8 @@ export function createAgentOrder(input: { userId: string; agentId: string; amoun
      VALUES (?, ?, ?, ?, ?, 'completed', ?)`,
     [id, input.userId, input.agentId, input.amountCents, input.currency ?? 'PKR', NOW()],
   );
-  db.run('UPDATE agent_marketplace SET install_count = install_count + 1 WHERE agent_id = ?', [input.agentId]);
+  // Install counting lives in installUserAgent (once per user); orders are
+  // recorded per transaction and power the trending window instead.
   return { id };
 }
 
@@ -752,6 +753,162 @@ export function saveUserAgent(input: { userId: string; agentId: string; saved?: 
      ON CONFLICT(user_id, agent_id) DO UPDATE SET saved=?, favorite=?`,
     [createId('ua'), input.userId, input.agentId, input.saved ? 1 : 0, input.favorite ? 1 : 0, NOW(), input.saved ? 1 : 0, input.favorite ? 1 : 0],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Agent World + Marketplace (Milestone 7): reviews, discovery, usage signals
+// ---------------------------------------------------------------------------
+
+export function upsertAgentReview(input: { userId: string; agentId: string; rating: number; comment?: string | null }): { id: string; rating: number; aggregate: { rating: number | null; reviewCount: number } } {
+  const existing = db.get<{ id: string }>('SELECT id FROM agent_reviews WHERE user_id = ? AND agent_id = ?', [input.userId, input.agentId]);
+  let id: string;
+  if (existing) {
+    id = existing.id;
+    db.run(
+      `UPDATE agent_reviews SET rating = ?, comment = ?, updated_at = ? WHERE id = ?`,
+      [input.rating, input.comment ?? null, NOW(), id],
+    );
+  } else {
+    id = createId('rev');
+    db.run(
+      `INSERT INTO agent_reviews (id, user_id, agent_id, rating, comment, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.userId, input.agentId, input.rating, input.comment ?? null, NOW(), NOW()],
+    );
+  }
+  return { id, rating: input.rating, aggregate: recomputeAgentRating(input.agentId) };
+}
+
+/** Recompute the marketplace aggregate from REAL reviews only. */
+export function recomputeAgentRating(agentId: string): { rating: number | null; reviewCount: number } {
+  const stats = db.get<{ avg: number | null; count: number }>(
+    'SELECT AVG(rating) AS avg, COUNT(*) AS count FROM agent_reviews WHERE agent_id = ?',
+    [agentId],
+  );
+  db.run(
+    `UPDATE agent_marketplace SET rating = ?, review_count = ?, updated_at = ? WHERE agent_id = ?`,
+    [stats?.avg ?? null, stats?.count ?? 0, NOW(), agentId],
+  );
+  return { rating: stats?.avg ?? null, reviewCount: stats?.count ?? 0 };
+}
+
+export function listAgentReviews(agentId: string, limit = 20): Array<Record<string, unknown>> {
+  return db.all(
+    `SELECT ar.id, ar.rating, ar.comment, ar.created_at, ar.updated_at, u.name AS reviewer_name
+     FROM agent_reviews ar JOIN users u ON u.id = ar.user_id
+     WHERE ar.agent_id = ?
+     ORDER BY ar.updated_at DESC LIMIT ?`,
+    [agentId, String(Math.min(Math.max(1, limit), 100))],
+  ) as Array<Record<string, unknown>>;
+}
+
+export function findAgentReview(userId: string, agentId: string): Record<string, unknown> | undefined {
+  return db.get('SELECT * FROM agent_reviews WHERE user_id = ? AND agent_id = ?', [userId, agentId]) as
+    | Record<string, unknown>
+    | undefined;
+}
+
+/**
+ * Install accounting: increments the marketplace install counter only when a
+ * NEW user-agents relationship is created (repeat installs/saves by the same
+ * user do not inflate the number).
+ */
+export function installUserAgent(input: { userId: string; agentId: string }): { firstInstall: boolean } {
+  const existing = db.get<{ id: string }>('SELECT id FROM user_agents WHERE user_id = ? AND agent_id = ?', [input.userId, input.agentId]);
+  const firstInstall = !existing;
+  db.run(
+    `INSERT INTO user_agents (id, user_id, agent_id, saved, favorite, installed_at)
+     VALUES (?, ?, ?, 1, 0, ?)
+     ON CONFLICT(user_id, agent_id) DO UPDATE SET saved=1`,
+    [createId('ua'), input.userId, input.agentId, NOW()],
+  );
+  if (firstInstall) {
+    db.run(
+      `UPDATE agent_marketplace SET install_count = install_count + 1, updated_at = ? WHERE agent_id = ?`,
+      [NOW(), input.agentId],
+    );
+  }
+  return { firstInstall };
+}
+
+/**
+ * The user's Agent World: saved/installed agents with REAL usage signals
+ * (tasks run against each agent by this user, last used, agent status).
+ */
+export function listMyAgentWorld(userId: string, options?: { q?: string }): Array<Record<string, unknown>> {
+  let searchClause = '';
+  const searchParams: Array<string> = [];
+  if (options?.q) {
+    searchClause = ' AND (a.name LIKE ? OR a.slug LIKE ? OR a.description LIKE ?)';
+    const like = `%${options.q}%`;
+    searchParams.push(like, like, like);
+  }
+  // Bind order: task_count subquery, last_used_at subquery, main WHERE, search.
+  return db.all(
+    `SELECT a.id, a.slug, a.name, a.description, a.version, a.status AS agent_status, a.owner_id,
+            ua.saved, ua.favorite, ua.installed_at,
+            (SELECT COUNT(*) FROM tasks t WHERE t.agent_id = a.id AND t.user_id = ?) AS task_count,
+            (SELECT COUNT(*) FROM agent_executions ae WHERE ae.agent_id = a.id AND ae.status = 'completed') AS total_executions,
+            (SELECT MAX(t.updated_at) FROM tasks t WHERE t.agent_id = a.id AND t.user_id = ?) AS last_used_at
+     FROM user_agents ua
+     JOIN agents a ON a.id = ua.agent_id
+     WHERE ua.user_id = ?${searchClause}
+     ORDER BY ua.favorite DESC, ua.installed_at DESC`,
+    [userId, userId, userId, ...searchParams],
+  ) as Array<Record<string, unknown>>;
+}
+
+/**
+ * Featured marketplace agents ranked by REAL signals only:
+ * installs, verified reviews (count and average rating), and completed
+ * executions. An empty marketplace stays empty — nothing is fabricated.
+ */
+export function listFeaturedAgents(limit = 10): Array<Record<string, unknown>> {
+  return db.all(
+    `SELECT a.id, a.slug, a.name, a.description, a.version,
+            m.price_cents, m.currency, m.rating, m.review_count, m.install_count, m.tags,
+            (SELECT COUNT(*) FROM agent_executions ae WHERE ae.agent_id = a.id AND ae.status = 'completed') AS completed_executions,
+            (m.install_count * 3 + m.review_count * 5 + COALESCE(m.rating, 0) * m.review_count * 2 + (SELECT COUNT(*) FROM agent_executions ae WHERE ae.agent_id = a.id AND ae.status = 'completed')) AS featured_score
+     FROM agent_marketplace m JOIN agents a ON a.id = m.agent_id
+     WHERE m.status = 'published' AND a.status = 'active'
+     ORDER BY featured_score DESC, m.rating DESC, m.install_count DESC, m.created_at ASC
+     LIMIT ?`,
+    [String(Math.min(Math.max(1, limit), 50))],
+  ) as Array<Record<string, unknown>>;
+}
+
+/**
+ * Trending marketplace agents: REAL activity in a recent window — new
+ * installs (orders) and completed executions, plus fresh reviews.
+ */
+export function listTrendingAgents(input: { limit?: number; days?: number } = {}): Array<Record<string, unknown>> {
+  const limit = String(Math.min(Math.max(1, input.limit ?? 10), 50));
+  const days = String(Math.min(Math.max(1, input.days ?? 7), 90));
+  return db.all(
+    `SELECT a.id, a.slug, a.name, a.description, a.version,
+            m.price_cents, m.currency, m.rating, m.review_count, m.install_count, m.tags,
+            (SELECT COUNT(*) FROM agent_orders o WHERE o.agent_id = a.id AND o.created_at >= datetime('now', '-' || ? || ' days')) AS recent_installs,
+            (SELECT COUNT(*) FROM agent_executions ae WHERE ae.agent_id = a.id AND ae.status = 'completed' AND ae.created_at >= datetime('now', '-' || ? || ' days')) AS recent_executions,
+            (SELECT COUNT(*) FROM agent_reviews ar WHERE ar.agent_id = a.id AND ar.created_at >= datetime('now', '-' || ? || ' days')) AS recent_reviews,
+            ((SELECT COUNT(*) FROM agent_orders o WHERE o.agent_id = a.id AND o.created_at >= datetime('now', '-' || ? || ' days')) * 3
+              + (SELECT COUNT(*) FROM agent_executions ae WHERE ae.agent_id = a.id AND ae.status = 'completed' AND ae.created_at >= datetime('now', '-' || ? || ' days'))
+              + (SELECT COUNT(*) FROM agent_reviews ar WHERE ar.agent_id = a.id AND ar.created_at >= datetime('now', '-' || ? || ' days')) * 2) AS trending_score
+     FROM agent_marketplace m JOIN agents a ON a.id = m.agent_id
+     WHERE m.status = 'published' AND a.status = 'active'
+     ORDER BY trending_score DESC, m.install_count DESC, m.created_at ASC
+     LIMIT ?`,
+    [days, days, days, days, days, days, limit],
+  ) as Array<Record<string, unknown>>;
+}
+
+export function setUserAgentFavorite(userId: string, agentId: string, favorite: boolean): boolean {
+  const result = db.run('UPDATE user_agents SET favorite = ? WHERE user_id = ? AND agent_id = ?', [favorite ? 1 : 0, userId, agentId]);
+  return result.changes === 1;
+}
+
+export function removeUserAgent(userId: string, agentId: string): boolean {
+  const result = db.run('DELETE FROM user_agents WHERE user_id = ? AND agent_id = ?', [userId, agentId]);
+  return result.changes === 1;
 }
 
 export function updateAgentStatus(agentId: string, status: string, version?: string): void {

@@ -291,10 +291,44 @@ provenance, custom agent creation (draft marketplace status), duplicate slug
 400, honest `provider_not_configured` benchmark with `passRate 0` and credits
 untouched (5/5).
 
-### Milestone 7 — Agent World + Marketplace (PLANNED)
+### Milestone 7 — Agent World + Marketplace (DONE — implemented, tested, verified)
 
-Agent World discovery surface, marketplace install/save/rate flows, featured/
-trending ranking with real usage signals.
+- [x] Reviews: migration `0007_agent_reviews` (1-5 CHECK, UNIQUE per
+      user+agent, update trigger). `POST /api/marketplace/:slug/rate` upserts
+      (update replaces the comment — no stale text) and recomputes the
+      marketplace aggregate honestly (`rating = AVG`, `review_count = COUNT`
+      from real reviews only); `GET /api/marketplace/:slug/reviews` lists
+      reviews plus the caller's own.
+- [x] Install accounting fixed: `install_count` now increments exactly once
+      per user on first install (the pre-existing double increment in
+      `createAgentOrder` was removed — orders remain recorded per install
+      event and power the trending window); repeat installs no longer force
+      the favorite flag (favorites are the user's own choice).
+- [x] Featured/trending with real usage signals:
+      `GET /api/marketplace/featured` ranks published agents by
+      installs + review count + rating-weighted reviews + completed
+      executions; `GET /api/marketplace/trending?days=` ranks by recent
+      install events, completed executions and fresh reviews inside the
+      window. An empty marketplace stays empty — nothing is fabricated.
+- [x] Agent World surface: `GET /api/world?q=` — the user's saved/installed
+      agents with real usage signals (their task count per agent, total
+      completed executions, last used, favorite state, summary counts);
+      `POST /api/world/:slug/favorite` toggles; `DELETE /api/world/:slug`
+      removes.
+- [x] Honest visibility preserved: unpublished custom agents are invisible to
+      non-owners (404, no existence leak); the owner receives the explicit
+      `agent_not_published` conflict (403).
+
+**Milestone 7 verification record (2026-09-09):** 8 new tests
+(`src/routes/marketplace-world.test.ts`: publish flow, install-once-per-user,
+rating upsert + honest AVG/COUNT recompute + comment replacement + listing,
+featured ranking order, trending window counts, Agent World listing/favorite/
+removal, unpublished visibility semantics for owner and non-owner, auth
+enforcement) — full suite **161/161 green**, typecheck clean, production build
+green. Live-verified: publish → install (+repeat, counter stays 1) → rate 5 →
+featured ranks the agent first on real signals (installs=1 rating=5 reviews=1
+score=18) → trending (2 install events, 1 review) → Agent World listing with
+real task usage → favorite toggle.
 
 ### Milestone 8 — Trial/credits/billing (PLANNED)
 

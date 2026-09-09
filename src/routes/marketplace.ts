@@ -1,5 +1,19 @@
 import { Router } from 'express';
-import { db, listMarketplaceAgents, createAgentOrder, findAllUserAgents, saveUserAgent, findAgentBySlug, recordAnalyticsEvent, createNotification } from '../db';
+import {
+  db,
+  listMarketplaceAgents,
+  createAgentOrder,
+  findAllUserAgents,
+  saveUserAgent,
+  findAgentBySlug,
+  recordAnalyticsEvent,
+  createNotification,
+  upsertAgentReview,
+  listAgentReviews,
+  listFeaturedAgents,
+  listTrendingAgents,
+  installUserAgent,
+} from '../db';
 import { getAgentBySlug, isAgentVisibleToUser } from '../agents/registry';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
@@ -13,6 +27,19 @@ export function createMarketplaceRouter(): Router {
     const status = typeof req.query.status === 'string' ? req.query.status : 'published';
     const agents = listMarketplaceAgents({ status });
     res.status(200).json({ agents });
+  });
+
+  // ---- Discovery (Milestone 7): real usage signals only --------------------
+
+  router.get('/featured', (req: AuthenticatedRequest, res) => {
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 10;
+    res.status(200).json({ featured: listFeaturedAgents(limit) });
+  });
+
+  router.get('/trending', (req: AuthenticatedRequest, res) => {
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 10;
+    const days = typeof req.query.days === 'string' ? Number(req.query.days) : 7;
+    res.status(200).json({ trending: listTrendingAgents({ limit, days }), windowDays: Math.min(Math.max(1, days), 90) });
   });
 
   router.get('/:slug', (req: AuthenticatedRequest, res) => {
@@ -46,7 +73,12 @@ export function createMarketplaceRouter(): Router {
     }
     const priceCents = market?.price_cents ?? 0;
     const order = createAgentOrder({ userId: req.auth!.userId, agentId: agent.id, amountCents: priceCents, currency: market?.currency ?? 'PKR' });
-    saveUserAgent({ userId: req.auth!.userId, agentId: agent.id, saved: true, favorite: true });
+    const { firstInstall } = installUserAgent({ userId: req.auth!.userId, agentId: agent.id });
+    if (!firstInstall) {
+      // Repeat install by the same user: keep it saved but never force the
+      // favorite flag — favorites are the user's own choice (Agent World).
+      saveUserAgent({ userId: req.auth!.userId, agentId: agent.id, saved: true });
+    }
     recordAnalyticsEvent({
       userId: req.auth!.userId,
       eventType: 'marketplace.install',
@@ -95,6 +127,42 @@ export function createMarketplaceRouter(): Router {
     }
     db.run(`UPDATE agent_marketplace SET status = 'removed', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE agent_id = ?`, [agent.id]);
     res.status(200).json({ slug: agent.slug, status: 'removed' });
+  });
+
+  // ---- Reviews (Milestone 7): honest 1-5 ratings from real users ------------
+
+  router.get('/:slug/reviews', (req: AuthenticatedRequest, res) => {
+    const view = getAgentBySlug(req.params.slug);
+    if (!view || !isAgentVisibleToUser(view, req.auth!.userId)) {
+      throw new HttpError(404, 'agent not found', 'not_found');
+    }
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 20;
+    const reviews = listAgentReviews(String(view.id), limit);
+    const mine = db.get<{ rating: number; comment: string | null }>(
+      'SELECT rating, comment FROM agent_reviews WHERE user_id = ? AND agent_id = ?',
+      [req.auth!.userId, String(view.id)],
+    );
+    res.status(200).json({ reviews, myReview: mine ?? null });
+  });
+
+  router.post('/:slug/rate', (req: AuthenticatedRequest, res) => {
+    const view = getAgentBySlug(req.params.slug);
+    if (!view || !isAgentVisibleToUser(view, req.auth!.userId)) {
+      throw new HttpError(404, 'agent not found', 'not_found');
+    }
+    const body = getBody(req);
+    const rating = Number(body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      throw new HttpError(400, 'rating must be an integer between 1 and 5', 'validation_error');
+    }
+    const comment = typeof body.comment === 'string' ? body.comment.slice(0, 2000) : null;
+    const result = upsertAgentReview({ userId: req.auth!.userId, agentId: String(view.id), rating, comment });
+    recordAnalyticsEvent({
+      userId: req.auth!.userId,
+      eventType: 'marketplace.rate',
+      payload: { agentSlug: view.slug, rating },
+    });
+    res.status(201).json({ review: { id: result.id, rating }, aggregate: result.aggregate });
   });
 
   router.post('/:slug/save', (req: AuthenticatedRequest, res) => {
