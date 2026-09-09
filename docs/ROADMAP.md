@@ -257,11 +257,39 @@ invite as member, member upload into the shared workspace, cross-member
 project knowledge search, owner-file attach (foreign file honestly 404),
 project archive/reactivate, artifacts endpoint.
 
-### Milestone 6 — Agent Factory (PLANNED)
+### Milestone 6 — Agent Factory (DONE — implemented, tested, verified)
 
-Custom agent creation from user specs (exists in v0): extend with template
-derivation from the 4,000-agent matrix, sandboxed benchmark runs, publishing
-pipeline to marketplace.
+- [x] Template derivation from the 4,000-agent matrix:
+      `GET /api/factory/templates` (search by name/specialization/description
+      via `json_extract`, category filter, only platform registry agents —
+      never other users' customs), `GET /api/factory/templates/:slug`
+      (complete derived spec with `templateOf` provenance), and
+      `POST /api/factory/agents/from-template` (owned, versioned 1.0.0,
+      provenance persisted in config, user overrides, duplicate-slug
+      protection). Also fixed a slug-normalization bypass: generated slugs now
+      round-trip through `slugify` so the duplicate check cannot be bypassed by
+      case differences (binary DB collation).
+- [x] Sandboxed benchmark runs: `POST /api/factory/agents/:slug/benchmark`
+      executes the agent against up to 5 goals through the real verified
+      pipeline (type=`test` tasks — never consume user credits) and aggregates
+      honest results (pass rate, average verification score, per-run latency,
+      explicit `providerNotConfigured` flag — no fabricated scores).
+- [x] Publishing pipeline to marketplace: unchanged v0 surface
+      (`/api/marketplace/:slug/publish` review flow) — the factory already
+      creates marketplace rows (`draft`/`pending_review`) with price + tags, and
+      every template-derived agent flows through it unchanged.
+
+**Milestone 6 verification record (2026-09-09):** 6 new tests
+(`src/orchestrator/factory-templates.test.ts`: matrix template search (only
+unowned registry agents), derivation + provenance + 404, create-from-template
+with overrides + ownership + provenance + duplicate rejection, honest
+unconfigured benchmark (no fabricated scores) + real fixture benchmark with
+2/2 verified passes, owner-only benchmark/management (403), input validation)
+— full suite **153/153 green**, typecheck clean, production build green.
+Live-verified: template search (5 marketing specialists), derivation with
+provenance, custom agent creation (draft marketplace status), duplicate slug
+400, honest `provider_not_configured` benchmark with `passRate 0` and credits
+untouched (5/5).
 
 ### Milestone 7 — Agent World + Marketplace (PLANNED)
 

@@ -38,6 +38,7 @@ export interface CustomAgentInput {
   priceCents?: number;
   categoryId?: string | null;
   projectId?: string | null;
+  templateOf?: string | null;
 }
 
 function slugify(value: string): string {
@@ -178,6 +179,7 @@ function toConfig(input: CustomAgentInput): Record<string, unknown> {
     verificationRules: input.verificationRules ?? [],
     securityPermissions: input.securityPermissions ?? [],
     systemInstructions: input.systemInstructions,
+    ...(input.templateOf ? { templateOf: input.templateOf } : {}),
   };
 }
 
@@ -206,7 +208,12 @@ export class AgentFactory {
         throw error;
       }
     }
-    const slug = input.slug ? slugify(input.slug) : `${slugify(input.specialization)}-${createId('agt').slice(-6)}`;
+    // Both paths normalize through slugify so a generated slug is stable under
+    // a round-trip (slugify(generated) === generated) and the duplicate check
+    // below cannot be bypassed by case differences (DB collation is binary).
+    const slug = input.slug
+      ? slugify(input.slug)
+      : slugify(`${slugify(input.specialization)}-${createId('agt').slice(-6)}`);
     if (findAgentBySlug(slug)) {
       throw new Error(`agent slug "${slug}" already exists`);
     }
@@ -420,6 +427,168 @@ export class AgentFactory {
       agent.id,
     ]);
     return { agentId: String(agent.id), slug: input.slug, version: input.version, status: String(target.status ?? 'active'), marketplaceStatus: 'rolled_back' };
+  }
+
+  /**
+   * Search the 4,000-agent registry matrix for template candidates. Only
+   * platform registry agents (no owner) are offered as templates.
+   */
+  listTemplates(input: { q?: string; category?: string; limit?: number }): Array<Record<string, unknown>> {
+    const limit = Math.min(Math.max(1, input.limit ?? 20), 50);
+    const conditions: string[] = ["owner_id IS NULL", "status = 'active'"];
+    const params: Array<string> = [];
+    if (input.q) {
+      // specialization lives in the config JSON, not a column.
+      conditions.push("(name LIKE ? OR json_extract(config, '$.specialization') LIKE ? OR description LIKE ?)");
+      const like = `%${input.q}%`;
+      params.push(like, like, like);
+    }
+    if (input.category) {
+      conditions.push('category_id = ?');
+      params.push(input.category);
+    }
+    return db.all(
+      `SELECT slug, name, json_extract(config, '$.specialization') AS specialization, description, category_id FROM agents
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY name ASC LIMIT ?`,
+      [...params, String(limit)],
+    ) as Array<Record<string, unknown>>;
+  }
+
+  /**
+   * Derive a complete custom-agent template from a registry agent. The
+   * template is a starter spec the user owns and can freely customize.
+   */
+  deriveTemplate(slug: string): Record<string, unknown> {
+    const agent = getAgentBySlug(slug);
+    if (!agent) {
+      throw new Error(`template source agent ${slug} not found`);
+    }
+    const owned = findAgentBySlug(slug);
+    if (owned?.owner_id) {
+      throw new Error('templates can only be derived from platform registry agents');
+    }
+    return {
+      templateOf: slug,
+      name: `${agent.name} (custom)`,
+      specialization: agent.specialization,
+      description: `Custom agent derived from the ${agent.name} template.`,
+      system_instructions: agent.systemInstructions,
+      capabilities: agent.capabilities,
+      inputs: agent.inputs,
+      outputs: agent.outputs,
+      model_requirements: agent.modelRequirements,
+      tool_permissions: agent.toolPermissions,
+      workflow: agent.workflow,
+      verification_rules: agent.verificationRules,
+      security_permissions: agent.securityPermissions,
+    };
+  }
+
+  /**
+   * Create a custom agent from a derived template with user overrides.
+   */
+  createFromTemplate(input: {
+    userId: string;
+    templateSlug: string;
+    overrides?: Partial<CustomAgentInput>;
+    projectId?: string | null;
+  }): FactoryResult {
+    const template = this.deriveTemplate(input.templateSlug) as Record<string, unknown>;
+    const override = input.overrides ?? {};
+    const source = findAgentBySlug(input.templateSlug);
+    return this.create({
+      userId: input.userId,
+      name: override.name ?? String(template.name),
+      slug: override.slug,
+      specialization: override.specialization ?? String(template.specialization),
+      description: override.description ?? String(template.description),
+      systemInstructions: override.systemInstructions ?? String(template.system_instructions),
+      capabilities: override.capabilities ?? (template.capabilities as string[]),
+      inputs: override.inputs ?? (template.inputs as string[]),
+      outputs: override.outputs ?? (template.outputs as string[]),
+      modelRequirements: override.modelRequirements ?? (template.model_requirements as string[]),
+      toolPermissions: override.toolPermissions ?? (template.tool_permissions as string[]),
+      workflow: override.workflow ?? (template.workflow as string[]),
+      verificationRules: override.verificationRules ?? (template.verification_rules as string[]),
+      securityPermissions: override.securityPermissions ?? (template.security_permissions as string[]),
+      priceCents: override.priceCents ?? 0,
+      categoryId: override.categoryId ?? (source?.category_id ? String(source.category_id) : null),
+      projectId: input.projectId ?? override.projectId ?? null,
+      templateOf: input.templateSlug,
+    });
+  }
+
+  /**
+   * Real benchmark run (Milestone 6): executes the agent against the given
+   * goals through the same verified pipeline used in production and aggregates
+   * honest results. Sandbox guarantee: benchmark tasks are type 'test' and
+   * never consume user credits. Unconfigured providers surface as
+   * provider_not_configured, never fabricated scores.
+   */
+  async runBenchmark(input: { userId: string; slug: string; goals?: string[] }): Promise<Record<string, unknown>> {
+    const agent = findAgentBySlug(input.slug);
+    if (!agent) {
+      throw new Error(`agent ${input.slug} not found`);
+    }
+    if (!hasOwner(agent, input.userId)) {
+      throw new Error('only the owner can benchmark this agent');
+    }
+    const goals = (input.goals ?? []).filter((goal) => typeof goal === 'string' && goal.trim().length > 0).slice(0, 5);
+    if (goals.length === 0) {
+      throw new Error('at least one benchmark goal is required (max 5)');
+    }
+    const runs: Array<Record<string, unknown>> = [];
+    let providerNotConfigured = false;
+    for (const goal of goals) {
+      const started = Date.now();
+      const task = createTask({
+        userId: input.userId,
+        title: `Benchmark: ${goal.slice(0, 60)}`,
+        description: `Benchmark run for ${input.slug}`,
+        type: 'test',
+        agentId: agent.id,
+        inputData: { goal, benchmark: true },
+      });
+      const execution = createAgentExecution({ agentId: agent.id, taskId: task.id, inputData: { goal, benchmark: true } });
+      const result = await dispatchAgentExecution(execution.id, input.slug);
+      const completed = result.status === 'completed';
+      if (!completed) {
+        updateTaskStatus({ id: task.id, status: 'failed', completedAt: new Date().toISOString(), errorMessage: result.error ?? 'benchmark run failed' });
+      } else {
+        updateTaskStatus({ id: task.id, status: 'completed', completedAt: new Date().toISOString() });
+      }
+      const verification = (result.output as { verification?: { passed?: boolean; score?: number } } | null)?.verification;
+      if ((result.code ?? '') === 'provider_not_configured') {
+        providerNotConfigured = true;
+      }
+      runs.push({
+        goal,
+        status: result.status,
+        code: result.code ?? null,
+        error: result.error ?? null,
+        verificationPassed: verification?.passed ?? false,
+        verificationScore: verification?.score ?? 0,
+        latencyMs: Date.now() - started,
+      });
+    }
+    const passed = runs.filter((run) => run.status === 'completed' && run.verificationPassed === true).length;
+    const scored = runs.filter((run) => typeof run.verificationScore === 'number' && (run.verificationScore as number) > 0);
+    return {
+      mode: 'run',
+      agentSlug: input.slug,
+      runs,
+      summary: {
+        total: runs.length,
+        passed,
+        passRate: runs.length > 0 ? Math.round((passed / runs.length) * 100) / 100 : 0,
+        avgVerificationScore:
+          scored.length > 0
+            ? Math.round((scored.reduce((sum, run) => sum + (run.verificationScore as number), 0) / scored.length) * 100) / 100
+            : 0,
+        providerNotConfigured,
+      },
+    };
   }
 
   listVersions(slug: string): Array<Record<string, unknown>> {

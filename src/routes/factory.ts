@@ -15,6 +15,69 @@ export function createFactoryRouter(): Router {
     res.status(200).json({ categories: listCategories() });
   });
 
+  // ---- Template derivation from the 4,000-agent matrix (Milestone 6) ------
+
+  router.get('/templates', (req: AuthenticatedRequest, res) => {
+    const templates = agentFactory.listTemplates({
+      q: typeof req.query.q === 'string' ? req.query.q : undefined,
+      category: typeof req.query.category === 'string' ? req.query.category : undefined,
+      limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
+    });
+    res.status(200).json({ templates });
+  });
+
+  router.get('/templates/:slug', (req: AuthenticatedRequest, res) => {
+    try {
+      res.status(200).json({ template: agentFactory.deriveTemplate(req.params.slug) });
+    } catch (error) {
+      throw businessErrorToHttp(error, 404, 'template_not_found');
+    }
+  });
+
+  router.post('/agents/from-template', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const templateSlug = requireString(body, 'template_slug', 'template_slug');
+    try {
+      const created = agentFactory.createFromTemplate({
+        userId: req.auth!.userId,
+        templateSlug,
+        overrides: {
+          name: optionalString(body, 'name'),
+          slug: optionalString(body, 'slug'),
+          description: optionalString(body, 'description'),
+          systemInstructions: optionalString(body, 'system_instructions'),
+          capabilities: asStringArray(body.capabilities),
+          toolPermissions: asStringArray(body.tool_permissions),
+          verificationRules: asStringArray(body.verification_rules),
+          priceCents: Number(body.price_cents ?? 0) || 0,
+        },
+        projectId: optionalString(body, 'project_id') ?? null,
+      });
+      res.status(201).json({ agent: created });
+    } catch (error) {
+      throw businessErrorToHttp(error, 400, 'agent_creation_failed');
+    }
+  });
+
+  // Real benchmark run: executes the agent against up to 5 goals through the
+  // verified pipeline (sandboxed: type=test tasks never consume credits).
+  router.post(
+    '/agents/:slug/benchmark',
+    asyncRoute(async (req: AuthenticatedRequest, res) => {
+      const agent = assertManageable(req, req.params.slug);
+      const body = getBody(req);
+      const goals = Array.isArray(body.goals)
+        ? body.goals.filter((goal): goal is string => typeof goal === 'string')
+        : [];
+      try {
+        const benchmark = await agentFactory.runBenchmark({ userId: req.auth!.userId, slug: agent.slug, goals });
+        res.status(200).json({ benchmark, slug: agent.slug });
+      } catch (error) {
+        throw businessErrorToHttp(error, 400, 'benchmark_failed');
+      }
+    }),
+  );
+
   router.post('/agents', (req: AuthenticatedRequest, res) => {
     const body = getBody(req);
     const name = requireString(body, 'name', 'name');
