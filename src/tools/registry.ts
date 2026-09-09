@@ -354,6 +354,173 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
     }
   },
 
+  async http_request(input) {
+    try {
+      const rawUrl = requireStringInput(input, 'url', 'http_request');
+      const url = assertPublicUrl(rawUrl);
+      const method = input.method === 'POST' ? 'POST' : 'GET';
+      if (method === 'GET' && input.body !== undefined) {
+        return fail('http_request', 'GET requests must not include a body', 'tool_input_error');
+      }
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      let body: string | undefined;
+      if (method === 'POST') {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(input.body ?? {});
+      }
+      const result = await externalHttpRequest('tool:http_request', url, {
+        method,
+        headers,
+        body,
+        timeoutMs: 20_000,
+      });
+      const text = result.text.slice(0, 100_000);
+      return ok('http_request', text, {
+        status: result.status,
+        bytes: result.text.length,
+        truncated: result.text.length > 100_000,
+        json: result.json,
+      });
+    } catch (error) {
+      if (error instanceof ToolInputError) {
+        return fail('http_request', error.message, 'tool_input_error');
+      }
+      return fail('http_request', error instanceof Error ? error.message : String(error), 'tool_failed');
+    }
+  },
+
+  async json_transform(input) {
+    try {
+      const data = input.data;
+      if (data === undefined || data === null) {
+        return fail('json_transform', 'data is required', 'tool_input_error');
+      }
+      let working: unknown = data;
+      if (typeof input.pick === 'string' && input.pick.trim().length > 0) {
+        for (const segment of input.pick.split('.').map((part) => part.trim()).filter(Boolean)) {
+          if (working && typeof working === 'object' && segment in (working as Record<string, unknown>)) {
+            working = (working as Record<string, unknown>)[segment];
+          } else {
+            return fail('json_transform', `pick path segment "${segment}" not found`, 'tool_input_error');
+          }
+        }
+      }
+      if (Array.isArray(working)) {
+        const offset = Math.max(0, typeof input.offset === 'number' ? Math.floor(input.offset) : 0);
+        const limit = Math.min(Math.max(0, typeof input.limit === 'number' ? Math.floor(input.limit) : working.length), 500);
+        const sliced = working.slice(offset, offset + limit);
+        return ok('json_transform', JSON.stringify(sliced, null, 2), {
+          total: working.length,
+          offset,
+          returned: sliced.length,
+          data: sliced,
+        });
+      }
+      return ok('json_transform', JSON.stringify(working, null, 2), { total: 1, returned: 1, data: working });
+    } catch (error) {
+      if (error instanceof ToolInputError) {
+        return fail('json_transform', error.message, 'tool_input_error');
+      }
+      return fail('json_transform', error instanceof Error ? error.message : String(error), 'tool_failed');
+    }
+  },
+
+  async text_analyze(input) {
+    try {
+      const text = requireStringInput(input, 'text', 'text_analyze');
+      const words = text.split(/\s+/).filter(Boolean);
+      const sentences = text.split(/[.!?]+\s*/).filter((sentence) => sentence.trim().length > 0);
+      const stopWords = new Set([
+        'the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'for', 'with', 'at', 'by',
+        'from', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'it', 'its', 'this', 'that',
+        'as', 'not', 'no', 'nor', 'so', 'if', 'then', 'than', 'too', 'very', 'can', 'will', 'just',
+      ]);
+      const frequencies = new Map<string, number>();
+      for (const raw of words) {
+        const word = raw.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+        if (word.length < 3 || stopWords.has(word) || /^\d+$/.test(word)) {
+          continue;
+        }
+        frequencies.set(word, (frequencies.get(word) ?? 0) + 1);
+      }
+      const topKeywords = [...frequencies.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 15)
+        .map(([word, count]) => ({ word, count }));
+      return ok('text_analyze', JSON.stringify(topKeywords, null, 2), {
+        characters: text.length,
+        words: words.length,
+        sentences: sentences.length,
+        uniqueWords: frequencies.size,
+        readingTimeMinutes: Math.max(1, Math.round(words.length / 200)),
+        topKeywords,
+      });
+    } catch (error) {
+      if (error instanceof ToolInputError) {
+        return fail('text_analyze', error.message, 'tool_input_error');
+      }
+      return fail('text_analyze', error instanceof Error ? error.message : String(error), 'tool_failed');
+    }
+  },
+
+  async csv_parse(input) {
+    try {
+      const csv = requireStringInput(input, 'csv', 'csv_parse');
+      const lines = csv.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      if (lines.length === 0) {
+        return fail('csv_parse', 'csv is empty', 'tool_input_error');
+      }
+      const parseCsvLine = (line: string): string[] => {
+        const values: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let index = 0; index < line.length; index += 1) {
+          const char = line[index];
+          if (inQuotes) {
+            if (char === '"' && line[index + 1] === '"') {
+              current += '"';
+              index += 1;
+            } else if (char === '"') {
+              inQuotes = false;
+            } else {
+              current += char;
+            }
+          } else if (char === '"') {
+            inQuotes = true;
+          } else if (char === ',') {
+            values.push(current);
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        values.push(current);
+        return values;
+      };
+      const headers = parseCsvLine(lines[0]).map((header, index) => header.trim() || `column_${index + 1}`);
+      const limit = Math.min(Math.max(0, typeof input.limit === 'number' ? Math.floor(input.limit) : lines.length - 1), 1000);
+      const rows = lines.slice(1, 1 + limit).map((line) => {
+        const values = parseCsvLine(line);
+        const row: Record<string, string> = {};
+        headers.forEach((header, index) => {
+          row[header] = (values[index] ?? '').trim();
+        });
+        return row;
+      });
+      return ok('csv_parse', JSON.stringify(rows, null, 2), {
+        headers,
+        totalRows: lines.length - 1,
+        returnedRows: rows.length,
+        rows,
+      });
+    } catch (error) {
+      if (error instanceof ToolInputError) {
+        return fail('csv_parse', error.message, 'tool_input_error');
+      }
+      return fail('csv_parse', error instanceof Error ? error.message : String(error), 'tool_failed');
+    }
+  },
+
   async maps_place(input) {
     try {
       requireCredential('GOOGLE_API_KEY', 'maps_place');
@@ -387,6 +554,9 @@ export async function runTool(key: string, input: ToolInput, ctx: ToolContext): 
     const result = await handler(input, ctx);
     return { ...result, durationMs: Date.now() - started };
   } catch (error) {
+    if (error instanceof ToolInputError) {
+      return fail(key, error.message, 'tool_input_error', { durationMs: Date.now() - started });
+    }
     return fail(key, error instanceof Error ? error.message : String(error), 'tool_failed', { durationMs: Date.now() - started });
   }
 }

@@ -16,7 +16,49 @@ export function createToolsRouter(): Router {
     ) as Array<Record<string, unknown>>;
     const implemented = new Set(listImplementedTools());
     res.status(200).json({
-      tools: rows.map((row) => ({ ...row, implemented: implemented.has(String(row.key)) })),
+      tools: rows.map((row) => ({
+        ...row,
+        implemented: implemented.has(String(row.key)),
+        credentialConfigured: credentialConfigured(String(row.required_credential_env_key ?? '')),
+      })),
+    });
+  });
+
+  // Per-tool credential status. Never exposes credential values — only whether
+  // each required environment variable is present, so clients can show which
+  // tools are usable right now and which honestly report provider_not_configured.
+  router.get('/credentials', (_req: AuthenticatedRequest, res) => {
+    const rows = db.all(
+      'SELECT key, name, kind, requires_credential, required_credential_env_key FROM tools ORDER BY kind, name',
+    ) as Array<{ key: string; name: string; kind: string; requires_credential: number; required_credential_env_key: string | null }>;
+    const implemented = new Set(listImplementedTools());
+    const credentials = rows.map((row) => {
+      const envKeys = (row.required_credential_env_key ?? '')
+        .split(',')
+        .map((key) => key.trim())
+        .filter(Boolean);
+      const configured = envKeys.length > 0 && envKeys.every((key) => Boolean(process.env[key]));
+      const usable = implemented.has(row.key) && (!row.requires_credential || configured);
+      return {
+        tool: row.key,
+        name: row.name,
+        kind: row.kind,
+        implemented: implemented.has(row.key),
+        requiresCredential: row.requires_credential === 1,
+        requiredEnvKeys: envKeys,
+        configured,
+        usable,
+      };
+    });
+    res.status(200).json({
+      credentials,
+      summary: {
+        total: credentials.length,
+        usable: credentials.filter((entry) => entry.usable).length,
+        missingCredentials: credentials
+          .filter((entry) => entry.implemented && entry.requiresCredential && !entry.configured)
+          .map((entry) => entry.tool),
+      },
     });
   });
 
@@ -48,6 +90,11 @@ export function createToolsRouter(): Router {
   });
 
   return router;
+}
+
+function credentialConfigured(requiredEnvKey: string): boolean {
+  const keys = requiredEnvKey.split(',').map((key) => key.trim()).filter(Boolean);
+  return keys.length === 0 || keys.every((key) => Boolean(process.env[key]));
 }
 
 function assertToolContext(userId: string, projectId: string | null, taskId: string | null, executionId: string | null): void {

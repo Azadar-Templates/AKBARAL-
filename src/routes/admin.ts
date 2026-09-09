@@ -9,6 +9,9 @@ import { discoverAgents, countAgentRegistry } from '../agents/registry';
 import { executionQueue } from '../orchestrator/queue';
 import { agentDefinitionCount } from '../agents/catalog';
 import { getConfigStatus } from '../config/credentials';
+import { PROVIDER_SPECS } from '../models/catalog';
+import { externalHttpRequest } from '../integrations/http';
+import { asyncRoute } from '../server/http';
 
 /**
  * Lightweight registry integrity summary for admin monitoring: DB count vs
@@ -146,6 +149,93 @@ export function createAdminRouter(): Router {
   });
 
   // --- Execution queue observability + admin cancellation (Milestone 3) ----
+  // Provider health (Milestone 4): DB-derived run statistics per model
+  // provider — total/succeeded/failed runs, average latency, last error and
+  // last usage — plus credential presence. `?live=1` additionally performs a
+  // real, cheap models-list request against each configured provider with a
+  // short timeout; unconfigured providers are reported honestly as such.
+  router.get('/providers/health', asyncRoute(async (req: AuthenticatedRequest, res) => {
+    const live = req.query.live === '1' || req.query.live === 'true';
+    const providers = listEnabledProviders() as Array<Record<string, unknown>>;
+    const rows = PROVIDER_SPECS.map((spec) => {
+      const row = providers.find((candidate) => String(candidate.key) === spec.key);
+      const stats = db.get<{ total: number; succeeded: number; failed: number; avgLatencyMs: number | null; lastUsedAt: string | null }>(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS succeeded,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                AVG(latency_ms) AS avgLatencyMs,
+                MAX(created_at) AS lastUsedAt
+         FROM model_runs WHERE provider_key = ?`,
+        [spec.key],
+      );
+      const lastError = db.get<{ error_message: string | null; created_at: string }>(
+        `SELECT error_message, created_at FROM model_runs
+         WHERE provider_key = ? AND status = 'failed' AND error_message IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [spec.key],
+      );
+      return {
+        key: spec.key,
+        name: spec.name,
+        envKey: spec.envKey,
+        configured: Boolean(process.env[spec.envKey]),
+        status: row ? String(row.status) : 'enabled',
+        runs: {
+          total: stats?.total ?? 0,
+          succeeded: stats?.succeeded ?? 0,
+          failed: stats?.failed ?? 0,
+          avgLatencyMs: stats?.avgLatencyMs !== null && stats?.avgLatencyMs !== undefined ? Math.round(Number(stats.avgLatencyMs)) : null,
+          lastUsedAt: stats?.lastUsedAt ?? null,
+          lastError: lastError ? { message: lastError.error_message, at: lastError.created_at } : null,
+        },
+        live: null as null | { ok: boolean; latencyMs: number; detail?: string },
+      };
+    });
+
+    if (live) {
+      await Promise.all(
+        PROVIDER_SPECS.map(async (spec) => {
+          const target = rows.find((row) => row.key === spec.key);
+          if (!target) {
+            return;
+          }
+          if (!target.configured) {
+            target.live = { ok: false, latencyMs: 0, detail: `not configured: set ${spec.envKey}` };
+            return;
+          }
+          const started = Date.now();
+          try {
+            const apiKey = process.env[spec.envKey] ?? '';
+            let url: string;
+            const override = process.env[`${spec.key.toUpperCase()}_BASE_URL`];
+            const base = ((override && override.trim()) || (spec.baseUrl ?? '')).replace(/\/+$/, '');
+            if (spec.key === 'anthropic') {
+              url = `${base}/models`;
+            } else if (spec.key === 'google') {
+              url = `${base}/models?key=${apiKey}`;
+            } else {
+              url = `${base}/models`;
+            }
+            await externalHttpRequest(spec.key, url, {
+              method: 'GET',
+              headers: spec.key === 'anthropic' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { Authorization: `Bearer ${apiKey}` },
+              timeoutMs: 8_000,
+            });
+            target.live = { ok: true, latencyMs: Date.now() - started };
+          } catch (error) {
+            target.live = {
+              ok: false,
+              latencyMs: Date.now() - started,
+              detail: error instanceof Error ? error.message : 'live check failed',
+            };
+          }
+        }),
+      );
+    }
+
+    res.status(200).json({ providers: rows, liveChecked: live });
+  }));
+
   router.get('/queue/jobs', (req: AuthenticatedRequest, res) => {
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const limit = Number(req.query.limit ?? 50);

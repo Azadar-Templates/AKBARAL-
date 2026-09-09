@@ -95,6 +95,33 @@ This content invents citations that no source tool produced.`;
       requests.push({ path: url.pathname, body });
 
       const respond = (payload: Record<string, unknown>): void => {
+        if (body.stream === true) {
+          // OpenAI-compatible streaming: chunk the content into a few SSE
+          // `data:` events and finish with [DONE].
+          const content = String(payload.content ?? '');
+          const chunks = content.match(/[\s\S]{1,40}/g) ?? [];
+          res.statusCode = 200;
+          res.setHeader('content-type', 'text/event-stream');
+          for (const chunk of chunks) {
+            res.write(
+              `data: ${JSON.stringify({
+                id: 'chatcmpl-fixture',
+                object: 'chat.completion.chunk',
+                choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+              })}\n\n`,
+            );
+          }
+          res.write(
+            `data: ${JSON.stringify({
+              id: 'chatcmpl-fixture',
+              object: 'chat.completion.chunk',
+              choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+              usage: { prompt_tokens: 100, completion_tokens: 200 },
+            })}\n\n`,
+          );
+          res.end('data: [DONE]\n\n');
+          return;
+        }
         res.statusCode = 200;
         res.setHeader('content-type', 'application/json');
         res.end(

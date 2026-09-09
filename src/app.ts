@@ -15,6 +15,7 @@ import { createFilesRouter } from './routes/files';
 import { createBillingRouter } from './routes/billing';
 import { createAdminRouter } from './routes/admin';
 import { createToolsRouter } from './routes/tools';
+import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createRealtimeRouter } from './routes/realtime';
@@ -151,6 +152,7 @@ export function createApiServer(): ApiServer {
   app.use('/api/billing', createBillingRouter());
   app.use('/api/admin', createAdminRouter());
   app.use('/api/tools', createToolsRouter());
+  app.use('/api/models', createModelsRouter());
   app.use('/api/factory', createFactoryRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
   app.use('/api', createRealtimeRouter());

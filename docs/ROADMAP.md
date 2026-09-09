@@ -176,10 +176,48 @@ restored to 5/5; 409 conflict on cancelling terminal work; admin queue
 listing with stats; simulated dead worker → boot recovery requeued the
 stale job → attempt 2 → honest failure + exactly-one refund.
 
-### Milestone 4 — Tool/API/provider abstraction + model router (PLANNED)
+### Milestone 4 — Tool/API/provider abstraction + model router (DONE — implemented, tested, verified)
 
-Expand tool catalog behind the permission boundary, per-tool credential status
-API, streaming model output, provider health checks, cost dashboards.
+- [x] Tool catalog expanded behind the existing permission boundary: four new
+      fully local, credential-free tools — `http_request` (SSRF-guarded public
+      GET/POST JSON), `json_transform`, `text_analyze`, `csv_parse` — plus
+      catalog specs synced to the DB (18 tools total, 10 usable without any
+      credentials).
+- [x] Per-tool credential status API: `GET /api/tools/credentials` reports for
+      every tool whether it is implemented, which env keys it requires, whether
+      they are configured and whether it is usable right now — values are never
+      exposed; `GET /api/tools` rows now include `credentialConfigured`.
+      Tool input validation failures now surface honestly as
+      `tool_input_error` instead of a generic `tool_failed`.
+- [x] Model catalog API: `GET /api/models` lists providers and models with
+      truthful availability, required env keys, costs, latency and defaults.
+- [x] Routing preview API: `POST /api/models/route` returns the primary
+      decision plus the ordered fallback chain with reasons — no model call,
+      no cost.
+- [x] Streaming model output: native `streamChat` for the OpenAI-compatible,
+      Anthropic and Google adapters (real SSE parsing with per-chunk timeouts
+      and redacted errors) and `modelRouter.completeStreaming` with the same
+      fallback chain and run recording; exposed via
+      `POST /api/models/chat/stream` (SSE: decision → tokens → done|error).
+      Unconfigured providers end the stream with an honest
+      `provider_not_configured` event — never a fabricated completion.
+- [x] Provider health checks: `GET /api/admin/providers/health` reports
+      DB-derived run statistics per provider (total/succeeded/failed, average
+      latency, last used, last error) plus credential presence;
+      `?live=1` performs a real models-list request against each configured
+      provider (8s timeout) and reports honest ok/failure details.
+
+**Milestone 4 verification record (2026-09-09):** 15 new tests
+(`src/models/models-api.test.ts`: credential status, catalog flags, SSRF
+contract for http_request, json_transform/text_analyze/csv_parse happy +
+validation paths, model catalog truthfulness, routing preview, honest
+unconfigured SSE stream, real token streaming via the model fixture, auth
+enforcement, admin RBAC, DB-derived health, live check against a live and a
+dead endpoint) — full suite **138/138 green**, typecheck clean, production
+build green. Live-verified on the dev server: 18 tools / 10 usable /
+8 honestly-missing credentials; model catalog all `available=false` with
+env keys; routing chain preview; SSE stream ending in
+`provider_not_configured`; admin health with `?live=1` honest details.
 
 ### Milestone 5 — Workspace/project/files (PLANNED)
 

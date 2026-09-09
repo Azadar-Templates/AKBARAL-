@@ -1,6 +1,6 @@
 import { getModel, listModels, recordModelRun } from '../db';
 import { MODEL_SPECS, PROVIDER_SPECS, type ModelSpec } from './catalog';
-import { createProvider, type ChatMessage, type ChatResult } from './client';
+import { createProvider, streamViaChat, type ChatMessage, type ChatResult } from './client';
 
 export interface ModelRequirements {
   capability?: string[]; // reasoning | coding | vision | speed | long_context | research | image | ...
@@ -146,6 +146,78 @@ export class ModelRouter {
       const startedAt = Date.now();
       try {
         const result = await provider.chat(decision.model, messages);
+        recordModelRun({
+          modelKey: decision.model.key,
+          providerKey: decision.providerKey,
+          taskId: requirements.taskId ?? null,
+          agentExecutionId: requirements.agentExecutionId ?? null,
+          status: 'succeeded',
+          latencyMs: result.latencyMs,
+          inputTokens: result.inputTokens ?? null,
+          outputTokens: result.outputTokens ?? null,
+          costCents: estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0),
+        });
+        return result;
+      } catch (error) {
+        lastError = error;
+        recordModelRun({
+          modelKey: decision.model.key,
+          providerKey: decision.providerKey,
+          taskId: requirements.taskId ?? null,
+          agentExecutionId: requirements.agentExecutionId ?? null,
+          status: 'failed',
+          latencyMs: Date.now() - startedAt,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new Error('no model available for request');
+  }
+
+  /**
+   * Full routing decision without executing anything: the primary model plus
+   * the ordered fallback chain, each with an honest availability flag. Used by
+   * the routing-preview API and diagnostics.
+   */
+  routeChain(requirements: ModelRequirements): RoutingDecision[] {
+    const primary = this.route(requirements);
+    return this.fallbackChain(primary, requirements);
+  }
+
+  /**
+   * Streaming variant of complete(): tokens are forwarded to onToken as the
+   * provider emits them (providers without native streaming emit the full text
+   * as a single token). Same fallback chain, same run recording.
+   */
+  async completeStreaming(
+    requirements: ModelRequirements,
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+  ): Promise<ChatResult> {
+    const primary = this.route(requirements);
+    const chain = this.fallbackChain(primary, requirements);
+
+    let lastError: unknown = null;
+    for (const decision of chain) {
+      if (!decision.available) {
+        const error = new Error(
+          `${decision.providerKey} is not configured; set ${decision.requiredEnvKey}`,
+        ) as Error & { code?: string; requiredEnvKey?: string };
+        error.code = 'provider_not_configured';
+        error.requiredEnvKey = decision.requiredEnvKey ?? undefined;
+        lastError = error;
+        continue;
+      }
+      const provider = createProvider(decision.providerKey);
+      const startedAt = Date.now();
+      try {
+        const result = provider.streamChat
+          ? await provider.streamChat(decision.model, messages, onToken)
+          : await streamViaChat(provider, decision.model, messages, onToken);
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
