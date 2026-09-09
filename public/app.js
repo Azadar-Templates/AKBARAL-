@@ -68,7 +68,7 @@
     plan: null,
     executionStream: null,
     view: 'landing',
-    theme: storageGet('ak_theme') || 'light',
+    theme: storageGet('ak_theme') || 'dark',
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -283,6 +283,248 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Cinematic landing system — hero media, live status, scroll direction.
+   *
+   * HONEST ARCHITECTURE:
+   * - The hero background is a full-bleed <video> SLOT. If the deployment
+   *   provides /media/hero-loop.mp4 it plays (muted/loop/playsInline) above
+   *   an original still poster. Until then an ORIGINAL canvas animation —
+   *   a slow intelligence network of drifting nodes and hairline links —
+   *   stands in. No third-party or copyrighted assets are used.
+   * - The system status chip reflects the REAL /api/health response.
+   * - Everything respects prefers-reduced-motion (poster only) and pauses
+   *   when off-screen or when the tab is hidden.
+   * ------------------------------------------------------------------ */
+  function initCinematic() {
+    initHeroMedia();
+    initSystemStatus();
+    initSectionRail();
+    initPipelineSpine();
+    initHeroReticle();
+    initHeroScrollParallax();
+  }
+
+  function initHeroMedia() {
+    const video = $('#hero-video');
+    const canvas = $('#hero-canvas');
+    if (!video && !canvas) return;
+    // Reduced motion: keep the still poster only. No video, no canvas.
+    if (motionPrefersReduced()) return;
+
+    const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const saveData = navigator.connection && navigator.connection.saveData;
+    // Mobile/save-data: canvas with a lighter node budget (no video fetch).
+    const budget = isCoarse || saveData ? 'light' : 'full';
+
+    if (video) {
+      fetch('/media/hero-loop.mp4', { method: 'HEAD' })
+        .then((res) => {
+          if (res.ok) {
+            video.classList.add('is-live');
+            video.setAttribute('preload', 'auto');
+            const play = video.play();
+            if (play && play.catch) play.catch(() => video.classList.remove('is-live'));
+            video.addEventListener('error', () => video.classList.remove('is-live'));
+          } else {
+            startHeroNetwork(canvas, budget);
+          }
+        })
+        .catch(() => startHeroNetwork(canvas, budget));
+    } else {
+      startHeroNetwork(canvas, budget);
+    }
+  }
+
+  /* Original intelligence-network animation: drifting nodes joined by
+     hairline links within a radius — moss/olive threads, rare gold nodes.
+     Deliberately slow and sparse; never draws attention from the copy. */
+  function startHeroNetwork(canvas, budget) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let width = 0, height = 0, dpr = 1;
+    let nodes = [];
+    let running = false, rafId = 0, inView = true;
+    const pointer = { x: -1e4, y: -1e4 };
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = Math.max(1, rect.width); height = Math.max(1, rect.height);
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const count = budget === 'light'
+        ? Math.min(34, Math.round((width * height) / 34000))
+        : Math.min(84, Math.round((width * height) / 15000));
+      nodes = Array.from({ length: count }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.16,
+        vy: (Math.random() - 0.5) * 0.16,
+        r: Math.random() < 0.16 ? 1.9 : 1.1,
+        gold: Math.random() < 0.18,
+      }));
+    };
+
+    const step = () => {
+      if (!running) return;
+      ctx.clearRect(0, 0, width, height);
+      const linkDist = width < 720 ? 108 : 138;
+      for (const n of nodes) {
+        n.x += n.vx; n.y += n.vy;
+        if (n.x < -20) n.x = width + 20; else if (n.x > width + 20) n.x = -20;
+        if (n.y < -20) n.y = height + 20; else if (n.y > height + 20) n.y = -20;
+      }
+      ctx.lineWidth = 1;
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
+        for (let j = i + 1; j < nodes.length; j++) {
+          const b = nodes[j];
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > linkDist * linkDist) continue;
+          const alpha = 0.16 * (1 - Math.sqrt(d2) / linkDist);
+          ctx.strokeStyle = `rgba(154, 168, 123, ${alpha.toFixed(3)})`;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+      for (const n of nodes) {
+        // A whisper of pointer awareness — nodes lean toward the cursor.
+        const pdx = pointer.x - n.x, pdy = pointer.y - n.y;
+        const pd = Math.sqrt(pdx * pdx + pdy * pdy);
+        if (pd < 170 && pd > 0.001) { n.x += (pdx / pd) * 0.14; n.y += (pdy / pd) * 0.14; }
+        ctx.fillStyle = n.gold ? 'rgba(181, 160, 66, 0.85)' : 'rgba(167, 168, 157, 0.55)';
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
+      }
+      rafId = requestAnimationFrame(step);
+    };
+
+    const start = () => { if (!running && inView && !document.hidden) { running = true; rafId = requestAnimationFrame(step); } };
+    const stop = () => { running = false; cancelAnimationFrame(rafId); };
+
+    resize();
+    window.addEventListener('resize', resize, { passive: true });
+    const host = $('#hero');
+    if (host) {
+      host.addEventListener('pointermove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        pointer.x = e.clientX - rect.left; pointer.y = e.clientY - rect.top;
+      }, { passive: true });
+      host.addEventListener('pointerleave', () => { pointer.x = -1e4; pointer.y = -1e4; });
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver((entries) => {
+          inView = entries[0].isIntersecting;
+          if (inView) start(); else stop();
+        }, { threshold: 0.02 }).observe(host);
+      }
+    }
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); else start(); });
+    start();
+  }
+
+  /* The status chip reports the REAL service health. */
+  function initSystemStatus() {
+    const el = $('#sys-status');
+    if (!el) return;
+    fetch('/api/health')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        const ok = body && body.status === 'ok';
+        el.textContent = ok ? 'READY' : 'DEGRADED';
+        el.classList.toggle('sys-ok', ok);
+        el.classList.toggle('sys-bad', !ok);
+      })
+      .catch(() => {
+        el.textContent = 'STANDBY';
+        el.classList.remove('sys-ok');
+        el.classList.add('sys-bad');
+      });
+  }
+
+  /* Chapter rail: highlight the section currently in view. */
+  function initSectionRail() {
+    const buttons = $$('.section-rail button[data-scroll-to]');
+    if (!buttons.length || !('IntersectionObserver' in window)) return;
+    const byId = new Map(buttons.map((b) => [b.dataset.scrollTo, b]));
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        buttons.forEach((b) => b.classList.remove('active'));
+        const btn = byId.get(entry.target.id);
+        if (btn) btn.classList.add('active');
+      }
+    }, { rootMargin: '-38% 0px -52% 0px' });
+    byId.forEach((_, id) => { const s = document.getElementById(id); if (s) io.observe(s); });
+  }
+
+  /* Pipeline spine draws as its stages reveal. */
+  function initPipelineSpine() {
+    const rail = $('#pipeline-rail');
+    if (!rail) return;
+    const stages = $$('.pipe-stage', rail);
+    if (!stages.length) return;
+    if (!('IntersectionObserver' in window) || motionPrefersReduced()) {
+      rail.style.setProperty('--pipe-progress', '100%');
+      return;
+    }
+    let revealed = 0;
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        revealed = Math.max(revealed, stages.indexOf(entry.target) + 1);
+        rail.style.setProperty('--pipe-progress', `${Math.round((revealed / stages.length) * 100)}%`);
+        io.unobserve(entry.target);
+      }
+    }, { threshold: 0.4 });
+    stages.forEach((s) => io.observe(s));
+  }
+
+  /* Fine targeting reticle following the cursor inside the hero only. */
+  function initHeroReticle() {
+    if (motionPrefersReduced()) return;
+    if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
+    const hero = $('#hero');
+    if (!hero) return;
+    const reticle = document.createElement('div');
+    reticle.className = 'hero-reticle';
+    reticle.setAttribute('aria-hidden', 'true');
+    reticle.innerHTML = '<i></i>';
+    document.body.appendChild(reticle);
+    let x = 0, y = 0, tx = 0, ty = 0, visible = false, raf = 0;
+    const loop = () => {
+      x += (tx - x) * 0.16; y += (ty - y) * 0.16;
+      reticle.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      if (visible || Math.abs(tx - x) > 0.4 || Math.abs(ty - y) > 0.4) raf = requestAnimationFrame(loop);
+      else raf = 0;
+    };
+    hero.addEventListener('pointermove', (e) => {
+      tx = e.clientX; ty = e.clientY;
+      if (!visible) { visible = true; reticle.style.opacity = '0.85'; }
+      if (!raf) raf = requestAnimationFrame(loop);
+    }, { passive: true });
+    hero.addEventListener('pointerleave', () => { visible = false; reticle.style.opacity = '0'; });
+  }
+
+  /* Subtle scroll parallax on the hero content. */
+  function initHeroScrollParallax() {
+    if (motionPrefersReduced()) return;
+    const hero = $('#hero');
+    if (!hero) return;
+    let ticking = false;
+    const apply = () => {
+      ticking = false;
+      const rect = hero.getBoundingClientRect();
+      if (rect.bottom < 0) return;
+      hero.style.setProperty('--scroll-par', String(Math.max(0, Math.min(-rect.top, rect.height))));
+    };
+    window.addEventListener('scroll', () => {
+      if (!ticking) { ticking = true; requestAnimationFrame(apply); }
+    }, { passive: true });
+    apply();
+  }
+
+  /* ------------------------------------------------------------------ *
    * Advertising consent (launch readiness / AdSense).
    *
    * HONEST BEHAVIOUR: when no publisher id is configured by the deployment
@@ -410,6 +652,7 @@
     bindLegalModal();
     bindFooter();
     initAds();
+    initCinematic();
     window.addEventListener('hashchange', navigate);
     await navigate();
   }

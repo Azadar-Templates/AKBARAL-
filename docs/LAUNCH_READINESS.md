@@ -215,6 +215,33 @@ architecture that is fully inert (no script, no slots, no banner, honest
 `ads.txt` 404) until a real `AKBARAL_ADSENSE_CLIENT` publisher id is
 configured. No approval is claimed or implied.
 
+## Cinematic visual transformation QA (2026-09-10)
+
+Full visual transformation verified with the same rigor as functional
+changes:
+
+1. **Zero functional regressions by construction:** every element ID and
+   binding the SPA uses was inventoried before the rewrite and re-verified
+   after (automated ID-parity check; the only removed IDs were four legacy
+   marketing sections nothing references). All 12 screens, all forms, all
+   flows intact.
+2. **Live verification:** homepage serves all new cinematic markers; all
+   static assets 200 (poster 92 KB, CSS 51 KB, JS 68 KB); hero video slot
+   correctly falls back to the original canvas animation (no video asset
+   present); real /api/health drives the hero status chip; login → /me →
+   agents (4,001) verified through the Next proxy; all scroll targets and
+   route targets resolve.
+3. **Performance discipline:** transform/opacity-only animations, rAF
+   throttling, passive listeners, animation paused off-screen and on
+   hidden tabs, light node budget on mobile/save-data, `preload=none`
+   video, `display=swap` fonts, no third-party JS on the page.
+4. **Accessibility:** single h1, ordered headings, skip link, aria labels,
+   keyboard-operable controls with visible focus, contrast-checked palette,
+   full prefers-reduced-motion support (poster-only hero, instant reveals).
+5. **Honesty preserved:** real counters only, representative trace clearly
+   labeled, implemented security controls only, advertising still inert
+   until configured + consented.
+
 ## Go/No-Go verdict
 
 **GO for 18 September 2026**, contingent on the deployment checklist in

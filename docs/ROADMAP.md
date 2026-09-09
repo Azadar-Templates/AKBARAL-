@@ -591,6 +591,50 @@ fixed real UI bugs (all verified against the running backend, not inferred):
       homepage markers (About/Contact links, hidden ad elements, v7 bundle,
       zero ad scripts on page).
 
+### Cinematic visual transformation (2026-09-10) — COMPLETE
+
+A full premium visual/UI/UX transformation of the entire product to the
+"luxury cinematic AI operating system" language (near-black cinematic
+tones, muted olive/moss/antique-gold, warm off-white editorial type,
+hairlines, fine grids, glass, restrained motion). All original design and
+assets — no third-party or copied material.
+
+- [x] New design system (`public/styles.css`, complete rewrite, both dark
+      default and functional light theme) applied uniformly across landing,
+      auth, dashboard, MASTER, agents, factory, marketplace, workspace,
+      CRM, billing, admin and settings. All 12 screens and every bound
+      element preserved (ID parity audited against the previous page).
+- [x] Cinematic hero: full-bleed background-video SLOT architecture —
+      `<video>` with poster + an ORIGINAL canvas intelligence-network
+      animation as the live fallback + still poster for reduced-motion /
+      no-JS / mobile. Production video placement documented in
+      `docs/DESIGN.md` (`public/media/hero-loop.mp4`). Zero third-party
+      assets; zero layout shift; performance budgeted (92 KB poster,
+      preload=none, light node budget on mobile/save-data).
+- [x] Hero copy per product identity (ONE INTELLIGENCE. EVERY SOLUTION.),
+      Start Building / Explore AI Agents CTAs, and a live system chip
+      whose READY/DEGRADED state comes from the real /api/health response.
+- [x] Scroll narrative: chapter rail with active-section tracking,
+      reveal system, pipeline spine that draws as stages reveal, staggered
+      trace/lab rows, real-number counters (4,001 agents / 80 disciplines),
+      subtle parallax, magnetic CTAs, hero cursor reticle — all disabled
+      under prefers-reduced-motion and paused off-screen/hidden-tab.
+- [x] Sections: MASTER pipeline (9 architecture stages), Agent World (real
+      registry categories + counts), Agent Factory laboratory, execution
+      trace (honestly labeled representative run), security-first trust
+      section (implemented controls only), honest pricing with the locked
+      trial/credit rules, final CTA.
+- [x] Fixed a pre-existing bug surfaced by the redesign: `data-kicker`
+      eyebrow labels were never rendered (no JS ever read the attribute) —
+      now rendered via CSS `attr()`.
+- [x] Dev preview hardening: `allowedDevOrigins` for the sandbox preview
+      host so proxied dev resources are not cross-origin blocked.
+- [x] AdSense architecture untouched and still honest (inert until
+      configured + consented). No fake ads, no fake metrics.
+- [x] QA: 200/200 tests, typecheck clean, production build green, fresh
+      server, live marker/asset/navigation/flow verification (documented
+      in LAUNCH_READINESS.md).
+
 ### Milestone 12 — Web/mobile integration readiness (PLANNED)
 
 Wire the web app + mobile shell fully to the MASTER API (task center, live
