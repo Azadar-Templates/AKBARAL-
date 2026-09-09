@@ -9,6 +9,7 @@ import { meRouter } from './routes/me';
 import { createTasksRouter } from './routes/tasks';
 import { createWorkflowsRouter } from './routes/workflows';
 import { createMasterRouter } from './routes/master';
+import { executionQueue } from './orchestrator/queue';
 import { createProjectsRouter } from './routes/projects';
 import { createFilesRouter } from './routes/files';
 import { createBillingRouter } from './routes/billing';
@@ -100,6 +101,11 @@ export function createApiServer(): ApiServer {
   const app = express();
   const server = http.createServer(app);
   const stream = new ExecutionStream(server);
+
+  // Bind the real-time stream to the persistent execution engine and start
+  // its worker loop (idempotent across repeated server construction).
+  executionQueue.bindStream(stream);
+  executionQueue.start();
 
   app.set('trust proxy', env.trustProxy);
   app.use(securityHeaders);

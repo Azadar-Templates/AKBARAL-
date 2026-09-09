@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { HttpError, asyncRoute, businessErrorToHttp } from '../server/http';
 import { createExecutionPlan } from '../orchestrator/planner';
-import { runWorkflow } from '../orchestrator/workflow-runner';
-import { createAgentTask, dispatchAgentExecution, assertEmergencyStopDisabled } from '../orchestrator/executor';
+import { createAgentTask, assertEmergencyStopDisabled } from '../orchestrator/executor';
+import { executionQueue } from '../orchestrator/queue';
 import { getWorkflow, listWorkflowSteps, db } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
-export function createWorkflowsRouter(stream: ExecutionStream): Router {
+export function createWorkflowsRouter(_stream: ExecutionStream): Router {
   const router = Router();
   router.use(requireAuth);
 
@@ -59,10 +59,29 @@ export function createWorkflowsRouter(stream: ExecutionStream): Router {
       } catch (error) {
         throw businessErrorToHttp(error);
       }
-      void runWorkflow(req.params.id, stream);
-      res.status(202).json({ workflow: { id: req.params.id, status: 'running' } });
+      const { job } = executionQueue.enqueueWorkflow({
+        workflowId: req.params.id,
+        userId: req.auth!.userId,
+      });
+      res.status(202).json({
+        workflow: { id: req.params.id, status: job.status === 'queued' ? 'running' : job.status },
+        job: { id: job.id, status: job.status, attempts: job.attempts, maxAttempts: job.max_attempts },
+      });
     },
   );
+
+  // Cancel a queued/running workflow and refund the in-flight step's task.
+  router.post('/:id/cancel', (req: AuthenticatedRequest, res) => {
+    const workflow = getWorkflow(req.params.id);
+    if (!workflow || String(workflow.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'workflow not found', 'not_found');
+    }
+    const result = executionQueue.cancelWorkflow(req.params.id, req.auth!.userId, 'cancelled by user');
+    if (!result.cancelled) {
+      throw new HttpError(409, `workflow cannot be cancelled (current status: ${workflow.status})`, 'conflict');
+    }
+    res.status(200).json({ workflow: { id: req.params.id, status: 'cancelled' }, jobId: result.jobId ?? null });
+  });
 
   router.get('/:id', (req: AuthenticatedRequest, res) => {
     const workflow = getWorkflow(req.params.id);
@@ -93,7 +112,12 @@ export function createWorkflowsRouter(stream: ExecutionStream): Router {
       } catch (error) {
         throw businessErrorToHttp(error, 400, 'agent_dispatch_failed');
       }
-      void dispatchAgentExecution(dispatched.executionId, agentSlug, stream);
+      const { job } = executionQueue.enqueueAgentExecution({
+        executionId: dispatched.executionId,
+        agentSlug,
+        taskId: dispatched.taskId,
+        userId: req.auth!.userId,
+      });
       res.status(202).json({
         task: {
           id: dispatched.taskId,
@@ -102,6 +126,7 @@ export function createWorkflowsRouter(stream: ExecutionStream): Router {
           agentSlug,
           executionId: dispatched.executionId,
         },
+        job: { id: job.id, status: job.status, attempts: job.attempts, maxAttempts: job.max_attempts },
         freeCredits: dispatched.freeCredits,
       });
     },

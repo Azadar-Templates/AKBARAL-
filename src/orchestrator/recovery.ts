@@ -1,27 +1,35 @@
+import { db } from '../db';
 import {
-  db,
-  refundTaskCredit,
-  updateTaskStatus,
-  updateWorkflowStatus,
-  updateWorkflowStepStatus,
-  updateAgentExecutionStatus,
+  finishJob,
+  listOrphanNonTerminalExecutions,
+  listOrphanNonTerminalTasks,
+  listOrphanRunningWorkflows,
+  listStaleRunningJobs,
+  requeueStaleJob,
+  type ExecutionJobRow,
 } from '../db';
+import { refundTaskCredit, updateTaskStatus, updateWorkflowStatus, updateWorkflowStepStatus, updateAgentExecutionStatus } from '../db';
+import { reconcileTaskFailed } from './task-reconciler';
+import { executionQueue } from './queue';
 
 /**
- * Crash recovery (Milestone 3, stage 1).
+ * Crash recovery (Milestone 3).
  *
- * Executions run in-process. If the process dies mid-run (crash, deploy,
- * restart), workflows, steps, tasks and agent executions are left in
- * non-terminal states with free-task credits already reserved — forever.
+ * Runs at boot BEFORE the queue starts accepting work:
  *
- * This reconciliation runs at boot BEFORE the server accepts traffic: every
- * non-terminal workflow/step/task/execution is marked failed with an honest
- * "interrupted by server restart" error and every affected task's reserved
- * credit is refunded (idempotently — refundTaskCredit refuses double
- * refunds per task).
+ *  1. Stale running jobs (locked by a dead worker) are re-queued for a final
+ *     attempt when attempts remain, or failed + task-refunded when exhausted.
+ *  2. Queued/retrying jobs need no action — the new worker claims them.
+ *  3. Non-terminal tasks/executions/workflows NOT owned by any live job are
+ *     reconciled the legacy way: honest failure + exactly-once refund.
+ *
+ * All refunds are idempotent per task (refundTaskCredit refuses doubles), so
+ * a crash during recovery itself is safe to re-run.
  */
 
 export interface RecoveryReport {
+  jobsRequeued: number;
+  jobsFailed: number;
   workflows: number;
   steps: number;
   tasks: number;
@@ -32,12 +40,49 @@ export interface RecoveryReport {
 const INTERRUPTED = 'interrupted by server restart';
 
 export function recoverInterruptedWork(): RecoveryReport {
-  const report: RecoveryReport = { workflows: 0, steps: 0, tasks: 0, executions: 0, creditsRefunded: 0 };
+  const report: RecoveryReport = {
+    jobsRequeued: 0,
+    jobsFailed: 0,
+    workflows: 0,
+    steps: 0,
+    tasks: 0,
+    executions: 0,
+    creditsRefunded: 0,
+  };
 
-  // 1. Agent executions stuck in a non-terminal state.
-  const executions = db.all<{ id: string }>(
-    "SELECT id FROM agent_executions WHERE status IN ('queued', 'running')",
-  ) as Array<{ id: string }>;
+  // --- 1. Stale running jobs from a dead worker -----------------------------
+  const staleJobs = listStaleRunningJobs(executionQueue.workerId);
+  for (const job of staleJobs) {
+    if (job.attempts < job.max_attempts) {
+      if (requeueStaleJob(job.id, `${INTERRUPTED} (attempt ${job.attempts} interrupted)`)) {
+        report.jobsRequeued += 1;
+      }
+    } else {
+      if (finishJob(job.id, { status: 'failed', errorCode: 'interrupted', errorMessage: INTERRUPTED })) {
+        report.jobsFailed += 1;
+        if (job.job_type === 'agent_execution' && job.task_id) {
+          const reconciled = reconcileTaskFailed({
+            taskId: job.task_id,
+            code: 'interrupted',
+            message: INTERRUPTED,
+          });
+          if (reconciled.applied) {
+            report.creditsRefunded += 1;
+          }
+        }
+        if (job.job_type === 'workflow' && job.workflow_id) {
+          db.run(
+            `UPDATE workflows SET status='failed', error_message=?, completed_at=? WHERE id=? AND status IN ('planned','running')`,
+            [INTERRUPTED, new Date().toISOString(), job.workflow_id],
+          );
+          report.workflows += 1;
+        }
+      }
+    }
+  }
+
+  // --- 2. Orphan agent executions (no live job owns them) -------------------
+  const executions = listOrphanNonTerminalExecutions();
   for (const execution of executions) {
     updateAgentExecutionStatus({
       id: execution.id,
@@ -48,20 +93,20 @@ export function recoverInterruptedWork(): RecoveryReport {
     report.executions += 1;
   }
 
-  // 2. Tasks stuck in a non-terminal state: fail + refund the reserved credit.
-  // Task states: created -> running -> completed | failed | cancelled. A crash
-  // can leave a task in 'created' (reserved but not yet dispatched) or
-  // 'running' (mid-execution); both are orphaned at boot.
-  const tasks = db.all<{ id: string; user_id: string }>(
-    "SELECT id, user_id FROM tasks WHERE status IN ('created', 'queued', 'running')",
-  ) as Array<{ id: string; user_id: string }>;
+  // --- 3. Orphan tasks (no live job owns them) ------------------------------
+  const tasks = listOrphanNonTerminalTasks();
   for (const task of tasks) {
-    updateTaskStatus({
+    const applied = updateTaskStatus({
       id: task.id,
       status: 'failed',
       completedAt: new Date().toISOString(),
       errorMessage: INTERRUPTED,
+      expectedStatuses: ['created', 'queued', 'running'],
     });
+    if (!applied) {
+      continue;
+    }
+    report.tasks += 1;
     const refund = refundTaskCredit({
       userId: task.user_id,
       taskId: task.id,
@@ -70,23 +115,25 @@ export function recoverInterruptedWork(): RecoveryReport {
     if (refund) {
       report.creditsRefunded += 1;
     }
-    report.tasks += 1;
   }
 
-  // 3. Workflow steps stuck running.
-  const steps = db.all<{ id: string }>(
-    "SELECT id FROM workflow_steps WHERE status = 'running'",
-  ) as Array<{ id: string }>;
-  for (const step of steps) {
-    updateWorkflowStepStatus({ id: step.id, status: 'failed', errorMessage: INTERRUPTED });
-    report.steps += 1;
+  // --- 4. Running workflow steps of orphaned workflows ----------------------
+  const orphanWorkflows = listOrphanRunningWorkflows();
+  const orphanWorkflowIds = new Set(orphanWorkflows.map((workflow) => workflow.id));
+  if (orphanWorkflowIds.size > 0) {
+    const steps = db.all<{ id: string; workflow_id: string }>(
+      `SELECT id, workflow_id FROM workflow_steps WHERE status = 'running'`,
+    ) as Array<{ id: string; workflow_id: string }>;
+    for (const step of steps) {
+      if (orphanWorkflowIds.has(step.workflow_id)) {
+        updateWorkflowStepStatus({ id: step.id, status: 'failed', errorMessage: INTERRUPTED });
+        report.steps += 1;
+      }
+    }
   }
 
-  // 4. Workflows stuck running.
-  const workflows = db.all<{ id: string }>(
-    "SELECT id FROM workflows WHERE status = 'running'",
-  ) as Array<{ id: string }>;
-  for (const workflow of workflows) {
+  // --- 5. Orphan running workflows ------------------------------------------
+  for (const workflow of orphanWorkflows) {
     updateWorkflowStatus({
       id: workflow.id,
       status: 'failed',
@@ -98,3 +145,6 @@ export function recoverInterruptedWork(): RecoveryReport {
 
   return report;
 }
+
+/** Type re-export for route layer convenience. */
+export type { ExecutionJobRow };

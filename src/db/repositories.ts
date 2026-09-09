@@ -674,16 +674,34 @@ export function updateTaskStatus(input: {
   startedAt?: string | null;
   completedAt?: string | null;
   errorMessage?: string | null;
-}): void {
-  db.run(
+  /**
+   * Optional state guard: the update only applies when the task is currently
+   * in one of these statuses. Used by the execution engine so a late
+   * completion can never overwrite a cancellation and vice versa. Returns
+   * whether the transition was applied.
+   */
+  expectedStatuses?: string[];
+}): boolean {
+  const guardSql = input.expectedStatuses
+    ? ` AND status IN (${input.expectedStatuses.map(() => '?').join(',')})`
+    : '';
+  const result = db.run(
     `UPDATE tasks
      SET status = ?,
          started_at = COALESCE(?, started_at),
          completed_at = COALESCE(?, completed_at),
          error_message = ?
-     WHERE id = ?`,
-    [input.status, input.startedAt ?? null, input.completedAt ?? null, input.errorMessage ?? null, input.id],
+     WHERE id = ?${guardSql}`,
+    [
+      input.status,
+      input.startedAt ?? null,
+      input.completedAt ?? null,
+      input.errorMessage ?? null,
+      input.id,
+      ...(input.expectedStatuses ?? []),
+    ],
   );
+  return result.changes === 1;
 }
 
 export function updateTaskOutput(input: { id: string; outputData: Record<string, unknown> | null }): void {

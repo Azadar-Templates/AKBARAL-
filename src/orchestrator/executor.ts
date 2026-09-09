@@ -3,7 +3,7 @@ import {
   appendAuditLog,
   appendTaskEvent,
   consumeTaskCredit,
-  refundTaskCredit,
+
   createAgent,
   createAgentExecution,
   createTask,
@@ -27,6 +27,7 @@ import { getAgentBySlug, isAgentVisibleToUser } from '../agents/registry';
 import { modelRouter } from '../models';
 import { runTool, type ToolResult } from '../tools';
 import { verifyAgentOutput } from './verifier';
+import { reconcileTaskFailed } from './task-reconciler';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
 /**
@@ -257,6 +258,31 @@ export function createAgentTask(input: {
   };
 }
 
+export interface DispatchOptions {
+  stream?: ExecutionStream;
+  /**
+   * Defer task-level failure reconciliation to the caller (the execution
+   * queue). When true, a failed attempt marks the agent execution failed but
+   * does NOT terminal-fail the task or refund the credit — the queue decides
+   * whether to retry or finalize. Used for queue-driven retries.
+   */
+  deferTaskFailure?: boolean;
+  /** Cancellation probe checked before applying results. */
+  isCancelled?: () => boolean;
+}
+
+function resolveDispatchOptions(
+  streamOrOptions?: ExecutionStream | DispatchOptions,
+): DispatchOptions {
+  if (!streamOrOptions) {
+    return {};
+  }
+  if (typeof streamOrOptions === 'object' && 'pushStatus' in streamOrOptions) {
+    return { stream: streamOrOptions as ExecutionStream };
+  }
+  return streamOrOptions as DispatchOptions;
+}
+
 /**
  * Dispatch an execution to the correct specialist. Agent #001 uses the real
  * research pipeline; every other registered agent uses the model router with
@@ -265,13 +291,14 @@ export function createAgentTask(input: {
 export function dispatchAgentExecution(
   executionId: string,
   agentSlug: string,
-  stream?: ExecutionStream,
-): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  streamOrOptions?: ExecutionStream | DispatchOptions,
+): Promise<{ status: string; output: Record<string, unknown> | null; error?: string; code?: string }> {
   assertEmergencyStopDisabled();
+  const options = resolveDispatchOptions(streamOrOptions);
   if (agentSlug === WEB_RESEARCH_AGENT_SLUG) {
-    return runWebResearchExecution(executionId, stream);
+    return runWebResearchExecution(executionId, options);
   }
-  return runGenericAgentExecution(executionId, agentSlug, stream);
+  return runGenericAgentExecution(executionId, agentSlug, options);
 }
 
 /**
@@ -282,9 +309,11 @@ export function dispatchAgentExecution(
 export async function runGenericAgentExecution(
   executionId: string,
   agentSlug: string,
-  stream?: ExecutionStream,
-): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  streamOrOptions?: ExecutionStream | DispatchOptions,
+): Promise<{ status: string; output: Record<string, unknown> | null; error?: string; code?: string }> {
   assertEmergencyStopDisabled();
+  const options = resolveDispatchOptions(streamOrOptions);
+  const stream = options.stream;
   const execution = getExecutionSafe(executionId);
   const start = Date.now();
   updateAgentExecutionStatus({ id: executionId, status: 'running', startedAt: new Date().toISOString() });
@@ -391,6 +420,14 @@ export async function runGenericAgentExecution(
         llm: verification.llm,
       },
     };
+
+    // Cancellation probe: if the task was cancelled while the model call was
+    // in flight, discard the result without applying it.
+    if (options.isCancelled?.()) {
+      appendLog(executionId, stream, 'Result discarded: task was cancelled during execution', 'warn', 'system', {});
+      return { status: 'failed', output: null, error: 'cancelled during execution', code: 'cancelled' };
+    }
+
     updateAgentExecutionStatus({
       id: executionId,
       status: 'completed',
@@ -414,17 +451,27 @@ export async function runGenericAgentExecution(
     );
 
     if (task) {
-      updateTaskStatus({ id: task.id, status: 'completed', completedAt: new Date().toISOString() });
-      updateTaskOutput({ id: task.id, outputData: output });
-      appendTaskEvent({ taskId: task.id, executionId, message: `Agent ${agentSlug} completed successfully (verification score ${Math.round(verification.score * 100)}%)`, level: 'info', type: 'status' });
-      appendAuditLog({
-        actorId: task.user_id,
-        action: 'task.completed',
-        resourceType: 'task',
-        resourceId: task.id as string,
-        description: `agent ${agentSlug} completed`,
-        metadata: { executionId, model: result.model, provider: result.provider, verificationScore: verification.score },
+      // Guarded completion: never overwrite a concurrent cancellation.
+      const applied = updateTaskStatus({
+        id: task.id,
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        expectedStatuses: ['created', 'queued', 'running'],
       });
+      if (applied) {
+        updateTaskOutput({ id: task.id, outputData: output });
+        appendTaskEvent({ taskId: task.id, executionId, message: `Agent ${agentSlug} completed successfully (verification score ${Math.round(verification.score * 100)}%)`, level: 'info', type: 'status' });
+        appendAuditLog({
+          actorId: task.user_id,
+          action: 'task.completed',
+          resourceType: 'task',
+          resourceId: task.id as string,
+          description: `agent ${agentSlug} completed`,
+          metadata: { executionId, model: result.model, provider: result.provider, verificationScore: verification.score },
+        });
+      } else {
+        appendLog(executionId, stream, 'Task reached a terminal state before completion; result not applied to the task', 'warn', 'system', {});
+      }
     }
     return { status: 'completed', output };
   } catch (error) {
@@ -432,7 +479,7 @@ export async function runGenericAgentExecution(
     if ((error as { code?: string }).code === 'verification_failed') {
       appendLog(executionId, stream, 'Output rejected by verification; task will fail and the free credit will be refunded', 'warn', 'verification', { message });
     }
-    return failExecution(executionId, task?.id, message, stream);
+    return failExecution(executionId, task?.id, message, stream, { deferTaskFailure: options.deferTaskFailure });
   }
 }
 
@@ -517,7 +564,8 @@ async function failExecution(
   taskId: string | undefined,
   message: string,
   stream: ExecutionStream | undefined,
-): Promise<{ status: string; output: null; error: string }> {
+  options?: { deferTaskFailure?: boolean },
+): Promise<{ status: string; output: null; error: string; code: string }> {
   const start = Date.now();
   const code = message.startsWith('verification_failed')
     ? 'verification_failed'
@@ -534,26 +582,17 @@ async function failExecution(
   stream?.pushStatus({ executionId, status: 'failed', message, errorMessage: message });
   appendLog(executionId, stream, `Execution failed: ${message}`, 'error', 'verification', { code });
 
-  if (taskId) {
-    updateTaskStatus({ id: taskId, status: 'failed', completedAt: new Date().toISOString(), errorMessage: message });
-    appendTaskEvent({ taskId, executionId, message: `Task failed: ${message}`, level: 'error', type: 'status' });
-    const task = findTaskById(taskId);
-    if (task) {
-      const refund = refundTaskCredit({ userId: task.user_id, taskId: task.id, reason: `automatic refund for failed task ${task.id}` });
-      if (refund) {
-        appendTaskEvent({ taskId, executionId, message: 'Task credit automatically refunded', level: 'info', type: 'status' });
-      }
-      appendAuditLog({
-        actorId: task.user_id,
-        action: 'task.failed',
-        resourceType: 'task',
-        resourceId: task.id as string,
-        description: `task failed: ${message}`,
-        metadata: { executionId, code },
-      });
-    }
+  if (options?.deferTaskFailure) {
+    // Queue-driven execution: task reconciliation (fail + refund) is decided
+    // by the queue after retry classification — an attempt failure alone must
+    // not terminal-fail the task.
+    return { status: 'failed', output: null, error: message, code };
   }
-  return { status: 'failed', output: null, error: message };
+
+  if (taskId) {
+    reconcileTaskFailed({ taskId, code, message, executionId, stream });
+  }
+  return { status: 'failed', output: null, error: message, code };
 }
 
 /**
@@ -563,9 +602,11 @@ async function failExecution(
  */
 export async function runWebResearchExecution(
   executionId: string,
-  stream?: ExecutionStream,
-): Promise<{ status: string; output: Record<string, unknown> | null; error?: string }> {
+  streamOrOptions?: ExecutionStream | DispatchOptions,
+): Promise<{ status: string; output: Record<string, unknown> | null; error?: string; code?: string }> {
   assertEmergencyStopDisabled();
+  const options = resolveDispatchOptions(streamOrOptions);
+  const stream = options.stream;
   const execution = getExecutionSafe(executionId);
   const start = Date.now();
   const runStartedAt = new Date().toISOString();
@@ -617,24 +658,38 @@ export async function runWebResearchExecution(
       verifiedSources: report.verifiedSources,
     });
 
+    if (options.isCancelled?.()) {
+      appendLog(executionId, stream, 'Result discarded: task was cancelled during execution', 'warn', 'system', {});
+      return { status: 'failed', output: null, error: 'cancelled during execution', code: 'cancelled' };
+    }
+
     if (task) {
-      updateTaskStatus({ id: task.id, status: 'completed', completedAt: new Date().toISOString() });
-      updateTaskOutput({ id: task.id, outputData: output });
-      appendTaskEvent({
-        taskId: task.id,
-        executionId,
-        message: 'Task completed successfully',
-        level: 'info',
-        type: 'status',
+      const applied = updateTaskStatus({
+        id: task.id,
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        expectedStatuses: ['created', 'queued', 'running'],
       });
-      appendAuditLog({
-        actorId: task.user_id,
-        action: 'task.completed',
-        resourceType: 'task',
-        resourceId: task.id as string,
-        description: 'web research task completed',
-        metadata: { executionId, verifiedSources: report.verifiedSources },
-      });
+      if (applied) {
+        updateTaskOutput({ id: task.id, outputData: output });
+        appendTaskEvent({
+          taskId: task.id,
+          executionId,
+          message: 'Task completed successfully',
+          level: 'info',
+          type: 'status',
+        });
+        appendAuditLog({
+          actorId: task.user_id,
+          action: 'task.completed',
+          resourceType: 'task',
+          resourceId: task.id as string,
+          description: 'web research task completed',
+          metadata: { executionId, verifiedSources: report.verifiedSources },
+        });
+      } else {
+        appendLog(executionId, stream, 'Task reached a terminal state before completion; result not applied to the task', 'warn', 'system', {});
+      }
     }
 
     return { status: 'completed', output };
@@ -650,42 +705,17 @@ export async function runWebResearchExecution(
     stream?.pushStatus({ executionId, status: 'failed', message, errorMessage: message });
     appendLog(executionId, stream, `Execution failed: ${message}`, 'error', 'verification', { error: message });
 
-    if (task) {
-      updateTaskStatus({ id: task.id, status: 'failed', completedAt: new Date().toISOString(), errorMessage: message });
-      appendTaskEvent({
+    if (task && !options.deferTaskFailure) {
+      reconcileTaskFailed({
         taskId: task.id,
+        code: (error as { code?: string }).code ?? 'execution_failed',
+        message,
         executionId,
-        message: `Task failed: ${message}`,
-        level: 'error',
-        type: 'status',
-      });
-
-      // Automatic refund on failure.
-      const refund = refundTaskCredit({
-        userId: task.user_id,
-        taskId: task.id,
-        reason: `automatic refund for failed task ${task.id}`,
-      });
-      if (refund) {
-        appendTaskEvent({
-          taskId: task.id,
-          executionId,
-          message: 'Task credit automatically refunded',
-          level: 'info',
-          type: 'status',
-        });
-      }
-      appendAuditLog({
-        actorId: task.user_id,
-        action: 'task.failed',
-        resourceType: 'task',
-        resourceId: task.id as string,
-        description: `research task failed: ${message}`,
-        metadata: { executionId },
+        stream,
       });
     }
 
-    return { status: 'failed', output: null, error: message };
+    return { status: 'failed', output: null, error: message, code: (error as { code?: string }).code ?? 'execution_failed' };
   }
 }
 

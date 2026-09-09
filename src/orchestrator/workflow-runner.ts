@@ -4,6 +4,7 @@ import {
   listWorkflowSteps,
   updateWorkflowStatus,
   updateWorkflowStepStatus,
+  updateAgentExecutionStatus,
   createWorkflow,
   createWorkflowStep,
 } from '../db';
@@ -11,11 +12,12 @@ import { getAgentBySlug } from '../agents/registry';
 import { createAgentTask, dispatchAgentExecution } from './executor';
 import { routerComplete } from './goal-analyzer';
 import { synthesizeFinalResult, type SynthesisStepInput } from './synthesizer';
+import { reconcileTaskFailed } from './task-reconciler';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
 export interface WorkflowRunResult {
   workflowId: string;
-  status: 'completed' | 'failed' | 'parsing_failed';
+  status: 'completed' | 'failed' | 'cancelled' | 'parsing_failed';
   completedSteps: number;
   failedSteps: number;
   skippedSteps: number;
@@ -34,9 +36,17 @@ export interface WorkflowRunResult {
  * consume credits (the task layer refunds automatically); dependent steps
  * are skipped.
  */
+export interface RunWorkflowOptions {
+  /** Cancellation probe checked between steps and before applying results. */
+  isCancelled?: () => boolean;
+  /** Per-step execution timeout in milliseconds. */
+  stepTimeoutMs?: number;
+}
+
 export async function runWorkflow(
   workflowId: string,
   stream?: ExecutionStream,
+  options?: RunWorkflowOptions,
 ): Promise<WorkflowRunResult> {
   const workflow = getWorkflow(workflowId);
   if (!workflow) {
@@ -52,9 +62,43 @@ export async function runWorkflow(
   let failed = 0;
   let skipped = 0;
   let failureMessage: string | undefined;
+  let cancelled = false;
 
   for (const step of steps) {
     const stepOrder = Number(step.step_order ?? 0);
+
+    // Resume support: steps already completed in a previous (interrupted or
+    // retried) run are not re-executed; their persisted results feed the
+    // synthesis and the dependency graph.
+    if (String(step.status ?? '') === 'completed' && step.result_json) {
+      let prior: Record<string, unknown> = {};
+      try {
+        prior = JSON.parse(String(step.result_json)) as Record<string, unknown>;
+      } catch {
+        prior = {};
+      }
+      completed.set(String(stepOrder), prior);
+      stepMeta.push({
+        stepOrder,
+        agentSlug: agentSlugForStep(step.agent_id),
+        specialization: specializationForStep(step.agent_id),
+        status: 'completed',
+        verified: Boolean((prior.verification as { passed?: boolean } | undefined)?.passed),
+        verificationScore: Number((prior.verification as { score?: number } | undefined)?.score ?? 0),
+        content: extractContent(prior),
+      });
+      if (step.task_id) {
+        taskIds.push(String(step.task_id));
+      }
+      continue;
+    }
+
+    // Cancellation probe between steps.
+    if (options?.isCancelled?.()) {
+      cancelled = true;
+      break;
+    }
+
     const dependencies = String(step.depends_on ?? '')
       .split(',')
       .map((value) => value.trim())
@@ -119,10 +163,15 @@ export async function runWorkflow(
       taskIds.push(dispatch.taskId);
       updateWorkflowStepStatus({ id: String(step.id), status: 'running', taskId: dispatch.taskId });
 
-      const run = await dispatchAgentExecution(dispatch.executionId, agentSlug, stream);
-      if (run.status !== 'completed') {
+      const run = await withStepTimeout(
+        dispatchAgentExecution(dispatch.executionId, agentSlug, stream),
+        options?.stepTimeoutMs,
+      );
+
+      if (run.timedOut) {
         failed += 1;
-        failureMessage = run.error ?? `step ${stepOrder} failed`;
+        failureMessage = `timed_out: step ${stepOrder} (${agentSlug}) exceeded the per-step time budget`;
+        markStepTimedOut(dispatch.executionId, dispatch.taskId, failureMessage);
         updateWorkflowStepStatus({
           id: String(step.id),
           status: 'failed',
@@ -141,8 +190,43 @@ export async function runWorkflow(
         });
         break;
       }
-      completed.set(String(stepOrder), run.output ?? {});
-      const verification = extractVerification(run.output);
+
+      if (run.value.status !== 'completed') {
+        failed += 1;
+        failureMessage = run.value.error ?? `step ${stepOrder} failed`;
+        updateWorkflowStepStatus({
+          id: String(step.id),
+          status: 'failed',
+          errorMessage: failureMessage,
+          taskId: dispatch.taskId,
+        });
+        stepMeta.push({
+          stepOrder,
+          agentSlug,
+          specialization: specializationForStep(step.agent_id),
+          status: 'failed',
+          verified: false,
+          verificationScore: 0,
+          content: '',
+          error: failureMessage,
+        });
+        break;
+      }
+
+      // Cancellation probe before applying the step result.
+      if (options?.isCancelled?.()) {
+        cancelled = true;
+        updateWorkflowStepStatus({
+          id: String(step.id),
+          status: 'cancelled',
+          errorMessage: 'workflow cancelled',
+          taskId: dispatch.taskId,
+        });
+        break;
+      }
+
+      completed.set(String(stepOrder), run.value.output ?? {});
+      const verification = extractVerification(run.value.output);
       stepMeta.push({
         stepOrder,
         agentSlug,
@@ -150,12 +234,12 @@ export async function runWorkflow(
         status: 'completed',
         verified: verification?.passed ?? false,
         verificationScore: verification?.score ?? 0,
-        content: extractContent(run.output),
+        content: extractContent(run.value.output),
       });
       updateWorkflowStepStatus({
         id: String(step.id),
         status: 'completed',
-        result: run.output ?? {},
+        result: run.value.output ?? {},
         taskId: dispatch.taskId,
       });
     } catch (error) {
@@ -188,18 +272,40 @@ export async function runWorkflow(
   const result: Record<string, unknown> = {
     workflowId,
     goal: workflow.goal,
-    summary: stepsSummary(completed.size, failed, skipped),
+    summary: stepsSummary(completed.size, failed, skipped, cancelled),
     stepResults: completed,
     finalResult,
   };
 
+  if (cancelled) {
+    // The cancellation path already wrote the terminal workflow state; do not
+    // overwrite it here.
+    stream?.pushStatus({
+      executionId: workflowId,
+      status: 'cancelled',
+      message: 'Workflow cancelled',
+    });
+    return {
+      workflowId,
+      status: 'cancelled',
+      completedSteps: completed.size,
+      failedSteps: failed,
+      skippedSteps: skipped,
+      result,
+      error: 'cancelled',
+    };
+  }
+
   const status = failed > 0 ? 'failed' : 'completed';
+  // Guarded: an overall timeout or cancellation may have terminalized the
+  // workflow while the last step was in flight; never overwrite that.
   updateWorkflowStatus({
     id: workflowId,
     status,
     result,
     errorMessage: failureMessage ?? null,
     completedAt: new Date().toISOString(),
+    expectedStatuses: ['planned', 'running'],
   });
   stream?.pushStatus({
     executionId: workflowId,
@@ -217,6 +323,53 @@ export async function runWorkflow(
     result,
     error: failureMessage,
   };
+}
+
+/**
+ * Race a step execution against its time budget. On timeout the losing
+ * promise is left to settle quietly (its guarded task/execution writes are
+ * no-ops once the step has been marked timed out) and the caller marks the
+ * step, execution and task failed with an honest timed_out error.
+ */
+async function withStepTimeout(
+  promise: Promise<{ status: string; output: Record<string, unknown> | null; error?: string; code?: string }>,
+  timeoutMs?: number,
+): Promise<
+  | { timedOut: false; value: { status: string; output: Record<string, unknown> | null; error?: string; code?: string } }
+  | { timedOut: true }
+> {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return { timedOut: false, value: await promise };
+  }
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const value = await Promise.race([
+      promise,
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+    if ('timedOut' in value && value.timedOut) {
+      return { timedOut: true };
+    }
+    return { timedOut: false, value: value as { status: string; output: Record<string, unknown> | null; error?: string; code?: string } };
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/** Mark a timed-out step's execution and task failed with a refund. */
+function markStepTimedOut(executionId: string, taskId: string, message: string): void {
+  updateAgentExecutionStatus({
+    id: executionId,
+    status: 'failed',
+    errorMessage: message,
+    completedAt: new Date().toISOString(),
+  });
+  reconcileTaskFailed({ taskId, code: 'timed_out', message, executionId });
 }
 
 function extractVerification(output: Record<string, unknown> | null): { passed: boolean; score: number } | null {
@@ -272,7 +425,10 @@ function aggregateCredits(taskIds: string[]): { consumed: number; refunded: numb
   return { consumed, refunded };
 }
 
-function stepsSummary(completed: number, failed: number, skipped: number): string {
+function stepsSummary(completed: number, failed: number, skipped: number, cancelled = false): string {
+  if (cancelled) {
+    return `Workflow cancelled after ${completed} completed step(s).`;
+  }
   if (failed > 0) {
     return `Workflow completed ${completed} step(s), failed ${failed}, skipped ${skipped}.`;
   }

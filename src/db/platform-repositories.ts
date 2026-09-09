@@ -472,11 +472,22 @@ export function createWorkflow(input: { userId: string; goal: string; projectId?
   return { id };
 }
 
-export function updateWorkflowStatus(input: { id: string; status: string; result?: unknown; errorMessage?: string | null; completedAt?: string | null }): void {
-  db.run(
-    `UPDATE workflows SET status=?, result_json=?, error_message=?, completed_at=COALESCE(?, completed_at) WHERE id=?`,
-    [input.status, input.result ? JSON.stringify(input.result) : null, input.errorMessage ?? null, input.completedAt ?? null, input.id],
+export function updateWorkflowStatus(input: { id: string; status: string; result?: unknown; errorMessage?: string | null; completedAt?: string | null; expectedStatuses?: string[] }): boolean {
+  const guardSql = input.expectedStatuses
+    ? ` AND status IN (${input.expectedStatuses.map(() => '?').join(',')})`
+    : '';
+  const result = db.run(
+    `UPDATE workflows SET status=?, result_json=?, error_message=?, completed_at=COALESCE(?, completed_at) WHERE id=?${guardSql}`,
+    [
+      input.status,
+      input.result ? JSON.stringify(input.result) : null,
+      input.errorMessage ?? null,
+      input.completedAt ?? null,
+      input.id,
+      ...(input.expectedStatuses ?? []),
+    ],
   );
+  return result.changes === 1;
 }
 
 export function getWorkflow(id: string): Record<string, unknown> | undefined {

@@ -117,7 +117,9 @@ Goal: make every stage of the core pipeline real, honest and observable.
       already implemented; full-contract diversity audit remains in
       `npm run audit:registry`.
 
-### Milestone 3 — Agent execution/runtime (stage 1 DONE)
+### Milestone 3 — Agent execution/runtime (DONE — implemented, tested, verified)
+
+Production execution engine shipped on top of stage 1.
 
 - [x] Crash recovery (`src/orchestrator/recovery.ts`): boot-time
       reconciliation fails non-terminal workflows/steps/tasks/executions
@@ -126,14 +128,53 @@ Goal: make every stage of the core pipeline real, honest and observable.
       simulated crash: boot logged "1 workflow(s), 1 task(s), 1 execution(s)
       marked failed; 1 credit(s) refunded"; ledger shows consume then refund;
       account restored to 5/5.
-- [ ] Persistent execution queue (survives restarts), worker concurrency
-      limits, retries with backoff, timeout enforcement, cancellation,
-      execution metrics.
+- [x] Persistent execution queue (`src/orchestrator/queue.ts`,
+      `db/migrations/0006_execution_queue.sql`): DB-backed jobs
+      (queued/running/retrying/completed/failed/cancelled/timed_out) with
+      worker locks and claim-based tick loop; survives restarts with no
+      duplicate execution (idempotency keys `agent:<executionId>` /
+      `workflow:<workflowId>`; duplicate enqueues return the existing job).
+- [x] Retries: exponential backoff `min(base·2^(attempts−1), 30s)`,
+      configurable max attempts; only retryable failures retry —
+      `provider_not_configured`, `verification_failed`, `requires_pro` etc.
+      are permanent; every attempt is persisted.
+- [x] Timeouts: per-step (`stepTimeoutMs`) and overall workflow
+      (`workflowTimeoutMs`) budgets with safe abort; abandoned in-flight work
+      can never resurrect a terminalized task/workflow (guarded status
+      writes); workflow overall timeout is terminal (no retry).
+- [x] Cancellation: user `POST /api/tasks/:id/cancel`,
+      `POST /api/workflows/:id/cancel`; admin `POST /api/admin/tasks/:id/cancel`
+      and `POST /api/admin/queue/cancel-all` (emergency stop); queued jobs are
+      settled instantly, running jobs abort at the next probe; every
+      cancellation refunds the reserved credit exactly once; all admin
+      actions audit-logged.
+- [x] Queue observability: `GET /api/admin/queue/jobs` (status/limit/offset
+      filters + by-status stats + active workers); job state included in
+      `GET /api/master/:id` and enqueue responses; real-time status pushes
+      (queued → running → step progress → retrying → terminal) over the
+      existing WS/SSE stream.
+- [x] Routes on the engine: `POST /api/tasks/research`,
+      `POST /api/workflows/:id/run`, `POST /api/workflows/agent`,
+      `POST /api/master` all enqueue; real pipeline preserved (analysis →
+      planning → tools → execution → verification → synthesis).
+- [x] Trust policy invariant: every unsuccessful terminal path (queue
+      failure, retry exhaustion, timeout, cancellation, crash-recovery
+      failure) reconciles the task and refunds exactly once; the engine was
+      built concurrency-safe for 4,000+ agents (concurrency limit, worker
+      locks, guarded terminal transitions).
 
-### Milestone 3 — Agent execution/runtime (PLANNED)
-
-Persistent execution queue (survives restarts), worker concurrency limits,
-retries with backoff, timeout enforcement, cancellation, execution metrics.
+**Milestone 3 verification record (2026-09-09):** 16 new tests
+(`src/orchestrator/queue.test.ts`: success/streaming, persistence across
+"restart", stale requeue, exhausted-stale refund + idempotency, retry
+success, retry exhaustion, permanent no-retry, verification failure, step
+timeout, queued cancel, running cancel, admin cancel-all, idempotency,
+parallel race/credit balance, workflow job, workflow timeout) — full suite
+**123/123 green**, typecheck clean, production build green. Live-verified:
+master workflow enqueued with job handle → honest `provider_not_configured`
+permanent failure (no retry) with consume-then-refund ledger and account
+restored to 5/5; 409 conflict on cancelling terminal work; admin queue
+listing with stats; simulated dead worker → boot recovery requeued the
+stale job → attempt 2 → honest failure + exactly-one refund.
 
 ### Milestone 4 — Tool/API/provider abstraction + model router (PLANNED)
 

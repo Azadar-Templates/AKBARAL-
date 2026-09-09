@@ -88,6 +88,11 @@ function resolveTrustProxy(): number {
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 10 ? parsed : 0;
 }
 
+function resolveIntEnv(name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number(trimOrEmpty(process.env[name]));
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
 export const env = {
   nodeEnv,
   isProduction,
@@ -105,6 +110,12 @@ export const env = {
   smtpFrom: trimOrEmpty(process.env.SMTP_FROM) || 'Akbaral <no-reply@akbaral.ai>',
   trustProxy: resolveTrustProxy(),
   corsOrigins: trimOrEmpty(process.env.CORS_ORIGINS).split(',').map((value) => value.trim()).filter(Boolean),
+  // --- Execution queue (Milestone 3) ------------------------------------
+  queueConcurrency: resolveIntEnv('AKBARAL_QUEUE_CONCURRENCY', 1, 1, 8),
+  executionMaxAttempts: resolveIntEnv('AKBARAL_EXECUTION_MAX_ATTEMPTS', 2, 1, 5),
+  executionRetryBaseDelayMs: resolveIntEnv('AKBARAL_EXECUTION_RETRY_BASE_DELAY_MS', 2000, 0, 60000),
+  executionStepTimeoutMs: resolveIntEnv('AKBARAL_EXECUTION_STEP_TIMEOUT_MS', 120000, 250, 3600000),
+  workflowTimeoutMs: resolveIntEnv('AKBARAL_WORKFLOW_TIMEOUT_MS', 900000, 1000, 7200000),
 } as const;
 
 /**

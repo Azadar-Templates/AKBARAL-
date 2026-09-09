@@ -8,7 +8,8 @@ import {
   listTaskExecutions,
   listTasksByUser,
 } from '../db';
-import { createResearchTask, runWebResearchExecution } from '../orchestrator/executor';
+import { createResearchTask, WEB_RESEARCH_AGENT_SLUG } from '../orchestrator/executor';
+import { executionQueue } from '../orchestrator/queue';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError, businessErrorToHttp } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
@@ -18,7 +19,7 @@ import type { ExecutionStream } from '../realtime/execution-stream';
  * Task API. The WebSocket execution stream is passed in from the app bootstrap
  * so each task's background execution broadcasts its real-time logs.
  */
-export function createTasksRouter(stream: ExecutionStream): Router {
+export function createTasksRouter(_stream: ExecutionStream): Router {
   const router = Router();
   router.use(requireAuth);
 
@@ -40,19 +41,43 @@ export function createTasksRouter(stream: ExecutionStream): Router {
       throw businessErrorToHttp(error, 400, 'task_creation_failed');
     }
 
-    // Run in the background so the client gets handles immediately and can
-    // subscribe to WebSocket logs while results stream in.
-    void runWebResearchExecution(dispatched.executionId, stream);
+    // Enqueue on the persistent execution engine so the task survives
+    // restarts, gets retries with backoff, timeouts and cancellation.
+    const { job } = executionQueue.enqueueAgentExecution({
+      executionId: dispatched.executionId,
+      agentSlug: WEB_RESEARCH_AGENT_SLUG,
+      taskId: dispatched.taskId,
+      userId: req.auth!.userId,
+    });
 
     res.status(202).json({
       task: {
         id: dispatched.taskId,
         status: 'queued',
         agentId: dispatched.agentId,
-        agentSlug: 'web-research-001',
+        agentSlug: WEB_RESEARCH_AGENT_SLUG,
         executionId: dispatched.executionId,
       },
+      job: { id: job.id, status: job.status, attempts: job.attempts, maxAttempts: job.max_attempts },
       freeCredits: dispatched.freeCredits,
+    });
+  });
+
+  // User cancellation of a queued/running task. Never consumes the free task:
+  // the reserved credit is refunded atomically.
+  router.post('/:id/cancel', (req: AuthenticatedRequest, res) => {
+    const task = findTaskById(req.params.id);
+    if (!task || String(task.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'task not found', 'not_found');
+    }
+    const result = executionQueue.cancelTask(req.params.id, req.auth!.userId, 'cancelled by user');
+    if (!result.cancelled) {
+      throw new HttpError(409, `task cannot be cancelled (current status: ${task.status})`, 'conflict');
+    }
+    res.status(200).json({
+      task: { id: req.params.id, status: 'cancelled' },
+      jobId: result.jobId ?? null,
+      freeTaskCredit: 'refunded',
     });
   });
 

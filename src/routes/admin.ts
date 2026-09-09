@@ -6,6 +6,7 @@ import { requireRole } from '../server/middleware/rbac';
 import { HttpError } from '../server/http';
 import { getBody, requireString } from '../server/middleware/validation';
 import { discoverAgents, countAgentRegistry } from '../agents/registry';
+import { executionQueue } from '../orchestrator/queue';
 import { agentDefinitionCount } from '../agents/catalog';
 import { getConfigStatus } from '../config/credentials';
 
@@ -142,6 +143,49 @@ export function createAdminRouter(): Router {
     const settled = billingService.settleManualPayment({ userId, invoiceId, amountCents, credits, reference: body.reference ? String(body.reference) : undefined });
     logAdminAction({ actorUserId: req.auth!.userId, action: 'payment.settled', targetType: 'invoice', targetId: invoiceId, payload: { userId, credits } });
     res.status(200).json({ settled });
+  });
+
+  // --- Execution queue observability + admin cancellation (Milestone 3) ----
+  router.get('/queue/jobs', (req: AuthenticatedRequest, res) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const limit = Number(req.query.limit ?? 50);
+    const offset = Number(req.query.offset ?? 0);
+    const result = executionQueue.listJobs({ status, limit, offset });
+    res.status(200).json({
+      jobs: result.jobs,
+      total: result.total,
+      stats: executionQueue.stats(),
+    });
+  });
+
+  router.post('/queue/cancel-all', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'admin bulk cancellation';
+    const result = executionQueue.adminCancelAll(req.auth!.userId, reason);
+    logAdminAction({
+      actorUserId: req.auth!.userId,
+      action: 'queue.cancel_all',
+      targetType: 'execution_queue',
+      payload: { cancelled: result.cancelled, reason },
+    });
+    res.status(200).json(result);
+  });
+
+  router.post('/tasks/:id/cancel', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'cancelled by admin';
+    const result = executionQueue.cancelTask(req.params.id, req.auth!.userId, reason);
+    if (!result.cancelled) {
+      throw new HttpError(409, 'task cannot be cancelled (already terminal)', 'conflict');
+    }
+    logAdminAction({
+      actorUserId: req.auth!.userId,
+      action: 'task.admin_cancel',
+      targetType: 'task',
+      targetId: req.params.id,
+      payload: { reason },
+    });
+    res.status(200).json({ task: { id: req.params.id, status: 'cancelled' }, jobId: result.jobId ?? null });
   });
 
   router.post('/emergency-stop', (req: AuthenticatedRequest, res) => {

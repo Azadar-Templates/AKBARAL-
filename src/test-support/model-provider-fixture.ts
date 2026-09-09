@@ -22,6 +22,7 @@ export interface ModelFixtureServer {
   port: number;
   requests: Array<{ path: string; body: Record<string, unknown> }>;
   setMode(mode: ModelFixtureMode): void;
+  setDelay(delayMs: number): void;
   close(): Promise<void>;
 }
 
@@ -33,8 +34,12 @@ export type ModelFixtureMode =
   | 'fabricate' // agents return invented citations (must fail verification)
   | 'down'; // 500 for every request
 
-export async function startModelFixture(mode: ModelFixtureMode = 'ok'): Promise<ModelFixtureServer> {
+export async function startModelFixture(
+  mode: ModelFixtureMode = 'ok',
+  options?: { delayMs?: number },
+): Promise<ModelFixtureServer> {
   let currentMode: ModelFixtureMode = mode;
+  let delayMs = options?.delayMs ?? 0;
   const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
 
   const substantiveAnswer = `## Specialist deliverable
@@ -73,6 +78,13 @@ This content invents citations that no source tool produced.`;
       raw += chunk;
     });
     req.on('end', () => {
+      // Simulated provider latency (used by timeout tests).
+      setTimeout(() => {
+        handleRequest();
+      }, delayMs);
+    });
+
+    const handleRequest = (): void => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
       let body: Record<string, unknown> = {};
       try {
@@ -169,7 +181,7 @@ This content invents citations that no source tool produced.`;
       // Make the substantive answer visibly address the goal terms.
       const goalSnippet = user.includes('USER GOAL') ? ` for the stated goal` : '';
       respond({ content: `${substantiveAnswer}${goalSnippet}` });
-    });
+    };
   });
 
   await new Promise<void>((resolve) => {
@@ -184,6 +196,9 @@ This content invents citations that no source tool produced.`;
     requests,
     setMode(next: ModelFixtureMode) {
       currentMode = next;
+    },
+    setDelay(nextDelayMs: number) {
+      delayMs = nextDelayMs;
     },
     close() {
       return new Promise<void>((resolve, reject) => {
