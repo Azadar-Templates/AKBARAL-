@@ -46,3 +46,24 @@ export function requireWebhookPayload(req: { headers: Record<string, string | st
   }
   return { payload, signature, secret };
 }
+
+/**
+ * Verify a Razorpay webhook signature: HMAC-SHA256 of the raw body with the
+ * Razorpay key secret, sent in `x-razorpay-signature`. Used in addition to the
+ * generic AKBARAL signature when a webhook identifies itself as Razorpay.
+ */
+export function verifyRazorpaySignature(input: { payload: string; signature?: string; keySecret?: string }): boolean {
+  if (!input.keySecret) {
+    throw new Error('RAZORPAY_KEY_SECRET is not configured') as Error & { code?: string };
+  }
+  if (!input.signature) {
+    return false;
+  }
+  const expected = createHmac('sha256', input.keySecret).update(input.payload, 'utf8').digest('hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  const actualBuffer = Buffer.from(input.signature, 'hex');
+  if (expectedBuffer.length !== actualBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBuffer, actualBuffer);
+}

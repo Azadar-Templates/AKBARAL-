@@ -350,6 +350,88 @@ export function grantCustomCredits(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Billing hardening (Milestone 8): failed payments, refunds, webhook dedup
+// ---------------------------------------------------------------------------
+
+/** Atomic duplicate-event guard: returns true only for the FIRST delivery. */
+export function claimBillingEvent(provider: string, providerEventId: string, eventType?: string): boolean {
+  const result = db.run(
+    `INSERT OR IGNORE INTO processed_billing_events (provider, provider_event_id, event_type, processed_at)
+     VALUES (?, ?, ?, ?)`,
+    [provider, providerEventId, eventType ?? null, NOW()],
+  );
+  return result.changes === 1;
+}
+
+export function markPaymentFailed(input: {
+  invoiceId?: string | null;
+  providerPaymentId?: string | null;
+  failureCode?: string | null;
+  failureReason?: string | null;
+}): boolean {
+  const now = NOW();
+  if (input.invoiceId) {
+    const result = db.run(
+      `UPDATE payments SET status = 'failed', failure_code = ?, failure_reason = ?, processed_at = ? WHERE invoice_id = ? AND status = 'pending'`,
+      [input.failureCode ?? null, input.failureReason ?? null, now, input.invoiceId],
+    );
+    return result.changes > 0;
+  }
+  if (input.providerPaymentId) {
+    const result = db.run(
+      `UPDATE payments SET status = 'failed', failure_code = ?, failure_reason = ?, processed_at = ? WHERE provider_payment_id = ? AND status = 'pending'`,
+      [input.failureCode ?? null, input.failureReason ?? null, now, input.providerPaymentId],
+    );
+    return result.changes > 0;
+  }
+  return false;
+}
+
+export function markInvoiceRefunded(invoiceId: string): boolean {
+  const result = db.run(
+    `UPDATE invoices SET status = 'refunded', updated_at = ? WHERE id = ? AND status = 'paid'`,
+    [NOW(), invoiceId],
+  );
+  return result.changes === 1;
+}
+
+export function markPaymentsRefundedForInvoice(invoiceId: string): void {
+  db.run(`UPDATE payments SET status = 'refunded', processed_at = ? WHERE invoice_id = ? AND status = 'succeeded'`, [NOW(), invoiceId]);
+}
+
+/**
+ * Atomically reverse previously granted custom credits (refund handling).
+ * The paid pool is clamped at zero — a refund can never drive a balance
+ * negative — and the reversal is recorded in the ledger exactly once per call.
+ */
+export function reverseCustomCredits(input: { userId: string; amount: number; reason?: string; reference?: string }): { reversed: number; id: string } {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    throw new Error('reverseCustomCredits: amount must be a positive integer');
+  }
+  const id = createId('crx');
+  const now = NOW();
+  let reversed = 0;
+  db.transaction((tx) => {
+    const account = tx.get<{ paid_credits: number }>('SELECT paid_credits FROM credit_accounts WHERE user_id = ?', [input.userId]);
+    const current = account?.paid_credits ?? 0;
+    reversed = Math.min(current, input.amount);
+    if (reversed > 0) {
+      tx.run(`UPDATE credit_accounts SET paid_credits = ?, last_credit_at = ? WHERE user_id = ?`, [current - reversed, now, input.userId]);
+    }
+    tx.run(
+      `INSERT INTO credit_transactions (id, type, amount, balance_after, user_id, reason, status, reference, created_at)
+       VALUES (?, 'reversal', ?, ?, ?, ?, 'completed', ?, ?)`,
+      [id, -reversed, Math.max(0, current - reversed), input.userId, input.reason ?? 'credit purchase refunded', input.reference ?? null, now],
+    );
+  });
+  return { reversed, id };
+}
+
+export function findInvoiceById(invoiceId: string): Record<string, unknown> | undefined {
+  return db.get('SELECT * FROM invoices WHERE id = ?', [invoiceId]) as Record<string, unknown> | undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Invoices / payments / billing events
 // ---------------------------------------------------------------------------
 

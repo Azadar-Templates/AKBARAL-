@@ -106,6 +106,12 @@ export const env = {
   pageFetchEndpoint: trimOrEmpty(process.env.AKBARAL_PAGE_FETCH_ENDPOINT),
   allowPrivateProvider: process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER === '1',
   uploadDir: resolveUploadDir(),
+  // Marketplace commission in basis points (1000 = 10%). Report-time rate for
+  // agent-order volume; 0 disables commission tracking.
+  marketplaceCommissionBps: (() => {
+    const raw = Number(process.env.AKBARAL_MARKETPLACE_COMMISSION_BPS ?? 1000);
+    return Number.isFinite(raw) && raw >= 0 && raw <= 5000 ? Math.floor(raw) : 1000;
+  })(),
   publicWebUrl: trimOrEmpty(process.env.AKBARAL_PUBLIC_WEB_URL) || 'http://localhost:3000',
   smtpFrom: trimOrEmpty(process.env.SMTP_FROM) || 'Akbaral <no-reply@akbaral.ai>',
   trustProxy: resolveTrustProxy(),

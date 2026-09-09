@@ -154,6 +154,13 @@ export function createAdminRouter(): Router {
   // last usage — plus credential presence. `?live=1` additionally performs a
   // real, cheap models-list request against each configured provider with a
   // short timeout; unconfigured providers are reported honestly as such.
+  // Billing overview (Milestone 8): revenue, provider costs, gross margin,
+  // credit flows, subscription state, trial conversion and marketplace
+  // commission — aggregated from real records only.
+  router.get('/billing/overview', (_req: AuthenticatedRequest, res) => {
+    res.status(200).json({ overview: billingService.adminBillingOverview() });
+  });
+
   router.get('/providers/health', asyncRoute(async (req: AuthenticatedRequest, res) => {
     const live = req.query.live === '1' || req.query.live === 'true';
     const providers = listEnabledProviders() as Array<Record<string, unknown>>;

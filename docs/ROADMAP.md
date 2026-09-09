@@ -330,34 +330,109 @@ featured ranks the agent first on real signals (installs=1 rating=5 reviews=1
 score=18) → trending (2 install events, 1 review) → Agent World listing with
 real task usage → favorite toggle.
 
-### Milestone 8 — Trial/credits/billing (PLANNED)
+### Milestone 8 — Trial/credits/billing (DONE — implemented, tested, verified)
 
-Payment provider integrations (Stripe/Razorpay) behind the existing honest
-`provider_not_configured` paths, subscription lifecycle, invoice PDFs, usage
-statements. Trust policy (30 days + 5 free tasks, refund-on-failure,
-atomic server-side credits) is already enforced and must stay regression-free.
+- [x] Real payment providers behind honest configuration gates:
+      `src/billing/providers.ts` creates real Stripe Checkout Sessions
+      (`/v1/checkout/sessions`, PKR, `client_reference_id` = invoice number)
+      and Razorpay Orders (`/v1/orders`) through `externalHttpRequest` with
+      `<PROVIDER>_BASE_URL` overrides, 20s timeouts and `PaymentProviderError`
+      wrapping (no credential leakage in errors). Unconfigured providers keep
+      returning 402 `provider_not_configured` naming the exact missing
+      credential (`STRIPE_SECRET_KEY` / `RAZORPAY_KEY_ID`+`RAZORPAY_KEY_SECRET`)
+      — no faked success. `POST /api/billing/credits` is now async and returns
+      `providerReference` + `checkoutUrl` for configured providers.
+- [x] Idempotent webhook settlement + duplicate protection: migration
+      `0008_billing_hardening` adds `processed_billing_events` (PK
+      provider+provider_event_id) so a replayed `event_id` is claimed and
+      ignored BEFORE any side effect; `handleWebhookEvent` dispatches
+      `invoice.paid` / `payment.failed` / `invoice.refunded` /
+      `payment.refunded` / `subscription.cancelled` with honest effects
+      (`settled`, `already_paid`, `already_refunded`, `not_paid`,
+      `payment_marked_failed`, `no_pending_payment`, `invoice_not_found`,
+      `ignored_duplicate`, …). `settleInvoicePayment` is idempotent and —
+      verified live and by regression test — a refunded/cancelled/void
+      invoice can never be re-settled or re-granted (the double-grant-after-
+      refund hole found during live verification was closed in both the
+      webhook path and the admin `settle-payment` path, which now rejects
+      non-payable invoices with 409).
+- [x] Webhook authenticity: `POST /api/billing/webhook` requires a
+      timing-safe HMAC signature (`X-AKBARAL-Signature: sha256=…` with
+      `BILLING_WEBHOOK_SECRET`); Razorpay deliveries must ALSO carry a valid
+      `X-Razorpay-Signature` (HMAC-SHA256 of the raw body with
+      `RAZORPAY_KEY_SECRET`). Forged/unsigned payloads are 401.
+- [x] Refunds with credit reversal: refunding a paid invoice marks the
+      invoice + its payments refunded and atomically reverses the granted
+      credits (paid pool clamped at 0, `reversal` ledger row); replays are
+      no-ops and refunds of never-paid invoices are honest no-ops.
+- [x] Invoice PDFs: dependency-free PDF 1.4 generator
+      (`src/billing/invoice-pdf.ts` — Catalog/Pages/Contents/Fonts, WinAnsi,
+      valid xref, `%%EOF`) rendering the real invoice (number, status, dates,
+      line items, subtotal/tax/total). `GET /api/billing/invoices/:id/pdf` is
+      owner-only (404 for anyone else, no existence leak), served as
+      `application/pdf` with an attachment filename.
+- [x] Usage statements: `GET /api/billing/usage?from&to` (default 30 days)
+      aggregates the user's REAL activity — tasks by status, credit
+      granted/consumed/refunded flows, model runs with cost, invoices and
+      paid cents. No estimated or fabricated numbers.
+- [x] Revenue/margin/conversion reporting: `GET /api/admin/billing/overview`
+      (admin-only) reports paid/refunded/outstanding revenue with a monthly
+      breakdown by `paid_at`, provider model costs, gross margin in cents and
+      percent, credit flows, subscriptions by plan, trial→paid conversion,
+      failed payments and marketplace volume/commission
+      (`AKBARAL_MARKETPLACE_COMMISSION_BPS`, default 1000 bps).
+- [x] Trust policy regression-free: registration still grants 5 free tasks +
+      30-day trial; credits are consumed only on successful completion,
+      returned on failure/timeout/cancellation; zero balance → honest 402
+      `requires_pro` with zero consumption (all re-asserted by tests).
 
-### Milestone 9 — Automation / AI Employees (PLANNED)
+**Milestone 8 verification record (2026-09-09):** `src/billing/billing.test.ts`
+(17 tests: trial grant, consume-on-success/refund-on-failure, requires_pro
+no-consumption, manual purchase due invoice, forged/unauthenticated webhook
+401, settle-once-grant-once, duplicate event ignored, payment.failed no grant,
+refund reverses + replay/no-pay no-ops + refunded-invoice re-payment guard,
+admin settle of refunded invoice 409, provider_not_configured 402, real Stripe
+checkout + Razorpay order against a local provider fixture, Razorpay dual
+signature enforcement, PDF validity + owner-only 404, usage statement real
+numbers, plan switch/account state, admin overview + non-admin 403,
+webhook_not_configured 503). Full suite **178/178**, typecheck clean, build
+green. Live-verified on the running server: 30-day trial on register, honest
+402 for unconfigured Stripe, manual purchase → due invoice, signed webhook
+settle → credits granted, duplicate replay ignored, forged signature 401,
+payment.failed → `payment_marked_failed` then late settle OK, refund →
+credits reversed + replay no-op, **invoice.paid on a refunded invoice →
+`already_refunded` with zero re-grant** (the pre-fix live run exposed the
+double-grant hole; dev data was corrected, guard added, regression added),
+PDF `%PDF-1.4` + `application/pdf` + attachment + outsider 404, usage
+statement real aggregates, admin overview (revenue/refunded/outstanding/
+monthly/margin/conversion/failed/marketplace) + non-admin 403 + anonymous 401.
 
-Scheduled/recurring workflows, trigger system (webhook/time/event), long-lived
-"AI employee" agent configurations with budgets and guardrails.
+### Milestone 9 — Security/admin/observability hardening (PLANNED)
 
-### Milestone 10 — Security/RBAC/audit/rate limits (PLANNED)
+Practical attack-surface hardening and verification: auth attacks, authz
+bypass, tenant isolation, API abuse, brute force, rate-limit bypass, SSRF,
+path traversal, malicious uploads, prompt injection, secret leakage, webhook
+forgery/replay (billing webhooks hardened in M8; extend to remaining
+surfaces), race conditions, duplicate execution, credit manipulation,
+privilege escalation, fraud. Role hierarchy beyond user/admin, per-route
+permission matrix, audit search API, adaptive rate limits, secret rotation
+tooling, admin console APIs for registry/model/cost/execution metrics,
+agent evaluation harness, drift reports.
 
-Role hierarchy beyond user/admin, per-route permission matrix, audit search
-API, adaptive rate limits, secret rotation tooling.
-
-### Milestone 11 — Admin/monitoring/evaluation (PLANNED)
-
-Admin console APIs for registry/model/cost/execution metrics, agent evaluation
-harness running `evaluationConfig` suites, drift reports.
-
-### Milestone 12 — Production deployment/scaling (PLANNED)
+### Milestone 10 — Production deployment/scaling (PLANNED)
 
 Docker hardening (base exists), horizontal-scale DB story, health/readiness
-probes, backup/restore, zero-downtime migration policy.
+probes, backup/restore, zero-downtime migration policy, monitoring. Business
+target: support beyond $500k–$1M/month across revenue streams (Pro subs,
+custom credits, premium agents, marketplace commission, team plans, API/usage
+revenue).
 
-### Milestone 13 — Web/mobile integration readiness (PLANNED)
+### Milestone 11 — Launch readiness QA (PLANNED — target 18 September 2026)
+
+Classify every feature LAUNCH READY / PARTIALLY READY / POST-LAUNCH against
+the live deployment; fix blockers; no cosmetic redesign, no faked features.
+
+### Milestone 12 — Web/mobile integration readiness (PLANNED)
 
 Wire the web app + mobile shell fully to the MASTER API (task center, live
 logs, results), deep links, push notifications.
