@@ -57,6 +57,20 @@ function resolveProviderSpec(key: string) {
   return spec;
 }
 
+/**
+ * Resolve a provider base URL. Env overrides (`<PROVIDER>_BASE_URL`, e.g.
+ * OPENAI_BASE_URL) allow enterprise proxies, Azure-style gateways and
+ * self-hosted OpenAI-compatible endpoints without code changes.
+ */
+function resolveBaseUrl(spec: { key: string; baseUrl?: string }): string {
+  const override = process.env[`${spec.key.toUpperCase()}_BASE_URL`];
+  const base = (override && override.trim()) || spec.baseUrl;
+  if (!base) {
+    throw new Error(`provider ${spec.key} has no base URL configured`);
+  }
+  return base.replace(/\/+$/, '');
+}
+
 async function runJsonRequest(
   key: string,
   url: string,
@@ -92,7 +106,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const started = Date.now();
     const { json } = await runJsonRequest(
       this.key,
-      `${spec.baseUrl}/chat/completions`,
+      `${resolveBaseUrl(spec)}/chat/completions`,
       {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -137,7 +151,7 @@ export class AnthropicProvider implements ModelProvider {
     const started = Date.now();
     const { json } = await runJsonRequest(
       this.key,
-      `${spec.baseUrl}/messages`,
+      `${resolveBaseUrl(spec)}/messages`,
       {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
@@ -185,7 +199,7 @@ export class GoogleProvider implements ModelProvider {
     const started = Date.now();
     const { json } = await runJsonRequest(
       this.key,
-      `${spec.baseUrl}/models/${model.key}:generateContent?key=${apiKey}`,
+      `${resolveBaseUrl(spec)}/models/${model.key}:generateContent?key=${apiKey}`,
       { 'Content-Type': 'application/json' },
       { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined },
     );

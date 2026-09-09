@@ -8,6 +8,7 @@ import { agentsRouter } from './routes/agents';
 import { meRouter } from './routes/me';
 import { createTasksRouter } from './routes/tasks';
 import { createWorkflowsRouter } from './routes/workflows';
+import { createMasterRouter } from './routes/master';
 import { createProjectsRouter } from './routes/projects';
 import { createFilesRouter } from './routes/files';
 import { createBillingRouter } from './routes/billing';
@@ -138,6 +139,7 @@ export function createApiServer(): ApiServer {
   app.use('/api/agents', agentsRouter);
   app.use('/api/tasks', createTasksRouter(stream));
   app.use('/api/workflows', createWorkflowsRouter(stream));
+  app.use('/api/master', createMasterRouter(stream));
   app.use('/api/projects', createProjectsRouter());
   app.use('/api', createFilesRouter());
   app.use('/api/billing', createBillingRouter());

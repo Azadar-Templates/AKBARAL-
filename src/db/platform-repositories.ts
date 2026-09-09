@@ -512,7 +512,10 @@ export function createWorkflowStep(input: {
   return { id };
 }
 
-export function updateWorkflowStepStatus(input: { id: string; status: string; result?: unknown; errorMessage?: string | null; completedAt?: string | null }): void {
+export function updateWorkflowStepStatus(input: { id: string; status: string; result?: unknown; errorMessage?: string | null; completedAt?: string | null; taskId?: string | null }): void {
+  if (input.taskId !== undefined && input.taskId !== null) {
+    db.run(`UPDATE workflow_steps SET task_id=? WHERE id=?`, [input.taskId, input.id]);
+  }
   db.run(
     `UPDATE workflow_steps SET status=?, result_json=?, error_message=?, completed_at=COALESCE(?, completed_at) WHERE id=?`,
     [input.status, input.result ? JSON.stringify(input.result) : null, input.errorMessage ?? null, input.completedAt ?? null, input.id],

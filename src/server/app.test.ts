@@ -69,11 +69,14 @@ describe('HTTP API integration', () => {
   });
 
   it('exposes agents to authenticated users', async () => {
-    const response = await fetch(`${baseUrl}/api/agents`, {
+    // Production boots with the full 4,000+ agent registry synced, so a
+    // default page cannot be assumed to contain any specific agent. Query for
+    // the agent this suite cares about instead of relying on page position.
+    const response = await fetch(`${baseUrl}/api/agents?q=web-research-001`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     assert.equal(response.status, 200);
-    const body = (await response.json()) as { agents: Array<{ slug: string }> };
+    const body = (await response.json()) as { agents: Array<{ slug: string }>; total: number };
     assert.ok(body.agents.some((agent) => agent.slug === 'web-research-001'));
   });
 

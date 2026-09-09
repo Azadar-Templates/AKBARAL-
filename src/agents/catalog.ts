@@ -268,3 +268,13 @@ export function agentDefinitionCount(): number {
 export function listDomainCount(): number {
   return DOMAINS.length;
 }
+
+/** All specialization archetype keys (e.g. 'strategist', 'researcher'). */
+export function listSpecializationKeys(): string[] {
+  return SPECIALIZATIONS.map((spec) => spec.key);
+}
+
+/** All category slugs (e.g. 'software-engineering', 'research'). */
+export function listCategorySlugs(): string[] {
+  return AGENT_CATEGORIES.map((category) => category.slug);
+}

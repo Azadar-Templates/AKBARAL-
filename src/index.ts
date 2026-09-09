@@ -9,6 +9,8 @@ import { createApiServer } from './app';
 import { db } from './db';
 import { syncModelCatalog } from './models';
 import { ensureBootstrapPlans } from './db';
+import { syncAgentRegistry, countAgentRegistry } from './agents/registry';
+import { agentDefinitionCount } from './agents/catalog';
 
 function checkDatabase(): void {
   const [userCount, taskCount, agentCount, projectCount] = [
@@ -53,6 +55,16 @@ async function start(): Promise<void> {
   try {
     ensureBootstrapPlans();
     syncModelCatalog();
+    // Self-heal a fresh/incomplete deployment: the planner and agent APIs
+    // need the full specialist registry in the database. The sync is
+    // idempotent but slow (~40s for 4,000 agents), so it only runs when the
+    // registry is missing or incomplete; version drift is handled by
+    // `npm run db:seed` in the deploy pipeline.
+    if (countAgentRegistry() < agentDefinitionCount()) {
+      console.log('[akbaral] agent registry incomplete — syncing specialist catalog...');
+      const registry = syncAgentRegistry();
+      console.log(`[akbaral] agent registry ready: ${registry.total} specialists`);
+    }
   } catch (error) {
     console.error('[akbaral] failed to sync catalog:', error instanceof Error ? error.message : String(error));
   }

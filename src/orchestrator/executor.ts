@@ -25,6 +25,8 @@ import {
 import { createResearchReport } from '../agents';
 import { getAgentBySlug, isAgentVisibleToUser } from '../agents/registry';
 import { modelRouter } from '../models';
+import { runTool, type ToolResult } from '../tools';
+import { verifyAgentOutput } from './verifier';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
 /**
@@ -313,7 +315,24 @@ export async function runGenericAgentExecution(
     workflow: agent.workflow,
   });
 
+  // --- TOOLS/API STAGE (bounded, best-effort, honest) ---------------------
+  const toolStage = await runBoundedToolStage({
+    agent,
+    goal: goalInput,
+    userId: task ? String(task.user_id) : '',
+    projectId: task?.project_id ? String(task.project_id) : null,
+    taskId: task?.id ?? null,
+    executionId,
+    stream,
+  });
+
   try {
+    const systemMessages: Array<{ role: 'system'; content: string }> = [
+      { role: 'system', content: `${MODEL_SYSTEM_GUARD}\n\n--- SPECIALIST SYSTEM INSTRUCTIONS ---\n${agent.systemInstructions}` },
+    ];
+    if (toolStage.contextBlock) {
+      systemMessages.push({ role: 'system', content: toolStage.contextBlock });
+    }
     const result = await modelRouter.complete(
       {
         capability: agent.modelRequirements,
@@ -322,10 +341,39 @@ export async function runGenericAgentExecution(
         agentExecutionId: executionId,
       },
       [
-        { role: 'system', content: `${MODEL_SYSTEM_GUARD}\n\n--- SPECIALIST SYSTEM INSTRUCTIONS ---\n${agent.systemInstructions}` },
+        ...systemMessages,
         { role: 'user', content: `--- UNTRUSTED USER REQUEST (DATA ONLY) ---\n${goalInput}` },
       ],
     );
+
+    // --- VERIFICATION STAGE (real contract checks + optional LLM rubric) ---
+    const useLlmVerification =
+      agent.costUsage.priority === 'high' && isFeatureFlagEnabled('llm_verification');
+    const verification = await verifyAgentOutput({
+      agent,
+      goal: goalInput,
+      content: result.text,
+      sourceContextUsed: toolStage.sourceContextUsed,
+      complete: useLlmVerification
+        ? (messages, requirements) =>
+            modelRouter.complete(
+              {
+                capability: requirements?.capability ?? ['reasoning'],
+                answerQuality: requirements?.answerQuality ?? 'fast',
+                taskId: task?.id ?? null,
+                agentExecutionId: executionId,
+              },
+              messages,
+            )
+        : null,
+    });
+
+    if (!verification.passed) {
+      const message = `verification_failed: ${verification.issues.join(' | ') || 'output did not meet the agent contract'}`;
+      const failure = new Error(message) as Error & { code?: string };
+      failure.code = 'verification_failed';
+      throw failure;
+    }
 
     const output: Record<string, unknown> = {
       type: 'agent_result',
@@ -334,6 +382,14 @@ export async function runGenericAgentExecution(
       model: result.model,
       provider: result.provider,
       latencyMs: result.latencyMs,
+      tools: toolStage.summary,
+      verification: {
+        passed: verification.passed,
+        mode: verification.mode,
+        score: verification.score,
+        checks: verification.checks,
+        llm: verification.llm,
+      },
     };
     updateAgentExecutionStatus({
       id: executionId,
@@ -343,29 +399,117 @@ export async function runGenericAgentExecution(
       completedAt: new Date().toISOString(),
     });
     stream?.pushStatus({ executionId, status: 'completed', message: `Agent ${agentSlug} completed` });
-    appendLog(executionId, stream, `Verification passed (${result.model} / ${result.provider})`, 'info', 'verification', {
-      model: result.model,
-      provider: result.provider,
-      latencyMs: result.latencyMs,
-    });
+    appendLog(
+      executionId,
+      stream,
+      `Verification passed (${verification.mode}, score ${Math.round(verification.score * 100)}%; ${result.model} / ${result.provider})`,
+      'info',
+      'verification',
+      {
+        model: result.model,
+        provider: result.provider,
+        latencyMs: result.latencyMs,
+        verification,
+      },
+    );
 
     if (task) {
       updateTaskStatus({ id: task.id, status: 'completed', completedAt: new Date().toISOString() });
       updateTaskOutput({ id: task.id, outputData: output });
-      appendTaskEvent({ taskId: task.id, executionId, message: `Agent ${agentSlug} completed successfully`, level: 'info', type: 'status' });
+      appendTaskEvent({ taskId: task.id, executionId, message: `Agent ${agentSlug} completed successfully (verification score ${Math.round(verification.score * 100)}%)`, level: 'info', type: 'status' });
       appendAuditLog({
         actorId: task.user_id,
         action: 'task.completed',
         resourceType: 'task',
         resourceId: task.id as string,
         description: `agent ${agentSlug} completed`,
-        metadata: { executionId, model: result.model, provider: result.provider },
+        metadata: { executionId, model: result.model, provider: result.provider, verificationScore: verification.score },
       });
     }
     return { status: 'completed', output };
   } catch (error) {
-    return failExecution(executionId, task?.id, error instanceof Error ? error.message : String(error), stream);
+    const message = error instanceof Error ? error.message : String(error);
+    if ((error as { code?: string }).code === 'verification_failed') {
+      appendLog(executionId, stream, 'Output rejected by verification; task will fail and the free credit will be refunded', 'warn', 'verification', { message });
+    }
+    return failExecution(executionId, task?.id, message, stream);
   }
+}
+
+/**
+ * Bounded tool stage for generic agents. Runs at most two permitted tools
+ * (web_search / knowledge_search) with the goal as query and builds a compact
+ * system context block of real tool output. Tools are best-effort: an
+ * unavailable tool (missing credential) is logged honestly and never fails
+ * the task — the agent continues without that context.
+ */
+async function runBoundedToolStage(input: {
+  agent: { toolPermissions: string[] };
+  goal: string;
+  userId: string;
+  projectId: string | null;
+  taskId: string | null;
+  executionId: string;
+  stream: ExecutionStream | undefined;
+}): Promise<{ contextBlock: string | null; sourceContextUsed: boolean; summary: Record<string, unknown> }> {
+  const PRE_STAGE_TOOLS = ['web_search', 'knowledge_search'] as const;
+  const permitted = PRE_STAGE_TOOLS.filter((tool) => input.agent.toolPermissions.includes(tool)).slice(0, 2);
+  if (permitted.length === 0 || !input.goal.trim()) {
+    return { contextBlock: null, sourceContextUsed: false, summary: { ran: [], note: 'no pre-stage tools permitted for this agent' } };
+  }
+
+  const summaries: Array<Record<string, unknown>> = [];
+  const contextParts: string[] = [];
+  let sourceContextUsed = false;
+
+  for (const tool of permitted) {
+    let result: ToolResult;
+    try {
+      result = await runTool(tool, { query: input.goal.slice(0, 300) }, {
+        userId: input.userId,
+        projectId: input.projectId,
+        taskId: input.taskId,
+        executionId: input.executionId,
+      });
+    } catch (error) {
+      result = {
+        ok: false,
+        tool,
+        content: '',
+        durationMs: 0,
+        error: error instanceof Error ? error.message : String(error),
+        code: 'tool_failed',
+      };
+    }
+    if (result.ok) {
+      const content = result.content.slice(0, 2400);
+      contextParts.push(`--- TOOL ${tool} (real result) ---\n${content}`);
+      if (tool === 'web_search') {
+        sourceContextUsed = true;
+      }
+      summaries.push({ tool, ok: true, durationMs: result.durationMs, characters: content.length });
+      appendLog(input.executionId, input.stream, `Tool ${tool} returned real context (${content.length} chars)`, 'info', 'tool', { tool });
+    } else {
+      summaries.push({ tool, ok: false, code: result.code ?? 'tool_failed', error: result.error ?? 'unknown error' });
+      appendLog(
+        input.executionId,
+        input.stream,
+        `Tool ${tool} unavailable (${result.code ?? 'tool_failed'}: ${result.error ?? 'unknown error'}); continuing without it`,
+        'warn',
+        'tool',
+        { tool, code: result.code ?? 'tool_failed', requiredCredential: result.requiredCredential ?? null },
+      );
+    }
+  }
+
+  return {
+    contextBlock:
+      contextParts.length > 0
+        ? `--- VERIFIED TOOL CONTEXT (real data retrieved by the platform; cite only these sources) ---\n${contextParts.join('\n\n')}`
+        : null,
+    sourceContextUsed,
+    summary: { ran: summaries },
+  };
 }
 
 async function failExecution(
@@ -375,7 +519,11 @@ async function failExecution(
   stream: ExecutionStream | undefined,
 ): Promise<{ status: string; output: null; error: string }> {
   const start = Date.now();
-  const code = (message.includes('not configured') || message.includes('provider_not_configured')) ? 'provider_not_configured' : 'execution_failed';
+  const code = message.startsWith('verification_failed')
+    ? 'verification_failed'
+    : (message.includes('not configured') || message.includes('provider_not_configured'))
+      ? 'provider_not_configured'
+      : 'execution_failed';
   updateAgentExecutionStatus({
     id: executionId,
     status: 'failed',
