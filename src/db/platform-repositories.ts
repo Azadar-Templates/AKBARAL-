@@ -1067,7 +1067,17 @@ export function findProjectById(id: string): Record<string, unknown> | undefined
 }
 
 export function listProjectsByUser(userId: string): Array<Record<string, unknown>> {
-  return db.all('SELECT * FROM projects WHERE owner_id = ? ORDER BY created_at DESC', [userId]) as Array<Record<string, unknown>>;
+  const owned = db.all('SELECT *, ? AS my_role FROM projects WHERE owner_id = ?', ['owner', userId]) as Array<Record<string, unknown>>;
+  const memberOf = db.all(
+    `SELECT p.*, wm.role AS my_role
+     FROM workspace_members wm
+     JOIN projects p ON p.id = wm.project_id
+     WHERE wm.user_id = ?
+     ORDER BY p.created_at DESC`,
+    [userId],
+  ) as Array<Record<string, unknown>>;
+  const seen = new Set(owned.map((project) => String(project.id)));
+  return [...owned, ...memberOf.filter((project) => !seen.has(String(project.id)))];
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,15 +1184,123 @@ export function indexKnowledgeItem(input: {
   return { id };
 }
 
-export function searchKnowledge(userId: string, query: string, limit = 20): Array<Record<string, unknown>> {
+export function searchKnowledge(userId: string, query: string, limit = 20, projectId?: string): Array<Record<string, unknown>> {
+  const projectFilter = projectId ? ' AND ki.project_id = ?' : '';
   return db.all(
-    `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type
+    `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type, ki.project_id
      FROM knowledge_fts fts
      JOIN knowledge_items ki ON ki.rowid = fts.rowid
-     WHERE knowledge_fts MATCH ? AND ki.user_id = ?
+     WHERE knowledge_fts MATCH ? AND ki.user_id = ?${projectFilter}
+     ORDER BY ki.indexed_at DESC
      LIMIT ?`,
-    [query, userId, limit],
+    projectId ? [query, userId, projectId, limit] : [query, userId, limit],
   ) as Array<Record<string, unknown>>;
+}
+
+/**
+ * Project-scoped knowledge search for shared workspaces: searches every
+ * knowledge item in the project regardless of which member indexed it.
+ * Access control happens at the route layer (workspace membership required).
+ */
+export function searchProjectKnowledge(projectId: string, query: string, limit = 20): Array<Record<string, unknown>> {
+  return db.all(
+    `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type, ki.project_id, ki.user_id
+     FROM knowledge_fts fts
+     JOIN knowledge_items ki ON ki.rowid = fts.rowid
+     WHERE knowledge_fts MATCH ? AND ki.project_id = ?
+     ORDER BY ki.indexed_at DESC
+     LIMIT ?`,
+    [query, projectId, limit],
+  ) as Array<Record<string, unknown>>;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace membership (project-scoped authorization)
+// ---------------------------------------------------------------------------
+
+export type ProjectRole = 'owner' | 'admin' | 'member' | 'viewer';
+
+const ROLE_RANK: Record<ProjectRole, number> = { viewer: 1, member: 2, admin: 3, owner: 4 };
+
+export function projectRole(project: { id: string; owner_id: string | Buffer }, userId: string): ProjectRole | null {
+  if (String(project.owner_id) === userId) {
+    return 'owner';
+  }
+  const row = db.get<{ role: string }>(
+    'SELECT role FROM workspace_members WHERE project_id = ? AND user_id = ?',
+    [project.id, userId],
+  );
+  return (row?.role as ProjectRole) ?? null;
+}
+
+export function hasProjectRole(project: { id: string; owner_id: string | Buffer }, userId: string, minimum: ProjectRole): boolean {
+  const role = projectRole(project, userId);
+  return role !== null && ROLE_RANK[role] >= ROLE_RANK[minimum];
+}
+
+export function listProjectMembers(projectId: string): Array<Record<string, unknown>> {
+  const members = db.all(
+    `SELECT wm.user_id, u.email, u.name, wm.role, wm.invited_at
+     FROM workspace_members wm
+     JOIN users u ON u.id = wm.user_id
+     WHERE wm.project_id = ?
+     ORDER BY wm.invited_at ASC`,
+    [projectId],
+  ) as Array<Record<string, unknown>>;
+  const owner = db.get<{ id: string; email: string; name: string; created_at: string }>(
+    `SELECT u.id, u.email, u.name, p.created_at FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = ?`,
+    [projectId],
+  );
+  const rows: Array<Record<string, unknown>> = [];
+  if (owner) {
+    rows.push({ user_id: owner.id, email: owner.email, name: owner.name, role: 'owner', invited_at: owner.created_at });
+  }
+  return [...rows, ...members];
+}
+
+export function addProjectMember(input: { projectId: string; userId: string; role: ProjectRole }): void {
+  db.run(
+    `INSERT INTO workspace_members (id, project_id, user_id, role, invited_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(project_id, user_id) DO UPDATE SET role = excluded.role`,
+    [createId('wsm'), input.projectId, input.userId, input.role, NOW()],
+  );
+}
+
+export function updateProjectMemberRole(projectId: string, userId: string, role: ProjectRole): boolean {
+  const result = db.run(
+    'UPDATE workspace_members SET role = ? WHERE project_id = ? AND user_id = ?',
+    [role, projectId, userId],
+  );
+  return result.changes === 1;
+}
+
+export function removeProjectMember(projectId: string, userId: string): boolean {
+  const result = db.run(
+    'DELETE FROM workspace_members WHERE project_id = ? AND user_id = ?',
+    [projectId, userId],
+  );
+  return result.changes === 1;
+}
+
+export function listFilesByProject(projectId: string): Array<Record<string, unknown>> {
+  return db.all('SELECT * FROM files WHERE project_id = ? ORDER BY created_at DESC', [projectId]) as Array<Record<string, unknown>>;
+}
+
+export function listProjectArtifacts(projectId: string): Array<Record<string, unknown>> {
+  return db.all(
+    `SELECT * FROM files WHERE project_id = ? AND kind = 'artifact' ORDER BY created_at DESC`,
+    [projectId],
+  ) as Array<Record<string, unknown>>;
+}
+
+export function listTaskFiles(taskId: string): Array<Record<string, unknown>> {
+  return db.all('SELECT * FROM files WHERE task_id = ? ORDER BY created_at ASC', [taskId]) as Array<Record<string, unknown>>;
+}
+
+export function attachFileToTask(fileId: string, taskId: string | null): boolean {
+  const result = db.run('UPDATE files SET task_id = ?, updated_at = ? WHERE id = ?', [taskId, NOW(), fileId]);
+  return result.changes === 1;
 }
 
 // ---------------------------------------------------------------------------

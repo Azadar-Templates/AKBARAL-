@@ -1,5 +1,5 @@
 import { Router, type Response } from 'express';
-import { findProjectById, getFile, indexKnowledgeItem, searchKnowledge } from '../db';
+import { findProjectById, getFile, indexKnowledgeItem, searchKnowledge, hasProjectRole } from '../db';
 import { upload, processUpload, getStoredFile } from '../services/files';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
@@ -10,7 +10,8 @@ export function createFilesRouter(): Router {
 
   router.post('/projects/:projectId/files', requireAuth, (req: AuthenticatedRequest, res) => {
     const project = findProjectById(req.params.projectId);
-    if (!project || String(project.owner_id) !== req.auth!.userId) {
+    // Workspace members (and above) may upload; viewers cannot.
+    if (!project || !hasProjectRole(project as { id: string; owner_id: string }, req.auth!.userId, 'member')) {
       throw new HttpError(404, 'project not found', 'not_found');
     }
     upload.single('file')(req, res, (error) => {

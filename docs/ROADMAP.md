@@ -219,10 +219,43 @@ build green. Live-verified on the dev server: 18 tools / 10 usable /
 env keys; routing chain preview; SSE stream ending in
 `provider_not_configured`; admin health with `?live=1` honest details.
 
-### Milestone 5 — Workspace/project/files (PLANNED)
+### Milestone 5 — Workspace/project/files (DONE — implemented, tested, verified)
 
-Project-scoped workspaces, file attachments on tasks, knowledge indexing per
-project, artifact storage of agent outputs.
+- [x] Project-scoped workspaces: full membership model on the existing
+      `workspace_members` table — `owner > admin > member > viewer` enforced on
+      every route (reads for all members, uploads/work for member+, membership
+      management for admin+). Non-members receive an indistinguishable 404 (no
+      existence leak). Owner role/removal is immutable; any member may
+      self-leave. Endpoints: `GET/POST /api/projects`,
+      `GET/PATCH /api/projects/:id`, `GET/POST /api/projects/:id/members`,
+      `PATCH/DELETE /api/projects/:id/members/:userId`; project lists include
+      `my_role`; invitations notify the invited user.
+- [x] File attachments on tasks: `GET/POST/DELETE /api/tasks/:id/files[...]`
+      — task owner may attach only their own non-artifact files (single active
+      attachment enforced); attached text content is injected into the agent
+      execution as explicit user-provided data (never instructions) via a
+      bounded context block.
+- [x] Knowledge indexing per project: uploads auto-index (existing FTS);
+      `POST /api/projects/:id/knowledge/search` searches the shared
+      workspace knowledge across all members (membership-gated), while the
+      personal `/api/files/knowledge/search` stays user-scoped.
+- [x] Artifact storage of agent outputs: every guarded task completion (agent
+      and web-research paths) stores the verified output as a real downloadable
+      file (kind `artifact`, sha256, storage-key guard, idempotent per task —
+      retries cannot duplicate); `GET /api/projects/:id/artifacts` lists them;
+      artifacts cannot be re-attached to tasks.
+
+**Milestone 5 verification record (2026-09-09):** 9 new tests
+(`src/routes/workspace.test.ts`: role listing, outsider 404 isolation, invite
+matrix + unknown-email 404 + owner protection, role changes, self-leave,
+viewer upload denial, project-scoped knowledge incl. cross-member visibility,
+attach/detach ownership validation, attachment content reaching the model
+(verified via fixture-captured messages), artifact stored + downloadable +
+no-reattach, auth enforcement) — full suite **147/147 green**, typecheck
+clean, production build green. Live-verified: project creation, colleague
+invite as member, member upload into the shared workspace, cross-member
+project knowledge search, owner-file attach (foreign file honestly 404),
+project archive/reactivate, artifacts endpoint.
 
 ### Milestone 6 — Agent Factory (PLANNED)
 

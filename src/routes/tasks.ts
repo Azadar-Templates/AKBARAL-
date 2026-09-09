@@ -7,6 +7,9 @@ import {
   listTaskEvents,
   listTaskExecutions,
   listTasksByUser,
+  getFile,
+  listTaskFiles,
+  attachFileToTask,
 } from '../db';
 import { createResearchTask, WEB_RESEARCH_AGENT_SLUG } from '../orchestrator/executor';
 import { executionQueue } from '../orchestrator/queue';
@@ -79,6 +82,51 @@ export function createTasksRouter(_stream: ExecutionStream): Router {
       jobId: result.jobId ?? null,
       freeTaskCredit: 'refunded',
     });
+  });
+
+  // ---- Task file attachments (Milestone 5) -------------------------------
+  // Only the task owner may attach their own files; attached text content is
+  // injected as user-provided data context into the agent execution.
+
+  router.get('/:id/files', (req: AuthenticatedRequest, res) => {
+    const task = findTaskById(req.params.id);
+    if (!task || String(task.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'task not found', 'not_found');
+    }
+    const files = listTaskFiles(req.params.id).filter((file) => String(file.kind) !== 'artifact');
+    res.status(200).json({ files });
+  });
+
+  router.post('/:id/files/:fileId', (req: AuthenticatedRequest, res) => {
+    const task = findTaskById(req.params.id);
+    if (!task || String(task.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'task not found', 'not_found');
+    }
+    const file = getFile(req.params.fileId);
+    if (!file || String(file.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'file not found', 'not_found');
+    }
+    if (String(file.kind) === 'artifact') {
+      throw new HttpError(409, 'artifacts cannot be attached to tasks', 'conflict');
+    }
+    if (file.task_id && String(file.task_id) !== req.params.id) {
+      throw new HttpError(409, 'file is already attached to another task', 'conflict');
+    }
+    attachFileToTask(req.params.fileId, req.params.id);
+    res.status(200).json({ attached: true, taskId: req.params.id, fileId: req.params.fileId });
+  });
+
+  router.delete('/:id/files/:fileId', (req: AuthenticatedRequest, res) => {
+    const task = findTaskById(req.params.id);
+    if (!task || String(task.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'task not found', 'not_found');
+    }
+    const file = getFile(req.params.fileId);
+    if (!file || String(file.user_id) !== req.auth!.userId || String(file.task_id ?? '') !== req.params.id) {
+      throw new HttpError(404, 'file is not attached to this task', 'not_found');
+    }
+    attachFileToTask(req.params.fileId, null);
+    res.status(200).json({ detached: true });
   });
 
   router.get('/', (req: AuthenticatedRequest, res) => {

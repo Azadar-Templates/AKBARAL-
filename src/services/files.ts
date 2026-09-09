@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import multer from 'multer';
-import { createFile, createFileVersion, indexKnowledgeItem, getFile } from '../db';
+import { createFile, createFileVersion, indexKnowledgeItem, getFile, db } from '../db';
 import { env } from '../config/env';
 
 export const UPLOAD_DIR = path.resolve(process.cwd(), env.uploadDir);
@@ -151,6 +151,55 @@ export function processUpload(input: {
     extractedText: text.length > 0,
     knowledgeItemId,
   };
+}
+
+/**
+ * Persist a completed task's output as a project artifact (Milestone 5).
+ *
+ * The artifact is a real file: written to the upload directory under a
+ * server-generated storage key, registered in `files` with kind='artifact',
+ * linked to the owning task and project, and idempotent per task (the first
+ * completed execution wins; retries cannot create duplicates).
+ */
+export function storeTaskArtifact(input: {
+  userId: string;
+  projectId: string | null;
+  taskId: string;
+  agentSlug: string;
+  content: string;
+}): { fileId: string; storageKey: string; sizeBytes: number } | null {
+  const existing = getFileByTaskArtifact(input.taskId);
+  if (existing) {
+    return null; // artifact already stored for this task
+  }
+  const buffer = Buffer.from(input.content, 'utf8');
+  const sha256 = createHash('sha256').update(buffer).digest('hex');
+  const storageKey = `artifact-${input.taskId}-${sha256.slice(0, 18)}`;
+  if (!SAFE_STORAGE_KEY.test(storageKey)) {
+    throw new Error('storeTaskArtifact refused: unsafe storage key');
+  }
+  const targetPath = path.join(UPLOAD_DIR, storageKey);
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  fs.writeFileSync(targetPath, buffer);
+  const created = createFile({
+    userId: input.userId,
+    projectId: input.projectId,
+    taskId: input.taskId,
+    originalName: `task-${input.taskId}-${input.agentSlug}-result.json`,
+    storageKey,
+    mimeType: 'application/json',
+    sizeBytes: buffer.length,
+    sha256,
+    kind: 'artifact',
+    metadata: { source: 'agent_output', agent: input.agentSlug, taskId: input.taskId },
+  });
+  return { fileId: created.id, storageKey, sizeBytes: buffer.length };
+}
+
+export function getFileByTaskArtifact(taskId: string): Record<string, unknown> | undefined {
+  return db.get(`SELECT * FROM files WHERE task_id = ? AND kind = 'artifact' LIMIT 1`, [taskId]) as
+    | Record<string, unknown>
+    | undefined;
 }
 
 export function getStoredFile(id: string) {
