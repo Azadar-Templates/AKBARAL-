@@ -523,10 +523,29 @@ pending files, Prometheus metrics admin-only + valid text format + real
 non-zero measurements). Full suite **200/200**, typecheck clean, build
 green. Live-verified on the dev server (see commit message).
 
-### Milestone 11 — Launch readiness QA (PLANNED — target 18 September 2026)
+### Milestone 11 — Launch readiness QA (DONE — 2026-09-09, for the 18 September 2026 launch)
 
-Classify every feature LAUNCH READY / PARTIALLY READY / POST-LAUNCH against
-the live deployment; fix blockers; no cosmetic redesign, no faked features.
+Full-platform QA performed with the live server: 23-endpoint smoke pass,
+end-to-end research-task verification (success path with report + credit
+consumption, and honest-failure path with refund), flagship-agent seed fix,
+and the honest classification of every feature in
+**`docs/LAUNCH_READINESS.md`** (LAUNCH READY / PARTIALLY READY with stated
+dependencies / POST-LAUNCH). Verdict: **GO**, contingent on the deployment
+checklist in `docs/DEPLOYMENT.md`.
+
+- [x] Launch blocker fixed: the flagship `web-research-001` was absent from
+      fresh seeds (lazily created by the first research task and owned by
+      that user, invisible to everyone else in discovery). It is now a
+      first-class platform-owned catalog definition synced by every
+      seed/boot — registry 4,001 agents, research category 51, `GET
+      /api/agents/web-research-001` 200 for every user (registry test
+      updated; live-verified).
+- [x] Live end-to-end: research task completed via the real pipeline
+      (dispatch → plan → specialist → search/fetch → verify → synthesize;
+      2,418-char report, 6 logs) with credits consumed exactly once
+      (5→4); the sandbox-blocked variant failed honestly and refunded
+      (5→5) — both trust-policy behaviors live-verified.
+- [x] 200/200 tests, typecheck clean, build green at QA close.
 
 ### Milestone 12 — Web/mobile integration readiness (PLANNED)
 

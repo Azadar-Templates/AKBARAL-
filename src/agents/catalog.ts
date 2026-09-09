@@ -251,8 +251,43 @@ function buildDefinition(domain: DomainBlueprint, spec: SpecializationProfile, i
 /**
  * Generate the full agent catalog (domains x specialization profiles).
  */
+/**
+ * Flagship Agent #001 — the platform's primary research specialist. The
+ * orchestrator's planner dispatches research work to this exact slug
+ * (WEB_RESEARCH_AGENT_SLUG in the executor), so it must exist in every
+ * seeded registry, platform-owned and published. Before Milestone 11 it was
+ * only created lazily by the first research task — owned by whichever user
+ * happened to run that task and therefore invisible to everyone else in
+ * discovery.
+ */
+export const WEB_RESEARCH_AGENT_DEFINITION: AgentDefinition = {
+  key: 'web-research-001',
+  slug: 'web-research-001',
+  name: 'Web Research Agent',
+  categorySlug: 'research',
+  specialization: 'Agent #001 — searches the web, retrieves sources, extracts facts and verifies results.',
+  systemInstructions:
+    'You are Agent #001, the AKBARAL web research specialist. Search the web, retrieve sources, extract facts and verify results. Cite every claim; never fabricate sources.',
+  capabilities: ['web_search', 'page_fetch', 'source_extraction', 'verification'],
+  inputs: ['research goal', 'constraints', 'source preferences'],
+  outputs: ['research report', 'verified facts', 'source list'],
+  modelRequirements: ['research', 'long_context'],
+  toolPermissions: ['web_search', 'page_fetch', 'knowledge_search'],
+  apiRequirements: [],
+  workflow: ['clarify goal', 'search', 'fetch sources', 'extract facts', 'verify', 'synthesize'],
+  verificationRules: ['source verification', 'citation check', 'claim evidence'],
+  securityPermissions: ['no fabricated sources', 'SSRF-safe fetching only'],
+  costUsage: { estimatedTokens: 6000, estimatedCents: 2, priority: 'high' },
+  fallbackStrategy: 'narrow the query and retry with fewer sources',
+  evaluationConfig: {
+    metrics: ['citation coverage', 'fact verification rate', 'source quality'],
+    rubric: 'Every claim carries a verifiable source; conflicting sources are surfaced.',
+    testCases: ['research a public company', 'compare two products', 'verify a recent news claim'],
+  },
+};
+
 export function generateAgentDefinitions(): AgentDefinition[] {
-  const definitions: AgentDefinition[] = [];
+  const definitions: AgentDefinition[] = [WEB_RESEARCH_AGENT_DEFINITION];
   for (const domain of DOMAINS) {
     SPECIALIZATIONS.forEach((spec, index) => {
       definitions.push(buildDefinition(domain, spec, index));
@@ -262,7 +297,8 @@ export function generateAgentDefinitions(): AgentDefinition[] {
 }
 
 export function agentDefinitionCount(): number {
-  return DOMAINS.length * SPECIALIZATIONS.length;
+  // 4000 generated specialists + the flagship Agent #001.
+  return 1 + DOMAINS.length * SPECIALIZATIONS.length;
 }
 
 export function listDomainCount(): number {

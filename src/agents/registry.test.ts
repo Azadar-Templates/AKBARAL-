@@ -20,14 +20,21 @@ describe('agent registry search and browsing', () => {
     db.close();
   });
 
-  it('synced the full 4,000-agent catalog across 80 categories', () => {
+  it('synced the full catalog (4,000 generated + flagship Agent #001) across 80 categories', () => {
     const { total } = discoverAgents({ limit: 1, userId });
-    // Other test files may have created on-demand agents (e.g. Agent #001)
-    // in this shared test database; the catalog itself must be complete.
-    assert.ok(total >= 4000, `expected >= 4000 agents, got ${total}`);
+    // Other test files may have created on-demand or custom agents in this
+    // shared test database; the catalog itself must be complete. Since
+    // Milestone 11 the catalog includes the flagship web-research-001 as a
+    // platform-owned agent (4001 definitions).
+    assert.ok(total >= 4001, `expected >= 4001 agents, got ${total}`);
     const categories = listCategories();
     assert.equal(categories.length, 80);
-    assert.ok(categories.every((category) => category.count === 50));
+    // The flagship Agent #001 lives in the research category (51); every
+    // other category holds exactly its 50 generated specialists.
+    assert.ok(
+      categories.every((category) => category.count === (category.slug === 'research' ? 51 : 50)),
+      `category counts: ${categories.map((category) => `${category.slug}=${category.count}`).join(',').slice(0, 200)}`,
+    );
   });
 
   it('ranks search results by relevance, not alphabetically', () => {
