@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local database files. Schema lives in db/migrations; runtime data is ignored.
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Environment files (commit only .env.example; real .env stays local)
+.env
+.env.local
+.env.*.local
+.env.test
+.env.production
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Next.js
+.next/

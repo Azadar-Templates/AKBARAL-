@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "AKBARAL!",
+    "slug": "akbaral",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "akbaral",
+    "splash": {
+      "backgroundColor": "#070b16"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.akbaral.mobile"
+    },
+    "android": {
+      "package": "ai.akbaral.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#070b16"
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "https://api.akbaral.ai"
+    }
+  }
+}
