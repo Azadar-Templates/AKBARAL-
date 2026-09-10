@@ -141,7 +141,9 @@
     if (state.accessToken) headers.authorization = `Bearer ${state.accessToken}`;
     const response = await fetch(path, { ...options, headers });
     if (response.status === 401 && retry && state.refreshToken) {
-      const refreshed = await refreshSession();
+      // Pass the exact token that failed: if another tab has refreshed since,
+      // refreshSession adopts its tokens instead of rotating again.
+      const refreshed = await refreshSession(headers.authorization || '');
       if (refreshed) return api(path, options, false);
     }
     const text = await response.text();
@@ -163,13 +165,28 @@
   // concurrent callers must share ONE refresh request.
   let refreshInFlight = null;
 
-  async function refreshSession() {
+  async function refreshSession(staleAuthorization = '') {
     if (refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
       // Another tab may already have rotated the token — always start from
       // the latest persisted copy instead of a stale in-memory value.
       const storedRefresh = storageGet('ak_refresh');
       if (storedRefresh) state.refreshToken = storedRefresh;
+      const storedAccess = storageGet('ak_access');
+      if (storedAccess) state.accessToken = storedAccess;
+      // CROSS-TAB ROTATION GUARD: the server revokes the previous session on
+      // every refresh, which instantly invalidates the OTHER tab's access
+      // token. If a different tab already refreshed since this request was
+      // sent with `staleAuthorization`, ADOPT its tokens — rotating again
+      // would revoke the fresh session and ping-pong both tabs forever
+      // (observed live: /api/me 401 -> /refresh 200 -> /api/me 401 loop).
+      if (
+        staleAuthorization &&
+        storedAccess &&
+        storedAccess !== staleAuthorization.replace(/^Bearer /, '')
+      ) {
+        return true; // a newer access token exists — retry with it
+      }
       if (!state.refreshToken) return false;
       try {
         const res = await fetch('/api/auth/refresh', {
