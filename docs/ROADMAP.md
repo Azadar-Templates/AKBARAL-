@@ -1056,6 +1056,39 @@ A full replacement of the visual language across web and Android, per the
   swept to the new palette, notification color aligned.
 - Design-system version 2.0.0; assets `akbaral-lux-4`.
 
+### M15 — GLASS-5 luxury glass reconstruction (2026-09-11)
+
+Complete visual reconstruction to a layered glass operating system,
+per the 27-point brief:
+
+- **Single signature theme**: light mode, dark-mode toggle and theme
+  preference UI fully removed (header toggle, settings row, JS theme
+  engine, light token block, light CSS rules, `color-scheme` locked to
+  dark). One AKBARAL! luxury glass identity.
+- **Layered atmosphere**: fixed composited background — obsidian base,
+  indigo/violet/charcoal/cyan radial fields, 130s imperceptible drift,
+  fine SVG grain; depth exists before any card is drawn.
+- **Glass material system** (tokens v3.0.0, all platforms): level 1
+  (cards), level 2 (panels), level 3 (floating: header bar, auth card,
+  modals, toasts, console) with backdrop blur, hairline borders, inner
+  top highlights, controlled shadows, and an @supports no-blur fallback.
+- **Navbar rebuilt as a floating glass bar**: detached rounded bar with
+  inset margins; one aligned row desktop; ≤1023px becomes a glass sheet
+  drawer (slide/fade, scroll lock, Escape, drawer-only Log in entry).
+- **Hero recomposed**: cinematic scale to 7.6rem, glass status chip,
+  glass meta strip, deeper CTA shadows — hero video untouched.
+- **Chapter navigator** is now a floating sticky glass pill rail.
+- **Every surface harmonized**: panels, MASTER goal composer (inner
+  light), agent cards, list rows, stats, factory lab, automation nodes,
+  execution traces, pricing tiers (featured = elevated glass-2 with
+  indigo crown light), console, logs, toasts, modals, inputs (glass
+  wells with focus rings), ads consent, footer.
+- **Android rebuilt in the same language**: layered atmosphere
+  (gradient + ambient fields) behind every screen, glass cards/inputs,
+  translucent header/tab-bar chrome, elevated featured plan; native
+  patterns preserved.
+- Assets `akbaral-lux-5`; design-system 3.0.0.
+
 ---
 
 ## Verification protocol (every milestone)

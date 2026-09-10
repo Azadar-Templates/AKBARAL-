@@ -58,19 +58,20 @@ const tabIcons: Record<string, string> = {
 
 const makeScreenOptions = (name: string) => ({
   headerShown: true,
-  headerStyle: { backgroundColor: palette.bg2, borderBottomColor: palette.line, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerStyle: { backgroundColor: 'rgba(8,8,10,0.78)', borderBottomColor: 'rgba(226,226,234,0.09)', borderBottomWidth: StyleSheet.hairlineWidth },
   headerShadowVisible: false,
   headerTitleStyle: { color: palette.text, fontWeight: '800' as const, fontSize: 15, letterSpacing: 1.2, textTransform: 'uppercase' as const },
   headerTintColor: palette.accent,
   tabBarActiveTintColor: palette.accent,
   tabBarInactiveTintColor: palette.textDim,
   tabBarStyle: {
-    backgroundColor: palette.bg2,
-    borderTopColor: palette.line,
+    backgroundColor: 'rgba(8,8,10,0.86)',
+    borderTopColor: 'rgba(226,226,234,0.09)',
     borderTopWidth: StyleSheet.hairlineWidth,
     height: 62,
     paddingBottom: 8,
     paddingTop: 6,
+    elevation: 0,
   },
   tabBarLabelStyle: { fontWeight: '700' as const, fontSize: 10, letterSpacing: 0.6 },
   tabBarIcon: ({ focused }: { focused: boolean }) => (

@@ -71,31 +71,12 @@
     plan: null,
     executionStream: null,
     view: 'landing',
-    theme: storageGet('ak_theme') || 'dark',
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   /* ----- Design-system helpers ----- */
-
-  function applyTheme() {
-    document.documentElement.dataset.theme = state.theme;
-    const toggle = $('#theme-toggle');
-    const settingsToggle = $('#settings-theme-toggle');
-    if (toggle) {
-      toggle.setAttribute('aria-pressed', String(state.theme === 'light'));
-      toggle.setAttribute('aria-label', state.theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme');
-      toggle.querySelector('.theme-toggle-icon').textContent = state.theme === 'light' ? '☾' : '◐';
-    }
-    if (settingsToggle) settingsToggle.textContent = state.theme === 'light' ? 'Switch to dark' : 'Switch to light';
-  }
-
-  function setTheme(next) {
-    state.theme = next === 'light' ? 'light' : 'dark';
-    storageSet('ak_theme', state.theme);
-    applyTheme();
-  }
 
   function setCoreState(next, label) {
     const core = $('#master-core');
@@ -871,7 +852,7 @@
     const content = {
       privacy: {
         title: 'Privacy',
-        body: '<h3>What we store</h3><p>AKBARAL stores only what is required to run your account: encrypted password hashes, hashed session tokens, your projects, files, knowledge, tasks and execution history. Provider API keys are never stored in the database and never sent to the browser.</p><h3>Cookies &amp; advertising</h3><p>The platform itself sets no tracking cookies. Sign-in tokens and your theme preference are kept in your browser\'s local storage and are essential/functional only. If advertising is enabled on a deployment, third-party advertising vendors (Google AdSense) may set cookies only after you explicitly accept the advertising-consent banner; declining keeps your experience ad-free and sets no advertising cookies. You can change your choice any time from the footer.</p><h3>What we do not do</h3><p>We do not fabricate reviews, ratings, statistics or AI results. We do not sell your data. Missing provider credentials are reported honestly.</p>',
+        body: '<h3>What we store</h3><p>AKBARAL stores only what is required to run your account: encrypted password hashes, hashed session tokens, your projects, files, knowledge, tasks and execution history. Provider API keys are never stored in the database and never sent to the browser.</p><h3>Cookies &amp; advertising</h3><p>The platform itself sets no tracking cookies. Sign-in tokens are kept in your browser\'s local storage and are essential/functional only. If advertising is enabled on a deployment, third-party advertising vendors (Google AdSense) may set cookies only after you explicitly accept the advertising-consent banner; declining keeps your experience ad-free and sets no advertising cookies. You can change your choice any time from the footer.</p><h3>What we do not do</h3><p>We do not fabricate reviews, ratings, statistics or AI results. We do not sell your data. Missing provider credentials are reported honestly.</p>',
       },
       terms: {
         title: 'Terms',
@@ -923,11 +904,9 @@
   }
 
   async function boot() {
-    applyTheme();
     bindMenu();
     bindAuth();
     bindGeneral();
-    bindTheme();
     bindMotion();
     bindLandingNav();
     bindLegalModal();
@@ -938,13 +917,17 @@
     await navigate();
   }
 
-  function bindTheme() {
-    $('#theme-toggle')?.addEventListener('click', () => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
-    $('#settings-theme-toggle')?.addEventListener('click', () => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
-  }
-
   function bindMenu() {
-    $('#menu-toggle').addEventListener('click', () => $('#main-nav').classList.toggle('open'));
+    const nav = $('#main-nav');
+    const toggle = $('#menu-toggle');
+    const setOpen = (open) => {
+      nav.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      document.body.style.overflow = open ? 'hidden' : '';
+    };
+    toggle.addEventListener('click', () => setOpen(!nav.classList.contains('open')));
+    nav.querySelectorAll('a, button').forEach((item) => item.addEventListener('click', () => setOpen(false)));
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
   }
 
   function bindAuth() {
@@ -2215,7 +2198,7 @@
    *
    * This script is a classic <script> at the end of <body>: it executes as
    * soon as it is parsed, which is BEFORE Next.js/React finish hydrating.
-   * Mutating the DOM at that point (theme attribute, footer year, credit
+   * Mutating the DOM at that point (footer year, credit
    * pill, reveal classes, reticle node) caused React hydration-mismatch
    * errors and a full client re-render. Waiting for the window `load`
    * event (all sync/module scripts, including React's, have executed by

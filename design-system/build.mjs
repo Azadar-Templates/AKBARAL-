@@ -18,8 +18,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tokens = JSON.parse(readFileSync(join(root, 'design-system', 'tokens.json'), 'utf8'));
 
-const DARK = tokens.color.dark;
-const LIGHT = tokens.color.light;
+const DARK = tokens.color.dark; // single signature theme — no light palette
 const YEAR = new Date().getFullYear();
 
 /** Explicit color mappings keep full control of emitted names. */
@@ -55,8 +54,6 @@ const tokensCss = `/* ==========================================================
 
 ${colorBlock(DARK, ':root')}
 
-${colorBlock(LIGHT, '[data-theme="light"]')}
-
 :root {
   /* Typography (families resolved per-platform; scale semantics in tokens.json) */
   --font-sans: ${tokens.typography.families.web.sans};
@@ -87,13 +84,34 @@ ${colorBlock(LIGHT, '[data-theme="light"]')}
   --header-h: ${tokens.layout.web.headerHeight}px;
   --content-max: ${tokens.layout.web.contentMax}px;
   --nav-gap: 4px;
-}
 
-[data-theme="light"] {
-  --shadow: ${tokens.shadow.light.shadow};
-  --shadow-soft: ${tokens.shadow.light.shadowSoft};
-  --glow-accent: ${tokens.shadow.light.glowAccent};
-  --glow-telemetry: ${tokens.shadow.light.glowTelemetry};
+  /* Glass material system (3 levels of depth) */
+  --glass-1-fill: ${tokens.glass.level1.fill};
+  --glass-1-fallback: ${tokens.glass.level1.fillFallback};
+  --glass-1-border: ${tokens.glass.level1.border};
+  --glass-1-blur: ${tokens.glass.level1.blur}px;
+  --glass-1-highlight: ${tokens.glass.level1.highlight};
+  --glass-1-shadow: ${tokens.glass.level1.shadow};
+  --glass-2-fill: ${tokens.glass.level2.fill};
+  --glass-2-fallback: ${tokens.glass.level2.fillFallback};
+  --glass-2-border: ${tokens.glass.level2.border};
+  --glass-2-blur: ${tokens.glass.level2.blur}px;
+  --glass-2-highlight: ${tokens.glass.level2.highlight};
+  --glass-2-shadow: ${tokens.glass.level2.shadow};
+  --glass-3-fill: ${tokens.glass.level3.fill};
+  --glass-3-fallback: ${tokens.glass.level3.fillFallback};
+  --glass-3-border: ${tokens.glass.level3.border};
+  --glass-3-blur: ${tokens.glass.level3.blur}px;
+  --glass-3-highlight: ${tokens.glass.level3.highlight};
+  --glass-3-shadow: ${tokens.glass.level3.shadow};
+
+  /* Atmosphere (layered background fields) */
+  --atmo-base: ${tokens.atmosphere.base};
+  --atmo-base-high: ${tokens.atmosphere.baseHigh};
+  --atmo-indigo: ${tokens.atmosphere.fieldIndigo};
+  --atmo-violet: ${tokens.atmosphere.fieldViolet};
+  --atmo-cyan: ${tokens.atmosphere.fieldCyan};
+  --atmo-charcoal: ${tokens.atmosphere.fieldCharcoal};
 }
 `;
 
@@ -158,6 +176,23 @@ export const shadow = {
     elevation: ${tokens.shadow.mobile.glow.elevation},
   },
 };
+
+/** Glass material system — 3 levels of depth (web parity). */
+export const glass = {
+  1: { fill: '${tokens.glass.level1.fill}', border: '${tokens.glass.level1.border}', highlight: '${tokens.glass.level1.highlight}' },
+  2: { fill: '${tokens.glass.level2.fill}', border: '${tokens.glass.level2.border}', highlight: '${tokens.glass.level2.highlight}' },
+  3: { fill: '${tokens.glass.level3.fill}', border: '${tokens.glass.level3.border}', highlight: '${tokens.glass.level3.highlight}' },
+} as const;
+
+/** Atmosphere fields for the layered screen background. */
+export const atmosphere = {
+  base: '${tokens.atmosphere.base}',
+  baseHigh: '${tokens.atmosphere.baseHigh}',
+  fieldIndigo: '${tokens.atmosphere.fieldIndigo}',
+  fieldViolet: '${tokens.atmosphere.fieldViolet}',
+  fieldCyan: '${tokens.atmosphere.fieldCyan}',
+  fieldCharcoal: '${tokens.atmosphere.fieldCharcoal}',
+} as const;
 
 /** Shared typographic scale (see tokens.json typography.scale). */
 export const type = {
@@ -240,11 +275,10 @@ export function sigilColors(name: string, category = ''): { hue: number; border:
 `;
 
 /* ---------- iOS: design-system/ios/AKBARALTheme.swift (future app) ---------- */
-function swiftColor(key, dark, light, comment) {
+function swiftColor(key, dark, comment) {
+  // Single signature theme — AKBARAL! ships one luxury glass identity.
   return `    /// ${comment}
-    static let ${key} = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("${DARK[dark]}") : hex("${LIGHT[light]}")
-    }`;
+    static let ${key} = hex("${DARK[dark]}")`;
 }
 
 const swift = `// ============================================================
@@ -281,34 +315,34 @@ enum AKBARALTheme {
         return UIColor(red: r, green: g, blue: b, alpha: 1)
     }
 
-${swiftColor('bgDeep', 'bgDeep', 'bgDeep', 'Deepest obsidian layer (footers, wells).')}
-${swiftColor('bg', 'bg', 'bg', 'Base obsidian canvas.')}
-${swiftColor('bg2', 'bg2', 'bg2', 'Raised obsidian (cards, bars).')}
-${swiftColor('bg3', 'bg3', 'bg3', 'Highest obsidian (hover, emphasis).')}
-${swiftColor('surface', 'surfaceSolid', 'surfaceSolid', 'Card surface.')}
-${swiftColor('surface2', 'surface2Solid', 'surface2Solid', 'Secondary surface.')}
-${swiftColor('surfaceStrong', 'surfaceStrong', 'surfaceStrong', 'Strong surface (dialogs, sheets).')}
+${swiftColor('bgDeep', 'bgDeep', 'Deepest obsidian layer (footers, wells).')}
+${swiftColor('bg', 'bg', 'Base obsidian canvas.')}
+${swiftColor('bg2', 'bg2', 'Raised obsidian (cards, bars).')}
+${swiftColor('bg3', 'bg3', 'Highest obsidian (hover, emphasis).')}
+${swiftColor('surface', 'surfaceSolid', 'Card surface.')}
+${swiftColor('surface2', 'surface2Solid', 'Secondary surface.')}
+${swiftColor('surfaceStrong', 'surfaceStrong', 'Strong surface (dialogs, sheets).')}
 
     // MARK: - Text ramp
 
-${swiftColor('text', 'text', 'text', 'Primary text.')}
-${swiftColor('text2', 'text2', 'text2', 'Secondary text.')}
-${swiftColor('textDim', 'textDim', 'textDim', 'Muted text / labels.')}
-${swiftColor('textFaint', 'textFaint', 'textFaint', 'Faint text / metadata.')}
+${swiftColor('text', 'text', 'Primary text.')}
+${swiftColor('text2', 'text2', 'Secondary text.')}
+${swiftColor('textDim', 'textDim', 'Muted text / labels.')}
+${swiftColor('textFaint', 'textFaint', 'Faint text / metadata.')}
 
     // MARK: - Atmosphere (the only accent family)
 
-${swiftColor('accent', 'accent', 'accent', 'Violet — the AKBARAL! accent.')}
-${swiftColor('accent2', 'accent2', 'accent2', 'Indigo — accent companion.')}
-${swiftColor('onAccent', 'onAccent', 'onAccent', 'Text on accent fills.')}
-${swiftColor('telemetry', 'telemetry', 'telemetry', 'Cyan — live/running telemetry only.')}
+${swiftColor('accent', 'accent', 'Violet — the AKBARAL! accent.')}
+${swiftColor('accent2', 'accent2', 'Indigo — accent companion.')}
+${swiftColor('onAccent', 'onAccent', 'Text on accent fills.')}
+${swiftColor('telemetry', 'telemetry', 'Cyan — live/running telemetry only.')}
 
     // MARK: - Status
 
-${swiftColor('statusGreen', 'green', 'green', 'Success / completed / active.')}
-${swiftColor('statusRed', 'red', 'red', 'Failure / blocked / disabled.')}
-${swiftColor('statusAmber', 'amber', 'amber', 'Pending / queued / retrying.')}
-${swiftColor('statusBlue', 'blue', 'blue', 'Informational.')}
+${swiftColor('statusGreen', 'green', 'Success / completed / active.')}
+${swiftColor('statusRed', 'red', 'Failure / blocked / disabled.')}
+${swiftColor('statusAmber', 'amber', 'Pending / queued / retrying.')}
+${swiftColor('statusBlue', 'blue', 'Informational.')}
 
     // MARK: - Spacing (pt)
 

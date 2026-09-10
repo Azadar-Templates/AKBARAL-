@@ -11,7 +11,7 @@ export const palette = {
   bg2: '#0d0d10',
   bg3: '#121217',
   surfaceStrong: '#15151b',
-  glassFill: 'rgba(10,10,13,0.7)',
+  glassFill: 'rgba(13,13,18,0.62)',
   line: 'rgba(226,226,234,0.08)',
   lineStrong: 'rgba(226,226,234,0.16)',
   lineFaint: 'rgba(226,226,234,0.045)',
@@ -75,6 +75,23 @@ export const shadow = {
     elevation: 6,
   },
 };
+
+/** Glass material system — 3 levels of depth (web parity). */
+export const glass = {
+  1: { fill: 'rgba(226,226,234,0.045)', border: 'rgba(226,226,234,0.09)', highlight: 'rgba(255,255,255,0.055)' },
+  2: { fill: 'rgba(16,16,22,0.52)', border: 'rgba(226,226,234,0.12)', highlight: 'rgba(255,255,255,0.07)' },
+  3: { fill: 'rgba(20,20,28,0.72)', border: 'rgba(226,226,234,0.16)', highlight: 'rgba(255,255,255,0.085)' },
+} as const;
+
+/** Atmosphere fields for the layered screen background. */
+export const atmosphere = {
+  base: '#060608',
+  baseHigh: '#0b0b10',
+  fieldIndigo: 'rgba(115,120,232,0.11)',
+  fieldViolet: 'rgba(151,144,242,0.08)',
+  fieldCyan: 'rgba(143,199,222,0.05)',
+  fieldCharcoal: 'rgba(60,60,74,0.20)',
+} as const;
 
 /** Shared typographic scale (see tokens.json typography.scale). */
 export const type = {

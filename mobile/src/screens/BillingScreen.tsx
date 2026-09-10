@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
-import { palette, spacing } from '../theme';
+import { palette, shadow, spacing } from '../theme';
 import { Button, Card, Field, LoadingState, PageHeader, ScreenShell, Skeleton, Stat } from '../components/ui';
 
 /** USD money formatting shared with the web client ($50 / $49.99). */
@@ -66,7 +66,7 @@ export function BillingScreen({ user }: { user: { id: string; email: string; fre
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
   heading: { color: palette.text2, fontWeight: '800', marginTop: spacing.md, marginBottom: spacing.sm },
-  featured: { borderLeftWidth: 3, borderLeftColor: palette.accent },
+  featured: { borderLeftWidth: 3, borderLeftColor: palette.accent, ...shadow.glow },
   planHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   planName: { color: palette.text, fontWeight: '900', fontSize: 17 },
   featuredTag: {

@@ -27,7 +27,7 @@ outputs. Never hand-edit the generated files.
 2. **Restraint is the accent.** One indigo/violet family
    (`accent2 #7378e8 → accent #9790f2`) for meaning, never decoration;
    the **ivory primary action** (`#ececee` solid, dark label — inverted in
-   light theme) carries confidence on buttons.
+   single theme) carries confidence on buttons.
 3. **Premium glass, rarely.** Sticky header, auth card, dialogs and toasts
    get blur (web) / solid + sheen (mobile). Cards do not.
 4. **Hairlines and fine grids** carry the technical elegance. 1px borders from the
@@ -65,9 +65,11 @@ symbols.
 | Failure | `red` | `#e58a97` |
 | Pending/queued | `amber` | `#dcb26a` |
 
-The website additionally ships a light theme (`tokens.css` `[data-theme="light"]`).
-The mobile app is dark-only by identity; iOS will ship dark-first with the same
-dynamic-color pattern already encoded in `AKBARALTheme.swift`.
+AKBARAL! ships **one signature luxury glass theme** — there is no light mode,
+no theme toggle and no dual palette anywhere (web, Android, future iOS).
+Depth comes from the layered atmosphere (fixed radial fields + grain) and a
+three-level glass material system (`glass.level1/2/3`: fill, border, blur,
+highlight, shadow) shared by every platform.
 
 ## Typography
 

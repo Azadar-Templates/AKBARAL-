@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { motion, palette, radius, shadow, sigilColors, spacing, statusColor, statusTone, type as typeScale } from '../theme';
+import { atmosphere, glass, motion, palette, radius, shadow, sigilColors, spacing, statusColor, statusTone, type as typeScale } from '../theme';
 
 /* ============================================================
  * AKBARAL! shared UI primitives — the mobile face of the unified
@@ -68,13 +68,24 @@ export function StatusDot({ status, size = 10 }: { status: string; size?: number
 
 /** Screen scaffold: obsidian canvas + the shared indigo atmosphere at the top. */
 export function ScreenShell({ children, style, scroll }: { children: React.ReactNode; style?: ViewStyle; scroll?: boolean }) {
+  // Layered atmosphere: base obsidian -> indigo field -> ambient light shapes.
+  // Depth lives behind the content; glass cards float above it.
   const atmosphere = (
-    <LinearGradient
-      colors={['rgba(115,120,232,0.16)', 'rgba(115,120,232,0.05)', 'rgba(8,8,10,0)']}
-      locations={[0, 0.55, 1]}
-      style={styles.atmosphere}
-      pointerEvents="none"
-    />
+    <View style={styles.atmosphere} pointerEvents="none">
+      <LinearGradient
+        colors={['rgba(11,11,16,0.92)', 'rgba(6,6,8,0)']}
+        locations={[0, 0.42]}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        colors={['rgba(115,120,232,0.15)', 'rgba(115,120,232,0.04)', 'rgba(115,120,232,0)']}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.atmoFieldIndigo} />
+      <View style={styles.atmoFieldViolet} />
+      <View style={styles.atmoFieldCharcoal} />
+    </View>
   );
   if (scroll) {
     return (
@@ -156,7 +167,7 @@ export function Button({ label, onPress, tone = 'primary', disabled, loading }: 
       </Pressable>
     );
   }
-  const bg = tone === 'danger' ? palette.redSoft : tone === 'secondary' ? palette.surface2 : 'transparent';
+  const bg = tone === 'danger' ? palette.redSoft : tone === 'secondary' ? glass[1].fill : 'transparent';
   const color = tone === 'danger' ? palette.red : palette.text;
   const border = tone === 'danger' ? `${palette.red}59` : palette.lineStrong;
   return (
@@ -340,16 +351,19 @@ export function HeroCard({ eyebrow, title, text, accent = 'accent' }: { eyebrow:
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
-  atmosphere: { position: 'absolute', top: 0, left: 0, right: 0, height: 220 },
+  atmosphere: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
+  atmoFieldIndigo: { position: 'absolute', top: -170, left: -120, width: 400, height: 400, borderRadius: 200, backgroundColor: atmosphere.fieldIndigo },
+  atmoFieldViolet: { position: 'absolute', top: 90, right: -150, width: 340, height: 340, borderRadius: 170, backgroundColor: atmosphere.fieldViolet },
+  atmoFieldCharcoal: { position: 'absolute', bottom: -140, left: -80, width: 460, height: 380, borderRadius: 190, backgroundColor: atmosphere.fieldCharcoal },
   screenContent: { padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { marginBottom: spacing.lg },
   kicker: { color: palette.telemetry, fontSize: typeScale.micro.fontSize, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 },
   title: { color: palette.text, fontSize: 27, fontWeight: '900', letterSpacing: -0.5 },
   card: {
-    backgroundColor: palette.surface,
+    backgroundColor: glass[1].fill,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: palette.line,
+    borderColor: glass[1].border,
     padding: spacing.lg,
     marginBottom: spacing.md,
     overflow: 'hidden',
@@ -380,13 +394,13 @@ const styles = StyleSheet.create({
   fieldWrap: { marginBottom: spacing.md },
   fieldLabel: { color: palette.textDim, fontSize: 12, marginBottom: 6, marginLeft: 2, textTransform: 'uppercase', letterSpacing: 1, fontWeight: '700' },
   input: {
-    backgroundColor: palette.bg3,
+    backgroundColor: 'rgba(5,5,8,0.55)',
     color: palette.text,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: palette.lineStrong,
+    borderColor: glass[1].border,
     fontSize: 15,
   },
   badge: {
@@ -434,7 +448,7 @@ const styles = StyleSheet.create({
   brandGradient: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   brandSheen: { position: 'absolute', top: -16, left: -22, width: 96, height: 96, backgroundColor: 'rgba(255,255,255,0.28)', transform: [{ rotate: '18deg' }] },
   brandMarkText: { color: palette.onAccent, fontWeight: '900' },
-  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: spacing.xl, marginBottom: spacing.lg, overflow: 'hidden', backgroundColor: palette.surface },
+  heroCard: { borderRadius: radius.xl, borderWidth: 1, borderColor: glass[2].border, padding: spacing.xl, marginBottom: spacing.lg, overflow: 'hidden', backgroundColor: glass[2].fill },
   heroGlow: { position: 'absolute', top: -50, right: -46, width: 160, height: 160, borderRadius: 80 },
   heroEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', marginBottom: spacing.sm },
   heroTitle: { color: palette.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.5, marginBottom: spacing.sm },

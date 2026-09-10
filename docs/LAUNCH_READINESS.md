@@ -385,3 +385,18 @@ motion across all surfaces. Verified: 254/254 tests, server + mobile
 typechecks, production build, live sweep (nav markup, tokens with ivory,
 hero video 200/206, six USD plans, 4,001-agent registry, demo console
 markers, QA auth round-trip). Functional behavior unchanged.
+
+## GLASS-5 luxury glass reconstruction (2026-09-11, M15)
+
+Full visual reconstruction to a layered glass system: single signature
+theme (theme switching completely removed — toggle, settings row, JS
+engine, light tokens), fixed composited atmosphere with grain, a
+three-level glass material system across every surface, floating glass
+navbar + glass sheet drawer, recentered cinematic hero (video kept),
+sticky glass chapter rail, harmonized translucent surfaces everywhere,
+and the Android app rebuilt on the same atmosphere + glass language
+with native UX. Verified: 254/254 tests, server + mobile typechecks,
+production build, live sweep (no theme UI, glass tokens live, hero
+video 200/206, six USD plans, 4,001 agents, console markers, QA auth
+round-trip, zero server errors). Functionality unchanged; console
+safety model untouched.
