@@ -945,3 +945,13 @@ form label + label { margin-top: 14px; }
   .log-line { grid-template-columns: 56px 1fr; }
   .log-msg { grid-column: 1 / -1; padding-left: 0; }
 }
+
+/* ===== OAuth provider sign-in (auth card) ===== */
+.auth-oauth { margin-top: 18px; }
+.auth-oauth-divider { display: flex; align-items: center; gap: 12px; color: var(--text-dim, #8293b7); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.auth-oauth-divider::before, .auth-oauth-divider::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: 0.25; }
+.auth-oauth-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.auth-oauth-buttons .btn { flex: 1 1 140px; justify-content: center; text-decoration: none; }
+.auth-oauth-note { margin-top: 10px; color: var(--text-faint, #5a6a8f); font-size: 11px; }
+#settings-oauth-list .list-item { flex-wrap: wrap; }
+#settings-oauth-list .btn[disabled] { opacity: 0.45; cursor: not-allowed; }

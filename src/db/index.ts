@@ -8,3 +8,4 @@ export * from './business-repositories';
 export * from './trust-repositories';
 export * from './queue-repositories';
 export * from './automation-repositories';
+export * from './oauth-repositories';

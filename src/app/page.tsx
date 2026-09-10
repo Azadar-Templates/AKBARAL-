@@ -357,7 +357,7 @@ export default function Home() {
             Email<input type="email" id="auth-email" autoComplete="email" required /></label><label>
             Password<input type="password" id="auth-password" minLength={ 8 } autoComplete="current-password" required /></label><label id="auth-name-wrap" hidden>
             Name<input type="text" id="auth-name" autoComplete="name" /></label><button className="btn btn-primary btn-block" id="auth-submit" type="submit">
-            Continue</button></form><p className="auth-switch" id="auth-switch">
+            Continue</button></form><div className="auth-oauth" id="auth-oauth" hidden><div className="auth-oauth-divider"><span>or continue with</span></div><div className="auth-oauth-buttons" id="auth-oauth-buttons"></div><p className="auth-oauth-note" id="auth-oauth-note"></p></div><p className="auth-switch" id="auth-switch">
 
 
           No account? <a href="#/register">Create one</a></p><p className="auth-trust" role="note"><span aria-hidden="true">
@@ -556,8 +556,14 @@ export default function Home() {
 
               Theme</b><small>AKBARAL dark / light identity</small></div><button className="btn btn-outline btn-sm" id="settings-theme-toggle">Toggle theme</button></div><div className="list-item"><div><b>
 
-              Session</b><small>Bearer session tokens are rotated on refresh.</small></div><span className="badge green">active</span></div></div><p className="auth-trust" role="note"><span aria-hidden="true">
+              Session</b><small>Bearer session tokens are rotated on refresh.</small></div><span className="badge green">active</span></div></div></div><div className="panel"><h3>
 
+
+            Connected accounts</h3><div className="list"><div className="list-item"><div><b>
+            Password</b><small id="settings-password-status">—</small></div><span className="badge" data-badge="neutral">—</span></div><div className="list" id="settings-oauth-list"><div className="list-item"><small>Sign in to manage connected providers.</small></div></div></div><div id="settings-oauth-actions" className="list"></div></div></div><div className="cols-2"><div className="panel"><h3>
+
+
+            Trust &amp; privacy</h3><p className="sub"><span aria-hidden="true">
 
             ⬡</span> Provider credentials are never exposed in the UI; the API reports only configured/unconfigured.</p><button className="btn btn-danger btn-block" id="settings-logout">
 

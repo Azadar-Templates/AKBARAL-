@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Linking from 'expo-linking';
 import { api } from '../api/client';
 import { palette, radius, spacing, shadow } from '../theme';
 import { Button, BrandMark, Card, Field, Pill } from '../components/ui';
@@ -10,6 +11,21 @@ export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: 
   const [registerMode, setRegisterMode] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState<Array<{ key: string; label: string }>>([]);
+
+  // Provider sign-in: only providers actually configured on the deployment
+  // are offered (honest — no fake buttons). The flow opens the system
+  // browser; the web client completes it.
+  useEffect(() => {
+    (async () => {
+      try {
+        const body = (await api.get('/api/auth/oauth/providers')) as { providers?: Array<{ key: string; label: string; configured: boolean }> };
+        setOauthProviders((body.providers ?? []).filter((p) => p.configured));
+      } catch {
+        setOauthProviders([]);
+      }
+    })();
+  }, []);
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -57,6 +73,25 @@ export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: 
           <TouchableOpacity onPress={() => setRegisterMode((value) => !value)} disabled={busy}>
             <Text style={styles.link}>{registerMode ? 'Already have an account? Sign in' : 'No account? Create one'}</Text>
           </TouchableOpacity>
+          {oauthProviders.length > 0 ? (
+            <View style={styles.oauthWrap}>
+              <Text style={styles.oauthDivider}>or continue with</Text>
+              <View style={styles.oauthRow}>
+                {oauthProviders.map((provider) => (
+                  <TouchableOpacity
+                    key={provider.key}
+                    style={styles.oauthButton}
+                    onPress={() => {
+                      const url = api.url(`/api/auth/oauth/${provider.key}/authorize`);
+                      void Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open the browser.'));
+                    }}>
+                    <Text style={styles.oauthButtonText}>{provider.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.oauthNote}>Opens the system browser to complete provider sign-in.</Text>
+            </View>
+          ) : null}
         </Card>
 
         <View style={styles.trust}>
@@ -81,6 +116,12 @@ const styles = StyleSheet.create({
   title: { color: palette.text, fontSize: 22, fontWeight: '900', marginBottom: 4 },
   subtitle: { color: palette.textDim, marginBottom: spacing.lg },
   link: { color: palette.cyan, textAlign: 'center', marginTop: spacing.lg, fontWeight: '700' },
+  oauthWrap: { marginTop: spacing.lg },
+  oauthDivider: { color: palette.textDim, fontSize: 10, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center', marginBottom: spacing.sm },
+  oauthRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  oauthButton: { flex: 1, borderWidth: 1, borderColor: palette.line, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center', backgroundColor: palette.surface },
+  oauthButtonText: { color: palette.text, fontWeight: '800', fontSize: 13 },
+  oauthNote: { color: palette.textFaint, fontSize: 10, textAlign: 'center', marginTop: spacing.sm },
   trust: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'center', marginTop: spacing.lg },
   chip: {
     backgroundColor: palette.bg3,

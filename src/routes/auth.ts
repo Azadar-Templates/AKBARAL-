@@ -15,7 +15,6 @@ import {
   setUserPasswordHash,
   db,
 } from '../db';
-import { getConfigStatus } from '../config/credentials';
 import { sendEmail, smtpConfigured, EmailDeliveryNotConfiguredError } from '../integrations/smtp';
 import { env } from '../config/env';
 import { redactSecrets } from '../config/secrets';
@@ -100,21 +99,6 @@ authRouter.post(
       });
     }
     res.status(204).send();
-  },
-);
-
-authRouter.get(
-  '/oauth/providers',
-  (_req, res) => {
-    const oauthKeys = ['oauth_google', 'oauth_github', 'oauth_apple', 'oauth_microsoft'];
-    const providers = getConfigStatus().integrations
-      .filter((item) => oauthKeys.includes(item.key))
-      .map((item) => ({
-        key: item.key.replace(/^oauth_/, ''),
-        configured: item.configured,
-        required: item.requiredEnvVars,
-      }));
-    res.status(200).json({ providers });
   },
 );
 

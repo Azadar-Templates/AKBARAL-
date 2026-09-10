@@ -771,6 +771,7 @@
     state.view = view;
     if (['login', 'register'].includes(view)) {
       showScreen('auth');
+      void renderOAuthButtons();
       $('#auth-title').textContent = view === 'register' ? 'Create account' : 'Sign in';
       $('#auth-name-wrap').hidden = view !== 'register';
       $('#auth-submit').textContent = view === 'register' ? 'Create account' : 'Sign in';
@@ -815,6 +816,7 @@
 
     const taskMatch = view.match(/^tasks\/([A-Za-z0-9_-]+)$/);
     if (taskMatch) { showScreen('task'); await loadTaskDetail(taskMatch[1]); return; }
+    if (view.split('?')[0] === 'oauth/callback') { await handleOAuthCallback(view); return; }
     if (view === 'dashboard') { showScreen('dashboard'); await loadDashboard(); return; }
     if (view === 'master') { showScreen('master'); await loadProjects(); return; }
     if (view === 'agents') { showScreen('agents'); await loadAgentWorld(); return; }
@@ -826,7 +828,7 @@
     if (schedMatch) { showScreen('automations'); await loadAutomations(schedMatch[1]); return; }
     if (view === 'crm') { showScreen('crm'); await loadCrm(); return; }
     if (view === 'billing') { showScreen('billing'); await loadBilling(); return; }
-    if (view === 'settings') { showScreen('settings'); await loadSettings(); return; }
+    if (view === 'settings') { showScreen('settings'); await loadSettings(); void loadConnectedAccounts(); return; }
     if (view === 'admin') {
       if (!['admin', 'super_admin'].includes(state.user?.role || '')) { toast('Admin access required', 'err'); showScreen('dashboard'); return; }
       showScreen('admin');
@@ -835,6 +837,107 @@
     }
     showScreen('dashboard');
     await loadDashboard();
+  }
+
+  /* ----- OAuth (provider sign-in + account linking) ----- */
+
+  async function handleOAuthCallback(view) {
+    const params = new URLSearchParams(view.split('?')[1] || '');
+    showScreen('auth');
+    $('#auth-title').textContent = 'Signing in…';
+    if (params.get('status') !== 'ok') {
+      const code = params.get('error') || 'unknown_error';
+      const messages = {
+        invalid_state: 'The sign-in link expired or was already used. Please try again.',
+        provider_error: 'The provider refused the sign-in request.',
+        oauth_exchange_failed: 'The provider token exchange failed. Please try again.',
+        oauth_profile_failed: 'The provider did not return a usable profile.',
+        oauth_email_missing: 'The provider did not share an email address.',
+        oauth_link_blocked: 'That email is registered, but the provider did not verify it. Sign in with your password, then link the provider from Settings.',
+        link_conflict: 'That provider account is already linked to another user.',
+      };
+      toast(messages[code] || `Sign-in failed (${code})`, 'err');
+      $('#auth-title').textContent = 'Sign in';
+      location.hash = '#/login';
+      return;
+    }
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) { toast('Incomplete sign-in response', 'err'); location.hash = '#/login'; return; }
+    state.accessToken = accessToken;
+    state.refreshToken = refreshToken;
+    storageSet('ak_access', accessToken);
+    storageSet('ak_refresh', refreshToken);
+    if (params.get('mode') === 'link') {
+      toast('Provider account linked', 'ok');
+      location.hash = '#/settings';
+      await loadMe().catch(() => {});
+      return;
+    }
+    await loadMe().catch(() => {});
+    toast(`Welcome, ${state.user?.name || state.user?.email || ''}`, 'ok');
+    location.hash = '#/dashboard';
+  }
+
+  async function renderOAuthButtons() {
+    const wrap = $('#auth-oauth');
+    const target = $('#auth-oauth-buttons');
+    if (!wrap || !target) return;
+    try {
+      const body = await api('/api/auth/oauth/providers');
+      const providers = (body.providers || []).filter((p) => p.configured);
+      if (!providers.length) { wrap.hidden = true; return; }
+      wrap.hidden = false;
+      $('#auth-oauth-note').textContent = 'Provider sign-in is handled entirely server-side.';
+      target.innerHTML = providers.map((p) => `<a class="btn btn-outline btn-sm" href="/api/auth/oauth/${esc(p.key)}/authorize">Continue with ${esc(p.label)}</a>`).join('');
+    } catch { wrap.hidden = true; }
+  }
+
+  async function loadConnectedAccounts() {
+    const list = $('#settings-oauth-list');
+    const actions = $('#settings-oauth-actions');
+    if (!list || !actions) return;
+    try {
+      const body = await api('/api/auth/oauth/identities');
+      $('#settings-password-status').textContent = body.passwordSet ? 'Password sign-in enabled' : 'No password set (provider sign-in only)';
+      const linked = new Map((body.identities || []).map((i) => [i.provider, i]));
+      const rows = (body.providers || []).map((p) => {
+        const identity = linked.get(p.key);
+        return `<div class="list-item"><div><b>${esc(p.label)}</b><small>${identity ? `Linked ${identity.linkedAt ? new Date(identity.linkedAt).toLocaleDateString() : ''}` : (p.configured ? 'Not linked' : 'Not configured on this deployment')}</small></div>${
+          identity
+            ? `<button class="btn btn-ghost btn-sm" data-unlink="${esc(p.key)}" ${!body.passwordSet && (body.identities || []).length === 1 ? 'disabled title="Set a password before removing the last sign-in method"' : ''}>Unlink</button>`
+            : (p.configured ? `<a class="btn btn-outline btn-sm" href="/api/auth/oauth/${esc(p.key)}/authorize?link=1" data-link="${esc(p.key)}">Link</a>` : '<span class="badge">off</span>')
+        }</div>`;
+      });
+      list.innerHTML = rows.join('') || '<div class="list-item"><small>No providers configured on this deployment.</small></div>';
+      actions.innerHTML = '';
+      list.querySelectorAll('button[data-unlink]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const provider = button.dataset.unlink;
+          if (!window.confirm(`Unlink ${provider} from your account?`)) return;
+          try {
+            await api(`/api/auth/oauth/identities/${encodeURIComponent(provider)}`, { method: 'DELETE' });
+            toast('Provider unlinked', 'ok');
+            await loadConnectedAccounts();
+          } catch (e) { toast(e.message, 'err'); }
+        });
+      });
+      // The link buttons need the session token in the Authorization header —
+      // plain anchors cannot send it, so intercept and fetch-then-redirect.
+      list.querySelectorAll('a[data-link]').forEach((link) => {
+        link.addEventListener('click', async (event) => {
+          event.preventDefault();
+          const provider = link.dataset.link;
+          try {
+            const body = await api(`/api/auth/oauth/${encodeURIComponent(provider)}/link`, { method: 'POST' });
+            if (body.redirectUrl) window.location.href = body.redirectUrl;
+            else toast('Could not start linking', 'err');
+          } catch (e) { toast(e.message, 'err'); }
+        });
+      });
+    } catch {
+      list.innerHTML = '<div class="list-item"><small>Sign in to manage connected providers.</small></div>';
+    }
   }
 
   /* ----- Live execution stream (M12 task center) -----

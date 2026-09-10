@@ -157,8 +157,13 @@ runtime image, `/api/ready` healthcheck, nightly verified backup cron);
    queue is in-process.
 3. **Zero-downtime deploys** — migrations run at boot; deploys take a brief
    restart window on a single node.
-4. **OAuth login** (Google/GitHub/Apple/Microsoft) — `/api/auth/oauth/providers`
-   honestly reports providers as not configured; the flows are not wired.
+4. **OAuth login** (Google/GitHub/Apple/Microsoft) — fully implemented
+   (state/CSRF + PKCE, server-side secrets, verified-email auto-link with
+   takeover protection, account linking, unlink with lockout protection,
+   Apple ES256/JWKS verification). Requires deployment credentials
+   (GOOGLE_CLIENT_ID/SECRET, GITHUB_*, MS_*, APPLE_* + private key) to go
+   live; until then `/api/auth/oauth/providers` honestly reports them as
+   unconfigured and no buttons are rendered.
 5. **Mobile shell** — Expo app (`mobile/`) is wired to the full MASTER API:
    auth, dashboard, MASTER, task center with live SSE logs, agents,
    workspace, billing, settings; deep links (`akbaral://tasks/:id`) and

@@ -793,6 +793,53 @@ on the existing orchestrator (no parallel system):
   log entries for every action; push notifications delivered with deep
   links).
 
+**OAuth providers & account linking — COMPLETE.** Real OAuth 2.0 flows,
+fully server-side, for Google, GitHub, Microsoft and Apple:
+
+- **Security model** (`src/auth/oauth.ts`): 256-bit `state` stored HASHED
+  server-side, single-use (guarded consume), 10-minute TTL, bound to provider
+  + mode + user + exact redirect_uri + IP; PKCE S256 everywhere supported;
+  client secrets never leave the server. Apple uses a real ES256
+  client-secret JWT (APPLE_PRIVATE_KEY) and id_token verification against
+  Apple's JWKS through node:crypto.
+- **Account resolution with takeover protection**: auto-link by email ONLY
+  when the provider asserts the email is verified (Google userinfo
+  email_verified, GitHub verified primary email, Apple id_token claim;
+  Microsoft Graph exposes no verified assertion — policy treats it as
+  unverified). Unverified provider emails never attach to existing password
+  accounts; linking an identity owned by another user is a 409 + critical
+  security event.
+- **Provisioning**: OAuth sign-in creates a real account (password_hash
+  NULL — password login stays available once a password is set) with the
+  standard trial credits; sessions are the same rotated refresh-token
+  sessions as password login.
+- **API** (`src/routes/oauth.ts`): GET /providers (honest configured state),
+  GET /:provider/authorize (login, 302), POST /:provider/link
+  (authenticated link start, returns the consent URL), GET+POST
+  /:provider/callback (Apple form_post), GET /identities,
+  DELETE /identities/:provider (refuses to remove the last sign-in method).
+  Per-IP rate limits on every public route; audit + security logs for all
+  events; credentials returned to the SPA only in the URL fragment (never
+  query strings or logs).
+- **Clients**: web — provider buttons on the sign-in card (only for
+  configured providers), `#/oauth/callback` fragment handler, Settings →
+  Connected accounts (list/link/unlink with lockout protection; assets
+  `cinematic-v7`); mobile — provider buttons on the login screen via the
+  system browser.
+- **Migration** `0011_oauth_identities.sql`: `oauth_identities` (UNIQUE
+  provider identity → one user) + `oauth_states` (hashed, single-use).
+- **Providers configured?** None in this deployment — all four are
+  implemented for real but report `configured: false` until their
+  credentials exist (GOOGLE_CLIENT_ID/SECRET, GITHUB_*, MS_*, APPLE_* +
+  key). The machinery is verified end-to-end by 18 integration tests
+  against a spec-accurate local OAuth fixture (real ES256 keys, JWKS, PKCE
+  verification, per-provider profile shapes) plus live E2E.
+- **Verification**: 253/253 tests, tsc clean (server + mobile), production
+  build green, live E2E on the dev stack (full login → provisioning →
+  session → refresh rotation → old token death; positive link; conflict
+  refusal with critical security log; invalid state; provider error;
+  unauthenticated 401s; unconfigured 503; unlink 204).
+
 ---
 
 ## Verification protocol (every milestone)

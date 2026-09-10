@@ -8,6 +8,7 @@ import { meRouter } from './routes/me';
 import { createTasksRouter } from './routes/tasks';
 import { createWorkflowsRouter } from './routes/workflows';
 import { createAutomationsRouter } from './routes/automations';
+import { createOAuthRouter } from './routes/oauth';
 import { createMasterRouter } from './routes/master';
 import { executionQueue } from './orchestrator/queue';
 import { automationScheduler } from './automation/scheduler';
@@ -136,6 +137,7 @@ export function createApiServer(): ApiServer {
   }));
 
   app.use('/api/auth', authRouter);
+  app.use('/api/auth/oauth', createOAuthRouter());
   app.get('/api/health', (_req, res) => {
     // Liveness: honest probe — if the database round trip fails the process
     // is degraded, not "ok" (the old payload reported database:'ok'
