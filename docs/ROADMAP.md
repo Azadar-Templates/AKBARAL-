@@ -635,10 +635,41 @@ assets — no third-party or copied material.
       server, live marker/asset/navigation/flow verification (documented
       in LAUNCH_READINESS.md).
 
-### Milestone 12 — Web/mobile integration readiness (PLANNED)
+### Milestone 12 — Web/mobile integration (IN PROGRESS)
 
 Wire the web app + mobile shell fully to the MASTER API (task center, live
 logs, results), deep links, push notifications.
+
+**Chunk 1 — web task center with live execution logs (2026-09-10, DONE):**
+
+- [x] Preview-error triage: React hydration mismatches were caused by the SPA
+      bootstrap executing before hydration and mutating the DOM (theme
+      attribute, footer year, reveal classes, hero canvas sizing, injected
+      pricing cards, a leftover module-level `js` class). The bootstrap now
+      waits for the window load event + double rAF (with a 4s safety valve);
+      zero module-level DOM mutations remain; `suppressHydrationWarning` on
+      `<html>` plus a pre-paint theme snippet (next-themes pattern) remove
+      the theme flash. The hero video 404 probe was replaced with a
+      server-rendered existence flag (no console noise; requires dev
+      restart/rebuild to pick up a newly added video file).
+- [x] Task center: dashboard task rows are deep links (`#/tasks/:id`) to a
+      full task detail view — status/execution/duration/log counters, result
+      payload, error panel, executions, event timeline and an execution log
+      console (level-colored, 500-line cap, live counter).
+- [x] Live logs: primary WebSocket channel `/ws/executions/:id?token=`
+      (same-origin, proxied via a new `/ws/*` rewrite) with automatic SSE
+      fallback `/api/executions/:id/events?token=` — the SSE route now also
+      accepts the access token as a query parameter (EventSource cannot send
+      headers), mirroring the WebSocket auth pattern. Streams close on view
+      change. Both channels live-verified through the web port.
+- [x] Test-suite hermeticity hardened (real defect found by the suite): the
+      billing "no provider configured" path now also clears
+      AKBARAL_SEARCH/PAGE_FETCH/ALLOW_PRIVATE_PROVIDER env, so a developer's
+      local `.env` fixture wiring can no longer make the honest-failure path
+      succeed. Full suite 200/200.
+
+**Remaining for M12:** mobile shell wiring (task center, live logs, results
+via the same channels), deep-link handling, push notifications.
 
 ---
 

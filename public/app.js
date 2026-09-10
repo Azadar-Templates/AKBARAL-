@@ -2,7 +2,10 @@
 (() => {
   'use strict';
 
-  try { document.documentElement.classList.add('js'); } catch {}
+  /* NOTE: no module-level DOM mutations allowed. This script executes before
+   * React hydration; every DOM write (including classList tweaks) must live
+   * inside boot(), which waits for the window load event — see the bootstrap
+   * gate at the bottom of this file. */
 
   /* Safe browser storage.
    *
@@ -316,20 +319,18 @@
     // Mobile/save-data: canvas with a lighter node budget (no video fetch).
     const budget = isCoarse || saveData ? 'light' : 'full';
 
-    if (video) {
-      fetch('/media/hero-loop.mp4', { method: 'HEAD' })
-        .then((res) => {
-          if (res.ok) {
-            video.classList.add('is-live');
-            video.setAttribute('preload', 'auto');
-            const play = video.play();
-            if (play && play.catch) play.catch(() => video.classList.remove('is-live'));
-            video.addEventListener('error', () => video.classList.remove('is-live'));
-          } else {
-            startHeroNetwork(canvas, budget);
-          }
-        })
-        .catch(() => startHeroNetwork(canvas, budget));
+    // The server component sets window.__AKBARAL_HERO_VIDEO__ = true ONLY
+    // when public/media/hero-loop.mp4 actually exists — so the no-video
+    // path performs no network probe at all (a HEAD 404 would log a
+    // console error on every visit). If the video errors at runtime, the
+    // original canvas network takes over.
+    const hasVideo = window.__AKBARAL_HERO_VIDEO__ === true;
+    if (video && hasVideo && !saveData) {
+      video.classList.add('is-live');
+      video.setAttribute('preload', 'auto');
+      const play = video.play();
+      if (play && play.catch) play.catch(() => { video.classList.remove('is-live'); startHeroNetwork(canvas, budget); });
+      video.addEventListener('error', () => { video.classList.remove('is-live'); startHeroNetwork(canvas, budget); });
     } else {
       startHeroNetwork(canvas, budget);
     }
@@ -783,6 +784,9 @@
       return;
     }
 
+    // Leaving a view closes its live execution stream.
+    closeLiveStream();
+
     try {
       await loadMe();
     } catch {
@@ -790,6 +794,8 @@
       return;
     }
 
+    const taskMatch = view.match(/^tasks\/([A-Za-z0-9_-]+)$/);
+    if (taskMatch) { showScreen('task'); await loadTaskDetail(taskMatch[1]); return; }
     if (view === 'dashboard') { showScreen('dashboard'); await loadDashboard(); return; }
     if (view === 'master') { showScreen('master'); await loadProjects(); return; }
     if (view === 'agents') { showScreen('agents'); await loadAgentWorld(); return; }
@@ -809,11 +815,63 @@
     await loadDashboard();
   }
 
+  /* ----- Live execution stream (M12 task center) -----
+   * Primary channel: WebSocket /ws/executions/:id?token= (same origin,
+   * proxied to the API). Fallback: SSE /api/executions/:id/events?token=
+   * (EventSource cannot send headers). Both replay persisted logs then tail
+   * live — identical payloads. */
+  let liveStream = null;
+
+  function closeLiveStream() {
+    if (!liveStream) return;
+    try {
+      if (liveStream.kind === 'ws') { liveStream.handle.onclose = null; liveStream.handle.close(); }
+      else liveStream.handle.close();
+    } catch {}
+    liveStream = null;
+  }
+
+  function openExecutionStream(executionId, onLog, onState) {
+    closeLiveStream();
+    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    let ws;
+    try {
+      ws = new WebSocket(`${proto}${location.host}/ws/executions/${encodeURIComponent(executionId)}?token=${encodeURIComponent(state.accessToken || '')}`);
+    } catch {
+      ws = null;
+    }
+    if (ws) {
+      let opened = false;
+      const fallback = setTimeout(() => { if (!opened) { try { ws.close(); } catch {} sse(); } }, 2500);
+      ws.onopen = () => { opened = true; clearTimeout(fallback); liveStream = { kind: 'ws', handle: ws }; };
+      ws.onmessage = (event) => {
+        try { const msg = JSON.parse(event.data); if (msg.type === 'log') onLog(msg); }
+        catch {}
+      };
+      ws.onclose = () => { clearTimeout(fallback); if (!opened) sse(); else if (onState) onState('closed'); };
+      ws.onerror = () => {};
+      return;
+    }
+    sse();
+
+    function sse() {
+      try {
+        const es = new EventSource(`/api/executions/${encodeURIComponent(executionId)}/events?token=${encodeURIComponent(state.accessToken || '')}`);
+        es.onmessage = (event) => {
+          try { const msg = JSON.parse(event.data); if (msg.type === 'log') onLog(msg); } catch {}
+        };
+        es.onerror = () => { if (onState) onState('error'); };
+        liveStream = { kind: 'sse', handle: es };
+      } catch {}
+    }
+  }
+
   function showScreen(name) {
     $$('.screen').forEach((screen) => { screen.hidden = true; });
     const map = {
       landing: 'screen-landing',
       auth: 'screen-auth',
+      task: 'screen-task',
       dashboard: 'screen-dashboard',
       master: 'screen-master',
       agents: 'screen-agents',
@@ -935,6 +993,107 @@
     renderAgentCards(agents.agents || [], '#dashboard-agents');
   }
 
+  /* ----- Task Center: detail view with live logs (M12) ----- */
+
+  async function loadTaskDetail(taskId) {
+    const root = $('#task-detail-root');
+    if (!root) return;
+    root.innerHTML = '<div class="skeleton" style="height:180px"></div>';
+    let body;
+    try {
+      body = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
+    } catch (e) {
+      root.innerHTML = `<div class="empty">${esc(e.message)} — <a href="#/dashboard">back to dashboard</a></div>`;
+      return;
+    }
+    const { task, executions, events, logs } = body;
+    const output = task.output_data ? safeJsonPretty(task.output_data) : null;
+    const error = task.error_message || (executions || []).find((x) => x.error_message)?.error_message;
+    const newest = (executions || [])[0];
+    const isLive = newest && !['completed', 'failed', 'cancelled'].includes(String(newest.status));
+    const logCount = (logs || []).length;
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <p class="eyebrow" data-kicker="Task Center"></p>
+          <h1>${esc(task.title || task.goal || task.id)}</h1>
+          <p class="sub">${esc(task.type || 'task')} · created ${esc(task.created_at || '')}</p>
+        </div>
+        <div class="actions">
+          <span>${badge(task.status)}</span>
+          <a class="btn btn-ghost btn-sm" href="#/dashboard">← Dashboard</a>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><span>Status</span><b>${esc(task.status || '—')}</b></div>
+        <div class="stat"><span>Executions</span><b>${(executions || []).length}</b></div>
+        <div class="stat"><span>Log entries</span><b id="task-log-count">${logCount}</b></div>
+        <div class="stat"><span>Duration</span><b>${newest && newest.duration_ms ? Math.round(newest.duration_ms / 100) / 10 + 's' : '—'}</b></div>
+      </div>
+      ${error ? `<div class="panel danger-panel"><h3>Error</h3><pre>${esc(String(error))}</pre></div>` : ''}
+      ${output ? `<div class="panel"><h3>Result</h3><pre>${esc(output)}</pre></div>` : ''}
+      ${(executions || []).length ? `
+      <div class="panel">
+        <h3>Executions</h3>
+        <div class="list">
+          ${(executions || []).map((x) => `
+            <div class="list-item">
+              <div><b>${esc(x.id)}</b><small>${esc(x.status)}${x.completed_at ? ' · ' + esc(x.completed_at) : ''}</small></div>
+              <span>${badge(x.status)}</span>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+      ${(events || []).length ? `
+      <div class="panel">
+        <h3>Events</h3>
+        <div class="list">
+          ${(events || []).map((ev) => `
+            <div class="list-item">
+              <div><b>${esc(ev.type || 'event')}</b><small>${esc(ev.message || '')}</small></div>
+              <small>${esc(ev.created_at || '')}</small>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+      <div class="panel">
+        <h3>Execution log ${isLive ? '<span class="live-indicator">● live</span>' : ''}</h3>
+        <div class="log-console" id="task-log" role="log" aria-live="polite"></div>
+      </div>`;
+
+    const logRoot = $('#task-log');
+    const seen = new Set();
+    let count = logCount;
+    const appendLog = (msg) => {
+      if (!logRoot || seen.has(msg.id)) return;
+      seen.add(msg.id);
+      const line = document.createElement('div');
+      line.className = 'log-line level-' + esc(msg.level || 'info');
+      line.innerHTML = `<span class="log-time">${esc(String(msg.createdAt || '').slice(11, 19))}</span><span class="log-type">${esc(msg.logType || msg.type || 'log')}</span><span class="log-msg">${esc(msg.message || '')}</span>`;
+      logRoot.appendChild(line);
+      while (logRoot.childElementCount > 500) logRoot.firstElementChild.remove();
+      logRoot.scrollTop = logRoot.scrollHeight;
+      count += 1;
+      const counter = $('#task-log-count');
+      if (counter) counter.textContent = count;
+    };
+    (logs || []).forEach((row) => appendLog({ id: String(row.id), level: row.level, logType: row.type, message: row.message, createdAt: row.created_at }));
+
+    if (isLive && newest) {
+      openExecutionStream(
+        String(newest.id),
+        appendLog,
+        () => { const live = root.querySelector('.live-indicator'); if (live) live.remove(); },
+      );
+    }
+  }
+
+  function safeJsonPretty(value) {
+    if (typeof value === 'string') {
+      try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
+    }
+    try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+  }
+
   function renderStats(items, rootSelector) {
     const root = $(rootSelector);
     if (!root) return;
@@ -946,10 +1105,10 @@
     if (!root) return;
     if (!tasks.length) { root.innerHTML = '<div class="list-item"><small>No tasks yet.</small></div>'; return; }
     root.innerHTML = tasks.slice(0, 10).map((task) => `
-      <div class="list-item">
+      <a class="list-item list-item-link" href="#/tasks/${esc(task.id)}">
         <div><b>${esc(task.title || task.goal || task.id)}</b><small>${esc(task.status || '')} · ${esc(task.created_at || '')}</small></div>
         <span>${badge(task.status)}</span>
-      </div>
+      </a>
       ${task.status === 'completed' ? `<div class="list-item"><small>Rate this result:</small><div class="actions">${[1,2,3,4,5].map((r) => `<button class="btn btn-ghost btn-sm" data-rate="${r}" data-task="${esc(task.id)}">${r}</button>`).join('')}</div></div>` : ''}`).join('');
     $$('[data-rate]', root).forEach((btn) => btn.addEventListener('click', async () => {
       try {
@@ -1523,5 +1682,29 @@
     };
   }
 
-  boot();
+  /* Bootstrap AFTER React hydration.
+   *
+   * This script is a classic <script> at the end of <body>: it executes as
+   * soon as it is parsed, which is BEFORE Next.js/React finish hydrating.
+   * Mutating the DOM at that point (theme attribute, footer year, credit
+   * pill, reveal classes, reticle node) caused React hydration-mismatch
+   * errors and a full client re-render. Waiting for the window `load`
+   * event (all sync/module scripts, including React's, have executed by
+   * then) plus a double animation frame guarantees hydration is complete
+   * before this SPA layer touches the DOM.
+   */
+  let hydrationGateDone = false;
+  function startAfterHydration() {
+    if (hydrationGateDone) return;
+    hydrationGateDone = true;
+    requestAnimationFrame(() => requestAnimationFrame(boot));
+  }
+  if (document.readyState === 'complete') startAfterHydration();
+  else {
+    window.addEventListener('load', startAfterHydration, { once: true });
+    // Safety valve: if some subresource hangs and `load` never fires, boot
+    // anyway — React hydration (pure script execution) will long since have
+    // finished on any realistic device.
+    setTimeout(startAfterHydration, 4000);
+  }
 })();

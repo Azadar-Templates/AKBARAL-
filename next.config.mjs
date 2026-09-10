@@ -10,6 +10,9 @@ const nextConfig = {
     return [
       { source: '/api/:path*', destination: `${backend}/api/:path*` },
       { source: '/uploads/:path*', destination: `${backend}/uploads/:path*` },
+      // Realtime execution-log WebSocket (the browser client connects to the
+      // same origin; SSE fallback rides on /api/* above).
+      { source: '/ws/:path*', destination: `${backend}/ws/:path*` },
     ];
   },
 };

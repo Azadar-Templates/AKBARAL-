@@ -242,6 +242,29 @@ changes:
    labeled, implemented security controls only, advertising still inert
    until configured + consented.
 
+## Preview-error & hermeticity pass (2026-09-10)
+
+1. **React hydration mismatches (live preview)** — root-caused from the dev
+   log's React diff output: the SPA bootstrap executed before hydration and
+   mutated the DOM. Fixed structurally (bootstrap gated on load + double
+   rAF; zero module-level DOM mutations; `suppressHydrationWarning` + pre-
+   paint theme snippet on `<html>`). The mismatch class is now impossible
+   by construction.
+2. **Console 404 noise** — the hero-video HEAD probe was replaced by a
+   server-rendered existence flag.
+3. **Clipboard errors** — verified the served code never touches the
+   clipboard API (zero references); those errors originate from the
+   embedded-preview environment, not the application.
+4. **Test hermeticity defect (found by the suite, real)** — a local `.env`
+   wiring live research providers could make the billing honest-failure
+   path succeed; the suite now clears research-provider env explicitly.
+   Full suite 200/200, typecheck clean, production build green.
+5. **Deployment note:** keep `AKBARAL_SEARCH_ENDPOINT` /
+   `AKBARAL_PAGE_FETCH_ENDPOINT` / provider credentials OUT of `.env` when
+   running the test suite in the same checkout (pass them on the dev
+   server's process env instead), and keep `TRUST_PROXY="0"` unless behind
+   a trusted proxy — the rate-limit spoofing test enforces exactly this.
+
 ## Go/No-Go verdict
 
 **GO for 18 September 2026**, contingent on the deployment checklist in

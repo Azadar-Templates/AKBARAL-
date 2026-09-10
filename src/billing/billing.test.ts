@@ -89,6 +89,13 @@ describe('Milestone 8: trial/credits/billing', () => {
     for (const key of [
       'OPENAI_API_KEY',
       'OPENAI_BASE_URL',
+      // Research providers must also start cleared: "no provider configured"
+      // means NO provider. Without this, a developer's local .env (which
+      // dotenv loads into process.env) could make the honest-failure path
+      // succeed via a live search fixture and break test hermeticity.
+      'AKBARAL_SEARCH_ENDPOINT',
+      'AKBARAL_PAGE_FETCH_ENDPOINT',
+      'AKBARAL_ALLOW_PRIVATE_PROVIDER',
       'BILLING_WEBHOOK_SECRET',
       'STRIPE_SECRET_KEY',
       'STRIPE_BASE_URL',

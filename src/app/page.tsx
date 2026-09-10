@@ -387,6 +387,9 @@ export default function Home() {
               Project <select id="master-project"><option value="">— none —</option></select></label><button className="btn btn-primary" id="master-plan-btn" type="submit">
               Plan &amp; run</button></div></form></div><div id="master-output" className="output" aria-live="polite"></div></div></section>
 
+      {/* ================= Task Center (detail) ================= */}
+      <section className="screen screen-default" id="screen-task" hidden><div className="aw-container"><div id="task-detail-root"></div></div></section>
+
       {/* ================= Agent World ================= */}
       <section className="screen screen-default" id="screen-agents" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Registry"></p><h1>
 

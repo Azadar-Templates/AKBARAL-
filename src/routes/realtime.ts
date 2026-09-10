@@ -8,9 +8,25 @@ import { HttpError } from '../server/http';
  *
  * The WebSocket path is the primary real-time channel. SSE is provided as a
  * simpler fallback for browsers/clients that cannot hold a WebSocket.
+ *
+ * Auth: the standard Authorization header, or `?token=<accessToken>` —
+ * EventSource in browsers cannot set request headers, so the query parameter
+ * mirrors the WebSocket channel's auth pattern exactly.
  */
 export function createRealtimeRouter(): Router {
   const router = Router();
+
+  // Promote ?token= to an Authorization header when the header is absent so
+  // `requireAuth` applies unchanged (same token, same session checks).
+  router.use((req, _res, next) => {
+    if (!req.header('authorization')) {
+      const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
+      if (queryToken) {
+        req.headers.authorization = `Bearer ${queryToken}`;
+      }
+    }
+    next();
+  });
 
   router.get('/executions/:id/events', requireAuth, (req: AuthenticatedRequest, res) => {
     const execution = getAgentExecution(req.params.id);
