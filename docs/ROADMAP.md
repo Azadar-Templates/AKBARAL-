@@ -946,6 +946,53 @@ journey, and the public pricing model moved to USD.
 
 ---
 
+## Milestone 13 — Final luxury visual pass + complete pricing architecture (COMPLETE)
+
+The final visual quality pass over the entire ecosystem, on top of f7f2876.
+
+- **Complete pricing architecture (USD)**: the six-tier public catalog —
+  Free Trial $0 · Starter $10 · Professional $50 · Business $90 ·
+  Scale $200 · Enterprise $400 — with honest per-tier credit/agent/
+  workspace/seat allocations, plus the custom manual credit purchase
+  path ($10/$50/$90/$200/$400 quick amounts). 'pro' keeps its key
+  (existing subscriptions stay valid) and is publicly renamed
+  "Professional". Migration `0013_pricing_tiers.sql` (idempotent
+  upserts, all rows USD); `ensureBootstrapPlans` seeds all six on
+  fresh databases; new six-tier catalog integration test.
+- **Web visual language refinements**: editorial typography hierarchy
+  (display/headline uppercase scale with tighter tracking, refined
+  body rhythm), restrained premium navigation (tracked micro labels,
+  quieter inactive states, taller header), restrained button glow,
+  hero film fully integrated into the composition (top/bottom mask,
+  side bleed into the canvas, scale framing) instead of a video box.
+- **MASTER pipeline**: now represents the full real architecture with
+  the Agent Router stage — Goal → Understanding → Planner → Master
+  Orchestrator → Agent Router → Specialist Agents → Tools → Execution
+  → Verification → Result (10 stages, glowing progress spine).
+- **Security chapter**: trust-card grid replaced by an architectural
+  control ledger (SEC-01..SEC-12, mono indices, hairline rows) —
+  restrained, technical, only real implemented controls.
+- **Agent World**: cards carry a category kicker (mono, telemetry)
+  above the name + shared sigils; automation rows show schedule-kind
+  chips (CRON/INTERVAL/ONCE); Agent Factory form reads as a spec
+  sheet (SPEC header tag).
+- **Pricing UI**: six premium tier cards (tier rail, large USD price,
+  description, spec grid, restrained CTA; Professional featured with
+  "Most chosen" flag) — responsive 3/2/1 columns.
+- **Android alignment**: uppercase tracked header titles and tab
+  labels, billing plan cards show seats + "Most chosen" featured
+  flag; all six tiers render from the live API.
+- **Verification**: 254/254 tests (six-tier catalog test included),
+  server tsc, mobile tsc, production build, node --check all green;
+  live sweep: 6 USD plans sorted $0-$400, manual $10 order pending,
+  login/me/agents 4,001/master plan/tasks/automations/workspace/
+  billing account/OAuth providers all 200, hero video 200 + 206
+  range + poster, boot veil, 11 chapters, 10 pipeline stages, 12
+  control ledger rows, zero PKR in served pages, zero errors in the
+  server log, zero 4-digit fixed widths.
+
+---
+
 ## Verification protocol (every milestone)
 
 1. `npm run typecheck`

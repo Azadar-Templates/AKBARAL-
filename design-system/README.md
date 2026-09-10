@@ -37,6 +37,16 @@ outputs. Never hand-edit the generated files.
 7. **One identity, native feel.** Same tokens everywhere; layouts stay native to
    each platform (the mobile app is a command center, not a shrunken website).
 
+## Pricing architecture (public model, USD)
+
+Six tiers — **Free Trial $0 · Starter $10 · Professional $50 · Business $90 ·
+Scale $200 · Enterprise $400** — plus custom/manual credit purchase
+($10/$50/$90/$200/$400). Tier presentation: mono tier rail, large display
+price, spec grid (credits/agents/workspaces/seats), restrained CTA;
+Professional is the featured tier. Money is always formatted via the shared
+`usd()` helpers (web `public/app.js`, Android `BillingScreen`); never hardcode
+symbols.
+
 ## Color (dark = platform identity)
 
 | Role | Token | Value |

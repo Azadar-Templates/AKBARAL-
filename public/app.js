@@ -1317,6 +1317,7 @@
         <div class="agent-head">
           ${agentSigil(agent.name, agent.category)}
           <div class="agent-head-text">
+            ${agent.category ? `<small class="agent-cat">${esc(agent.category)}</small>` : ''}
             <h3>${esc(agent.name)}</h3>
             <p>${esc(agent.specialization || agent.description || agent.slug)}</p>
           </div>
@@ -1724,7 +1725,7 @@
     const body = await api('/api/automations').catch(() => ({ automations: [] }));
     const items = body.automations || [];
     $('#sched-list').innerHTML = items.map((a) => `
-      <div class="list-item" data-id="${esc(a.id)}"><div><b>${esc(a.name)}</b><small>${esc(describeSchedule(a.schedule))} · ${a.steps.length} step${a.steps.length === 1 ? '' : 's'} · ${a.runCount} run${a.runCount === 1 ? '' : 's'}${a.failCount ? ` · ${a.failCount} failed` : ''}</small><small>${a.status === 'active' ? `Next: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString() : '—'}` : 'Paused'}</small></div><div class="list-actions">${badge(a.status === 'active' ? 'active' : 'disabled')}<button class="btn btn-ghost btn-sm" data-act="toggle" data-id="${esc(a.id)}" data-status="${esc(a.status)}">${a.status === 'active' ? 'Pause' : 'Resume'}</button><button class="btn btn-ghost btn-sm" data-act="run" data-id="${esc(a.id)}">Run now</button><button class="btn btn-ghost btn-sm" data-act="runs" data-id="${esc(a.id)}">Runs</button><button class="btn btn-ghost btn-sm" data-act="delete" data-id="${esc(a.id)}">Delete</button></div></div>`).join('') || '<div class="list-item"><small>No automations yet — create one on the left.</small></div>';
+      <div class="list-item" data-id="${esc(a.id)}"><div><b><span class="sched-kind">${esc(String((a.schedule && a.schedule.kind) || 'interval').toUpperCase())}</span>${esc(a.name)}</b><small>${esc(describeSchedule(a.schedule))} · ${a.steps.length} step${a.steps.length === 1 ? '' : 's'} · ${a.runCount} run${a.runCount === 1 ? '' : 's'}${a.failCount ? ` · ${a.failCount} failed` : ''}</small><small>${a.status === 'active' ? `Next: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString() : '—'}` : 'Paused'}</small></div><div class="list-actions">${badge(a.status === 'active' ? 'active' : 'disabled')}<button class="btn btn-ghost btn-sm" data-act="toggle" data-id="${esc(a.id)}" data-status="${esc(a.status)}">${a.status === 'active' ? 'Pause' : 'Resume'}</button><button class="btn btn-ghost btn-sm" data-act="run" data-id="${esc(a.id)}">Run now</button><button class="btn btn-ghost btn-sm" data-act="runs" data-id="${esc(a.id)}">Runs</button><button class="btn btn-ghost btn-sm" data-act="delete" data-id="${esc(a.id)}">Delete</button></div></div>`).join('') || '<div class="list-item"><small>No automations yet — create one on the left.</small></div>';
     $('#sched-list').querySelectorAll('button[data-act]').forEach((button) => { button.addEventListener('click', schedAction); });
     updateSchedForm();
     if (schedSelected) await loadAutomationRuns(schedSelected);
@@ -1868,14 +1869,24 @@
   function renderPlans(plans, selector) {
     const root = $(selector);
     if (!root) return;
-    root.innerHTML = plans.map((plan) => `
-      <article class="${plan.key === 'pro' ? 'featured' : ''}">
-        <h3>${esc(plan.name)}</h3>
-        <p class="muted">${esc(plan.description || '')}</p>
-        <p><b>${usd(plan.price_cents)}</b> / ${esc(plan.billing_interval || 'month')}</p>
-        <p>${esc(plan.monthly_credits || 0)} credits · ${esc(plan.max_agents || 0)} agents · ${esc(plan.max_workspaces || 0)} workspaces</p>
-        <button class="btn btn-primary" data-plan="${esc(plan.key)}">${plan.key === 'free' ? 'Activate free' : 'Switch plan'}</button>
-      </article>`).join('');
+    const sorted = [...plans].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    root.innerHTML = sorted.map((plan) => {
+      const featured = plan.key === 'pro';
+      const specs = [
+        [`${plan.monthly_credits ?? 0}`, 'credits / month'],
+        [`${plan.max_agents ?? 0}`, 'agents'],
+        [`${plan.max_workspaces ?? 0}`, 'workspaces'],
+        [`${plan.max_seats ?? 0}`, 'seats'],
+      ];
+      return `
+      <article class="${featured ? 'featured' : ''}">
+        <div class="plan-tier">${esc(plan.name)}${featured ? '<span class="plan-flag">Most chosen</span>' : ''}</div>
+        <div class="plan-price"><b>${usd(plan.price_cents)}</b><span>/ ${esc(plan.billing_interval || 'month')}</span></div>
+        <p class="plan-desc">${esc(plan.description || '')}</p>
+        <ul class="plan-specs">${specs.map(([v, l]) => `<li><b>${esc(v)}</b><small>${esc(l)}</small></li>`).join('')}</ul>
+        <button class="btn ${featured ? 'btn-primary' : 'btn-outline'} btn-block" data-plan="${esc(plan.key)}">${plan.key === 'free' ? 'Start free' : `Choose ${esc(plan.name)}`}</button>
+      </article>`;
+    }).join('');
     $$('[data-plan]', root).forEach((btn) => btn.addEventListener('click', () => switchPlan(btn.dataset.plan)));
   }
 

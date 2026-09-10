@@ -43,11 +43,11 @@ export function BillingScreen({ user }: { user: { id: string; email: string; fre
         <Card key={plan.key} accent={plan.key === 'pro' ? 'accent' : 'telemetry'} style={plan.key === 'pro' ? styles.featured : undefined}>
           <View style={styles.planHead}>
             <Text style={styles.planName}>{plan.name}</Text>
-            {plan.key === 'pro' ? <View style={styles.featuredTag}><Text style={styles.featuredTagText}>FEATURED</Text></View> : null}
+            {plan.key === 'pro' ? <View style={styles.featuredTag}><Text style={styles.featuredTagText}>MOST CHOSEN</Text></View> : null}
           </View>
           <Text style={styles.planPrice}>{usd(plan.price_cents)}<Text style={styles.planInterval}> / {plan.billing_interval || 'month'}</Text></Text>
           <Text style={styles.muted}>{plan.description || ''}</Text>
-          <Text style={styles.planMeta}>{plan.monthly_credits || 0} credits · {plan.max_agents || 0} agents · {plan.max_workspaces || 0} workspaces</Text>
+          <Text style={styles.planMeta}>{plan.monthly_credits || 0} credits/mo · {plan.max_agents || 0} agents · {plan.max_workspaces || 0} workspaces · {plan.max_seats || 0} seats</Text>
         </Card>
       ))}
 

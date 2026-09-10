@@ -336,3 +336,26 @@ a single token source (`design-system/tokens.json`):
    registry (4,001), OAuth providers; server log clean; no test was
    removed or weakened (the currency model legitimately changed —
    assertions were updated and a new USD catalog test added).
+
+## Final luxury visual pass + six-tier pricing (2026-09-10, M13)
+
+1. **Pricing architecture complete and live**: six USD tiers
+   ($0/$10/$50/$90/$200/$400) with honest per-tier allocations plus
+   custom manual credit purchase; verified live on the dev stack and
+   by a new integration test. No PKR anywhere public; historical
+   dev invoices keep their original PKR label.
+2. **Visual system final**: editorial typography hierarchy, restrained
+   navigation, integrated hero film (masked edges, no video-box look),
+   Agent Router pipeline stage, security control ledger, category-
+   kickered agent cards, spec-sheet factory form, schedule-kind chips,
+   premium six-tier pricing cards; Android aligned (tracked chrome,
+   seats + featured flag in billing).
+3. **Functional integrity re-verified end to end**: 254/254 tests,
+   both typechecks, production build, and a live sweep across auth,
+   billing (plans + manual order), registry (4,001), MASTER planning,
+   tasks, automations, workspace, OAuth providers — all clean, server
+   log free of errors.
+4. **Responsive/motion discipline**: no fixed oversized widths; new
+   grids collapse 3→2→1; all new transitions settle under
+   prefers-reduced-motion; a11y rules (skip link, focus-visible,
+   aria labels) intact.

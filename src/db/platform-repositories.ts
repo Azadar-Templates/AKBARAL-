@@ -184,14 +184,15 @@ export function getPlanByKey(key: string): PlanRow | undefined {
 }
 
 /**
- * Idempotently create the base pricing plan catalog.
- * Prices are in USD cents ($50.00 = 5000 cents).
+ * Idempotently create the complete pricing plan catalog (USD).
+ * Six public tiers + the custom/manual credit purchase path
+ * (handled by the billing service, not a plan row).
  */
 export function ensureBootstrapPlans(): void {
   upsertPlan({
     key: 'free',
     name: 'Free Trial',
-    description: '30-day trial with 5 free tasks.',
+    description: '30-day trial with 5 free tasks. No card required.',
     priceCents: 0,
     currency: 'USD',
     monthlyCredits: 5,
@@ -202,9 +203,22 @@ export function ensureBootstrapPlans(): void {
     sortOrder: 0,
   });
   upsertPlan({
+    key: 'starter',
+    name: 'Starter',
+    description: 'For individuals putting their first agents to work.',
+    priceCents: 1000, // $10.00 per month
+    currency: 'USD',
+    monthlyCredits: 25,
+    maxAgents: 10,
+    maxWorkspaces: 1,
+    maxSeats: 1,
+    features: { agentWorld: true, customCredits: true },
+    sortOrder: 10,
+  });
+  upsertPlan({
     key: 'pro',
-    name: 'AKBARAL Pro',
-    description: 'Unlimited core agent usage with monthly credit allowance.',
+    name: 'Professional',
+    description: 'Unlimited core agent usage with a monthly credit allowance.',
     priceCents: 5000, // $50.00 per month
     currency: 'USD',
     monthlyCredits: 100,
@@ -212,7 +226,33 @@ export function ensureBootstrapPlans(): void {
     maxWorkspaces: 5,
     maxSeats: 3,
     features: { agentWorld: true, agentFactory: true, customCredits: true, apiAccess: true },
-    sortOrder: 10,
+    sortOrder: 20,
+  });
+  upsertPlan({
+    key: 'business',
+    name: 'Business',
+    description: 'For teams running continuous multi-agent operations.',
+    priceCents: 9000, // $90.00 per month
+    currency: 'USD',
+    monthlyCredits: 250,
+    maxAgents: 150,
+    maxWorkspaces: 15,
+    maxSeats: 10,
+    features: { agentWorld: true, agentFactory: true, customCredits: true, apiAccess: true, team: true },
+    sortOrder: 30,
+  });
+  upsertPlan({
+    key: 'scale',
+    name: 'Scale',
+    description: 'High-volume execution, automation and API throughput.',
+    priceCents: 20000, // $200.00 per month
+    currency: 'USD',
+    monthlyCredits: 750,
+    maxAgents: 500,
+    maxWorkspaces: 50,
+    maxSeats: 25,
+    features: { agentWorld: true, agentFactory: true, customCredits: true, apiAccess: true, team: true, priority: true },
+    sortOrder: 40,
   });
   upsertPlan({
     key: 'enterprise',
@@ -225,7 +265,7 @@ export function ensureBootstrapPlans(): void {
     maxWorkspaces: 100,
     maxSeats: 100,
     features: { sso: true, dedicated: true, team: true, customCredits: true, apiAccess: true, sla: true },
-    sortOrder: 20,
+    sortOrder: 50,
   });
 }
 

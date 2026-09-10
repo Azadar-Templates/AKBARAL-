@@ -60,7 +60,7 @@ const makeScreenOptions = (name: string) => ({
   headerShown: true,
   headerStyle: { backgroundColor: palette.bg2, borderBottomColor: palette.line, borderBottomWidth: StyleSheet.hairlineWidth },
   headerShadowVisible: false,
-  headerTitleStyle: { color: palette.text, fontWeight: '900' as const, fontSize: 16 },
+  headerTitleStyle: { color: palette.text, fontWeight: '800' as const, fontSize: 15, letterSpacing: 1.2, textTransform: 'uppercase' as const },
   headerTintColor: palette.accent,
   tabBarActiveTintColor: palette.accent,
   tabBarInactiveTintColor: palette.textDim,
@@ -72,7 +72,7 @@ const makeScreenOptions = (name: string) => ({
     paddingBottom: 8,
     paddingTop: 6,
   },
-  tabBarLabelStyle: { fontWeight: '700' as const, fontSize: 11 },
+  tabBarLabelStyle: { fontWeight: '700' as const, fontSize: 10, letterSpacing: 0.6 },
   tabBarIcon: ({ focused }: { focused: boolean }) => (
     <Text style={{ color: focused ? palette.accent : palette.textDim, fontSize: 15, opacity: focused ? 1 : 0.72, textShadowColor: focused ? palette.accent : 'transparent', textShadowRadius: focused ? 10 : 0 }}>{tabIcons[name]}</Text>
   ),

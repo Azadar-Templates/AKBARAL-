@@ -53,12 +53,13 @@ const PIPELINE_STAGES = [
   { n: '01', key: 'goal', label: 'User goal', note: 'State any goal in plain language — research, engineering, revenue, operations.' },
   { n: '02', key: 'understanding', label: 'Goal understanding', note: 'Intent detection decomposes the goal into structured, ordered work.' },
   { n: '03', key: 'planner', label: 'Planner', note: 'A persisted workflow and step graph is created with dependencies.' },
-  { n: '04', key: 'core', label: 'Master orchestrator', note: 'MASTER sequences steps, selects specialists and streams every state change.' },
-  { n: '05', key: 'agents', label: 'Specialist agents', note: 'The right agents are dispatched from a registry of 4,000+ distinct contracts.' },
-  { n: '06', key: 'tools', label: 'Tools / APIs', note: 'Real tool execution — search, fetch, files, knowledge, data — with honest credential checks.' },
-  { n: '07', key: 'execution', label: 'Execution', note: 'Queued, retried and cancellable runs with live progress in your workspace.' },
-  { n: '08', key: 'verification', label: 'Verification', note: 'Sources, evidence and execution checks run before anything is marked successful.' },
-  { n: '09', key: 'result', label: 'Final result', note: 'Verified result, full execution history — and credits consumed only on success.' },
+  { n: '04', key: 'core', label: 'Master orchestrator', note: 'MASTER sequences steps, streams every state change and owns the run end to end.' },
+  { n: '05', key: 'router', label: 'Agent router', note: 'Each step is matched to the right specialist through the agent registry and routing rules.' },
+  { n: '06', key: 'agents', label: 'Specialist agents', note: 'The selected agents are dispatched from a registry of 4,000+ distinct contracts.' },
+  { n: '07', key: 'tools', label: 'Tools / APIs', note: 'Real tool execution — search, fetch, files, knowledge, data — with honest credential checks.' },
+  { n: '08', key: 'execution', label: 'Execution', note: 'Queued, retried and cancellable runs with live progress in your workspace.' },
+  { n: '09', key: 'verification', label: 'Verification', note: 'Sources, evidence and execution checks run before anything is marked successful.' },
+  { n: '10', key: 'result', label: 'Final result', note: 'Verified result, full execution history — and credits consumed only on success.' },
 ];
 
 const TRACE_STEPS = [
@@ -444,19 +445,19 @@ export default function Home() {
           <div className="trust-stamps" data-reveal aria-label="Security posture">
             <span>Secure</span><span>Verified</span><span>Audited</span><span>Isolated</span><span>Protected</span>
           </div>
-          <div className="trust-grid" data-reveal>
-            <div className="trust-card"><b>Authentication</b><small>JWT access tokens with strictly rotated, hashed refresh tokens.</small></div>
-            <div className="trust-card"><b>Authorization</b><small>Role checks and admin-only control routes throughout the API.</small></div>
-            <div className="trust-card"><b>Login protection</b><small>Rate limits and lockout guards on authentication endpoints.</small></div>
-            <div className="trust-card"><b>Rate limiting</b><small>API and auth buckets with bypass protection.</small></div>
-            <div className="trust-card"><b>Tenant isolation</b><small>Tasks, files, knowledge and streams scoped to their owner.</small></div>
-            <div className="trust-card"><b>SSRF protection</b><small>Redirect and host checks on every fetched URL.</small></div>
-            <div className="trust-card"><b>Upload validation</b><small>Size, extension and storage-key checks on file handling.</small></div>
-            <div className="trust-card"><b>Audit logging</b><small>Admin and system actions recorded for review.</small></div>
-            <div className="trust-card"><b>Webhook verification</b><small>Signature-verified webhooks with idempotent handling.</small></div>
-            <div className="trust-card"><b>Prompt-injection defense</b><small>Untrusted content is never blindly trusted by agents.</small></div>
-            <div className="trust-card"><b>Credit atomicity</b><small>Reservation, consumption and refund are atomic and idempotent.</small></div>
-            <div className="trust-card"><b>Crash recovery</b><small>Interrupted runs are recovered or refunded — never double-charged.</small></div>
+          <div className="control-ledger" data-reveal aria-label="Implemented security controls">
+            <div className="control"><small>SEC-01</small><div><b>Authentication</b><span>JWT access tokens with strictly rotated, hashed refresh tokens.</span></div></div>
+            <div className="control"><small>SEC-02</small><div><b>Authorization</b><span>Role checks and admin-only control routes throughout the API.</span></div></div>
+            <div className="control"><small>SEC-03</small><div><b>Login protection</b><span>Rate limits and lockout guards on authentication endpoints.</span></div></div>
+            <div className="control"><small>SEC-04</small><div><b>Rate limiting</b><span>API and auth buckets with bypass protection.</span></div></div>
+            <div className="control"><small>SEC-05</small><div><b>Tenant isolation</b><span>Tasks, files, knowledge and streams scoped to their owner.</span></div></div>
+            <div className="control"><small>SEC-06</small><div><b>SSRF protection</b><span>Redirect and host checks on every fetched URL.</span></div></div>
+            <div className="control"><small>SEC-07</small><div><b>Upload validation</b><span>Size, extension and storage-key checks on file handling.</span></div></div>
+            <div className="control"><small>SEC-08</small><div><b>Audit logging</b><span>Admin and system actions recorded for review.</span></div></div>
+            <div className="control"><small>SEC-09</small><div><b>Webhook verification</b><span>Signature-verified webhooks with idempotent handling.</span></div></div>
+            <div className="control"><small>SEC-10</small><div><b>Prompt-injection defense</b><span>Untrusted content is never blindly trusted by agents.</span></div></div>
+            <div className="control"><small>SEC-11</small><div><b>Credit atomicity</b><span>Reservation, consumption and refund are atomic and idempotent.</span></div></div>
+            <div className="control"><small>SEC-12</small><div><b>Crash recovery</b><span>Interrupted runs are recovered or refunded — never double-charged.</span></div></div>
           </div>
           <p className="trust-note" data-reveal>EVERY CONTROL ABOVE IS IMPLEMENTED AND COVERED BY THE PLATFORM TEST SUITE.</p>
         </div>
@@ -467,9 +468,10 @@ export default function Home() {
             <p className="eyebrow" data-kicker="Pricing"></p>
             <h2>Honest task accounting.</h2>
             <p className="sub">
-              Start with 5 free tasks across a 30-day trial. A task is consumed only when work
-              succeeds. Paid resources that require Pro are disclosed before use — and if a
-              provider is not configured, the platform says so instead of pretending.
+              Six tiers in USD — from a free 30-day trial with 5 tasks to company-grade
+              Enterprise — plus custom manual credit purchase at $10 / $50 / $90 / $200 / $400.
+              A task is consumed only when work succeeds; failures are refunded automatically.
+              If a provider is not configured, the platform says so instead of pretending.
             </p>
           </div>
           <div className="price-grid" id="landing-plans" data-reveal></div>

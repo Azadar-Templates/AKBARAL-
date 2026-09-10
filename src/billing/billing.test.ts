@@ -301,17 +301,29 @@ describe('Milestone 8: trial/credits/billing', () => {
     assert.equal(invoice.currency, 'USD');
   });
 
-  it('serves the plan catalog in USD', async () => {
+  it('serves the complete six-tier plan catalog in USD', async () => {
     const response = await fetch(`${baseUrl}/api/billing/plans`);
     assert.equal(response.status, 200);
-    const body = (await response.json()) as { plans: Array<{ key: string; price_cents: number; currency: string }> };
-    const pro = body.plans.find((p) => p.key === 'pro');
-    const enterprise = body.plans.find((p) => p.key === 'enterprise');
-    assert.ok(pro && enterprise);
-    assert.equal(pro.currency, 'USD');
-    assert.equal(enterprise.currency, 'USD');
-    assert.equal(pro.price_cents, 5000); // $50.00
-    assert.equal(enterprise.price_cents, 40000); // $400.00
+    const body = (await response.json()) as { plans: Array<{ key: string; name: string; price_cents: number; currency: string; sort_order: number }> };
+    const expected: Array<[string, string, number]> = [
+      ['free', 'Free Trial', 0],
+      ['starter', 'Starter', 1000],        // $10
+      ['pro', 'Professional', 5000],       // $50
+      ['business', 'Business', 9000],      // $90
+      ['scale', 'Scale', 20000],           // $200
+      ['enterprise', 'Enterprise', 40000], // $400
+    ];
+    assert.equal(body.plans.length, expected.length);
+    for (const [key, name, cents] of expected) {
+      const plan = body.plans.find((p) => p.key === key);
+      assert.ok(plan, `plan ${key} missing`);
+      assert.equal(plan.name, name);
+      assert.equal(plan.price_cents, cents);
+      assert.equal(plan.currency, 'USD');
+    }
+    // sorted by tier order, all USD, no PKR anywhere
+    const sorted = [...body.plans].sort((a, b) => a.sort_order - b.sort_order).map((p) => p.key);
+    assert.deepEqual(sorted, expected.map(([k]) => k));
     for (const plan of body.plans) assert.equal(plan.currency, 'USD');
   });
 

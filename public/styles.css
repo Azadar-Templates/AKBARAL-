@@ -1158,3 +1158,142 @@ form label + label { margin-top: 14px; }
   .discipline-row, .roster-row, .shelf-row { transition: none; }
   .manifesto-facts b { background: none; color: var(--accent); -webkit-text-fill-color: currentColor; }
 }
+
+/* ============================================================
+   FINAL LUXURY PASS — typography rhythm, premium chrome,
+   hero framing, six-tier pricing, control ledger
+   ============================================================ */
+
+/* ---------- Typography: editorial hierarchy ----------
+   DISPLAY (hero/manifesto) · HEADLINE (section h2) · SUBHEAD
+   SECTION LABEL (eyebrow) · BODY · METADATA · SYSTEM STATUS */
+body { line-height: 1.68; }
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+.landing-section .section-head h2 {
+  font-size: clamp(2.05rem, 4.4vw, 3.35rem);
+  text-transform: uppercase;
+  letter-spacing: -0.026em;
+  line-height: 1.02;
+  margin-bottom: 14px;
+  text-wrap: balance;
+}
+.hero-title { letter-spacing: -0.035em; }
+.manifesto-line { letter-spacing: -0.032em; }
+.eyebrow { letter-spacing: 0.26em; }
+
+/* ---------- Navigation: restrained, spacious, tracked ---------- */
+.brand-text { letter-spacing: 0.22em; font-size: 0.94rem; }
+.main-nav a {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  padding: 8px 10px;
+}
+.main-nav a:hover { color: var(--text-2); }
+.main-nav a.active { color: var(--text); }
+.main-nav a.active::after { height: 1px; opacity: 0.9; }
+.site-header { height: 68px; }
+
+/* ---------- Buttons: restrained glow, confident press ---------- */
+.btn-primary { box-shadow: 0 10px 30px rgba(93, 111, 240, 0.18); }
+.btn-primary:hover { box-shadow: 0 14px 38px rgba(93, 111, 240, 0.24); }
+
+/* ---------- Hero: integrated cinematic film frame ---------- */
+.hero-media video.is-live { transform: scale(1.045); }
+.hero-media video.is-live, .hero-media .hero-poster {
+  mask-image: linear-gradient(180deg, transparent 0%, black 6.5%, black 87%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 6.5%, black 87%, transparent 100%);
+}
+.hero-media::after {
+  content: "";
+  position: absolute; inset: 0; z-index: 7; pointer-events: none;
+  background:
+    linear-gradient(90deg, var(--bg) 0%, transparent 9%, transparent 91%, var(--bg) 100%);
+  opacity: 0.85;
+}
+.hero-system { letter-spacing: 0.3em; }
+
+/* ---------- Pricing: the six-tier architecture ---------- */
+.price-grid { grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.price-grid article { gap: 14px; padding: 26px 24px 22px; }
+.plan-tier {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-family: var(--font-mono); font-size: 0.68rem; font-weight: 500;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-2);
+  padding-bottom: 12px; border-bottom: 1px solid var(--line-faint);
+}
+.plan-flag {
+  font-family: var(--font-mono); font-size: 0.56rem; letter-spacing: 0.16em;
+  color: var(--accent-2); border: 1px solid var(--line-accent);
+  border-radius: 999px; padding: 3px 8px; white-space: nowrap;
+}
+.plan-price { display: flex; align-items: baseline; gap: 8px; }
+.plan-price b {
+  font-family: var(--font-display); font-weight: 500; letter-spacing: -0.03em;
+  font-size: clamp(1.9rem, 2.6vw, 2.4rem); color: var(--text); line-height: 1;
+}
+.plan-price span { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint); }
+.plan-desc { margin: 0; font-size: 0.82rem; line-height: 1.55; color: var(--text-dim); min-height: 2.4em; }
+.plan-specs {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--line-faint); border: 1px solid var(--line-faint);
+  border-radius: var(--radius); overflow: hidden;
+}
+.plan-specs li { background: var(--bg-2); padding: 9px 12px; display: flex; align-items: baseline; gap: 7px; }
+.plan-specs b { font-family: var(--font-display); font-weight: 500; font-size: 0.95rem; color: var(--text); }
+.plan-specs small { font-family: var(--font-mono); font-size: 0.56rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
+.price-grid article .btn { margin-top: auto; }
+.price-grid article.featured { background: linear-gradient(170deg, rgba(93,111,240,0.09), var(--surface) 55%); }
+
+@media (max-width: 1080px) { .price-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .price-grid { grid-template-columns: 1fr; max-width: 440px; margin: 0 auto; } }
+
+/* ---------- Security: architectural control ledger ---------- */
+.control-ledger {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 44px;
+  border-top: 1px solid var(--line);
+}
+.control {
+  display: grid; grid-template-columns: 62px 1fr; gap: 4px 18px; align-items: baseline;
+  padding: 17px 4px; border-bottom: 1px solid var(--line-faint);
+  transition: background .25s var(--ease-soft);
+}
+.control:hover { background: var(--surface); }
+.control small { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.18em; color: var(--accent); }
+.control b { display: block; font-size: 0.92rem; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+.control span { font-size: 0.8rem; color: var(--text-dim); line-height: 1.55; }
+@media (max-width: 860px) { .control-ledger { grid-template-columns: 1fr; } }
+
+/* ---------- Agent World: category kicker on cards ---------- */
+.agent-cat {
+  display: block; font-family: var(--font-mono); font-size: 0.58rem; font-weight: 500;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--telemetry);
+  margin: 0 0 5px; opacity: 0.9;
+}
+
+/* ---------- Automation: schedule-kind chips ---------- */
+.sched-kind {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.56rem; font-weight: 500;
+  letter-spacing: 0.18em; color: var(--accent-2); text-transform: uppercase;
+  border: 1px solid var(--line-accent); border-radius: 999px;
+  padding: 2px 7px; margin-right: 9px; vertical-align: 1px;
+}
+
+/* ---------- Factory: studio spec-sheet headers ---------- */
+.form-panel h3 { display: flex; align-items: center; gap: 10px; }
+.form-panel h3::before {
+  content: "SPEC"; font-size: 0.56rem; letter-spacing: 0.22em; color: var(--telemetry);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px; opacity: 0.85;
+}
+
+/* ---------- Workspace panels: refined headers ---------- */
+.panel h3 { letter-spacing: 0.06em; }
+
+/* ---------- Trust stamps: quieter ---------- */
+.trust-stamps span { letter-spacing: 0.34em; color: var(--text-dim); }
+
+/* ---------- Reduced motion: settle everything new ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .control, .plan-specs li, .sched-kind { transition: none; }
+}
