@@ -681,6 +681,15 @@ impossible), server→client flags (hero video, AdSense id) travel as
 was removed as no longer needed. Design unchanged; 200/200 tests,
 typecheck clean, build green; preview verified.
 
+- [x] Hotfix (2026-09-10): the legal/privacy modal blocked the preview —
+      the redesign had dropped the old `.modal-scrim[hidden]` display guard,
+      so the author `display:grid` rule overrode the `hidden` attribute
+      (overlay rendered on every load; the close button set `hidden` but CSS
+      ignored it). Fixed with a single global `[hidden] { display: none
+      !important; }` rule, restoring native hidden semantics for every
+      toggle (modal, auth name field, login/logout buttons, admin nav link).
+      No design or content change; tsc + build + live verification green.
+
 **Remaining for M12:** mobile shell wiring (task center, live logs, results
 via the same channels), deep-link handling, push notifications.
 

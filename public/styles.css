@@ -150,6 +150,11 @@ pre {
 .skip-link:focus { left: 8px; }
 
 .aw-container { max-width: var(--content-max); margin: 0 auto; padding-left: 28px; padding-right: 28px; }
+/* The hidden attribute must always win over author display rules
+   (.modal-scrim{display:grid}, .btn{display:inline-flex}, label{display:flex}
+   would otherwise ignore it — e.g. the legal overlay rendered on load and
+   could not be dismissed). */
+[hidden] { display: none !important; }
 .screen[hidden] { display: none !important; }
 .screen { animation: screenIn .5s var(--ease-out) both; }
 @keyframes screenIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
