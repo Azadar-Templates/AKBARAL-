@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
 import { Badge, Card, EmptyState, HeroCard, LoadingState, PageHeader, ScreenShell, Stat } from '../components/ui';
 
-export function DashboardScreen({ user }: { user: { id: string; email: string; freeCredits: number; role: string } }) {
+export function DashboardScreen({ user, onOpenTask, note }: { user: { id: string; email: string; freeCredits: number; role: string }; onOpenTask: (taskId: string) => void; note?: string | null }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,6 +15,7 @@ export function DashboardScreen({ user }: { user: { id: string; email: string; f
   return (
     <ScreenShell scroll>
       <PageHeader kicker="Command center" title="Dashboard" />
+      {note ? <Text style={styles.note}>{note}</Text> : null}
       <View style={styles.row}>
         <Stat label="Free tasks" value={user.freeCredits} accent={palette.gold} />
         <Stat label="Role" value={user.role} accent={palette.cyan} />
@@ -30,21 +31,24 @@ export function DashboardScreen({ user }: { user: { id: string; email: string; f
 
       <Text style={styles.heading}>Recent tasks</Text>
       {loading ? <LoadingState /> : tasks.length === 0 ? <EmptyState text="No tasks yet. Open MASTER and describe your goal." /> : tasks.slice(0, 10).map((task) => (
-        <Card key={task.id} style={styles.item}>
-          <View style={styles.itemRow}>
-            <View style={styles.itemBody}>
-              <Text style={styles.itemTitle}>{task.title || task.goal || task.id}</Text>
-              <Text style={styles.muted}>{task.status}</Text>
+        <Pressable key={task.id} onPress={() => onOpenTask(String(task.id))}>
+          <Card style={styles.item}>
+            <View style={styles.itemRow}>
+              <View style={styles.itemBody}>
+                <Text style={styles.itemTitle}>{task.title || task.goal || task.id}</Text>
+                <Text style={styles.muted}>{task.status}</Text>
+              </View>
+              <Badge status={task.status} />
             </View>
-            <Badge status={task.status} />
-          </View>
-        </Card>
+          </Card>
+        </Pressable>
       ))}
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  note: { color: palette.gold, fontSize: 12, marginBottom: spacing.sm },
   row: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   hero: { marginBottom: spacing.md, borderLeftWidth: 3, borderLeftColor: palette.gold },
   heroEyebrow: { color: palette.gold, fontSize: 11, fontWeight: '900', letterSpacing: 2 },

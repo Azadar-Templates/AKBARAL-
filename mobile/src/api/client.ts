@@ -83,6 +83,20 @@ export class ApiClient {
   post(path: string, body: unknown) {
     return this.request(path, { method: 'POST', body });
   }
+
+  del(path: string) {
+    return this.request(path, { method: 'DELETE' });
+  }
+
+  /** Absolute URL for a path — used by transports that cannot use request()
+   * (e.g. the SSE live-log subscription, which needs ?token= auth). */
+  url(path: string): string {
+    return `${BASE_URL}${path}`;
+  }
+
+  getAccessToken(): string | null {
+    return this.accessToken;
+  }
 }
 
 export const api = new ApiClient();

@@ -690,8 +690,45 @@ typecheck clean, build green; preview verified.
       toggle (modal, auth name field, login/logout buttons, admin nav link).
       No design or content change; tsc + build + live verification green.
 
-**Remaining for M12:** mobile shell wiring (task center, live logs, results
-via the same channels), deep-link handling, push notifications.
+**M12 chunk 2 (mobile) — COMPLETE.** The Expo app now carries the same
+capability surface as the web client:
+
+- **Task center** (`mobile/src/screens/TasksScreen.tsx`): task list from
+  `GET /api/tasks`, full detail (`GET /api/tasks/:id` — task, events,
+  executions, logs), output rendering, tappable recent tasks on the
+  dashboard.
+- **Live logs** (`mobile/src/services/sse.ts`): dependency-free SSE client
+  (XMLHttpRequest + incremental `onprogress` parsing, since RN fetch cannot
+  stream) consuming the SAME channel as the web task center —
+  `GET /api/executions/:id/events?token=` — with dedupe by log id, a
+  500-line cap, `● live` indicator, 5s task polling while non-terminal, and
+  subscription cleanup on unmount/terminal state.
+- **Deep links**: `akbaral://tasks/:id` (scheme already declared in
+  `mobile/app.json`); react-navigation `linking` config routes it to the
+  Tasks tab detail view; notification taps route through the same path.
+- **Push notifications**: `mobile/src/services/push.ts` registers the device
+  (permission request → Expo push token → `POST /api/notifications/device`);
+  registration failures surface honestly on the dashboard (e.g. iOS
+  simulator or missing EAS projectId) instead of being faked; logout
+  unregisters (`DELETE /api/notifications/device/:token`).
+- **Server side**: migration `0009_mobile_push.sql` (`device_tokens` table),
+  `src/push/expo-push.ts` (real Expo push-service dispatch, endpoint
+  overridable via `AKBARAL_EXPO_PUSH_URL`, failures logged and reported —
+  never faked, never allowed to break task execution), `src/push/notify.ts`
+  (in-app notification row + push fan-out on task completion/failure from
+  the executor, task reconciler and crash recovery), device registration
+  routes (auth + validation + idempotent re-registration + ownership
+  transfer on re-login, per-user revocation).
+- **Verification**: 206/206 tests (6 new in `src/push/push.test.ts` covering
+  auth, validation, persistence, ownership transfer, unregistration,
+  completion/failure notifications, push dispatch with deep link, and push-
+  endpoint-failure honesty), tsc clean (server + mobile), production build
+  green, live end-to-end on the dev stack (device registered → task
+  completed → in-app row + push dispatched with `akbaral://tasks/:id`;
+  honest failure path with refund message; SSE frames verified; unregister
+  → 204/404/revoked).
+
+**Remaining after M12:** none for this milestone — M12 is complete.
 
 ---
 

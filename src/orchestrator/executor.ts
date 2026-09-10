@@ -30,6 +30,7 @@ import { modelRouter } from '../models';
 import { runTool, type ToolResult } from '../tools';
 import { verifyAgentOutput } from './verifier';
 import { reconcileTaskFailed } from './task-reconciler';
+import { notifyTaskFinished } from '../push/notify';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
 /**
@@ -540,6 +541,12 @@ export async function runGenericAgentExecution(
           metadata: { executionId, model: result.model, provider: result.provider, verificationScore: verification.score },
         });
         storeTaskArtifactSafe(task, agentSlug, output, executionId, stream);
+        notifyTaskFinished({
+          userId: String(task.user_id),
+          taskId: String(task.id),
+          status: 'completed',
+          detail: `Agent ${agentSlug} completed (verification score ${Math.round(verification.score * 100)}%)`,
+        });
       } else {
         appendLog(executionId, stream, 'Task reached a terminal state before completion; result not applied to the task', 'warn', 'system', {});
       }
@@ -759,6 +766,12 @@ export async function runWebResearchExecution(
           metadata: { executionId, verifiedSources: report.verifiedSources },
         });
         storeTaskArtifactSafe(task, WEB_RESEARCH_AGENT_SLUG, output, executionId, stream);
+        notifyTaskFinished({
+          userId: String(task.user_id),
+          taskId: String(task.id),
+          status: 'completed',
+          detail: `Web research completed (${report.verifiedSources} verified source${report.verifiedSources === 1 ? '' : 's'})`,
+        });
       } else {
         appendLog(executionId, stream, 'Task reached a terminal state before completion; result not applied to the task', 'warn', 'system', {});
       }

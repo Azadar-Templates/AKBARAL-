@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, ActivityIndicator, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme, Theme } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
+import { NavigationContainer, DarkTheme, Theme, useNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { api } from './src/api/client';
 import { palette } from './src/theme';
+import { registerForPushNotifications, taskIdFromDeepLink, unregisterPushNotifications } from './src/services/push';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { MasterScreen } from './src/screens/MasterScreen';
+import { TasksScreen } from './src/screens/TasksScreen';
 import { AgentsScreen } from './src/screens/AgentsScreen';
 import { WorkspaceScreen } from './src/screens/WorkspaceScreen';
 import { BillingScreen } from './src/screens/BillingScreen';
@@ -28,9 +31,20 @@ const navTheme: Theme = {
   },
 };
 
+/** Deep links: akbaral://tasks/:id (from push notifications, web links, QR). */
+const linking = {
+  prefixes: ['akbaral://', 'https://akbaral.ai'],
+  config: {
+    screens: {
+      Tasks: 'tasks/:taskId?',
+    },
+  },
+};
+
 const tabIcons: Record<string, string> = {
   Dashboard: '▣',
   MASTER: '◉',
+  Tasks: '◍',
   Agents: '⬡',
   Workspace: '▤',
   Billing: '◈',
@@ -61,6 +75,14 @@ const makeScreenOptions = (name: string) => ({
 export default function App() {
   const [user, setUser] = useState<{ id: string; email: string; freeCredits: number; role: string } | null>(null);
   const [ready, setReady] = useState(false);
+  const [pushNote, setPushNote] = useState<string | null>(null);
+  const navigationRef = useNavigationContainerRef<{ Tasks: { taskId?: string } | undefined }>();
+
+  const openTaskById = (taskId: string) => {
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('Tasks', { taskId });
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -75,6 +97,45 @@ export default function App() {
     })();
   }, []);
 
+  // Register the device for push after login. Registration failures are shown
+  // honestly (reason on the dashboard) — never silently faked.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const result = await registerForPushNotifications();
+      if (cancelled) return;
+      setPushNote(result.ok ? null : `Push disabled: ${result.reason}`);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tapping a task notification deep-links into the task detail.
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+  useEffect(() => {
+    const response = lastNotificationResponse;
+    if (response) {
+      const taskId = taskIdFromDeepLink(response.notification.request.content.data?.deepLink);
+      if (taskId) openTaskById(taskId);
+    }
+  }, [lastNotificationResponse]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const taskId = taskIdFromDeepLink(response.notification.request.content.data?.deepLink);
+      if (taskId) openTaskById(taskId);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const handleLogout = async () => {
+    await unregisterPushNotifications();
+    await api.logout();
+    setUser(null);
+    setPushNote(null);
+  };
+
   if (!ready) {
     return (
       <View style={{ flex: 1, backgroundColor: palette.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -88,15 +149,24 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer ref={navigationRef} theme={navTheme} linking={linking}>
       <StatusBar style="light" />
       <Tab.Navigator>
-        <Tab.Screen name="Dashboard" options={makeScreenOptions('Dashboard')}>{() => <DashboardScreen user={user} />}</Tab.Screen>
+        <Tab.Screen name="Dashboard" options={makeScreenOptions('Dashboard')}>
+          {() => (
+            <DashboardScreen
+              user={user}
+              onOpenTask={openTaskById}
+              note={pushNote}
+            />
+          )}
+        </Tab.Screen>
         <Tab.Screen name="MASTER" options={makeScreenOptions('MASTER')} component={MasterScreen} />
+        <Tab.Screen name="Tasks" options={makeScreenOptions('Tasks')} component={TasksScreen} />
         <Tab.Screen name="Agents" options={makeScreenOptions('Agents')} component={AgentsScreen} />
         <Tab.Screen name="Workspace" options={makeScreenOptions('Workspace')} component={WorkspaceScreen} />
         <Tab.Screen name="Billing" options={makeScreenOptions('Billing')}>{() => <BillingScreen user={user} />}</Tab.Screen>
-        <Tab.Screen name="Settings" options={makeScreenOptions('Settings')}>{() => <SettingsScreen onLogout={async () => { await api.logout(); setUser(null); }} />}</Tab.Screen>
+        <Tab.Screen name="Settings" options={makeScreenOptions('Settings')}>{() => <SettingsScreen onLogout={handleLogout} />}</Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>
   );

@@ -5,6 +5,7 @@ import {
   refundTaskCredit,
   updateTaskStatus,
 } from '../db';
+import { notifyTaskFinished } from '../push/notify';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
 /**
@@ -52,6 +53,12 @@ export function reconcileTaskFailed(input: {
       userId: String(task.user_id),
       taskId: task.id,
       reason: `automatic refund for failed task ${task.id} (${input.code})`,
+    });
+    notifyTaskFinished({
+      userId: String(task.user_id),
+      taskId: String(task.id),
+      status: 'failed',
+      detail: refund ? `Task failed (${input.code}) — free task credit refunded` : `Task failed (${input.code})`,
     });
     appendTaskEvent({
       taskId: task.id,

@@ -159,8 +159,12 @@ runtime image, `/api/ready` healthcheck, nightly verified backup cron);
    restart window on a single node.
 4. **OAuth login** (Google/GitHub/Apple/Microsoft) — `/api/auth/oauth/providers`
    honestly reports providers as not configured; the flows are not wired.
-5. **Mobile shell** — Expo app skeleton exists (`mobile/`); full MASTER API
-   wiring, deep links, push notifications are Milestone 12+.
+5. **Mobile shell** — Expo app (`mobile/`) is wired to the full MASTER API:
+   auth, dashboard, MASTER, task center with live SSE logs, agents,
+   workspace, billing, settings; deep links (`akbaral://tasks/:id`) and
+   Expo push notifications (device registration + honest failure
+   reporting). Remaining for store release: an EAS build with a projectId
+   (required for real Expo push tokens) and app-store assets.
 6. **Automation / AI employees** — scheduled/recurring workflows, trigger
    system, long-lived agent budgets: not implemented.
 7. **Social/marketing integrations** (YouTube/Instagram/X/Shopify/Twilio) —

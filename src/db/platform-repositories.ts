@@ -1563,6 +1563,43 @@ export function createNotification(input: {
   return { id };
 }
 
+// ---------------------------------------------------------------------------
+// Mobile push device tokens (M12)
+// ---------------------------------------------------------------------------
+
+export function upsertDeviceToken(input: { userId: string; token: string; platform: string }): { id: string } {
+  const existing = db.get<{ id: string }>('SELECT id FROM device_tokens WHERE token = ?', [input.token]);
+  if (existing) {
+    db.run(
+      'UPDATE device_tokens SET user_id = ?, platform = ?, last_seen_at = ?, revoked_at = NULL WHERE id = ?',
+      [input.userId, input.platform, NOW(), existing.id],
+    );
+    return { id: existing.id };
+  }
+  const id = createId('dvc');
+  db.run(
+    `INSERT INTO device_tokens (id, user_id, token, platform, created_at, last_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, input.userId, input.token, input.platform, NOW(), NOW()],
+  );
+  return { id };
+}
+
+export function listActiveDeviceTokens(userId: string): Array<{ token: string; platform: string }> {
+  return db.all(
+    'SELECT token, platform FROM device_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY last_seen_at DESC',
+    [userId],
+  ) as Array<{ token: string; platform: string }>;
+}
+
+export function revokeDeviceToken(userId: string, token: string): boolean {
+  const result = db.run(
+    'UPDATE device_tokens SET revoked_at = ? WHERE user_id = ? AND token = ? AND revoked_at IS NULL',
+    [NOW(), userId, token],
+  );
+  return (result.changes ?? 0) > 0;
+}
+
 export function listNotifications(userId: string): Array<Record<string, unknown>> {
   return db.all('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100', [userId]) as Array<Record<string, unknown>>;
 }

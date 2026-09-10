@@ -10,6 +10,7 @@ import {
 } from '../db';
 import { refundTaskCredit, updateTaskStatus, updateWorkflowStatus, updateWorkflowStepStatus, updateAgentExecutionStatus } from '../db';
 import { reconcileTaskFailed } from './task-reconciler';
+import { notifyTaskFinished } from '../push/notify';
 import { executionQueue } from './queue';
 
 /**
@@ -115,6 +116,12 @@ export function recoverInterruptedWork(): RecoveryReport {
     if (refund) {
       report.creditsRefunded += 1;
     }
+    void notifyTaskFinished({
+      userId: String(task.user_id),
+      taskId: String(task.id),
+      status: 'failed',
+      detail: refund ? 'Task interrupted by a server restart — free task credit automatically refunded' : 'Task interrupted by a server restart',
+    });
   }
 
   // --- 4. Running workflow steps of orphaned workflows ----------------------
