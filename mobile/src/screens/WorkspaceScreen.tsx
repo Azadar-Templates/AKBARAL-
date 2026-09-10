@@ -3,6 +3,7 @@ import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, spacing } from '../theme';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export function WorkspaceScreen() {
   const [projects, setProjects] = useState<any[]>([]);
@@ -32,6 +33,7 @@ export function WorkspaceScreen() {
 
   return (
     <View style={styles.screen}>
+      <LinearGradient colors={['rgba(93,111,240,0.16)', 'rgba(93,111,240,0.05)', 'rgba(9,11,24,0)']} locations={[0, 0.55, 1]} style={styles.atmosphere} pointerEvents="none" />
       <View style={styles.header}>
         <PageHeader kicker="Project vault" title="Workspace" />
         <View style={styles.searchRow}>
@@ -69,6 +71,7 @@ export function WorkspaceScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
+  atmosphere: { position: 'absolute', top: 0, left: 0, right: 0, height: 220 },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   searchField: { flex: 1 },
@@ -82,8 +85,8 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: palette.cyan,
-    shadowColor: palette.cyan,
+    backgroundColor: palette.telemetry,
+    shadowColor: palette.telemetry,
     shadowOpacity: 0.7,
     shadowRadius: 10,
     elevation: 5,

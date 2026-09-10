@@ -7,7 +7,7 @@
     "userInterfaceStyle": "dark",
     "scheme": "akbaral",
     "splash": {
-      "backgroundColor": "#070b16"
+      "backgroundColor": "#06070f"
     },
     "ios": {
       "supportsTablet": true,
@@ -16,7 +16,7 @@
     "android": {
       "package": "ai.akbaral.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#070b16"
+        "backgroundColor": "#06070f"
       }
     },
     "extra": {

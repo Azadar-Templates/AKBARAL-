@@ -127,11 +127,32 @@
       .replace(/'/g, '&#39;');
   }
 
+  /* AKBARAL! agent identity — the shared sigil.
+     Same formula on web, Android and iOS (design-system/tokens.json):
+     hue = 222 + (fnv1a(name + '|' + category) % 78) -> indigo..violet. */
+  function fnv1a(input) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash >>> 0;
+  }
+
+  function agentSigil(name, category = '') {
+    const hue = 222 + (fnv1a(`${name}|${category}`) % 78);
+    const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+    const mono = words.length === 0 ? 'A'
+      : words.length === 1 ? words[0].slice(0, 2).toUpperCase()
+      : (words[0][0] + words[1][0]).toUpperCase();
+    return `<span class="agent-sigil" style="--sigil-hue: ${hue}" aria-hidden="true">${esc(mono)}</span>`;
+  }
+
   function badge(status) {
     const color = status === 'active' || status === 'completed' || status === 'published' || status === 'enabled'
       ? 'green'
       : status === 'failed' || status === 'disabled' || status === 'blocked' ? 'red'
-      : status === 'pending' || status === 'running' || status === 'planned' ? 'gold'
+      : status === 'pending' || status === 'running' || status === 'planned' ? 'accent'
       : 'blue';
     return `<span class="badge ${color}">${esc(status)}</span>`;
   }
@@ -381,7 +402,7 @@
         vx: (Math.random() - 0.5) * 0.16,
         vy: (Math.random() - 0.5) * 0.16,
         r: Math.random() < 0.16 ? 1.9 : 1.1,
-        gold: Math.random() < 0.18,
+        accent: Math.random() < 0.18,
       }));
     };
 
@@ -403,7 +424,7 @@
           const d2 = dx * dx + dy * dy;
           if (d2 > linkDist * linkDist) continue;
           const alpha = 0.16 * (1 - Math.sqrt(d2) / linkDist);
-          ctx.strokeStyle = `rgba(154, 168, 123, ${alpha.toFixed(3)})`;
+          ctx.strokeStyle = `rgba(122, 136, 246, ${alpha.toFixed(3)})`;
           ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
         }
       }
@@ -412,7 +433,7 @@
         const pdx = pointer.x - n.x, pdy = pointer.y - n.y;
         const pd = Math.sqrt(pdx * pdx + pdy * pdy);
         if (pd < 170 && pd > 0.001) { n.x += (pdx / pd) * 0.14; n.y += (pdy / pd) * 0.14; }
-        ctx.fillStyle = n.gold ? 'rgba(181, 160, 66, 0.85)' : 'rgba(167, 168, 157, 0.55)';
+        ctx.fillStyle = n.accent ? 'rgba(157, 140, 255, 0.85)' : 'rgba(151, 161, 235, 0.5)';
         ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
       }
       rafId = requestAnimationFrame(step);
@@ -1252,8 +1273,13 @@
     if (!agents.length) { root.innerHTML = '<div class="list-item"><small>No agents found.</small></div>'; return; }
     root.innerHTML = agents.slice(0, 24).map((agent) => `
       <article class="agent-card">
-        <h3>${esc(agent.name)}</h3>
-        <p>${esc(agent.specialization || agent.description || agent.slug)}</p>
+        <div class="agent-head">
+          ${agentSigil(agent.name, agent.category)}
+          <div class="agent-head-text">
+            <h3>${esc(agent.name)}</h3>
+            <p>${esc(agent.specialization || agent.description || agent.slug)}</p>
+          </div>
+        </div>
         <div class="tags">${(agent.capabilities || []).slice(0, 5).map((c) => `<span>${esc(c)}</span>`).join('')}</div>
         <div class="actions">
           ${allowDetail ? `<button class="btn btn-ghost" data-detail="${esc(agent.slug)}">Details</button>` : ''}
@@ -1598,8 +1624,13 @@
     };
     root.innerHTML = agents.length ? agents.map((a) => `
       <article class="agent-card">
-        <h3>${esc(a.name)}</h3>
-        <p>${esc(a.description || a.specialization || a.slug)}</p>
+        <div class="agent-head">
+          ${agentSigil(a.name)}
+          <div class="agent-head-text">
+            <h3>${esc(a.name)}</h3>
+            <p>${esc(a.description || a.specialization || a.slug)}</p>
+          </div>
+        </div>
         <div class="tags"><span>PKR ${Number(a.price_cents || 0) / 100}</span><span>${esc(a.install_count || 0)} installs</span>${tagsOf(a.tags).slice(0, 4).map((t) => `<span>${esc(t)}</span>`).join('')}</div>
         <div class="actions">
           <button class="btn btn-primary" data-install="${esc(a.slug)}">Install</button>

@@ -4,10 +4,12 @@
  * Active page for `/`. Rendered as a real React component with native JSX
  * elements. The SPA behaviour is provided by public/app.js.
  *
- * Visual system: "luxury cinematic AI operating system" — near-black
- * cinematic tones, muted olive / moss / antique gold accents, warm
- * off-white editorial typography, hairline borders, fine technical
- * grids, glass surfaces. Fully original design (no third-party assets).
+ * Visual system: the unified AKBARAL! Design System (design-system/
+ * tokens.json — shared with the Android app and the future iOS app):
+ * deep obsidian foundation, subtle indigo/violet atmosphere, premium
+ * glass surfaces, cinematic lighting, editorial/technical typography,
+ * hairline borders, fine grids. One identity, every surface.
+ * Fully original design (no third-party assets).
  *
  * Hero background architecture: full-bleed <video> slot
  * (/media/hero-loop.mp4 — drop the production loop there) with an
@@ -139,9 +141,10 @@ export default function Home() {
           <button type="button" data-scroll-to="master-ai"><i>01</i> Master AI</button>
           <button type="button" data-scroll-to="agent-world"><i>02</i> Agent World</button>
           <button type="button" data-scroll-to="factory"><i>03</i> Agent Factory</button>
-          <button type="button" data-scroll-to="workspace"><i>04</i> Execution</button>
-          <button type="button" data-scroll-to="trust"><i>05</i> Security</button>
-          <button type="button" data-scroll-to="pricing"><i>06</i> Pricing</button>
+          <button type="button" data-scroll-to="automation"><i>04</i> Automation</button>
+          <button type="button" data-scroll-to="workspace"><i>05</i> Execution</button>
+          <button type="button" data-scroll-to="trust"><i>06</i> Security</button>
+          <button type="button" data-scroll-to="pricing"><i>07</i> Pricing</button>
         </nav>
 
         {/* ================= 01 · MASTER AI pipeline ================= */}
@@ -243,7 +246,41 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ================= 04 · Workspace / execution ================= */}
+        {/* ================= 04 · Automation ================= */}
+        <div className="aw-container landing-section" id="automation">
+          <div className="section-head" data-reveal>
+            <p className="eyebrow" data-kicker="Automation"></p>
+            <h2>Intelligence on a schedule.</h2>
+            <p className="sub">
+              The same orchestrator that runs your tasks also runs them on real schedules —
+              timezone-aware cron, intervals and one-shot timers — with conditions, retries,
+              crash recovery and notifications. A credit is consumed only when a run succeeds.
+            </p>
+          </div>
+          <div className="auto-panel" data-reveal>
+            <div className="auto-strip" aria-label="Supported schedule forms">
+              <span className="cron-chip"><code>*/15 * * * *</code><small>cron · Asia/Karachi</small></span>
+              <span className="cron-chip"><code>0 9 * * 1-5</code><small>weekdays 09:00 · DST-safe</small></span>
+              <span className="cron-chip"><code>every 30m</code><small>interval</small></span>
+              <span className="cron-chip"><code>once · ISO 8601</code><small>one-shot</small></span>
+            </div>
+            <div className="auto-chain" aria-label="Automation run lifecycle">
+              <div className="auto-node"><i>A-01</i><b>Schedule</b><small>The engine computes the next run for each schedule and timezone.</small></div>
+              <div className="auto-node"><i>A-02</i><b>Conditions</b><small>A run proceeds only when its conditions hold.</small></div>
+              <div className="auto-node"><i>A-03</i><b>Agent steps</b><small>Registered specialists run through the MASTER orchestrator.</small></div>
+              <div className="auto-node"><i>A-04</i><b>Verify &amp; retry</b><small>Verification gates success; failures retry with backoff and timeouts.</small></div>
+              <div className="auto-node"><i>A-05</i><b>Notify</b><small>Push and in-app notifications — and honest credit refunds.</small></div>
+            </div>
+            <div className="world-note">
+              <p>Interrupted runs are recovered after a crash — or refunded. Every run is auditable, cancellable and isolated to your tenant.</p>
+              <div className="actions">
+                <a className="btn btn-outline" href="#/automations">Open Automations →</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= 05 · Workspace / execution ================= */}
         <div className="aw-container landing-section" id="workspace">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Execution"></p>
@@ -268,7 +305,7 @@ export default function Home() {
                 <div className="trace-step" key={label}>
                   <b>{label}</b>
                   <p>{note}</p>
-                  <span className={`badge ${state === 'completed' ? 'green' : state === 'active' ? 'gold' : 'blue'}`}>{state}</span>
+                  <span className={`badge ${state === 'completed' ? 'green' : state === 'active' ? 'accent' : 'blue'}`}>{state}</span>
                 </div>
               ))}
             </div>
@@ -279,7 +316,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ================= 05 · Trust + security ================= */}
+        {/* ================= 06 · Trust + security ================= */}
         <div className="aw-container landing-section" id="trust">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Security &amp; trust"></p>
@@ -310,7 +347,7 @@ export default function Home() {
           <p className="trust-note" data-reveal>EVERY CONTROL ABOVE IS IMPLEMENTED AND COVERED BY THE PLATFORM TEST SUITE.</p>
         </div>
 
-        {/* ================= 06 · Pricing ================= */}
+        {/* ================= 07 · Pricing ================= */}
         <section className="pricing aw-container landing-section" id="pricing">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Pricing"></p>

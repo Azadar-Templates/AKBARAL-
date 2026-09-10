@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../api/client';
 import { palette, spacing } from '../theme';
-import { Badge, Button, Card, EmptyState, Field, LoadingState, PageHeader } from '../components/ui';
+import { AgentSigil, Badge, Button, Card, EmptyState, Field, PageHeader, Skeleton } from '../components/ui';
 
 export function AgentsScreen() {
   const [query, setQuery] = useState('');
@@ -52,6 +53,7 @@ export function AgentsScreen() {
 
   return (
     <View style={styles.screen}>
+      <LinearGradient colors={['rgba(93,111,240,0.16)', 'rgba(93,111,240,0.05)', 'rgba(9,11,24,0)']} locations={[0, 0.55, 1]} style={styles.atmosphere} pointerEvents="none" />
       <View style={styles.header}>
         <PageHeader kicker="Specialist intelligence" title="Agent World" />
         <View style={styles.searchRow}>
@@ -62,7 +64,9 @@ export function AgentsScreen() {
         </View>
       </View>
 
-      {loading ? <LoadingState text="Loading agents…" /> : (
+      {loading ? (
+        <View style={styles.skeletonWrap}><Skeleton count={4} height={96} /></View>
+      ) : (
         <FlatList
           data={agents}
           keyExtractor={(item) => item.id}
@@ -71,6 +75,7 @@ export function AgentsScreen() {
           renderItem={({ item }) => (
             <Card accent="none" style={styles.card}>
               <View style={styles.cardHead}>
+                <AgentSigil name={item.name} category={item.category} />
                 <View style={styles.cardBody}>
                   <Text style={styles.cardTitle}>{item.name}</Text>
                   <Text style={styles.muted} numberOfLines={2}>{item.specialization || item.description || item.slug}</Text>
@@ -94,6 +99,8 @@ export function AgentsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
+  atmosphere: { position: 'absolute', top: 0, left: 0, right: 0, height: 220 },
+  skeletonWrap: { paddingHorizontal: spacing.lg },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   searchField: { flex: 1 },
@@ -112,6 +119,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginRight: 6,
   },
-  tagText: { color: palette.textSoft, fontSize: 11 },
+  tagText: { color: palette.text2, fontSize: 11 },
   cardActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
 });

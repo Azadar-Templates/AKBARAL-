@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
-import { Badge, Card, EmptyState, LoadingState, PageHeader, Pill, ScreenShell } from '../components/ui';
+import { Badge, Card, EmptyState, LoadingState, PageHeader, Pill, ScreenShell, Skeleton } from '../components/ui';
 import { subscribeExecutionEvents, type ExecutionLogEvent, type LiveState, type LiveSubscription } from '../services/sse';
 import { AutomationsScreen } from './AutomationsScreen';
 
@@ -148,7 +148,7 @@ export function TasksScreen() {
         </View>
       </View>
       {loading && tasks.length === 0 ? (
-        <LoadingState text="Loading tasks…" />
+        <Skeleton count={4} height={64} />
       ) : tasks.length === 0 ? (
         <EmptyState text="No tasks yet. Open MASTER and describe your goal." />
       ) : (
@@ -337,16 +337,16 @@ function TaskDetailScreen({ taskId, onClose }: { taskId: string; onClose: () => 
 
 const styles = StyleSheet.create({
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
-  refresh: { color: palette.cyan, fontWeight: '800', fontSize: 13 },
+  refresh: { color: palette.telemetry, fontWeight: '800', fontSize: 13 },
   toolbarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  automationsLink: { color: palette.violet, fontWeight: '800', fontSize: 13 },
+  automationsLink: { color: palette.accent2, fontWeight: '800', fontSize: 13 },
   item: { padding: spacing.md },
   itemRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   itemBody: { flex: 1, paddingRight: spacing.sm },
   itemTitle: { color: palette.text, fontWeight: '700', fontSize: 15 },
   muted: { color: palette.textDim, fontSize: 12, marginTop: 2 },
   back: { marginBottom: spacing.sm, alignSelf: 'flex-start' },
-  backText: { color: palette.gold, fontWeight: '800', fontSize: 13 },
+  backText: { color: palette.accent, fontWeight: '800', fontSize: 13 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   section: { marginBottom: spacing.md },
   label: { color: palette.textFaint, fontSize: 10, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase', marginTop: spacing.sm },
@@ -354,12 +354,12 @@ const styles = StyleSheet.create({
   executionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
   errorCard: { borderColor: palette.red, marginBottom: spacing.md },
   errorText: { color: palette.red, fontSize: 13 },
-  heading: { color: palette.textSoft, fontWeight: '800', marginTop: spacing.sm, marginBottom: spacing.sm },
+  heading: { color: palette.text2, fontWeight: '800', marginTop: spacing.sm, marginBottom: spacing.sm },
   eventCard: { padding: spacing.sm, marginBottom: spacing.sm },
   outputCard: { padding: spacing.md, marginBottom: spacing.md },
   outputText: { color: palette.text, fontSize: 13, lineHeight: 19 },
   console: { backgroundColor: palette.bg, borderWidth: 1, borderColor: palette.line, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.xl },
   consoleLine: { color: palette.textDim, fontSize: 11, lineHeight: 17 },
   consoleError: { color: palette.red },
-  consoleWarn: { color: palette.gold },
+  consoleWarn: { color: palette.accent },
 });

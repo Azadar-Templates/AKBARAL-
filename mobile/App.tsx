@@ -7,6 +7,7 @@ import { NavigationContainer, DarkTheme, Theme, useNavigationContainerRef } from
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { api } from './src/api/client';
 import { palette } from './src/theme';
+import { BrandMark } from './src/components/ui';
 import { automationIdFromDeepLink, registerForPushNotifications, taskIdFromDeepLink, unregisterPushNotifications } from './src/services/push';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
@@ -23,12 +24,12 @@ const navTheme: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    primary: palette.gold,
+    primary: palette.accent,
     background: palette.bg,
     card: palette.bg2,
     text: palette.text,
     border: palette.line,
-    notification: palette.gold,
+    notification: palette.accent,
   },
 };
 
@@ -57,9 +58,10 @@ const tabIcons: Record<string, string> = {
 const makeScreenOptions = (name: string) => ({
   headerShown: true,
   headerStyle: { backgroundColor: palette.bg2, borderBottomColor: palette.line, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerShadowVisible: false,
   headerTitleStyle: { color: palette.text, fontWeight: '900' as const, fontSize: 16 },
-  headerTintColor: palette.gold,
-  tabBarActiveTintColor: palette.gold,
+  headerTintColor: palette.accent,
+  tabBarActiveTintColor: palette.accent,
   tabBarInactiveTintColor: palette.textDim,
   tabBarStyle: {
     backgroundColor: palette.bg2,
@@ -71,7 +73,7 @@ const makeScreenOptions = (name: string) => ({
   },
   tabBarLabelStyle: { fontWeight: '700' as const, fontSize: 11 },
   tabBarIcon: ({ focused }: { focused: boolean }) => (
-    <Text style={{ color: focused ? palette.gold : palette.textDim, fontSize: 15, opacity: focused ? 1 : 0.72 }}>{tabIcons[name]}</Text>
+    <Text style={{ color: focused ? palette.accent : palette.textDim, fontSize: 15, opacity: focused ? 1 : 0.72, textShadowColor: focused ? palette.accent : 'transparent', textShadowRadius: focused ? 10 : 0 }}>{tabIcons[name]}</Text>
   ),
 });
 
@@ -172,7 +174,8 @@ export default function App() {
   if (!ready) {
     return (
       <View style={{ flex: 1, backgroundColor: palette.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={palette.gold} size="large" />
+        <BrandMark size={56} />
+        <ActivityIndicator color={palette.telemetry} size="large" style={{ marginTop: 22 }} />
       </View>
     );
   }

@@ -55,7 +55,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" data-theme="dark">
       <head>
         <meta name="color-scheme" content="light dark" />
-        <meta name="theme-color" content="#050604" />
+        <meta name="theme-color" content="#06070f" />
         {heroVideoEnabled ? <meta name="akbaral-hero-video" content="1" /> : null}
         {adsenseClient ? <meta name="akbaral-adsense-client" content={adsenseClient} /> : null}
         {/* Premium editorial type: Space Grotesk (display) + Inter (text),
@@ -66,11 +66,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
         />
-        <link rel="stylesheet" href="/styles.css?v=cinematic-v7" />
+        <link rel="stylesheet" href="/tokens.css?v=akbaral-ds-1" />
+        <link rel="stylesheet" href="/styles.css?v=akbaral-ds-1" />
       </head>
       <body>
         {children}
-        <Script src="/app.js?v=cinematic-v7" strategy="afterInteractive" />
+        <Script src="/app.js?v=akbaral-ds-1" strategy="afterInteractive" />
       </body>
     </html>
   );

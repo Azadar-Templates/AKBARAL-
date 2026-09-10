@@ -288,3 +288,28 @@ The platform launches as an honest single-node deployment with a locked
 trust policy, tested security posture, verified backups, and monetization
 that works today via manual settlement and activates per provider the
 moment real credentials are configured.
+
+## Unified design system pass — web + Android + future iOS (2026-09-10)
+
+The website and the Android app now share ONE design system, compiled from
+a single token source (`design-system/tokens.json`):
+
+1. **One identity, native feel**: identical palette (obsidian
+   `#06070f` family, indigo `#5d6ff0` → violet `#9d8cff` accent, cyan
+   telemetry), spacing, radii, status language, agent sigils and motion
+   semantics on both platforms; the mobile app keeps a native mobile UX
+   (bottom tabs, native scroll, system font) rather than a shrunken site.
+2. **iOS is prepared, not faked**: generated `AKBARALTheme.swift` tokens
+   exist; there is no iOS app and none is claimed.
+3. **No functionality touched**: authentication, OAuth, MASTER, agents,
+   Agent Factory, Agent World, tasks, execution, verification, workspace,
+   automation, notifications, billing/credits, security and APIs all
+   unchanged — verified by the full suite (253/253), both typechecks and
+   the production build, plus live login/me/agents/OAuth checks.
+4. **Responsive + motion discipline maintained**: 320–430px + tablet
+   rules intact on web (new sections follow the same container-scroll
+   discipline); mobile layouts are flexbox-native at all widths; all new
+   motion (entrances, pulses, shimmers) honors reduced-motion on both
+   platforms and runs on native drivers/compositor-only properties.
+5. **Assets**: new original AI-generated hero poster (obsidian/indigo);
+   asset cache version `akbaral-ds-1`.

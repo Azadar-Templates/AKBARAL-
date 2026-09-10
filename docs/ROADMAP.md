@@ -842,6 +842,56 @@ fully server-side, for Google, GitHub, Microsoft and Apple:
 
 ---
 
+## Milestone 11 — Unified AKBARAL! Design System (COMPLETE)
+
+**One visual identity across website, Android app and the future iOS app.**
+Obsidian foundation · indigo/violet atmosphere · premium glass · cinematic
+lighting · technical elegance. "One Intelligence. Every Solution."
+
+- **Single source of truth**: `design-system/tokens.json` + zero-dependency
+  compiler `node design-system/build.mjs` generating three committed
+  consumers — `public/tokens.css` (web), `mobile/src/theme.ts` (Android),
+  `design-system/ios/AKBARALTheme.swift` (future iOS; tokens only, no fake
+  app). `design-system/README.md` documents the full contract (colors,
+  typography, spacing, radii, glass, status language, agent identity,
+  iconography, motion, responsive rules).
+- **Website**: all hand-written tokens replaced by the generated
+  `tokens.css` (linked before `styles.css`; assets `akbaral-ds-1`). Full
+  palette migration from the warm gold/olive system to obsidian +
+  indigo/violet: buttons (indigo→violet gradient primary), glows, hero
+  (veil/vignette/outline type), auth atmosphere, agent-world/factory/
+  pipeline/pricing/CTA sections, scrollbar, selection, focus rings.
+  Hero canvas network re-tinted (indigo links, violet/silver nodes); new
+  original AI-generated obsidian/indigo hero poster. New **Automation**
+  landing chapter (rail item 04; cron/interval/one-shot chips, 5-node run
+  lifecycle chain — all real engine behavior). Agent cards gained the
+  shared **agent sigil** (deterministic indigo→violet monogram; identical
+  formula on every platform — verified identical output web vs mobile).
+- **Android (native mobile UX, same identity)**: `mobile/src/theme.ts`
+  regenerated from tokens; `ui.tsx` rebuilt as the shared component
+  library (gradient primary buttons with glow, sheened cards, pulsing
+  status dots/badges, shimmer skeletons, agent sigils, branded boot,
+  reduce-motion-aware `FadeIn`/`StatusDot`/`Skeleton` via
+  `AccessibilityInfo`). All 9 screens migrated + elevated: every screen
+  inherits the obsidian canvas + top indigo atmosphere (`ScreenShell`);
+  Agents/Tasks/Automations/Billing load with skeleton shimmer; Agents
+  rows show agent sigils; Dashboard opens with brand row + cinematic
+  entrance; Login gets full atmosphere gradient + staged entrance;
+  MASTER orb respects reduce-motion. `expo-linear-gradient` added (real
+  Expo module). Splash/adaptive-icon aligned to obsidian `#06070f`.
+- **Status language unified** (identical mapping web + mobile + iOS):
+  running/live → pulsing cyan telemetry; queued/pending/planned/retrying →
+  amber; completed/active/enabled → green; failed/blocked/disabled → red;
+  cancelled/paused/idle → neutral.
+- **Verification**: 253/253 tests, server tsc clean, mobile tsc clean,
+  production build green, live stack verified (tokens.css served, head
+  link order correct, automation section + rail, login/me/agents(4,001)/
+  oauth providers functional, server log clean), sigil formula parity
+  proven across platforms. No functional changes to any API, flow or
+  test; all existing production functionality preserved.
+
+---
+
 ## Verification protocol (every milestone)
 
 1. `npm run typecheck`

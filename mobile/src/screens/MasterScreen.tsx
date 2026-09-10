@@ -2,14 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
-import { Button, Card, Field, PageHeader, ScreenShell } from '../components/ui';
+import { Button, Card, Field, PageHeader, ScreenShell, useReducedMotion } from '../components/ui';
 
 type Phase = 'idle' | 'thinking' | 'executing' | 'success' | 'error';
 
 const phaseCopy: Record<Phase, { label: string; tone: string; message: string }> = {
   idle: { label: 'STANDBY', tone: palette.textDim, message: 'MASTER is ready to plan and dispatch your mission.' },
-  thinking: { label: 'THINKING', tone: palette.violet, message: 'MASTER is decomposing your goal and selecting specialists.' },
-  executing: { label: 'EXECUTING', tone: palette.gold, message: 'Specialist agents are executing the plan in your workspace.' },
+  thinking: { label: 'THINKING', tone: palette.accent2, message: 'MASTER is decomposing your goal and selecting specialists.' },
+  executing: { label: 'EXECUTING', tone: palette.accent, message: 'Specialist agents are executing the plan in your workspace.' },
   success: { label: 'SUCCESS', tone: palette.green, message: 'Plan and execution completed. Review the output below.' },
   error: { label: 'ERROR', tone: palette.red, message: 'The request could not be completed. Review the error below.' },
 };
@@ -20,9 +20,10 @@ export function MasterScreen() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [busy, setBusy] = useState(false);
   const orbPulse = useRef(new Animated.Value(1)).current;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (phase === 'idle' || phase === 'success' || phase === 'error') {
+    if (phase === 'idle' || phase === 'success' || phase === 'error' || reducedMotion) {
       orbPulse.setValue(1);
       return;
     }
@@ -34,7 +35,7 @@ export function MasterScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [phase, orbPulse]);
+  }, [phase, orbPulse, reducedMotion]);
 
   const submit = async () => {
     if (!goal.trim()) return;
@@ -113,5 +114,5 @@ const styles = StyleSheet.create({
   muted: { color: palette.textDim, marginBottom: spacing.md },
   input: { minHeight: 120, textAlignVertical: 'top' },
   output: { marginTop: spacing.lg },
-  outputText: { color: palette.textSoft, fontFamily: 'monospace', fontSize: 12, lineHeight: 18 },
+  outputText: { color: palette.text2, fontFamily: 'monospace', fontSize: 12, lineHeight: 18 },
 });

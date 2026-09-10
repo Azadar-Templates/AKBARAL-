@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
-import { Badge, Button, Card, EmptyState, Field, LoadingState, PageHeader, Pill, ScreenShell } from '../components/ui';
+import { Badge, Button, Card, EmptyState, Field, LoadingState, PageHeader, Pill, ScreenShell, Skeleton } from '../components/ui';
 
 /**
  * Automation & scheduled workflows (mobile) — real management over the same
@@ -112,7 +112,7 @@ export function AutomationsScreen({ initialAutomationId }: { initialAutomationId
       {creating ? <CreateAutomationForm onCreated={() => { setCreating(false); void load(); }} /> : null}
 
       {loading && automations.length === 0 ? (
-        <LoadingState text="Loading automations…" />
+        <Skeleton count={3} height={96} />
       ) : automations.length === 0 && !creating ? (
         <EmptyState text="No automations yet. Create one to schedule recurring agent work." />
       ) : (
@@ -366,23 +366,23 @@ const styles = StyleSheet.create({
   itemTitle: { color: palette.text, fontWeight: '700', fontSize: 15 },
   muted: { color: palette.textDim, fontSize: 12, marginTop: 2 },
   back: { marginBottom: spacing.sm, alignSelf: 'flex-start' },
-  backText: { color: palette.gold, fontWeight: '800', fontSize: 13 },
+  backText: { color: palette.accent, fontWeight: '800', fontSize: 13 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   section: { marginBottom: spacing.md },
   label: { color: palette.textFaint, fontSize: 10, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase', marginTop: spacing.sm },
   body: { color: palette.text, fontSize: 14, marginTop: 2 },
   stepRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  stepIndex: { color: palette.violet, fontWeight: '900', fontSize: 13 },
+  stepIndex: { color: palette.accent2, fontWeight: '900', fontSize: 13 },
   stepBody: { flex: 1 },
   actions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md, flexWrap: 'wrap' },
-  heading: { color: palette.textSoft, fontWeight: '800', marginTop: spacing.sm, marginBottom: spacing.sm },
+  heading: { color: palette.text2, fontWeight: '800', marginTop: spacing.sm, marginBottom: spacing.sm },
   runCard: { padding: spacing.sm, marginBottom: spacing.sm },
   form: { padding: spacing.md, marginBottom: spacing.md },
   formTitle: { color: palette.text, fontWeight: '900', fontSize: 16, marginBottom: spacing.sm },
   kindRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   kindButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: palette.line },
-  kindButtonActive: { borderColor: palette.violet, backgroundColor: palette.violetSoft },
+  kindButtonActive: { borderColor: palette.accent2, backgroundColor: palette.indigoSoft },
   kindText: { color: palette.textDim, fontWeight: '700', fontSize: 12 },
-  kindTextActive: { color: palette.violet },
+  kindTextActive: { color: palette.accent2 },
   error: { color: palette.red, fontSize: 12, marginBottom: spacing.sm },
 });
