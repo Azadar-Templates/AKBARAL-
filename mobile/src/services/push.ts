@@ -99,3 +99,10 @@ export function taskIdFromDeepLink(link: unknown): string | null {
   const match = link.match(/\/tasks\/([A-Za-z0-9_-]+)/);
   return match ? match[1] : null;
 }
+
+/** Extract an automation id from an `akbaral://automations/:id` deep link. */
+export function automationIdFromDeepLink(link: unknown): string | null {
+  if (typeof link !== 'string') return null;
+  const match = link.match(/\/automations\/([A-Za-z0-9_-]+)/);
+  return match ? match[1] : null;
+}

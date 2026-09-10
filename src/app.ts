@@ -7,8 +7,10 @@ import { agentsRouter } from './routes/agents';
 import { meRouter } from './routes/me';
 import { createTasksRouter } from './routes/tasks';
 import { createWorkflowsRouter } from './routes/workflows';
+import { createAutomationsRouter } from './routes/automations';
 import { createMasterRouter } from './routes/master';
 import { executionQueue } from './orchestrator/queue';
+import { automationScheduler } from './automation/scheduler';
 import { createProjectsRouter } from './routes/projects';
 import { createFilesRouter } from './routes/files';
 import { createBillingRouter } from './routes/billing';
@@ -98,6 +100,11 @@ export function createApiServer(): ApiServer {
   executionQueue.bindStream(stream);
   executionQueue.start();
 
+  // Start the durable automation scheduler (idempotent; same pattern as the
+  // execution queue — it ticks once per second, firing due automations and
+  // reconciling open runs against the authoritative job state).
+  automationScheduler.start();
+
   app.set('trust proxy', env.trustProxy);
   app.use(securityHeaders);
   app.use(cacheHeaders);
@@ -151,6 +158,7 @@ export function createApiServer(): ApiServer {
   app.use('/api/agents', agentsRouter);
   app.use('/api/tasks', createTasksRouter(stream));
   app.use('/api/workflows', createWorkflowsRouter(stream));
+  app.use('/api/automations', createAutomationsRouter());
   app.use('/api/master', createMasterRouter(stream));
   app.use('/api/projects', createProjectsRouter());
   app.use('/api', createFilesRouter());
@@ -186,6 +194,7 @@ export function createApiServer(): ApiServer {
       });
     },
     async close(): Promise<void> {
+      automationScheduler.stop();
       stream.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },

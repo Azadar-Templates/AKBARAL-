@@ -88,6 +88,10 @@ export class ApiClient {
     return this.request(path, { method: 'DELETE' });
   }
 
+  patch(path: string, body: unknown) {
+    return this.request(path, { method: 'PATCH', body });
+  }
+
   /** Absolute URL for a path — used by transports that cannot use request()
    * (e.g. the SSE live-log subscription, which needs ?token= auth). */
   url(path: string): string {

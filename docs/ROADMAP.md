@@ -730,6 +730,69 @@ capability surface as the web client:
 
 **Remaining after M12:** none for this milestone — M12 is complete.
 
+**Automation & Scheduled Workflows — COMPLETE.** Real production scheduling
+on the existing orchestrator (no parallel system):
+
+- **Schedules** (`src/automation/cron.ts`, `validate.ts`): one-time (`once`),
+  recurring cron (strict 5-field subset: `*`, step, single value — no
+  ambiguous ranges/lists) and fixed intervals. Timezone handling is real:
+  IANA zones via Intl, DST-aware — spring-forward gaps are skipped (Vixie
+  semantics), fall-back ambiguity resolves to the first occurrence; naive
+  local timestamps are interpreted in the automation's timezone and rejected
+  if they do not exist.
+- **Engine** (`src/automation/scheduler.ts`): 1s durable tick — fires due
+  automations exactly once per occurrence (UNIQUE idempotency key on
+  `automation_runs`; restart- and race-safe), advances schedules without
+  backfilling missed occurrences, reconciles open runs against the
+  authoritative queue/workflow state (this is what makes restarts and crashes
+  safe), re-fires jobless runs with a bounded attempt budget, and enforces
+  per-automation timeouts via a graceful queue cancellation.
+- **Execution**: each occurrence becomes a persisted workflow whose steps are
+  the automation's steps (per-step goals chain 1→n through
+  `depends_on`) and runs through the existing execution queue — agent
+  registry visibility checks, atomic credit reservation, consume-on-success,
+  automatic refunds, job retries with exponential backoff (only for transient
+  errors), per-job timeout override, cancellation.
+- **Conditions**: `last_run_outcome` and `min_interval_since_last_run` gates
+  evaluated server-side before firing; unmet conditions skip the occurrence
+  with a recorded reason (visible in the run history), never fail it.
+- **Resource controls**: credit pre-flight auto-pauses an automation (with a
+  notification + audit entry) when the owner has no task credits, instead of
+  looping uselessly; manual triggers are cooldown-limited; max 25 active
+  automations per account; per-IP rate limits on the router.
+- **API** (`src/routes/automations.ts`): full CRUD + pause/resume + manual
+  run + run history + run cancellation. Auth on every route, strict
+  server-side validation of all input, tenant isolation (cross-user access is
+  an indistinguishable 404), audit logging on every state change.
+- **Legacy note**: the 0003 CRM `automations` skeleton (trigger_key rows) is
+  preserved in the same table behind a cohort filter (`schedule_json IS
+  NULL`) — `/api/crm/automations` keeps working untouched and CRM rows are
+  invisible to the scheduler.
+- **Notifications**: run-level completion/failure/cancellation summaries and
+  attention events flow through the M12 system (in-app row + Expo push with
+  `akbaral://automations/:id` deep links), in addition to the existing
+  per-task notifications from each step.
+- **Clients**: new web view (`#/automations`, `#/automations/:id` — create
+  form, list, pause/resume/run-now/delete, run history; assets at
+  `cinematic-v6`) and mobile AutomationsScreen (behind the Tasks tab; create,
+  manage, run history; deep-link routing from push notifications).
+- **Migration** `0010_automation.sql`: evolves `automations` (rebuilt to relax
+  the legacy trigger_key NOT NULL) + `automation_runs` (UNIQUE idempotency)
+  + `workflow_steps.goal`.
+- **Verification**: 235/235 tests (11 cron/timezone unit tests + 18
+  end-to-end automation integration tests covering the full matrix: scheduled
+  fire → agent execution → verified result → notification, failure/refund,
+  transient retry recovery, timeout, cancellation, duplicate protection,
+  timezone math, auth, tenant isolation, validation, conditions, auto-pause,
+  cooldown, crash recovery, per-account caps, CRM cohort isolation),
+  tsc clean (server + mobile), production build green, live E2E on the dev
+  stack (cron next-run at 04:30Z for 09:30 Karachi; one-shot scheduled fire
+  executed through the web-research agent with verified sources; honest
+  provider_not_configured failure with refund; mid-flight cancel with refund;
+  duplicate occurrence rejected; orphan run recovered and completed; audit
+  log entries for every action; push notifications delivered with deep
+  links).
+
 ---
 
 ## Verification protocol (every milestone)

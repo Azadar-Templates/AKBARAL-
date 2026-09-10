@@ -584,11 +584,12 @@ export function createWorkflowStep(input: {
   toolKey?: string | null;
   stepOrder: number;
   dependsOn?: string[];
+  goal?: string | null;
 }): { id: string } {
   const id = createId('stp');
   db.run(
-    `INSERT INTO workflow_steps (id, workflow_id, task_id, agent_id, model_key, tool_key, step_order, depends_on, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO workflow_steps (id, workflow_id, task_id, agent_id, model_key, tool_key, step_order, depends_on, goal, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.workflowId,
@@ -598,6 +599,7 @@ export function createWorkflowStep(input: {
       input.toolKey ?? null,
       input.stepOrder,
       input.dependsOn ? input.dependsOn.join(',') : null,
+      input.goal ?? null,
       NOW(),
       NOW(),
     ],

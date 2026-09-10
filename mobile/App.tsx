@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, ActivityIndicator, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import { NavigationContainer, DarkTheme, Theme, useNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { api } from './src/api/client';
 import { palette } from './src/theme';
-import { registerForPushNotifications, taskIdFromDeepLink, unregisterPushNotifications } from './src/services/push';
+import { automationIdFromDeepLink, registerForPushNotifications, taskIdFromDeepLink, unregisterPushNotifications } from './src/services/push';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { MasterScreen } from './src/screens/MasterScreen';
@@ -31,7 +32,9 @@ const navTheme: Theme = {
   },
 };
 
-/** Deep links: akbaral://tasks/:id (from push notifications, web links, QR). */
+/** Deep links: akbaral://tasks/:id (react-navigation config). The
+ * akbaral://automations/:id scheme is handled manually below because the
+ * Tasks tab hosts both surfaces. */
 const linking = {
   prefixes: ['akbaral://', 'https://akbaral.ai'],
   config: {
@@ -76,11 +79,29 @@ export default function App() {
   const [user, setUser] = useState<{ id: string; email: string; freeCredits: number; role: string } | null>(null);
   const [ready, setReady] = useState(false);
   const [pushNote, setPushNote] = useState<string | null>(null);
-  const navigationRef = useNavigationContainerRef<{ Tasks: { taskId?: string } | undefined }>();
+  const navigationRef = useNavigationContainerRef<{ Tasks: { taskId?: string; automationId?: string; viewAutomations?: boolean } | undefined }>();
 
   const openTaskById = (taskId: string) => {
     if (navigationRef.isReady()) {
       navigationRef.navigate('Tasks', { taskId });
+    }
+  };
+
+  const openAutomationById = (automationId: string) => {
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('Tasks', { automationId });
+    }
+  };
+
+  const routeDeepLink = (url: string) => {
+    const taskId = taskIdFromDeepLink(url);
+    if (taskId) {
+      openTaskById(taskId);
+      return;
+    }
+    const automationId = automationIdFromDeepLink(url);
+    if (automationId) {
+      openAutomationById(automationId);
     }
   };
 
@@ -113,18 +134,30 @@ export default function App() {
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tapping a task notification deep-links into the task detail.
+  // Cold-start and in-app akbaral:// links (notification taps also route
+  // through the response listeners below).
+  useEffect(() => {
+    let initialUrl: string | null = null;
+    Linking.getInitialURL()
+      .then((url) => {
+        initialUrl = url;
+        if (url) routeDeepLink(url);
+      })
+      .catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => routeDeepLink(url));
+    return () => subscription.remove();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
   useEffect(() => {
     const response = lastNotificationResponse;
     if (response) {
-      const taskId = taskIdFromDeepLink(response.notification.request.content.data?.deepLink);
-      if (taskId) openTaskById(taskId);
+      routeDeepLink(String(response.notification.request.content.data?.deepLink ?? ''));
     }
   }, [lastNotificationResponse]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const taskId = taskIdFromDeepLink(response.notification.request.content.data?.deepLink);
-      if (taskId) openTaskById(taskId);
+      routeDeepLink(String(response.notification.request.content.data?.deepLink ?? ''));
     });
     return () => subscription.remove();
   }, []);

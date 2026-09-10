@@ -756,6 +756,8 @@
     $('#contact-form').addEventListener('submit', createContact);
     $('#campaign-form').addEventListener('submit', createCampaign);
     $('#automation-form').addEventListener('submit', createAutomation);
+    $('#sched-form').addEventListener('submit', createScheduledAutomation);
+    $('#sched-form').addEventListener('change', updateSchedForm);
     $('#employee-form').addEventListener('submit', createEmployee);
     $('#credit-form').addEventListener('submit', purchaseCredits);
     $('#flag-form').addEventListener('submit', setFlag);
@@ -819,6 +821,9 @@
     if (view === 'factory') { showScreen('factory'); await loadFactory(); return; }
     if (view === 'marketplace') { showScreen('marketplace'); await loadMarketplace(); return; }
     if (view === 'workspace') { showScreen('workspace'); await loadWorkspace(); return; }
+    if (view === 'automations') { showScreen('automations'); await loadAutomations(); return; }
+    const schedMatch = view.match(/^automations\/([A-Za-z0-9_-]+)$/);
+    if (schedMatch) { showScreen('automations'); await loadAutomations(schedMatch[1]); return; }
     if (view === 'crm') { showScreen('crm'); await loadCrm(); return; }
     if (view === 'billing') { showScreen('billing'); await loadBilling(); return; }
     if (view === 'settings') { showScreen('settings'); await loadSettings(); return; }
@@ -895,6 +900,7 @@
       factory: 'screen-factory',
       marketplace: 'screen-marketplace',
       workspace: 'screen-workspace',
+      automations: 'screen-automations',
       crm: 'screen-crm',
       billing: 'screen-billing',
       admin: 'screen-admin',
@@ -1513,6 +1519,100 @@
 
   async function loadWorkspace() {
     await loadProjects();
+  }
+
+  /* ----- Scheduled automations (Automation milestone) ----- */
+  let schedSelected = null;
+
+  function describeSchedule(s) {
+    if (!s) return '';
+    if (s.kind === 'once') return `Once · ${new Date(s.runAt).toLocaleString()}`;
+    if (s.kind === 'cron') return `Cron ${s.expr} · ${s.tz || 'UTC'}`;
+    const sec = s.seconds || 0;
+    if (sec % 86400 === 0) return `Every ${sec / 86400}d`;
+    if (sec % 3600 === 0) return `Every ${sec / 3600}h`;
+    return `Every ${sec}m`;
+  }
+
+  function updateSchedForm() {
+    const form = $('#sched-form');
+    const kind = form.elements.namedItem('kind').value;
+    form.elements.namedItem('minutes').hidden = kind !== 'interval';
+    form.elements.namedItem('cron_expr').hidden = kind !== 'cron';
+    form.elements.namedItem('cron_tz').hidden = kind !== 'cron';
+    form.elements.namedItem('run_at').hidden = kind !== 'once';
+  }
+
+  async function loadAutomations(selectedId) {
+    schedSelected = selectedId || schedSelected;
+    skeleton('#sched-list', 3);
+    const body = await api('/api/automations').catch(() => ({ automations: [] }));
+    const items = body.automations || [];
+    $('#sched-list').innerHTML = items.map((a) => `
+      <div class="list-item" data-id="${esc(a.id)}"><div><b>${esc(a.name)}</b><small>${esc(describeSchedule(a.schedule))} · ${a.steps.length} step${a.steps.length === 1 ? '' : 's'} · ${a.runCount} run${a.runCount === 1 ? '' : 's'}${a.failCount ? ` · ${a.failCount} failed` : ''}</small><small>${a.status === 'active' ? `Next: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString() : '—'}` : 'Paused'}</small></div><div class="list-actions">${badge(a.status === 'active' ? 'active' : 'disabled')}<button class="btn btn-ghost btn-sm" data-act="toggle" data-id="${esc(a.id)}" data-status="${esc(a.status)}">${a.status === 'active' ? 'Pause' : 'Resume'}</button><button class="btn btn-ghost btn-sm" data-act="run" data-id="${esc(a.id)}">Run now</button><button class="btn btn-ghost btn-sm" data-act="runs" data-id="${esc(a.id)}">Runs</button><button class="btn btn-ghost btn-sm" data-act="delete" data-id="${esc(a.id)}">Delete</button></div></div>`).join('') || '<div class="list-item"><small>No automations yet — create one on the left.</small></div>';
+    $('#sched-list').querySelectorAll('button[data-act]').forEach((button) => { button.addEventListener('click', schedAction); });
+    updateSchedForm();
+    if (schedSelected) await loadAutomationRuns(schedSelected);
+  }
+
+  async function loadAutomationRuns(id) {
+    const panel = $('#sched-runs-panel');
+    panel.hidden = false;
+    skeleton('#sched-runs', 3);
+    const body = await api(`/api/automations/${encodeURIComponent(id)}/runs`).catch(() => ({ runs: [] }));
+    $('#sched-runs').innerHTML = (body.runs || []).map((r) => `<div class="list-item"><div><b>${r.triggerReason === 'manual' ? 'Manual run' : 'Scheduled run'}</b><small>${r.startedAt ? new Date(r.startedAt).toLocaleString() : (r.scheduledFor ? new Date(r.scheduledFor).toLocaleString() : '')}</small>${r.errorMessage ? `<small>${esc(r.errorMessage)}</small>` : ''}</div>${badge(r.status)}</div>`).join('') || '<div class="list-item"><small>No runs yet.</small></div>';
+  }
+
+  async function schedAction(event) {
+    const button = event.currentTarget;
+    const { act, id } = button.dataset;
+    try {
+      if (act === 'toggle') {
+        const status = button.dataset.status;
+        await api(`/api/automations/${encodeURIComponent(id)}/${status === 'active' ? 'pause' : 'resume'}`, { method: 'POST' });
+        toast(status === 'active' ? 'Automation paused' : 'Automation resumed', 'ok');
+      } else if (act === 'run') {
+        await api(`/api/automations/${encodeURIComponent(id)}/run`, { method: 'POST' });
+        toast('Run started', 'ok');
+        schedSelected = id;
+      } else if (act === 'runs') {
+        schedSelected = id;
+        await loadAutomationRuns(id);
+        return;
+      } else if (act === 'delete') {
+        if (!window.confirm('Delete this automation? Open runs are cancelled.')) return;
+        await api(`/api/automations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        toast('Automation deleted', 'ok');
+        if (schedSelected === id) { schedSelected = null; $('#sched-runs-panel').hidden = true; }
+      }
+    } catch (e) { toast(e.message, 'err'); }
+    await loadAutomations();
+  }
+
+  async function createScheduledAutomation(event) {
+    event.preventDefault();
+    const form = event.target;
+    const kind = form.elements.namedItem('kind').value;
+    let schedule;
+    if (kind === 'interval') {
+      const minutes = Math.max(1, Number(form.elements.namedItem('minutes').value || '60'));
+      schedule = { kind: 'interval', seconds: minutes * 60 };
+    } else if (kind === 'cron') {
+      schedule = { kind: 'cron', expr: form.elements.namedItem('cron_expr').value.trim(), tz: form.elements.namedItem('cron_tz').value.trim() || 'UTC' };
+    } else {
+      schedule = { kind: 'once', run_at: form.elements.namedItem('run_at').value.trim() };
+    }
+    const steps = form.elements.namedItem('steps').value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+      const [agentSlug, ...rest] = line.split('|');
+      return { agent_slug: agentSlug.trim(), goal: rest.join('|').trim() };
+    }).filter((step) => step.agent_slug && step.goal);
+    try {
+      await api('/api/automations', { method: 'POST', body: JSON.stringify({ name: form.elements.namedItem('name').value.trim(), schedule, steps }) });
+      toast('Automation created', 'ok');
+      form.reset();
+      updateSchedForm();
+      await loadAutomations();
+    } catch (e) { toast(e.message, 'err'); }
   }
 
   async function loadCrm() {

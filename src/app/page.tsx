@@ -62,7 +62,9 @@ export default function Home() {
       AKBARAL!</span></a><nav className="main-nav" id="main-nav" aria-label="Primary navigation"><a href="#/dashboard"><span className="nav-dot"></span>
 
       Dashboard</a><a href="#/master"><span className="nav-dot"></span>
-      MASTER AI</a><a href="#/agents"><span className="nav-dot"></span>
+      MASTER AI</a><a href="#/automations"><span className="nav-dot"></span>
+
+      Automations</a><a href="#/agents"><span className="nav-dot"></span>
       Agent World</a><a href="#/factory"><span className="nav-dot"></span>
       Agent Factory</a><a href="#/marketplace"><span className="nav-dot"></span>
       Marketplace</a><a href="#/workspace"><span className="nav-dot"></span>
@@ -443,6 +445,22 @@ export default function Home() {
             Knowledge search</h3><form id="knowledge-form"><input placeholder="Search your knowledge" required aria-label="Search knowledge" /><button className="btn btn-primary" type="submit">
 
             Search</button></form><div id="knowledge-results" className="list"></div></div></div><div className="panel" id="project-workspace"></div></div></section>
+
+      {/* ================= Automations (scheduled workflows) ================= */}
+      <section className="screen screen-default" id="screen-automations" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Automation"></p><h1>
+
+        Scheduled Automations</h1><p className="sub">One-time, recurring and timezone-aware schedules that run registered agents through the MASTER orchestrator — with retries, timeouts, refunds and notifications.</p></div></div><div className="cols-2"><div className="panel"><h3>
+
+
+            Create automation</h3><form id="sched-form"><input name="name" placeholder="Name (e.g. Morning research)" required aria-label="Automation name" /><select name="kind" aria-label="Schedule kind"><option value="interval">Interval (every N minutes)</option><option value="cron">Cron (timezone-aware)</option><option value="once">One-time</option></select><input name="minutes" type="number" min="1" placeholder="Every N minutes (interval)" aria-label="Interval minutes" /><input name="cron_expr" placeholder="Cron: minute hour dom month dow" aria-label="Cron expression" /><input name="cron_tz" placeholder="Timezone (e.g. Asia/Karachi)" aria-label="Cron timezone" /><input name="run_at" placeholder="Run at (ISO 8601, one-time)" aria-label="One-time run at" /><textarea name="steps" rows={4} placeholder={'One step per line: agent-slug | goal\ne.g. research-researcher-002 | Summarize today\u2019s AI news'} aria-label="Steps"></textarea><button className="btn btn-primary" type="submit">
+
+            Create</button></form><p className="sub" id="sched-hint"></p></div><div className="panel"><h3>
+
+
+            Your automations</h3><div id="sched-list" className="list"></div></div></div><div className="panel" id="sched-runs-panel" hidden><h3>
+
+
+            Runs</h3><div id="sched-runs" className="list"></div></div></div></section>
 
       {/* ================= CRM ================= */}
       <section className="screen screen-default" id="screen-crm" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Revenue"></p><h1>

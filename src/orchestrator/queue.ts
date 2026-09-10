@@ -67,6 +67,8 @@ interface AgentJobPayload {
 
 interface WorkflowJobPayload {
   workflowId: string;
+  /** Per-run timeout override (automations); falls back to the queue default. */
+  timeoutMs?: number;
 }
 
 const TERMINAL_JOB_STATUSES: ReadonlySet<QueueJobStatus> = new Set([
@@ -164,6 +166,7 @@ export class ExecutionQueue {
     userId?: string | null;
     priority?: number;
     maxAttempts?: number;
+    timeoutMs?: number;
   }): { job: ExecutionJobRow; created: boolean } {
     const idempotencyKey = `workflow:${input.workflowId}`;
     const duplicate = findJobByIdempotencyKey(idempotencyKey);
@@ -173,7 +176,10 @@ export class ExecutionQueue {
     const job = insertJob({
       jobType: 'workflow',
       idempotencyKey,
-      payload: { workflowId: input.workflowId },
+      payload: {
+        workflowId: input.workflowId,
+        ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+      },
       workflowId: input.workflowId,
       userId: input.userId ?? null,
       priority: input.priority ?? 100,
@@ -384,16 +390,17 @@ export class ExecutionQueue {
     const payload = JSON.parse(job.payload_json) as WorkflowJobPayload;
     const attemptId = latestAttemptId(job.id);
 
+    const timeoutMs = payload.timeoutMs ?? this.workflowTimeoutMs;
     const outcome = await raceWithTimeout(
       runWorkflow(payload.workflowId, this.stream ?? undefined, {
         isCancelled,
         stepTimeoutMs: this.stepTimeoutMs,
       }),
-      this.workflowTimeoutMs,
+      timeoutMs,
     );
 
     if (outcome.timedOut) {
-      const message = `timed_out: workflow exceeded ${this.workflowTimeoutMs}ms`;
+      const message = `timed_out: workflow exceeded ${timeoutMs}ms`;
       db.run(
         `UPDATE workflows SET status='failed', error_message=?, completed_at=? WHERE id=? AND status IN ('planned','running')`,
         [message, new Date().toISOString(), payload.workflowId],

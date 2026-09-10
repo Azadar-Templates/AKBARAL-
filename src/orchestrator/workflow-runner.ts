@@ -145,7 +145,9 @@ export async function runWorkflow(
       continue;
     }
 
-    const goal = String(workflow.goal ?? 'Untitled workflow');
+    // Automations carry a per-step goal; MASTER-planned workflows fall back
+    // to the workflow goal.
+    const goal = step.goal ? String(step.goal) : String(workflow.goal ?? 'Untitled workflow');
     updateWorkflowStepStatus({ id: String(step.id), status: 'running' });
     stream?.pushStatus({
       executionId: workflowId,

@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
 import { Badge, Card, EmptyState, LoadingState, PageHeader, Pill, ScreenShell } from '../components/ui';
 import { subscribeExecutionEvents, type ExecutionLogEvent, type LiveState, type LiveSubscription } from '../services/sse';
+import { AutomationsScreen } from './AutomationsScreen';
 
 /**
  * M12 mobile task center — the same contract as the web task center:
@@ -74,6 +75,8 @@ export function TasksScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const deepLinkId = (route.params as { taskId?: string } | undefined)?.taskId;
+  const automationId = (route.params as { automationId?: string } | undefined)?.automationId;
+  const viewAutomations = (route.params as { viewAutomations?: boolean } | undefined)?.viewAutomations;
 
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,10 +105,15 @@ export function TasksScreen() {
     if (deepLinkId) {
       setOpenId(deepLinkId);
       // Clear the param so back-navigation from detail returns to the list.
-      const setParams = (navigation as unknown as { setParams: (params: { taskId?: string }) => void }).setParams;
+      const setParams = (navigation as unknown as { setParams: (params: Record<string, unknown>) => void }).setParams;
       setParams({ taskId: undefined });
     }
   }, [deepLinkId, navigation]);
+
+  // Automations live behind the Tasks tab (deep links + toolbar entry).
+  if (automationId || viewAutomations) {
+    return <AutomationsScreen initialAutomationId={automationId} />;
+  }
 
   const closeDetail = useCallback(() => {
     setOpenId(null);
@@ -125,9 +133,19 @@ export function TasksScreen() {
       <PageHeader kicker="Task center" title="Tasks" />
       <View style={styles.toolbar}>
         <Pill label={`${tasks.length} task${tasks.length === 1 ? '' : 's'}`} tone="cyan" />
-        <Pressable onPress={() => void loadTasks()} hitSlop={8}>
-          <Text style={styles.refresh}>{loading ? 'Refreshing…' : '↻ Refresh'}</Text>
-        </Pressable>
+        <View style={styles.toolbarRight}>
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              const setParams = (navigation as unknown as { setParams: (params: Record<string, unknown>) => void }).setParams;
+              setParams({ viewAutomations: true });
+            }}>
+            <Text style={styles.automationsLink}>⚡ Automations</Text>
+          </Pressable>
+          <Pressable onPress={() => void loadTasks()} hitSlop={8}>
+            <Text style={styles.refresh}>{loading ? 'Refreshing…' : '↻ Refresh'}</Text>
+          </Pressable>
+        </View>
       </View>
       {loading && tasks.length === 0 ? (
         <LoadingState text="Loading tasks…" />
@@ -320,6 +338,8 @@ function TaskDetailScreen({ taskId, onClose }: { taskId: string; onClose: () => 
 const styles = StyleSheet.create({
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   refresh: { color: palette.cyan, fontWeight: '800', fontSize: 13 },
+  toolbarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  automationsLink: { color: palette.violet, fontWeight: '800', fontSize: 13 },
   item: { padding: spacing.md },
   itemRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   itemBody: { flex: 1, paddingRight: spacing.sm },

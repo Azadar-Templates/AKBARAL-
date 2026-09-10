@@ -165,8 +165,13 @@ runtime image, `/api/ready` healthcheck, nightly verified backup cron);
    Expo push notifications (device registration + honest failure
    reporting). Remaining for store release: an EAS build with a projectId
    (required for real Expo push tokens) and app-store assets.
-6. **Automation / AI employees** — scheduled/recurring workflows, trigger
-   system, long-lived agent budgets: not implemented.
+6. **Automation / AI employees** — scheduled/recurring workflows ARE
+   implemented (one-time, timezone-aware cron and interval schedules,
+   multi-step agent workflows through the MASTER orchestrator, retries,
+   timeouts, refunds, notifications, crash recovery; web + mobile clients).
+   Remaining for later: event-driven triggers beyond schedules (webhooks,
+   task.completed hooks) and long-lived agent budgets. Legacy CRM
+   trigger-key automations remain a data skeleton (no execution), unchanged.
 7. **Social/marketing integrations** (YouTube/Instagram/X/Shopify/Twilio) —
    surfaced honestly as credentials required by specialist agents; no
    built-in connectors.
