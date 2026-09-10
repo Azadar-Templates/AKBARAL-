@@ -82,13 +82,16 @@ fallback chain (all original assets — nothing copyrighted):
 **To enable the production video:** place a dark, cinematic, AI-themed
 loop at `public/media/hero-loop.mp4` (H.264, ideally ≤ 4 MB, ~10–20 s,
 no audio, 1920×1080 or wider). The server component checks the file at
-render time and exposes `window.__AKBARAL_HERO_VIDEO__ = true` only when
-it exists — the client then plays it (autoplay/muted/loop/playsInline,
-runtime errors fall back to the canvas) with **no network probing** (a
-HEAD 404 on every visit would log console errors). When the file is
-absent (current state) the original canvas intelligence-network animation
-runs instead. Adding/removing the video requires a dev-server restart or
-production rebuild for the flag to update. Mobile / `saveData` /
+render time and emits `<meta name="akbaral-hero-video" content="1">` only
+when it exists — the client reads that meta tag (pure data: no inline
+script, no pre-hydration mutation) and plays the video
+(autoplay/muted/loop/playsInline, runtime errors fall back to the canvas)
+with **no network probing** (a HEAD 404 on every visit would log console
+errors). When the file is absent (current state) the original canvas
+intelligence-network animation runs instead. Adding/removing the video
+requires a dev-server restart or production rebuild for the flag to
+update. The AdSense publisher id travels the same way, via
+`<meta name="akbaral-adsense-client">`. Mobile / `saveData` /
 reduced-motion users always get the lightweight path (light canvas budget
 or still poster). No layout shift in any mode.
 

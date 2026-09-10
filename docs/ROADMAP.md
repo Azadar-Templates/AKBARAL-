@@ -668,6 +668,19 @@ logs, results), deep links, push notifications.
       local `.env` fixture wiring can no longer make the honest-failure path
       succeed. Full suite 200/200.
 
+**Chunk 1a — hydration fix completed (2026-09-10):** live preview logs
+showed React 19's concurrent/streaming hydration can still be mid-flight
+when the window `load` event fires, so the load-gated bootstrap could
+mutate the DOM before hydration finished. Final architecture: ALL
+React-rendered scripts removed from the layout — the SPA bundle now loads
+via `next/script` `afterInteractive` (Next.js injects it only after
+hydration completes, making pre-hydration mutations structurally
+impossible), server→client flags (hero video, AdSense id) travel as
+`<meta>` tags read by the client, the pre-paint theme snippet is gone
+(theme applies post-hydration from boot), and `suppressHydrationWarning`
+was removed as no longer needed. Design unchanged; 200/200 tests,
+typecheck clean, build green; preview verified.
+
 **Remaining for M12:** mobile shell wiring (task center, live logs, results
 via the same channels), deep-link handling, push notifications.
 

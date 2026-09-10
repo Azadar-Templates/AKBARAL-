@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import Script from 'next/script';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
@@ -10,11 +11,12 @@ export const metadata: Metadata = {
 
 /**
  * Hero background-video slot (see docs/DESIGN.md):
- * when public/media/hero-loop.mp4 exists, the server exposes a flag so the
- * client plays it directly — no network probing (a HEAD 404 on every visit
- * would log console errors). Without the file the client runs the original
- * canvas intelligence-network animation. Adding/removing the video requires
- * a dev restart / production rebuild for this flag to update.
+ * when public/media/hero-loop.mp4 exists, the server exposes a META FLAG so
+ * the client plays it directly — no network probing (a HEAD 404 on every
+ * visit would log console errors) and no inline script (React-rendered
+ * scripts caused hydration errors). Without the file the client runs the
+ * original canvas intelligence-network animation. Adding/removing the video
+ * requires a dev restart / production rebuild for this flag to update.
  */
 const heroVideoPath = path.join(process.cwd(), 'public', 'media', 'hero-loop.mp4');
 const heroVideoEnabled = existsSync(heroVideoPath);
@@ -26,36 +28,36 @@ const heroVideoEnabled = existsSync(heroVideoPath);
  * - When AKBARAL_ADSENSE_CLIENT is NOT set (the current launch default), the
  *   web app exposes NO ad client id, loads NO ad script, renders NO ad slots
  *   and serves NO ads.txt. Nothing pretends to be monetized.
- * - When an operator sets a real publisher id, only the id is exposed here;
- *   the client (public/app.js) still loads the AdSense script only after the
- *   visitor accepts the advertising-consent banner, and slots are clearly
- *   labelled "Advertisement" in non-intrusive positions.
+ * - When an operator sets a real publisher id, only the id is exposed (as a
+ *   meta tag read by the client); the AdSense script still loads only after
+ *   the visitor accepts the advertising-consent banner, and slots are
+ *   clearly labelled "Advertisement" in non-intrusive positions.
  */
 const adsenseClient = (process.env.AKBARAL_ADSENSE_CLIENT ?? '').trim();
 
 /**
- * Pre-paint theme restore. The SPA bootstrap (public/app.js) intentionally
- * waits until AFTER React hydration to touch the DOM (prevents hydration
- * mismatches), so without this snippet light-theme users would see a dark
- * flash first. This inline snippet only touches <html data-theme>, which
- * carries suppressHydrationWarning — the officially sanctioned pattern for
- * exactly this (see next-themes).
+ * NO React-rendered scripts and NO pre-hydration DOM mutations — by design.
+ *
+ * - Server→client configuration travels via <meta> tags (pure data; no
+ *   execution, no mutation): `akbaral-hero-video` and
+ *   `akbaral-adsense-client` are read by public/app.js.
+ * - The theme is NOT restored by an inline pre-paint snippet (that mutated
+ *   <html data-theme> before hydration). The server renders the dark
+ *   identity by default and public/app.js applies the stored theme from
+ *   inside boot(), which runs strictly after hydration.
+ * - The SPA bundle loads via next/script `afterInteractive` — Next.js
+ *   injects it after hydration, so the raw <script> tag that React had to
+ *   hydrate (a hydration-error source) is gone. The bundle additionally
+ *   self-gates on the window load event as defense in depth.
  */
-const themeSnippet = `try{var t=localStorage.getItem('ak_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}`;
-
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    // suppressHydrationWarning: the theme attribute may be set pre-hydration
-    // by the snippet above (or post-hydration by the SPA) — React must not
-    // treat that as a mismatch.
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" data-theme="dark">
       <head>
         <meta name="color-scheme" content="light dark" />
         <meta name="theme-color" content="#050604" />
-        <script dangerouslySetInnerHTML={{ __html: themeSnippet }} />
-        {heroVideoEnabled ? (
-          <script dangerouslySetInnerHTML={{ __html: 'window.__AKBARAL_HERO_VIDEO__=true;' }} />
-        ) : null}
+        {heroVideoEnabled ? <meta name="akbaral-hero-video" content="1" /> : null}
+        {adsenseClient ? <meta name="akbaral-adsense-client" content={adsenseClient} /> : null}
         {/* Premium editorial type: Space Grotesk (display) + Inter (text),
             swapped with system fallbacks — never a render blocker. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -65,17 +67,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
         />
         <link rel="stylesheet" href="/styles.css?v=cinematic-v3" />
-        {adsenseClient ? (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `window.__AKBARAL_ADSENSE_CLIENT__=${JSON.stringify(adsenseClient)};`,
-            }}
-          />
-        ) : null}
       </head>
       <body>
         {children}
-        <script src="/app.js?v=cinematic-v3" />
+        <Script src="/app.js?v=cinematic-v4" strategy="afterInteractive" />
       </body>
     </html>
   );

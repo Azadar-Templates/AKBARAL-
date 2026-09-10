@@ -319,12 +319,12 @@
     // Mobile/save-data: canvas with a lighter node budget (no video fetch).
     const budget = isCoarse || saveData ? 'light' : 'full';
 
-    // The server component sets window.__AKBARAL_HERO_VIDEO__ = true ONLY
-    // when public/media/hero-loop.mp4 actually exists — so the no-video
-    // path performs no network probe at all (a HEAD 404 would log a
-    // console error on every visit). If the video errors at runtime, the
-    // original canvas network takes over.
-    const hasVideo = window.__AKBARAL_HERO_VIDEO__ === true;
+    // The server renders <meta name="akbaral-hero-video" content="1"> ONLY
+    // when public/media/hero-loop.mp4 actually exists — so the no-video path
+    // performs no network probe at all (a HEAD 404 would log a console error
+    // on every visit) and no inline script is needed. If the video errors at
+    // runtime, the original canvas network takes over.
+    const hasVideo = document.querySelector('meta[name="akbaral-hero-video"]')?.content === '1';
     if (video && hasVideo && !saveData) {
       video.classList.add('is-live');
       video.setAttribute('preload', 'auto');
@@ -529,7 +529,7 @@
    * Advertising consent (launch readiness / AdSense).
    *
    * HONEST BEHAVIOUR: when no publisher id is configured by the deployment
-   * (window.__AKBARAL_ADSENSE_CLIENT__ absent — the launch default), this
+   * (<meta name="akbaral-adsense-client"> absent — the launch default), this
    * module does NOTHING: no banner, no ad script, no slots, no cookies.
    * With a real publisher id configured, the AdSense script loads only
    * after the visitor accepts the consent banner; slots are clearly
@@ -538,7 +538,7 @@
    * and nothing asks or rewards clicking ads.
    * ------------------------------------------------------------------ */
   function initAds() {
-    const client = window.__AKBARAL_ADSENSE_CLIENT__;
+    const client = document.querySelector('meta[name="akbaral-adsense-client"]')?.content?.trim() || '';
     if (!client) return; // advertising not configured -> no ads, no banner
     const banner = $('#ads-consent');
     if (!banner) return;
