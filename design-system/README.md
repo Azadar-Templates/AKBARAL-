@@ -22,12 +22,14 @@ outputs. Never hand-edit the generated files.
 
 ## Identity
 
-1. **Obsidian first.** Deep blue-black canvas (`#06070f` family). Content floats on
-   space, never on flat gray.
-2. **Indigo/violet is the only atmosphere.** `accent2 #5d6ff0 → accent #9d8cff`,
-   used as glows, gradients and soft radial fields — subtle, never floods.
-3. **Premium glass, rarely.** Sticky header, auth card, dialogs, toasts, toasts and
-   overlays get blur (web) / solid + sheen (mobile). Cards do not.
+1. **Obsidian first.** Neutral deep-black canvas (`#050506` family, no color
+   tint). Content floats on space, never on flat gray.
+2. **Restraint is the accent.** One indigo/violet family
+   (`accent2 #7378e8 → accent #9790f2`) for meaning, never decoration;
+   the **ivory primary action** (`#ececee` solid, dark label — inverted in
+   light theme) carries confidence on buttons.
+3. **Premium glass, rarely.** Sticky header, auth card, dialogs and toasts
+   get blur (web) / solid + sheen (mobile). Cards do not.
 4. **Hairlines and fine grids** carry the technical elegance. 1px borders from the
    `line` ramp; fine background grids masked with radial fades.
 5. **Cinematic, restrained motion.** Reveal on scroll, parallax whisper, pulsing
@@ -52,15 +54,16 @@ symbols.
 | Role | Token | Value |
 |---|---|---|
 | Canvas | `bg` | `#06070f` |
-| Raised | `bg2` / `bg3` | `#0a0c18` / `#0e1122` |
-| Card surface | `surface` (solid) | `#0d1126` |
-| Text ramp | `text` → `textFaint` | `#eef0fc → #5f6790` |
-| Accent (violet) | `accent` | `#9d8cff` |
-| Accent (indigo) | `accent2` | `#5d6ff0` |
-| Live telemetry (cyan) | `telemetry` | `#6fd7ff` — running/live states only |
-| Success | `green` | `#62d99a` |
-| Failure | `red` | `#ff6b81` |
-| Pending/queued | `amber` | `#f2b95e` |
+| Raised | `bg2` / `bg3` | `#0d0d10` / `#121217` |
+| Card surface | `surface` (solid) | `#101014` |
+| Text ramp | `text` → `textFaint` | `#f0f0f2 → #5d5d66` |
+| Primary action | `ivory` / `onIvory` | `#ececee` / `#0b0b0d` |
+| Accent (violet) | `accent` | `#9790f2` |
+| Accent (indigo) | `accent2` | `#7378e8` |
+| Live telemetry (cyan) | `telemetry` | `#8fc7de` — running/live states only |
+| Success | `green` | `#7fc9a4` |
+| Failure | `red` | `#e58a97` |
+| Pending/queued | `amber` | `#dcb26a` |
 
 The website additionally ships a light theme (`tokens.css` `[data-theme="light"]`).
 The mobile app is dark-only by identity; iOS will ship dark-first with the same
@@ -68,7 +71,7 @@ dynamic-color pattern already encoded in `AKBARALTheme.swift`.
 
 ## Typography
 
-- **Web:** Space Grotesk (display) + Inter (text) + Space Grotesk Mono (technical)
+- **Web:** Sora (display) + Inter (text) + Space Grotesk Mono (technical)
   via Google Fonts, system fallbacks.
 - **Mobile:** the native system font (SF Pro / Roboto) with the same scale, weight
   and tracking semantics — native rendering, identical voice.

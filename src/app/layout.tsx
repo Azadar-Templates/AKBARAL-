@@ -55,23 +55,23 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" data-theme="dark">
       <head>
         <meta name="color-scheme" content="light dark" />
-        <meta name="theme-color" content="#06070f" />
+        <meta name="theme-color" content="#08080a" />
         {heroVideoEnabled ? <meta name="akbaral-hero-video" content="1" /> : null}
         {adsenseClient ? <meta name="akbaral-adsense-client" content={adsenseClient} /> : null}
-        {/* Premium editorial type: Space Grotesk (display) + Inter (text),
+        {/* Premium editorial type: Sora (display) + Inter (text) + Space Grotesk Mono (technical),
             swapped with system fallbacks — never a render blocker. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Grotesk+Mono:wght@400;500&display=swap"
         />
-        <link rel="stylesheet" href="/tokens.css?v=akbaral-lux-3" />
-        <link rel="stylesheet" href="/styles.css?v=akbaral-lux-3" />
+        <link rel="stylesheet" href="/tokens.css?v=akbaral-lux-4" />
+        <link rel="stylesheet" href="/styles.css?v=akbaral-lux-4" />
       </head>
       <body>
         {children}
-        <Script src="/app.js?v=akbaral-lux-3" strategy="afterInteractive" />
+        <Script src="/app.js?v=akbaral-lux-4" strategy="afterInteractive" />
       </body>
     </html>
   );

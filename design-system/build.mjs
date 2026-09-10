@@ -30,7 +30,7 @@ const cssColorMap = [
   ['line', '--line'], ['lineStrong', '--line-strong'], ['lineFaint', '--line-faint'], ['lineAccent', '--line-accent'],
   ['text', '--text'], ['text2', '--text-2'], ['textDim', '--text-dim'], ['textFaint', '--text-faint'],
   ['accent', '--accent'], ['accent2', '--accent-2'], ['accentSoft', '--accent-soft'], ['indigoSoft', '--indigo-soft'],
-  ['onAccent', '--on-accent'],
+  ['onAccent', '--on-accent'], ['ivory', '--ivory'], ['onIvory', '--on-ivory'],
   ['telemetry', '--telemetry'], ['telemetrySoft', '--telemetry-soft'],
   ['green', '--green'], ['greenSoft', '--green-soft'],
   ['red', '--red'], ['redSoft', '--red-soft'],

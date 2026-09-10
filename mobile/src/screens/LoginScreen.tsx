@@ -52,7 +52,7 @@ export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: 
 
   return (
     <KeyboardAvoidingView style={styles.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <LinearGradient colors={['rgba(93,111,240,0.22)', 'rgba(9,11,24,0)', 'rgba(157,140,255,0.12)']} locations={[0, 0.5, 1]} style={styles.atmosphere} pointerEvents="none" />
+      <LinearGradient colors={['rgba(115,120,232,0.22)', 'rgba(8,8,10,0)', 'rgba(151,144,242,0.12)']} locations={[0, 0.5, 1]} style={styles.atmosphere} pointerEvents="none" />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <FadeIn>
         <View style={styles.brandWrap}>

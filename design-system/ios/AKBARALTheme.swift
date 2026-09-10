@@ -1,7 +1,7 @@
 // ============================================================
 // AKBARALTheme.swift — AKBARAL! Design System tokens for iOS.
 //
-// GENERATED from design-system/tokens.json (v1.0.0) —
+// GENERATED from design-system/tokens.json (v2.0.0) —
 // run `node design-system/build.mjs` after token edits.
 //
 // STATUS: prepared design tokens for the FUTURE iOS app. There is
@@ -34,88 +34,88 @@ enum AKBARALTheme {
 
     /// Deepest obsidian layer (footers, wells).
     static let bgDeep = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#030409") : hex("#e2e5f1")
+        trait.userInterfaceStyle == .dark ? hex("#050506") : hex("#e3e3e8")
     }
     /// Base obsidian canvas.
     static let bg = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#06070f") : hex("#eef0f9")
+        trait.userInterfaceStyle == .dark ? hex("#08080a") : hex("#ededf0")
     }
     /// Raised obsidian (cards, bars).
     static let bg2 = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#0a0c18") : hex("#f3f5fc")
+        trait.userInterfaceStyle == .dark ? hex("#0d0d10") : hex("#f2f2f5")
     }
     /// Highest obsidian (hover, emphasis).
     static let bg3 = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#0e1122") : hex("#e6e9f4")
+        trait.userInterfaceStyle == .dark ? hex("#121217") : hex("#e6e6ea")
     }
     /// Card surface.
     static let surface = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#0d1126") : hex("#fbfcff")
+        trait.userInterfaceStyle == .dark ? hex("#101014") : hex("#fcfcfd")
     }
     /// Secondary surface.
     static let surface2 = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#121736") : hex("#f2f4fb")
+        trait.userInterfaceStyle == .dark ? hex("#17171d") : hex("#f2f2f5")
     }
     /// Strong surface (dialogs, sheets).
     static let surfaceStrong = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#10142a") : hex("#fbfcff")
+        trait.userInterfaceStyle == .dark ? hex("#15151b") : hex("#fcfcfd")
     }
 
     // MARK: - Text ramp
 
     /// Primary text.
     static let text = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#eef0fc") : hex("#16192e")
+        trait.userInterfaceStyle == .dark ? hex("#f0f0f2") : hex("#16161a")
     }
     /// Secondary text.
     static let text2 = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#b9bfe2") : hex("#3a3f5c")
+        trait.userInterfaceStyle == .dark ? hex("#b8b8c0") : hex("#3c3c44")
     }
     /// Muted text / labels.
     static let textDim = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#8a92bb") : hex("#565c7c")
+        trait.userInterfaceStyle == .dark ? hex("#87878f") : hex("#5a5a63")
     }
     /// Faint text / metadata.
     static let textFaint = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#5f6790") : hex("#757ca0")
+        trait.userInterfaceStyle == .dark ? hex("#5d5d66") : hex("#7b7b84")
     }
 
     // MARK: - Atmosphere (the only accent family)
 
     /// Violet — the AKBARAL! accent.
     static let accent = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#9d8cff") : hex("#6f5bd6")
+        trait.userInterfaceStyle == .dark ? hex("#9790f2") : hex("#6f68d8")
     }
     /// Indigo — accent companion.
     static let accent2 = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#5d6ff0") : hex("#4a55d6")
+        trait.userInterfaceStyle == .dark ? hex("#7378e8") : hex("#5459cc")
     }
     /// Text on accent fills.
     static let onAccent = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#f5f4ff") : hex("#ffffff")
+        trait.userInterfaceStyle == .dark ? hex("#0b0b0d") : hex("#ffffff")
     }
     /// Cyan — live/running telemetry only.
     static let telemetry = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#6fd7ff") : hex("#1e7fae")
+        trait.userInterfaceStyle == .dark ? hex("#8fc7de") : hex("#2e7d9e")
     }
 
     // MARK: - Status
 
     /// Success / completed / active.
     static let statusGreen = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#62d99a") : hex("#237a4e")
+        trait.userInterfaceStyle == .dark ? hex("#7fc9a4") : hex("#2e7d52")
     }
     /// Failure / blocked / disabled.
     static let statusRed = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#ff6b81") : hex("#b23a4d")
+        trait.userInterfaceStyle == .dark ? hex("#e58a97") : hex("#b0455a")
     }
     /// Pending / queued / retrying.
     static let statusAmber = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#f2b95e") : hex("#96690f")
+        trait.userInterfaceStyle == .dark ? hex("#dcb26a") : hex("#96702a")
     }
     /// Informational.
     static let statusBlue = UIColor { trait in
-        trait.userInterfaceStyle == .dark ? hex("#7f9dff") : hex("#3b5bbf")
+        trait.userInterfaceStyle == .dark ? hex("#9db1e0") : hex("#44599e")
     }
 
     // MARK: - Spacing (pt)
@@ -132,10 +132,10 @@ enum AKBARALTheme {
     // MARK: - Radii (pt)
 
     enum Radius {
-        static let sm: CGFloat   = 6
-        static let md: CGFloat   = 10
-        static let lg: CGFloat   = 14
-        static let xl: CGFloat   = 20
+        static let sm: CGFloat   = 4
+        static let md: CGFloat   = 8
+        static let lg: CGFloat   = 12
+        static let xl: CGFloat   = 18
     }
 
     // MARK: - Typography scale

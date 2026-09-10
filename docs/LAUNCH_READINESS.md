@@ -372,3 +372,16 @@ settled under prefers-reduced-motion (static snapshot). Verified by a
 static security audit, a Node execution harness (randomized, crash-free,
 all-strings), the full test suite, both typechecks, the production build
 and live asset checks.
+
+## LUX-4 quiet-luxury identity (2026-09-11, M14)
+
+Complete visual-language replacement (web + Android): neutral obsidian
+surfaces, muted silver lines, restrained indigo/violet accent and an ivory
+primary action that inverts in light theme; Sora/Inter/Grotesk-Mono type
+system; rebuilt single-row navbar with landing/app sets and a More
+dropdown (flattened in the ≤1023px mobile menu); recentered cinematic
+hero (video unchanged); architectural radii and quieter card/button
+motion across all surfaces. Verified: 254/254 tests, server + mobile
+typechecks, production build, live sweep (nav markup, tokens with ivory,
+hero video 200/206, six USD plans, 4,001-agent registry, demo console
+markers, QA auth round-trip). Functional behavior unchanged.

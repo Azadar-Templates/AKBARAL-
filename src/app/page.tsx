@@ -77,29 +77,28 @@ export default function Home() {
     <>
 <div id="boot-veil" aria-hidden="true"><div className="boot-core"><span className="boot-ring"></span><span className="boot-ring r2"></span><span className="boot-mark">A!</span></div><div className="boot-word">AKBARAL!</div><div className="boot-tagline">ONE INTELLIGENCE · EVERY SOLUTION</div><div className="boot-line"><i></i></div></div><div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
   Skip to content</a><header className="site-header" id="site-header"><a className="brand" href="#/" aria-label="AKBARAL home"><span className="brand-mark" aria-hidden="true"><span className="brand-mark-glow"></span>
-
       A!</span><span className="brand-text">
-      AKBARAL!</span></a><nav className="main-nav" id="main-nav" aria-label="Primary navigation"><a href="#/dashboard"><span className="nav-dot"></span>
-
-      Dashboard</a><a href="#/master"><span className="nav-dot"></span>
-      MASTER AI</a><a href="#/automations"><span className="nav-dot"></span>
-
-      Automations</a><a href="#/agents"><span className="nav-dot"></span>
-      Agent World</a><a href="#/factory"><span className="nav-dot"></span>
-      Agent Factory</a><a href="#/marketplace"><span className="nav-dot"></span>
-      Marketplace</a><a href="#/workspace"><span className="nav-dot"></span>
-      Workspace</a><a href="#/crm"><span className="nav-dot"></span>
-      CRM</a><a href="#/billing"><span className="nav-dot"></span>
-      Billing</a><a href="#/settings"><span className="nav-dot"></span>
-      Settings</a><a href="#/admin" className="admin-only" hidden><span className="nav-dot"></span>
-      Admin</a></nav><div className="header-actions"><button className="icon-btn theme-toggle" id="theme-toggle" type="button" aria-pressed="false" aria-label="Toggle color theme"><span className="theme-toggle-icon" aria-hidden="true">
-
+      AKBARAL!</span></a><nav className="main-nav" id="main-nav" aria-label="Primary navigation"><div className="nav-set nav-public">
+        <button type="button" data-scroll-to="intelligence">Platform</button>
+        <button type="button" data-scroll-to="agent-world">Agents</button>
+        <button type="button" data-scroll-to="trust">Security</button>
+        <button type="button" data-scroll-to="pricing">Pricing</button></div><div className="nav-set nav-app">
+        <a href="#/dashboard">Dashboard</a>
+        <a href="#/master">MASTER</a>
+        <a href="#/agents">Agents</a>
+        <a href="#/workspace">Workspace</a>
+        <a href="#/automations">Automations</a>
+        <a href="#/billing">Billing</a>
+        <div className="nav-more" id="nav-more"><button type="button" className="nav-more-btn" id="nav-more-btn" aria-expanded="false" aria-haspopup="true">More<i aria-hidden="true">⌄</i></button><div className="nav-more-panel" id="nav-more-panel">
+          <a href="#/factory">Agent Factory</a>
+          <a href="#/marketplace">Marketplace</a>
+          <a href="#/crm">CRM &amp; AI Employees</a>
+          <a href="#/settings">Settings</a>
+          <a href="#/admin" className="admin-only" hidden>Admin</a></div></div></div></nav><div className="header-actions"><button className="icon-btn theme-toggle" id="theme-toggle" type="button" aria-pressed="false" aria-label="Toggle color theme"><span className="theme-toggle-icon" aria-hidden="true">
         ◐</span></button><span className="credit-pill" id="credit-pill" title="Free task credits">
-
-
       …</span><span className="menu-toggle" id="menu-toggle" role="button" tabIndex={ 0 } aria-label="Toggle navigation menu" aria-expanded="false">
-      ☰</span><button className="btn btn-outline btn-sm" id="logout-btn" hidden>
-      Log out</button><button className="btn btn-outline btn-sm" id="login-btn" data-route="login">
+        ☰</span><button className="btn btn-ghost btn-sm" id="logout-btn" hidden>
+      Log out</button><button className="btn btn-ghost btn-sm" id="login-btn" data-route="login">
       Log in</button><button className="btn btn-primary btn-sm" id="start-free-nav" data-route="register">Start Building</button></div></header><main id="app-root">
 
       {/* ================= LANDING — cinematic hero ================= */}

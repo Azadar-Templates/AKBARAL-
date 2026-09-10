@@ -1026,6 +1026,36 @@ console — a visual, cinematic representation of a MASTER run.
   build, `node --check`, live markup/asset checks, clean server log.
   Assets `akbaral-lux-3`.
 
+### M14 — LUX-4 quiet-luxury visual identity (2026-09-11)
+
+A full replacement of the visual language across web and Android, per the
+24-point brief:
+
+- **Palette**: neutral obsidian surfaces (`#050506 → #17171d`, no blue
+  tint), muted silver lines, restrained indigo/violet accent
+  (`#7378e8/#9790f2`), soft-telemetry cyan, and a new **ivory primary
+  action** (`#ececee` gradient, dark label) that inverts in light theme.
+  No neon, no glassmorphism-heavy look, no gamer aesthetics.
+- **Typography**: Sora display + Inter text + Space Grotesk Mono
+  technical; sharper radius system (4/8/12/18) for an architectural feel.
+- **Navbar rebuilt**: one aligned row — wordmark · landing set
+  (Platform/Agents/Security/Pricing) while signed out · app set
+  (Dashboard/MASTER/Agents/Workspace/Automations/Billing + More
+  dropdown: Factory/Marketplace/CRM/Settings/Admin) while signed in ·
+  theme/credits/log in/Start Building. Premium compact dropdown with
+  flattened sub-items ≤1023px; nav compression 1024–1280px; no wrap
+  disasters 320→ultrawide.
+- **Hero recentered**: center-weighted cinematic composition, larger
+  display scale (up to 7rem), centered actions/meta, center-focused
+  veil. Hero video untouched (kept exactly as committed).
+- **Buttons/cards/forms**: ivory primary buttons web + Android, quieter
+  hovers (-1px lift, soft shadows), neutral editorial eyebrows,
+  obsidian form fields, architectural radii everywhere.
+- **Android**: same tokens regenerated (theme.ts + iOS Swift theme),
+  ivory primary button with dark label, old hardcoded atmospheres
+  swept to the new palette, notification color aligned.
+- Design-system version 2.0.0; assets `akbaral-lux-4`.
+
 ---
 
 ## Verification protocol (every milestone)

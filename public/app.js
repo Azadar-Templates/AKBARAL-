@@ -1002,7 +1002,25 @@
       setCoreState('idle', 'idle');
     });
 
-    $('#login-btn').addEventListener('click', () => { location.hash = '#/login'; });
+      // Header "More" dropdown: click to open, outside-click / Escape to close.
+  {
+    const moreBtn = $('#nav-more-btn');
+    const moreWrap = $('#nav-more');
+    const morePanel = $('#nav-more-panel');
+    if (moreBtn && moreWrap && morePanel) {
+      const close = () => { moreWrap.classList.remove('open'); moreBtn.setAttribute('aria-expanded', 'false'); };
+      moreBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const open = moreWrap.classList.toggle('open');
+        moreBtn.setAttribute('aria-expanded', String(open));
+      });
+      document.addEventListener('click', (event) => { if (!moreWrap.contains(event.target)) close(); });
+      document.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+      morePanel.addEventListener('click', close);
+    }
+  }
+
+  $('#login-btn').addEventListener('click', () => { location.hash = '#/login'; });
     $$('[data-route]').forEach((btn) => btn.addEventListener('click', () => { location.hash = `#/${btn.dataset.route}`; }));
     $('#explore-agents').addEventListener('click', () => {
       if (!state.accessToken) { location.hash = '#/login'; return; }
@@ -1284,6 +1302,9 @@
     $('#login-btn').hidden = Boolean(state.accessToken);
     $('#logout-btn').hidden = !state.accessToken;
     $('.admin-only').hidden = !isAdmin;
+    // One navigation system: landing links while signed out, app links
+    // while signed in (see .nav-set rules in styles.css).
+    document.body.classList.toggle('is-authed', Boolean(state.accessToken));
   }
 
   async function loadMe() {

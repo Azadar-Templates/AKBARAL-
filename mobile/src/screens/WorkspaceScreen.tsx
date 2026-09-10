@@ -33,7 +33,7 @@ export function WorkspaceScreen() {
 
   return (
     <View style={styles.screen}>
-      <LinearGradient colors={['rgba(93,111,240,0.16)', 'rgba(93,111,240,0.05)', 'rgba(9,11,24,0)']} locations={[0, 0.55, 1]} style={styles.atmosphere} pointerEvents="none" />
+      <LinearGradient colors={['rgba(115,120,232,0.16)', 'rgba(115,120,232,0.05)', 'rgba(8,8,10,0)']} locations={[0, 0.55, 1]} style={styles.atmosphere} pointerEvents="none" />
       <View style={styles.header}>
         <PageHeader kicker="Project vault" title="Workspace" />
         <View style={styles.searchRow}>

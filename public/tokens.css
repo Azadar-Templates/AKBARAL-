@@ -4,94 +4,98 @@
      node design-system/build.mjs
    Identity: obsidian foundation · indigo/violet atmosphere ·
    glass surfaces · cinematic lighting · technical elegance.
-   Version 1.0.0
+   Version 2.0.0
    ============================================================ */
 
 :root {
-  --bg-deep: #030409;
-  --bg: #06070f;
-  --bg-2: #0a0c18;
-  --bg-3: #0e1122;
-  --surface: rgba(150,160,238,0.045);
-  --surface-2: rgba(150,160,238,0.075);
-  --surface-strong: #10142a;
-  --glass: rgba(9,11,24,0.62);
-  --line: rgba(148,158,235,0.14);
-  --line-strong: rgba(148,158,235,0.28);
-  --line-faint: rgba(148,158,235,0.07);
-  --line-accent: rgba(157,140,255,0.36);
-  --text: #eef0fc;
-  --text-2: #b9bfe2;
-  --text-dim: #8a92bb;
-  --text-faint: #5f6790;
-  --accent: #9d8cff;
-  --accent-2: #5d6ff0;
-  --accent-soft: rgba(157,140,255,0.12);
-  --indigo-soft: rgba(93,111,240,0.16);
-  --on-accent: #f5f4ff;
-  --telemetry: #6fd7ff;
-  --telemetry-soft: rgba(111,215,255,0.12);
-  --green: #62d99a;
-  --green-soft: rgba(98,217,154,0.13);
-  --red: #ff6b81;
-  --red-soft: rgba(255,107,129,0.13);
-  --amber: #f2b95e;
-  --amber-soft: rgba(242,185,94,0.13);
-  --blue: #7f9dff;
-  --blue-soft: rgba(127,157,255,0.13);
+  --bg-deep: #050506;
+  --bg: #08080a;
+  --bg-2: #0d0d10;
+  --bg-3: #121217;
+  --surface: rgba(226,226,234,0.035);
+  --surface-2: rgba(226,226,234,0.06);
+  --surface-strong: #15151b;
+  --glass: rgba(10,10,13,0.7);
+  --line: rgba(226,226,234,0.08);
+  --line-strong: rgba(226,226,234,0.16);
+  --line-faint: rgba(226,226,234,0.045);
+  --line-accent: rgba(151,144,242,0.3);
+  --text: #f0f0f2;
+  --text-2: #b8b8c0;
+  --text-dim: #87878f;
+  --text-faint: #5d5d66;
+  --accent: #9790f2;
+  --accent-2: #7378e8;
+  --accent-soft: rgba(151,144,242,0.10);
+  --indigo-soft: rgba(115,120,232,0.12);
+  --on-accent: #0b0b0d;
+  --ivory: #ececee;
+  --on-ivory: #0b0b0d;
+  --telemetry: #8fc7de;
+  --telemetry-soft: rgba(143,199,222,0.11);
+  --green: #7fc9a4;
+  --green-soft: rgba(127,201,164,0.12);
+  --red: #e58a97;
+  --red-soft: rgba(229,138,151,0.12);
+  --amber: #dcb26a;
+  --amber-soft: rgba(220,178,106,0.12);
+  --blue: #9db1e0;
+  --blue-soft: rgba(157,177,224,0.12);
 }
 
 [data-theme="light"] {
-  --bg-deep: #e2e5f1;
-  --bg: #eef0f9;
-  --bg-2: #f3f5fc;
-  --bg-3: #e6e9f4;
-  --surface: rgba(23,26,46,0.045);
-  --surface-2: rgba(23,26,46,0.07);
-  --surface-strong: #fbfcff;
-  --glass: rgba(248,249,253,0.72);
-  --line: rgba(23,26,46,0.14);
-  --line-strong: rgba(23,26,46,0.28);
-  --line-faint: rgba(23,26,46,0.07);
-  --line-accent: rgba(93,90,214,0.4);
-  --text: #16192e;
-  --text-2: #3a3f5c;
-  --text-dim: #565c7c;
-  --text-faint: #757ca0;
-  --accent: #6f5bd6;
-  --accent-2: #4a55d6;
-  --accent-soft: rgba(111,91,214,0.1);
-  --indigo-soft: rgba(74,85,214,0.1);
+  --bg-deep: #e3e3e8;
+  --bg: #ededf0;
+  --bg-2: #f2f2f5;
+  --bg-3: #e6e6ea;
+  --surface: rgba(20,20,26,0.04);
+  --surface-2: rgba(20,20,26,0.06);
+  --surface-strong: #fcfcfd;
+  --glass: rgba(248,248,250,0.72);
+  --line: rgba(20,20,26,0.1);
+  --line-strong: rgba(20,20,26,0.2);
+  --line-faint: rgba(20,20,26,0.05);
+  --line-accent: rgba(103,96,214,0.34);
+  --text: #16161a;
+  --text-2: #3c3c44;
+  --text-dim: #5a5a63;
+  --text-faint: #7b7b84;
+  --accent: #6f68d8;
+  --accent-2: #5459cc;
+  --accent-soft: rgba(111,104,216,0.09);
+  --indigo-soft: rgba(84,89,204,0.09);
   --on-accent: #ffffff;
-  --telemetry: #1e7fae;
-  --telemetry-soft: rgba(30,127,174,0.1);
-  --green: #237a4e;
-  --green-soft: rgba(35,122,78,0.1);
-  --red: #b23a4d;
-  --red-soft: rgba(178,58,77,0.1);
-  --amber: #96690f;
-  --amber-soft: rgba(150,105,15,0.1);
-  --blue: #3b5bbf;
-  --blue-soft: rgba(59,91,191,0.1);
+  --ivory: #16161a;
+  --on-ivory: #16161a;
+  --telemetry: #2e7d9e;
+  --telemetry-soft: rgba(46,125,158,0.09);
+  --green: #2e7d52;
+  --green-soft: rgba(46,125,82,0.09);
+  --red: #b0455a;
+  --red-soft: rgba(176,69,90,0.09);
+  --amber: #96702a;
+  --amber-soft: rgba(150,112,42,0.09);
+  --blue: #44599e;
+  --blue-soft: rgba(68,89,158,0.09);
 }
 
 :root {
   /* Typography (families resolved per-platform; scale semantics in tokens.json) */
   --font-sans: "Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
-  --font-display: "Space Grotesk", "Inter", "SF Pro Display", system-ui, sans-serif;
+  --font-display: "Sora", "Inter", "SF Pro Display", system-ui, sans-serif;
   --font-mono: "Space Grotesk Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
   /* Radii */
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
 
   /* Shadows & glows */
-  --shadow: 0 24px 70px rgba(2,3,12,0.55);
-  --shadow-soft: 0 10px 34px rgba(2,3,12,0.38);
-  --glow-accent: 0 0 0 1px rgba(157,140,255,0.24), 0 12px 40px rgba(93,111,240,0.24);
-  --glow-telemetry: 0 0 0 1px rgba(111,215,255,0.22), 0 12px 36px rgba(111,215,255,0.16);
+  --shadow: 0 30px 80px rgba(0,0,0,0.5);
+  --shadow-soft: 0 12px 36px rgba(0,0,0,0.32);
+  --glow-accent: 0 0 0 1px rgba(151,144,242,0.22), 0 10px 30px rgba(115,120,232,0.14);
+  --glow-telemetry: 0 0 0 1px rgba(143,199,222,0.2), 0 10px 28px rgba(143,199,222,0.1);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22,0.61,0.36,1);
@@ -108,8 +112,8 @@
 }
 
 [data-theme="light"] {
-  --shadow: 0 24px 70px rgba(38,42,74,0.16);
-  --shadow-soft: 0 10px 34px rgba(38,42,74,0.1);
-  --glow-accent: 0 0 0 1px rgba(93,90,214,0.24), 0 12px 40px rgba(93,90,214,0.14);
-  --glow-telemetry: 0 0 0 1px rgba(30,127,174,0.2), 0 12px 36px rgba(30,127,174,0.1);
+  --shadow: 0 30px 80px rgba(24,24,32,0.14);
+  --shadow-soft: 0 12px 36px rgba(24,24,32,0.09);
+  --glow-accent: 0 0 0 1px rgba(103,96,214,0.22), 0 10px 30px rgba(103,96,214,0.1);
+  --glow-telemetry: 0 0 0 1px rgba(46,125,158,0.18), 0 10px 28px rgba(46,125,158,0.08);
 }

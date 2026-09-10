@@ -70,7 +70,7 @@ export function StatusDot({ status, size = 10 }: { status: string; size?: number
 export function ScreenShell({ children, style, scroll }: { children: React.ReactNode; style?: ViewStyle; scroll?: boolean }) {
   const atmosphere = (
     <LinearGradient
-      colors={['rgba(93,111,240,0.16)', 'rgba(93,111,240,0.05)', 'rgba(9,11,24,0)']}
+      colors={['rgba(115,120,232,0.16)', 'rgba(115,120,232,0.05)', 'rgba(8,8,10,0)']}
       locations={[0, 0.55, 1]}
       style={styles.atmosphere}
       pointerEvents="none"
@@ -145,15 +145,14 @@ export function Button({ label, onPress, tone = 'primary', disabled, loading }: 
 }) {
   const inner = (
     <>
-      {loading ? <ActivityIndicator color={tone === 'primary' ? palette.onAccent : palette.text} /> : <Text style={[styles.buttonText, tone === 'primary' ? { color: palette.onAccent } : null]}>{label}</Text>}
+      {loading ? <ActivityIndicator color={tone === 'primary' ? palette.onIvory : palette.text} /> : <Text style={[styles.buttonText, tone === 'primary' ? { color: palette.onIvory } : null]}>{label}</Text>}
     </>
   );
   if (tone === 'primary') {
+    // Primary action = the ivory solid: quiet, confident, unmistakable.
     return (
-      <Pressable disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.button, shadow.glow, pressed && !disabled ? styles.buttonPressed : null, disabled ? styles.buttonDisabled : null]}>
-        <LinearGradient colors={[palette.accent2, palette.accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.buttonGradient}>
-          {inner}
-        </LinearGradient>
+      <Pressable disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.button, styles.buttonIvory, shadow.card, pressed && !disabled ? styles.buttonPressed : null, disabled ? styles.buttonDisabled : null]}>
+        {inner}
       </Pressable>
     );
   }
@@ -359,6 +358,10 @@ const styles = StyleSheet.create({
   stat: { flex: 1, minWidth: 100, padding: spacing.md },
   statValue: { color: palette.accent, fontSize: 23, fontWeight: '900', letterSpacing: -0.4 },
   statLabel: { color: palette.textDim, fontSize: 12, marginTop: 2 },
+  buttonIvory: {
+    backgroundColor: palette.ivory,
+    borderColor: `${palette.ivory}33`,
+  },
   button: {
     borderRadius: radius.md,
     borderWidth: 1,

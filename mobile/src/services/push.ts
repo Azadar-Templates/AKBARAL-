@@ -53,7 +53,7 @@ export async function registerForPushNotifications(): Promise<PushRegisterResult
         name: 'Task updates',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#ffcf5c',
+        lightColor: '#9790f2',
       });
     } catch {
       // channel may already exist — registration can continue
