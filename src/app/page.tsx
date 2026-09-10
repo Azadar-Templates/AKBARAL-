@@ -82,23 +82,22 @@ export default function Home() {
         <button type="button" data-scroll-to="intelligence">Platform</button>
         <button type="button" data-scroll-to="agent-world">Agents</button>
         <button type="button" data-scroll-to="trust">Security</button>
-        <button type="button" data-scroll-to="pricing">Pricing</button><a className="nav-mobile-only" href="#/login">Log in</a></div><div className="nav-set nav-app">
+        <button type="button" data-scroll-to="pricing">Pricing</button><a className="nav-mobile-only" href="#/login">Log In</a><a className="nav-mobile-only" href="#/register">Sign Up</a></div><div className="nav-set nav-app">
         <a href="#/dashboard">Dashboard</a>
         <a href="#/master">MASTER</a>
         <a href="#/agents">Agents</a>
         <a href="#/workspace">Workspace</a>
         <a href="#/automations">Automations</a>
         <a href="#/billing">Billing</a>
-        <div className="nav-more" id="nav-more"><button type="button" className="nav-more-btn" id="nav-more-btn" aria-expanded="false" aria-haspopup="true">More<i aria-hidden="true">⌄</i></button><div className="nav-more-panel" id="nav-more-panel">
-          <a href="#/factory">Agent Factory</a>
-          <a href="#/marketplace">Marketplace</a>
-          <a href="#/crm">CRM &amp; AI Employees</a>
-          <a href="#/settings">Settings</a>
-          <a href="#/admin" className="admin-only" hidden>Admin</a></div></div></div></nav><div className="header-actions"><span className="credit-pill" id="credit-pill" title="Free task credits">
+        <a href="#/factory">Factory</a>
+        <a href="#/marketplace" className="nav-mobile-only">Marketplace</a>
+        <a href="#/crm" className="nav-mobile-only">CRM &amp; AI Employees</a>
+        <a href="#/settings">Settings</a>
+        <a href="#/admin" className="admin-only" hidden>Admin</a></div></nav><div className="header-actions"><span className="credit-pill" id="credit-pill" title="Free task credits">
       …</span><span className="menu-toggle" id="menu-toggle" role="button" tabIndex={ 0 } aria-label="Toggle navigation menu" aria-expanded="false">
         ☰</span><button className="btn btn-ghost btn-sm" id="logout-btn" hidden>
       Log out</button><button className="btn btn-ghost btn-sm" id="login-btn" data-route="login">
-      Log in</button><button className="btn btn-primary btn-sm" id="start-free-nav" data-route="register">Start Building</button></div></div></header><main id="app-root">
+      Log In</button><button className="btn btn-primary btn-sm" id="start-free-nav" data-route="register">Start Building</button></div></div></header><main id="app-root">
 
       {/* ================= LANDING — cinematic hero ================= */}
       <section className="screen landing-screen" id="screen-landing">
@@ -489,7 +488,7 @@ export default function Home() {
             <div><small>02</small><span>A free task is consumed only when work succeeds.</span></div>
             <div><small>03</small><span>Failed, unverified or cancelled tasks are refunded automatically.</span></div>
             <div><small>04</small><span>Paid resources are clearly disclosed; Pro required where applicable.</span></div>
-            <div><small>05</small><span>Every credit movement is visible in your billing ledger.</span></div>
+            <div><small>05</small><span>Every credit movement is visible in your billing ledger.</span></div><div><small>06</small><span>AKBARAL! clearly shows task status, execution progress and verification state — so you can understand what the system is doing and what was actually completed.</span></div>
           </div>
         </section>
 
@@ -765,21 +764,7 @@ export default function Home() {
 
       <footer className="site-footer"><div className="aw-container footer-inner"><div className="footer-brand"><p className="brand-lockup"><span className="brand-mark" aria-hidden="true">
 
-      A!</span> AKBARAL!</p><p className="footer-tagline">One intelligence. Every solution. A Master AI operating platform — no fabrications, no hidden charges.</p></div><nav className="footer-nav" aria-label="Footer"><a href="#/" data-route-landing>
-
-        Platform</a><button type="button" className="footer-link" data-legal="about">
-
-        About</button><button type="button" className="footer-link" data-legal="contact">
-
-        Contact</button><button type="button" className="footer-link" data-legal="privacy">
-
-        Privacy</button><button type="button" className="footer-link" data-legal="terms">
-
-        Terms</button><button type="button" className="footer-link" data-legal="security">
-
-        Security</button><a href="/api/health" target="_blank" rel="noopener">
-
-        Status</a></nav><p className="footer-copy">
+      A!</span> AKBARAL!</p><p className="footer-tagline">One intelligence. Every solution. A Master AI operating platform — no fabrications, no hidden charges.</p></div><nav className="footer-nav" aria-label="Footer"><div className="footer-nav-bar"><a href="#/" data-route-landing>Platform</a><button type="button" className="footer-link" data-legal="about">About</button><button type="button" className="footer-link" data-legal="contact">Contact</button><button type="button" className="footer-link" data-legal="privacy">Privacy</button><button type="button" className="footer-link" data-legal="terms">Terms</button><button type="button" className="footer-link" data-legal="security">Security</button><a href="/api/health" target="_blank" rel="noopener" className="footer-status"><i aria-hidden="true"></i>System status</a></div></nav><p className="footer-copy">
 
 
       © <span id="footer-year"></span> AKBARAL!. Real execution · honest credits.</p></div></footer>

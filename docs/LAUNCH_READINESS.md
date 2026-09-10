@@ -400,3 +400,16 @@ production build, live sweep (no theme UI, glass tokens live, hero
 video 200/206, six USD plans, 4,001 agents, console markers, QA auth
 round-trip, zero server errors). Functionality unchanged; console
 safety model untouched.
+
+## Final UI corrections (2026-09-11, M15.1)
+
+Console density reduced 37-39% (188px/132px stream, inert engine
+re-audited untouched); More dropdown removed for a professional
+one-row navbar (Log In / Start Building always visible, real routes;
+Start-Building-now-hides-when-authed bug fixed); footer rebuilt as a
+glass navigation strip with professional System-status link; sixth
+billing principle (real capability disclosure) added on web + Android
+with identical wording. Verified: 254/254 tests, both typechecks,
+production build, live sweep (nav-more gone, glass footer present,
+principle 06 present, USD six-tier pricing, 4,001 agents, real login
+round-trip, /api/health 200, no theme switch).

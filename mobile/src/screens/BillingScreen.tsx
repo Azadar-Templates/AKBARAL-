@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
-import { palette, shadow, spacing } from '../theme';
+import { glass, palette, radius, shadow, spacing } from '../theme';
 import { Button, Card, Field, LoadingState, PageHeader, ScreenShell, Skeleton, Stat } from '../components/ui';
 
 /** USD money formatting shared with the web client ($50 / $49.99). */
@@ -56,6 +56,16 @@ export function BillingScreen({ user }: { user: { id: string; email: string; fre
       <Field keyboardType="numeric" value={amount} onChangeText={setAmount} placeholder="Amount in USD cents" label="Amount (USD cents)" />
       <Button label="Request secure purchase" onPress={buy} loading={busy} />
 
+      <Text style={styles.heading}>Billing principles</Text>
+      <View style={styles.rules}>
+        {RULES.map(([n, text]) => (
+          <View key={n} style={styles.rule}>
+            <Text style={styles.ruleNum}>{n}</Text>
+            <Text style={styles.ruleText}>{text}</Text>
+          </View>
+        ))}
+      </View>
+
       <View style={styles.security}>
         <Text style={styles.securityText}>Payments are credentialed server-side with Razorpay or your configured provider. No card data touches the app client.</Text>
       </View>
@@ -63,8 +73,22 @@ export function BillingScreen({ user }: { user: { id: string; email: string; fre
   );
 }
 
+/** The six billing principles — identical wording to the web landing. */
+const RULES: ReadonlyArray<readonly [string, string]> = [
+  ['01', '30-day trial with 5 free tasks. No card required.'],
+  ['02', 'A free task is consumed only when work succeeds.'],
+  ['03', 'Failed, unverified or cancelled tasks are refunded automatically.'],
+  ['04', 'Paid resources are clearly disclosed; Pro required where applicable.'],
+  ['05', 'Every credit movement is visible in your billing ledger.'],
+  ['06', 'AKBARAL! clearly shows task status, execution progress and verification state \u2014 so you can understand what the system is doing and what was actually completed.'],
+];
+
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  rules: { gap: 6, marginBottom: spacing.sm },
+  rule: { flexDirection: 'row', alignItems: 'baseline', gap: 10, backgroundColor: glass[1].fill, borderWidth: 1, borderColor: glass[1].border, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 14 },
+  ruleNum: { color: palette.accent, fontSize: 11, fontWeight: '800', fontFamily: undefined },
+  ruleText: { flex: 1, color: palette.textDim, fontSize: 13, lineHeight: 18 },
   heading: { color: palette.text2, fontWeight: '800', marginTop: spacing.md, marginBottom: spacing.sm },
   featured: { borderLeftWidth: 3, borderLeftColor: palette.accent, ...shadow.glow },
   planHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

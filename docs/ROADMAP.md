@@ -1089,6 +1089,35 @@ per the 27-point brief:
   patterns preserved.
 - Assets `akbaral-lux-5`; design-system 3.0.0.
 
+### M15.1 — Final UI corrections pass (2026-09-11)
+
+Focused web + Android correction pass (glass system intact):
+
+- **Execution console density**: stream height 300→188px desktop
+  (−37%), 216→132px mobile (−39%); tightened console margins, status
+  padding and line-height. Animation, inert engine and safety model
+  unchanged (re-audited: zero eval/Function/innerHTML/network/storage
+  patterns in the module).
+- **Navbar**: More/three-dot dropdown completely removed (markup, CSS,
+  JS). Signed-out: Platform · Agents · Security · Pricing · Log In ·
+  Start Building. Signed-in: Dashboard · MASTER · Agents · Workspace ·
+  Automations · Billing · Factory · Settings (+ admin-only Admin);
+  Marketplace/CRM/Log In/Sign Up are sheet-only entries on mobile.
+  Fixed real bug: Start Building no longer shows when signed in.
+  Progressive compression (1024–1280) + credit-pill hide (1024–1150)
+  guarantee one row, no wrap.
+- **Footer**: rebuilt as a premium glass navigation strip (glass-2
+  fill, blur, hairline, inner highlight, 16px radius) — one horizontal
+  row where width allows, wraps only on small screens. Status link is
+  now a professional "System status" entry with a live dot (still the
+  real /api/health).
+- **Sixth billing principle** added on web (landing pricing-rules) and
+  Android (Billing screen): "06 — AKBARAL! clearly shows task status,
+  execution progress and verification state — so you can understand
+  what the system is doing and what was actually completed." Honest
+  capability disclosure; no fabricated claims.
+- Assets stay `akbaral-lux-5`.
+
 ---
 
 ## Verification protocol (every milestone)
