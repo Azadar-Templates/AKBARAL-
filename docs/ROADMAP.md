@@ -993,6 +993,41 @@ The final visual quality pass over the entire ecosystem, on top of f7f2876.
 
 ---
 
+## Milestone 13.1 — Safe animated execution-simulation console (COMPLETE)
+
+The black panel under the landing page's user goal ("Build me a complete
+launch strategy for my business") is now a premium AI execution-simulation
+console — a visual, cinematic representation of a MASTER run.
+
+- **100% inert by construction**: every displayed line is a plain string
+  from a hardcoded local snippet library (agents, tools, domains, markets),
+  attached exclusively via `textContent`. No eval / new Function / dynamic
+  import / innerHTML / network / storage / cookies / secrets; no
+  connection to auth, database, payments or the real orchestrator; writes
+  confined to its own container. Clearly badged "SIMULATION ·
+  PRESENTATION ONLY" and it fabricates no business results — it shows the
+  SHAPE of a run (understand → plan → route → research → synthesize →
+  verify), ending with "the real pipeline runs in your workspace".
+- **Premium motion**: character typing with humanized jitter + whole log
+  lines fading in + automatic upward stream scroll (inside its own
+  container), blinking block caret, phase status bar with pulsing
+  telemetry dot, restrained indigo/violet/telemetry accents on obsidian.
+- **Randomized per load and per loop** (verified: 5/5 distinct scripts);
+  DOM capped at 48 lines; pauses off-screen (IntersectionObserver), on
+  hidden tabs, and on route changes; stale timer chains invalidated by
+  generation counter. Reduced motion renders a static snapshot (no loop).
+- **Responsive**: 300px stream desktop → 216px + smaller type on mobile;
+  `pre-wrap + overflow-wrap: anywhere` → zero horizontal overflow at
+  320–1920px. A11y: console `role="region"` + aria-label; the animated
+  stream is `aria-hidden` (decorative).
+- **Verification**: security audit (zero forbidden patterns in the module,
+  all DOM writes confined), engine executed in a Node harness (crash-free,
+  all-strings, randomized), 254/254 tests, server + mobile tsc, production
+  build, `node --check`, live markup/asset checks, clean server log.
+  Assets `akbaral-lux-3`.
+
+---
+
 ## Verification protocol (every milestone)
 
 1. `npm run typecheck`

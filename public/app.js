@@ -341,12 +341,217 @@
    * - Everything respects prefers-reduced-motion (poster only) and pauses
    *   when off-screen or when the tab is hidden.
    * ------------------------------------------------------------------ */
+  /* ============================================================
+   DEMO CONSOLE — safe visual execution simulation (landing page).
+   *
+   * SECURITY MODEL — this panel is 100% INERT presentation:
+   *   - Every displayed line is a plain STRING from the hardcoded
+   *     libraries below (or composed from them). Lines are attached
+   *     with textContent only — never innerHTML, never scripts.
+   *   - No eval(), no new Function(), no dynamic import, no shell,
+   *     no SQL, no network requests, no secrets, no cookies, no
+   *     tokens. Nothing here touches auth, database, payments or
+   *     the real orchestration engine.
+   *   - The engine writes ONLY inside #demo-console. It reads
+   *     nothing from the page and mutates nothing outside its
+   *     container.
+   *   - It is clearly labelled "SIMULATION · PRESENTATION ONLY" and
+   *     fabricates no business results — it visualizes the SHAPE of
+   *     a MASTER run (understand → plan → route → research →
+   *     synthesize → verify), not a fake outcome.
+   * Performance: one setTimeout chain, paused when off-screen or the
+   * tab is hidden, capped DOM line count, cleaned up on restart.
+   * Reduced motion: static pre-rendered snapshot, no animation loop.
+   * ============================================================ */
+  function initDemoConsole() {
+    const root = $('#demo-console');
+    const stream = $('#demo-stream');
+    const phaseEl = $('#demo-phase');
+    if (!root || !stream || !phaseEl) return;
+
+    /* ---- inert local snippet library (presentation-only) ---- */
+    const USER_REQUEST = 'Build me a complete launch strategy for my business.';
+    const AGENTS = [
+      ['research-analyst-002', 'market & competitor research'],
+      ['strategy-lead-041', 'go-to-market architecture'],
+      ['marketing-planner-018', 'positioning & channels'],
+      ['seo-specialist-023', 'search & demand analysis'],
+      ['data-scientist-056', 'pricing & forecast models'],
+      ['copywriter-012', 'messaging framework'],
+      ['brand-designer-031', 'identity & launch assets'],
+      ['financial-analyst-047', 'budget & unit economics'],
+      ['growth-strategist-019', 'launch sequencing'],
+      ['operations-planner-028', 'rollout & logistics'],
+    ];
+    const TOOLS = ['web_search', 'page_fetch', 'knowledge_search', 'file_write', 'data_analyze'];
+    const DOMAINS = ['SaaS', 'fintech', 'e-commerce', 'healthcare', 'education', 'marketplace', 'B2B services'];
+    const MARKETS = ['North America', 'the EU', 'SEA', 'MENA', 'a global audience'];
+    const PHASES = [
+      'Understanding objective', 'Building execution plan', 'Selecting specialist agents',
+      'Research', 'Strategy synthesis', 'Verification', 'Complete',
+    ];
+
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const pickN = (arr, n) => {
+      const copy = arr.slice();
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, n);
+    };
+    const int = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+    /* Randomized, inert script for one loop of the simulation. */
+    function buildScript() {
+      const domain = pick(DOMAINS);
+      const market = pick(MARKETS);
+      const agents = pickN(AGENTS, int(3, 4));
+      const tools = pickN(TOOLS, int(2, 3));
+      const stepCount = int(5, 7);
+      const sourceCount = int(3, 6);
+      return [
+        { name: PHASES[0], lines: [
+          { t: `> "${USER_REQUEST}"`, c: 'dl-cmd', m: 'type' },
+          { t: `const objective = parseGoal("launch strategy · ${domain}");`, c: 'dl-cmd', m: 'type' },
+          { t: `intent.detected = "go_to_market"`, c: 'dl-dim', m: 'log' },
+          { t: `scope = [product, ${market}, ${stepCount} workstreams]`, c: 'dl-dim', m: 'log' },
+        ]},
+        { name: PHASES[1], lines: [
+          { t: 'const plan = await simulatePlanning(objective);', c: 'dl-cmd', m: 'type' },
+          { t: `plan.steps = ${stepCount} · dependencies resolved`, c: 'dl-ok', m: 'log' },
+          { t: 'credits.reserved = 1 · refunded on failure', c: 'dl-dim', m: 'log' },
+        ]},
+        { name: PHASES[2], lines: [
+          { t: 'agentRouter.select(["research", "strategy", "marketing"]);', c: 'dl-cmd', m: 'type' },
+          ...agents.map(([slug, role]) => ({ t: `↳ ${slug} · ${role}`, c: 'dl-agent', m: 'log' })),
+        ]},
+        { name: PHASES[3], lines: [
+          { t: `${agents[0][0]} → ${tools[0]}("${domain} launch benchmarks")`, c: 'dl-tool', m: 'type' },
+          { t: `${tools[1]}(${int(2, 4)} sources) · knowledge_search(workspace)`, c: 'dl-tool', m: 'log' },
+          { t: `${sourceCount} sources captured · citations tracked`, c: 'dl-dim', m: 'log' },
+        ]},
+        { name: PHASES[4], lines: [
+          { t: 'strategy.merge([positioning, pricing, channels, timeline]);', c: 'dl-cmd', m: 'type' },
+          { t: `draft.sections = ${int(4, 6)} · review pass ${int(1, 2)}`, c: 'dl-dim', m: 'log' },
+        ]},
+        { name: PHASES[5], lines: [
+          { t: 'verification.run(["sources_present", "steps_complete"]);', c: 'dl-cmd', m: 'type' },
+          { t: 'verification.status = "passed"', c: 'dl-ok', m: 'log' },
+          { t: `evidence.links = ${sourceCount} · trace archived`, c: 'dl-ok', m: 'log' },
+        ]},
+        { name: PHASES[6], lines: [
+          { t: '// simulation complete — the real pipeline runs in your workspace', c: 'dl-dim', m: 'log' },
+          { t: '▸ restarting simulation…', c: 'dl-dim', m: 'log' },
+        ]},
+      ];
+    }
+
+    const MAX_LINES = 48;
+    let generation = 0;   // invalidates stale timer chains
+    let timer = 0;
+    let active = false;   // panel on screen (IntersectionObserver)
+
+    function makeLine(text, cls) {
+      const el = document.createElement('div');
+      el.className = 'demo-line ' + (cls || '');
+      el.textContent = text; // strings only — never HTML
+      return el;
+    }
+
+    function appendLine(el) {
+      stream.appendChild(el);
+      while (stream.childElementCount > MAX_LINES) stream.firstElementChild.remove();
+      stream.scrollTop = stream.scrollHeight;
+    }
+
+    function isLive() { return active && !document.hidden; }
+
+    /* Schedule fn after ms — if paused, idle-poll until live again. */
+    function pace(ms, fn) {
+      const myGen = generation;
+      const check = () => {
+        if (myGen !== generation) return;
+        if (isLive()) fn();
+        else timer = setTimeout(check, 600);
+      };
+      timer = setTimeout(check, ms);
+    }
+
+    function play() {
+      const myGen = ++generation;
+      const script = buildScript();
+      stream.textContent = '';
+      let pi = 0;
+
+      const playPhase = () => {
+        if (myGen !== generation) return;
+        if (pi >= script.length) {
+          phaseEl.textContent = 'Simulation complete';
+          pace(2600, () => { if (myGen === generation) play(); });
+          return;
+        }
+        const phase = script[pi++];
+        phaseEl.textContent = phase.name;
+        appendLine(makeLine(`— ${phase.name.toLowerCase()}`, 'dl-head'));
+        let li = 0;
+
+        const playLine = () => {
+          if (myGen !== generation) return;
+          if (li >= phase.lines.length) { pace(420, playPhase); return; }
+          const line = phase.lines[li++];
+          const el = makeLine('', line.c);
+          if (line.m === 'type') {
+            el.classList.add('typing');
+            appendLine(el);
+            let i = 0;
+            const typeChar = () => {
+              if (myGen !== generation) return;
+              el.textContent = line.t.slice(0, ++i);
+              stream.scrollTop = stream.scrollHeight;
+              if (i < line.t.length) pace(9 + Math.floor(Math.random() * 22), typeChar);
+              else { el.classList.remove('typing'); pace(70 + Math.random() * 170, playLine); }
+            };
+            typeChar();
+          } else {
+            appendLine(el);
+            el.textContent = line.t; // whole log line (CSS fade-in)
+            pace(150 + Math.random() * 230, playLine);
+          }
+        };
+        playLine();
+      };
+      playPhase();
+    }
+
+    if (motionPrefersReduced()) {
+      // Static, minimally-animated snapshot: no loop, no typing.
+      phaseEl.textContent = 'Simulation · static preview';
+      const script = buildScript();
+      for (const phase of script) {
+        appendLine(makeLine(`— ${phase.name.toLowerCase()}`, 'dl-head'));
+        for (const line of phase.lines.slice(0, 2)) appendLine(makeLine(line.t, line.c));
+      }
+      return;
+    }
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((entries) => {
+        active = entries[0].isIntersecting;
+      }, { threshold: 0.15 }).observe(root);
+    } else {
+      active = true;
+    }
+    play();
+  }
+
   function initCinematic() {
     dismissBootVeil();
     initHeroMedia();
     initSystemStatus();
     initSectionRail();
     initPipelineSpine();
+    initDemoConsole();
     initHeroReticle();
     initHeroScrollParallax();
   }

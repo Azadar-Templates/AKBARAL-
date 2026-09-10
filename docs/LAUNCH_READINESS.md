@@ -359,3 +359,16 @@ a single token source (`design-system/tokens.json`):
    grids collapse 3→2→1; all new transitions settle under
    prefers-reduced-motion; a11y rules (skip link, focus-visible,
    aria labels) intact.
+
+## Execution-simulation console (2026-09-10, M13.1)
+
+The landing execution chapter now includes an animated simulation console
+under the user goal. It is presentation-only by construction (hardcoded
+inert strings, textContent-only rendering, zero connection to any real
+system) and explicitly badged "SIMULATION · PRESENTATION ONLY" — no fake
+task completion, no fabricated business results. Performance-safe
+(off-screen/tab-hidden pauses, capped DOM, one timer chain) and fully
+settled under prefers-reduced-motion (static snapshot). Verified by a
+static security audit, a Node execution harness (randomized, crash-free,
+all-strings), the full test suite, both typechecks, the production build
+and live asset checks.

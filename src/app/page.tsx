@@ -333,6 +333,17 @@ export default function Home() {
               <small>User goal</small>
               <p>Build me a complete launch strategy for my business.</p>
             </div>
+            {/* Safe visual execution simulation — presentation-only strings
+                rendered as text (see initDemoConsole in public/app.js).
+                Never executed, never connected to the real pipeline. */}
+            <div className="demo-console" id="demo-console" role="region" aria-label="Visual execution simulation — presentation only, not a real run">
+              <div className="demo-status" aria-hidden="true">
+                <span className="demo-dot"></span>
+                <span className="demo-phase" id="demo-phase">Initializing</span>
+                <span className="demo-badge">SIMULATION · PRESENTATION ONLY</span>
+              </div>
+              <div className="demo-stream" id="demo-stream" aria-hidden="true"></div>
+            </div>
             <div className="trace-steps">
               {TRACE_STEPS.map(([label, note, state]) => (
                 <div className="trace-step" key={label}>
