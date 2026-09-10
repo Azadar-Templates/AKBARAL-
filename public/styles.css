@@ -970,3 +970,191 @@ form label + label { margin-top: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .auto-node, .cron-chip { transition: none; }
 }
+
+/* ============================================================
+   CINEMATIC TRANSFORMATION LAYER — boot veil, manifesto,
+   disciplines, roster, shelf, chapter watermarks, luxury detail
+   ============================================================ */
+
+/* ---------- Premium boot experience (web) ----------
+   Decorative, aria-hidden, pointer-events: none — it can never
+   block content, clicks or crawlers. JS dismisses it after the
+   app boots; a CSS safety animation hides it even without JS. */
+#boot-veil {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background:
+    radial-gradient(ellipse 60% 42% at 50% 38%, rgba(93, 111, 240, 0.14), transparent 70%),
+    var(--bg);
+  pointer-events: none;
+  animation: bootSafety 2.8s var(--ease-soft) forwards;
+}
+@keyframes bootSafety { 0%, 78% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
+#boot-veil.is-done { opacity: 0; visibility: hidden; transition: opacity .55s var(--ease-soft), visibility 0s .55s; }
+.boot-core { position: relative; width: 74px; height: 74px; display: grid; place-items: center; }
+.boot-ring { position: absolute; inset: 0; border: 1px solid var(--line-accent); border-radius: 50%; opacity: 0; animation: bootRing 1.9s var(--ease-soft) infinite; }
+.boot-ring.r2 { animation-delay: .55s; }
+@keyframes bootRing { 0% { transform: scale(0.55); opacity: 0; } 35% { opacity: 0.85; } 100% { transform: scale(1.25); opacity: 0; } }
+.boot-mark {
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid var(--line-accent); border-radius: 12px;
+  background: linear-gradient(160deg, rgba(157,140,255,0.16), transparent 65%);
+  color: var(--accent); font-family: var(--font-display); font-weight: 700; font-size: 0.8rem;
+  box-shadow: 0 0 34px rgba(93, 111, 240, 0.28);
+}
+.boot-word { font-family: var(--font-display); font-size: 1.06rem; font-weight: 600; letter-spacing: 0.42em; text-indent: 0.42em; color: var(--text); }
+.boot-tagline { font-family: var(--font-mono); font-size: 0.56rem; letter-spacing: 0.34em; text-indent: 0.34em; color: var(--text-faint); text-transform: uppercase; }
+.boot-line { width: 168px; height: 1px; background: var(--line); overflow: hidden; }
+.boot-line i { display: block; width: 40%; height: 100%; background: linear-gradient(90deg, transparent, var(--accent), var(--telemetry)); animation: bootProgress 1.15s var(--ease-soft) infinite; }
+@keyframes bootProgress { 0% { transform: translateX(-110%); } 100% { transform: translateX(280%); } }
+@media (prefers-reduced-motion: reduce) {
+  #boot-veil { display: none; }
+  .boot-ring, .boot-line i { animation: none; }
+}
+
+/* ---------- Gradient emphasis text ---------- */
+.grad-text {
+  background: linear-gradient(115deg, var(--accent) 0%, var(--accent-2) 55%, var(--telemetry) 115%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---------- Chapter watermark numerals (large visual moments) ---------- */
+.landing-section[data-chapter]::before {
+  content: attr(data-chapter);
+  position: absolute; top: clamp(28px, 4vw, 56px); right: 0;
+  font-family: var(--font-display);
+  font-size: clamp(5rem, 13vw, 11rem);
+  font-weight: 700; line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(157, 140, 255, 0.13);
+  pointer-events: none; user-select: none;
+  z-index: 0;
+}
+[data-theme="light"] .landing-section[data-chapter]::before { -webkit-text-stroke: 1px rgba(93, 90, 214, 0.16); }
+.landing-section > * { position: relative; z-index: 1; }
+@media (max-width: 900px) { .landing-section[data-chapter]::before { display: none; } }
+
+/* ---------- 01 · Intelligence manifesto ---------- */
+.section-intelligence { padding-top: clamp(96px, 12vw, 176px) !important; }
+.manifesto { max-width: 980px; }
+.manifesto-line {
+  font-size: clamp(2.5rem, 6.2vw, 4.9rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  margin-bottom: 26px;
+  text-wrap: balance;
+}
+.manifesto-sub { font-size: clamp(1rem, 1.5vw, 1.14rem); line-height: 1.75; color: var(--text-2); max-width: 760px; }
+.manifesto-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px;
+  background: var(--line-faint); border: 1px solid var(--line-faint); border-radius: var(--radius-lg);
+  overflow: hidden; margin-top: 44px;
+}
+.manifesto-facts div { background: var(--bg-2); padding: 22px 24px 18px; }
+.manifesto-facts b {
+  display: block; font-family: var(--font-display); font-weight: 500; font-size: clamp(1.9rem, 3.6vw, 2.7rem);
+  letter-spacing: -0.03em; line-height: 1; margin-bottom: 8px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+}
+.manifesto-facts small { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+
+/* ---------- 04 · Discipline index (editorial rows, not cards) ---------- */
+.discipline-index { border-top: 1px solid var(--line-faint); }
+.discipline-row {
+  display: grid; grid-template-columns: 64px minmax(210px, 300px) 1fr auto; gap: 8px 26px; align-items: baseline;
+  padding: 22px 8px; border-bottom: 1px solid var(--line-faint);
+  transition: background .3s var(--ease-soft), padding-left .3s var(--ease-soft);
+  position: relative;
+}
+.discipline-row::before {
+  content: ""; position: absolute; left: 0; top: 20%; bottom: 20%; width: 1px;
+  background: linear-gradient(180deg, var(--accent), var(--telemetry));
+  opacity: 0; transition: opacity .3s var(--ease-soft);
+}
+.discipline-row:hover { background: var(--surface); padding-left: 20px; }
+.discipline-row:hover::before { opacity: 1; }
+.discipline-row small { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.2em; color: var(--accent); }
+.discipline-row b { font-family: var(--font-display); font-size: clamp(1.05rem, 2vw, 1.45rem); font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
+.discipline-row span { font-size: 0.86rem; color: var(--text-dim); line-height: 1.55; }
+.discipline-row em { font-style: normal; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.12em; color: var(--text-faint); text-transform: uppercase; white-space: nowrap; }
+@media (max-width: 720px) {
+  .discipline-row { grid-template-columns: 44px 1fr auto; }
+  .discipline-row span { grid-column: 2 / -1; }
+  .discipline-row em { grid-row: 1; }
+}
+
+/* ---------- 08 · AI Employees split ---------- */
+.split-wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(28px, 4vw, 64px); align-items: center; }
+.split-copy h2 { font-size: clamp(2rem, 4.4vw, 3.3rem); line-height: 1.04; letter-spacing: -0.025em; text-transform: uppercase; margin-bottom: 18px; text-wrap: balance; }
+.split-copy .actions { margin-top: 30px; }
+.employee-roster {
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 0%, rgba(93, 111, 240, 0.08), transparent 70%),
+    var(--bg-2);
+  overflow: hidden;
+}
+.roster-head {
+  padding: 14px 22px; border-bottom: 1px solid var(--line-faint);
+  font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-dim);
+}
+.roster-row { display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 16px 22px; border-bottom: 1px solid var(--line-faint); transition: background .25s var(--ease-soft); }
+.roster-row:last-child { border-bottom: 0; }
+.roster-row:hover { background: var(--surface); }
+.roster-row b { font-size: 0.92rem; font-weight: 500; color: var(--text); white-space: nowrap; }
+.roster-row span { font-size: 0.78rem; color: var(--text-dim); text-align: right; }
+@media (max-width: 900px) { .split-wrap { grid-template-columns: 1fr; } }
+
+/* ---------- 09 · Workspace shelf ---------- */
+.workspace-shelf { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-2); }
+.shelf-row {
+  display: grid; grid-template-columns: minmax(130px, 200px) 1fr; gap: 8px 24px; align-items: baseline;
+  padding: 20px 24px; border-bottom: 1px solid var(--line-faint);
+  transition: background .25s var(--ease-soft);
+}
+.shelf-row:last-child { border-bottom: 0; }
+.shelf-row:hover { background: var(--surface); }
+.shelf-row b { font-family: var(--font-display); font-size: 1rem; font-weight: 500; color: var(--text); letter-spacing: 0.02em; }
+.shelf-row span { font-size: 0.86rem; color: var(--text-dim); line-height: 1.6; }
+@media (max-width: 560px) { .shelf-row { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ---------- Pipeline spine: glowing progress head ---------- */
+.pipeline .pipe-head {
+  position: absolute; left: 1.5px; top: calc(8px + var(--pipe-progress, 0%));
+  width: 8px; height: 8px; margin-top: -4px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 14px rgba(157, 140, 255, 0.75), 0 0 34px rgba(93, 111, 240, 0.35);
+  transition: top 1.6s var(--ease-soft);
+  z-index: 2;
+}
+@media (prefers-reduced-motion: reduce) { .pipeline .pipe-head { display: none; } }
+
+/* ---------- Quick amount chips (billing) ---------- */
+.quick-amounts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.quick-amounts button {
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+  color: var(--text-2); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 13px; cursor: pointer;
+  transition: color .2s var(--ease-soft), border-color .2s var(--ease-soft), background .2s var(--ease-soft);
+}
+.quick-amounts button:hover { color: var(--accent-2); border-color: var(--line-accent); background: var(--accent-soft); }
+
+/* ---------- Hero scale-up (premium first screen) ---------- */
+.hero-title { font-size: clamp(2.9rem, 7.6vw, 6.2rem); letter-spacing: -0.032em; }
+.hero-sub { max-width: 560px; }
+
+/* ---------- Pricing featured ring ---------- */
+.price-grid article.featured {
+  box-shadow: 0 0 0 1px var(--line-accent), 0 30px 80px rgba(93, 111, 240, 0.13);
+}
+[data-theme="light"] .price-grid article.featured { box-shadow: 0 0 0 1px var(--line-accent), 0 30px 80px rgba(38, 42, 74, 0.12); }
+
+/* ---------- Reduced motion settles the new layers ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .discipline-row, .roster-row, .shelf-row { transition: none; }
+  .manifesto-facts b { background: none; color: var(--accent); -webkit-text-fill-color: currentColor; }
+}

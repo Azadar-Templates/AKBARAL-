@@ -107,7 +107,7 @@ When a credential is missing, the platform returns an honest error (e.g. `provid
 - Agent categories: **80**
 - Registered tools: **14**
 - Registered models: **5** across OpenAI, Anthropic, Google/DALL·E 3
-- Plans: free, pro, enterprise in PKR cents
+- Plans: free, pro ($50/mo), enterprise ($400/mo) in USD cents
 
 ## 7. Current Model / Provider Integrations
 
@@ -116,7 +116,7 @@ When a credential is missing, the platform returns an honest error (e.g. `provid
 ## 8. Current Monetization Capabilities
 
 - Free trial (30 days / 5 free tasks) with race-condition-safe consume-on-success, refund-on-failure.
-- Pro and Enterprise plan architecture in PKR.
+- Pro and Enterprise plan architecture in USD.
 - Custom credit purchase request + admin manual settlement.
 - Subscription + entitlement tracking.
 - Invoices, payments, billing events, manual payment settlement, signed billing webhooks.

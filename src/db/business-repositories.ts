@@ -114,7 +114,7 @@ export function createCrmDeal(input: {
   const id = createId('dl');
   db.run(
     `INSERT INTO crm_deals (id, user_id, pipeline_id, contact_id, title, stage, amount_cents, currency, probability, metadata, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'PKR', ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'USD', ?, ?, ?, ?)`,
     [
       id,
       input.userId,

@@ -109,7 +109,7 @@ export function syncAgentRegistry(): { created: number; updated: number; total: 
     upsertAgentMarketplace({
       agentId: agent.id,
       priceCents: definition.costUsage.estimatedCents <= 1 ? 0 : 100 * definition.costUsage.estimatedCents,
-      currency: 'PKR',
+      currency: 'USD',
       status: 'published',
       tags: definition.capabilities,
     });

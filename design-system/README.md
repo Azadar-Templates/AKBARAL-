@@ -143,6 +143,39 @@ Status is always a colored dot, never a glyph.
 - Preserve animations, accessibility (focus rings, labels, contrast) and touch
   ergonomics. No desktop-breaking hacks, no functionality removal.
 
+## Loading identity (all platforms)
+
+The same boot choreography opens every surface — web, Android, and iOS when it ships:
+
+1. **Mark**: the A! monogram in a hairline ring, breathing glow.
+2. **Rings**: two staggered ring pulses expanding outward (the "system waking").
+3. **Wordmark**: `AKBARAL!` wide-tracked display type + `ONE INTELLIGENCE · EVERY SOLUTION` micro tagline.
+4. **Progress**: an indeterminate light sweep on a hairline track.
+5. **Transition**: crossfade into the live UI (web: `#boot-veil` dissolves after boot, CSS
+   safety animation hides it even without JS, `pointer-events: none` always; Android:
+   `BootVisual` in `App.tsx` fades over the pre-rendered UI — no white flash, no layout
+   jump; native splash image bridges the cold start with the same `#06070f` canvas).
+   Reduced motion skips all animation on every platform.
+
+## Hero film (original, generated)
+
+`public/media/hero-loop.mp4` is REAL, fully original footage rendered procedurally from
+code (no stock, no third-party assets, no license questions): obsidian depths, drifting
+indigo/violet nebula fog, a 3D constellation of agents with hairline filaments, data
+pulses travelling between nodes, breathing core orbs, a horizon light band, cinematic
+vignette and exposure breathing. 1920×1080, 30 fps, 12 s, H.264 +faststart (~272 KB),
+mathematically seamless loop (every term is periodic over the clip). The poster is
+extracted from the film itself, so the still and the motion always match.
+
+The renderer lives outside the repo (`render-hero.mjs`, pure Node + a static ffmpeg);
+regeneration notes: render 360 frames of periodic phase, pipe RGBA to
+`libx264 -crf 25 -preset slow -pix_fmt yuv420p -movflags +faststart`, then extract the
+poster with `-ss 6.2 -frames:v 1 -q:v 2`. Serving: the server exposes the
+`akbaral-hero-video` meta flag only when the file exists; the client plays it muted/
+looping/inline, cross-dissolves it in on `canplay` (poster is the loading state), and
+falls back to the canvas network on error, save-data, or reduced motion. Range
+requests are supported (206) for iOS seeking.
+
 ## iOS readiness (honest status)
 
 There is **no iOS application in production scope today** — and nothing here

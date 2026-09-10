@@ -4,10 +4,16 @@ import { api } from '../api/client';
 import { palette, spacing } from '../theme';
 import { Button, Card, Field, LoadingState, PageHeader, ScreenShell, Skeleton, Stat } from '../components/ui';
 
+/** USD money formatting shared with the web client ($50 / $49.99). */
+function usd(cents: unknown): string {
+  const n = Number(cents || 0) / 100;
+  return n % 1 === 0 ? `$${n.toLocaleString('en-US')}` : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function BillingScreen({ user }: { user: { id: string; email: string; freeCredits: number; role: string } }) {
   const [plans, setPlans] = useState<any[]>([]);
   const [credits, setCredits] = useState('10');
-  const [amount, setAmount] = useState('2500');
+  const [amount, setAmount] = useState('1000'); // $10.00 in USD cents
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -34,12 +40,12 @@ export function BillingScreen({ user }: { user: { id: string; email: string; fre
 
       <Text style={styles.heading}>Plans</Text>
       {plans.length === 0 ? <Skeleton count={3} height={76} /> : plans.map((plan) => (
-        <Card key={plan.key} accent={plan.key === 'pro' ? 'gold' : 'cyan'} style={plan.key === 'pro' ? styles.featured : undefined}>
+        <Card key={plan.key} accent={plan.key === 'pro' ? 'accent' : 'telemetry'} style={plan.key === 'pro' ? styles.featured : undefined}>
           <View style={styles.planHead}>
             <Text style={styles.planName}>{plan.name}</Text>
             {plan.key === 'pro' ? <View style={styles.featuredTag}><Text style={styles.featuredTagText}>FEATURED</Text></View> : null}
           </View>
-          <Text style={styles.planPrice}>PKR {Number(plan.price_cents || 0) / 100}<Text style={styles.planInterval}> / {plan.billing_interval || 'month'}</Text></Text>
+          <Text style={styles.planPrice}>{usd(plan.price_cents)}<Text style={styles.planInterval}> / {plan.billing_interval || 'month'}</Text></Text>
           <Text style={styles.muted}>{plan.description || ''}</Text>
           <Text style={styles.planMeta}>{plan.monthly_credits || 0} credits · {plan.max_agents || 0} agents · {plan.max_workspaces || 0} workspaces</Text>
         </Card>
@@ -47,7 +53,7 @@ export function BillingScreen({ user }: { user: { id: string; email: string; fre
 
       <Text style={styles.heading}>Custom credit top-up</Text>
       <Field keyboardType="numeric" value={credits} onChangeText={setCredits} placeholder="Credits" label="Credits" />
-      <Field keyboardType="numeric" value={amount} onChangeText={setAmount} placeholder="Amount PKR" label="Amount (PKR)" />
+      <Field keyboardType="numeric" value={amount} onChangeText={setAmount} placeholder="Amount in USD cents" label="Amount (USD cents)" />
       <Button label="Request secure purchase" onPress={buy} loading={busy} />
 
       <View style={styles.security}>

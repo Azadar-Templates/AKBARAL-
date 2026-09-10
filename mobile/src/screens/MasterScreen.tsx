@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, radius, spacing } from '../theme';
-import { Button, Card, Field, PageHeader, ScreenShell, useReducedMotion } from '../components/ui';
+import { Button, Card, Field, PageHeader, ScreenShell, StatusDot, useReducedMotion } from '../components/ui';
 
 type Phase = 'idle' | 'thinking' | 'executing' | 'success' | 'error';
 
@@ -13,6 +13,65 @@ const phaseCopy: Record<Phase, { label: string; tone: string; message: string }>
   success: { label: 'SUCCESS', tone: palette.green, message: 'Plan and execution completed. Review the output below.' },
   error: { label: 'ERROR', tone: palette.red, message: 'The request could not be completed. Review the error below.' },
 };
+
+/** The MASTER orchestration pipeline, visualized: the real stages a goal
+ * travels through (goal → plan → agents → tools → verification → result).
+ * Live stages pulse; success settles green; failures mark red. Purely a
+ * representation of the actual pipeline — no fabricated progress. */
+const FLOW_STAGES = ['Goal', 'Plan', 'Agents', 'Tools', 'Verify', 'Result'];
+
+function flowActive(phase: Phase): number[] {
+  switch (phase) {
+    case 'thinking': return [1];
+    case 'executing': return [2, 3, 4];
+    case 'success': return [0, 1, 2, 3, 4, 5];
+    default: return [];
+  }
+}
+
+function OrchestrationFlow({ phase }: { phase: Phase }) {
+  const reduced = useReducedMotion();
+  const pulse = useRef(new Animated.Value(1)).current;
+  const live = phase === 'thinking' || phase === 'executing';
+
+  useEffect(() => {
+    if (!live || reduced) { pulse.setValue(1); return; }
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 0.45, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [live, reduced, pulse]);
+
+  const active = flowActive(phase);
+  return (
+    <View style={styles.flow} accessibilityLabel="Orchestration pipeline stages">
+      {FLOW_STAGES.map((label, i) => {
+        const isActive = active.includes(i);
+        const color = phase === 'error' && isActive ? palette.red
+          : phase === 'success' ? palette.green
+          : isActive ? palette.telemetry : palette.textFaint;
+        return (
+          <React.Fragment key={label}>
+            {i > 0 ? <View style={styles.flowConnector} /> : null}
+            <Animated.View
+              style={[
+                styles.flowChip,
+                isActive && phase !== 'error' && styles.flowChipActive,
+                phase === 'success' && styles.flowChipDone,
+                { opacity: isActive && live && !reduced ? pulse : 1 },
+              ]}
+            >
+              {isActive && live ? <StatusDot status={phase === 'executing' ? 'running' : 'pending'} size={6} /> : null}
+              <Text style={[styles.flowText, { color }]}>{label}</Text>
+            </Animated.View>
+          </React.Fragment>
+        );
+      })}
+    </View>
+  );
+}
 
 export function MasterScreen() {
   const [goal, setGoal] = useState('');
@@ -81,6 +140,8 @@ export function MasterScreen() {
         </View>
       </Card>
 
+      <OrchestrationFlow phase={phase} />
+
       <Text style={styles.muted}>Describe your goal. MASTER plans, selects specialists and executes.</Text>
       <Field multiline value={goal} onChangeText={setGoal} placeholder="e.g. Build my company website and create a launch plan." style={styles.input} />
 
@@ -111,6 +172,17 @@ const styles = StyleSheet.create({
   coreText: { flex: 1 },
   phaseLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 2 },
   phaseMessage: { color: palette.textDim, fontSize: 13, marginTop: 4, lineHeight: 18 },
+  flow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginBottom: spacing.md },
+  flowChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderColor: palette.line, borderRadius: radius.pill,
+    paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: palette.surface,
+  },
+  flowChipActive: { borderColor: palette.telemetry, backgroundColor: palette.telemetrySoft },
+  flowChipDone: { borderColor: palette.green, backgroundColor: palette.greenSoft },
+  flowText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  flowConnector: { width: 9, height: 1, backgroundColor: palette.lineStrong },
   muted: { color: palette.textDim, marginBottom: spacing.md },
   input: { minHeight: 120, textAlignVertical: 'top' },
   output: { marginTop: spacing.lg },

@@ -54,7 +54,7 @@ async function startPaymentFixture(): Promise<ProviderFixture> {
       if (req.url?.includes('/v1/orders')) {
         res.statusCode = 200;
         res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ id: 'order_m8fixture', status: 'created', amount: 5000, currency: 'PKR' }));
+        res.end(JSON.stringify({ id: 'order_m8fixture', status: 'created', amount: 5000, currency: 'usd' }));
         return;
       }
       res.statusCode = 404;
@@ -290,13 +290,29 @@ describe('Milestone 8: trial/credits/billing', () => {
       body: JSON.stringify({ credits: 10, amount_cents: 2500, provider: 'manual' }),
     });
     assert.equal(response.status, 201);
-    const body = (await response.json()) as { order: { invoiceId: string; invoiceNumber: string; status: string; credits: number } };
+    const body = (await response.json()) as { order: { invoiceId: string; invoiceNumber: string; status: string; credits: number; currency: string } };
     assert.equal(body.order.status, 'pending');
     assert.equal(body.order.credits, 10);
-    const invoice = db.get<{ status: string; total_cents: number }>('SELECT status, total_cents FROM invoices WHERE id = ?', [body.order.invoiceId]);
+    assert.equal(body.order.currency, 'USD');
+    const invoice = db.get<{ status: string; total_cents: number; currency: string }>('SELECT status, total_cents, currency FROM invoices WHERE id = ?', [body.order.invoiceId]);
     assert.ok(invoice);
     assert.equal(invoice.status, 'due');
     assert.equal(invoice.total_cents, 2500);
+    assert.equal(invoice.currency, 'USD');
+  });
+
+  it('serves the plan catalog in USD', async () => {
+    const response = await fetch(`${baseUrl}/api/billing/plans`);
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { plans: Array<{ key: string; price_cents: number; currency: string }> };
+    const pro = body.plans.find((p) => p.key === 'pro');
+    const enterprise = body.plans.find((p) => p.key === 'enterprise');
+    assert.ok(pro && enterprise);
+    assert.equal(pro.currency, 'USD');
+    assert.equal(enterprise.currency, 'USD');
+    assert.equal(pro.price_cents, 5000); // $50.00
+    assert.equal(enterprise.price_cents, 40000); // $400.00
+    for (const plan of body.plans) assert.equal(plan.currency, 'USD');
   });
 
   it('rejects forged and unauthenticated webhooks', async () => {

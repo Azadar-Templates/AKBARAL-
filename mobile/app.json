@@ -7,6 +7,8 @@
     "userInterfaceStyle": "dark",
     "scheme": "akbaral",
     "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#06070f"
     },
     "ios": {

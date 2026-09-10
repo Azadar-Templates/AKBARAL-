@@ -77,6 +77,7 @@ export function AgentsScreen() {
               <View style={styles.cardHead}>
                 <AgentSigil name={item.name} category={item.category} />
                 <View style={styles.cardBody}>
+                  {item.category ? <Text style={styles.cardCategory}>{item.category}</Text> : null}
                   <Text style={styles.cardTitle}>{item.name}</Text>
                   <Text style={styles.muted} numberOfLines={2}>{item.specialization || item.description || item.slug}</Text>
                 </View>
@@ -108,6 +109,7 @@ const styles = StyleSheet.create({
   card: { padding: spacing.lg },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   cardBody: { flex: 1 },
+  cardCategory: { color: palette.telemetry, fontSize: 9, fontWeight: '800', letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 3 },
   cardTitle: { color: palette.text, fontWeight: '800', fontSize: 16 },
   muted: { color: palette.textDim, marginTop: 2 },
   tag: {

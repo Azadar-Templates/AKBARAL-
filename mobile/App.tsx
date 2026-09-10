@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, ActivityIndicator, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
@@ -7,7 +8,7 @@ import { NavigationContainer, DarkTheme, Theme, useNavigationContainerRef } from
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { api } from './src/api/client';
 import { palette } from './src/theme';
-import { BrandMark } from './src/components/ui';
+import { BrandMark, useReducedMotion } from './src/components/ui';
 import { automationIdFromDeepLink, registerForPushNotifications, taskIdFromDeepLink, unregisterPushNotifications } from './src/services/push';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
@@ -77,9 +78,85 @@ const makeScreenOptions = (name: string) => ({
   ),
 });
 
+/** Premium branded boot screen — the mobile face of the AKBARAL! loading
+ * identity (same choreography as the web #boot-veil): monogram, rings,
+ * wordmark, tagline and an indeterminate progress sweep. Fades out over
+ * the live UI (rendered underneath) so there is no white flash and no
+ * layout jump. Honors the OS reduce-motion preference. */
+function BootVisual({ reduced }: { reduced: boolean }) {
+  const ring1 = React.useRef(new Animated.Value(0)).current;
+  const ring2 = React.useRef(new Animated.Value(0)).current;
+  const sweep = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (reduced) return;
+    const pulse = (v: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(v, { toValue: 1, duration: 1900, useNativeDriver: true }),
+        ]),
+      );
+    const ringAnim1 = pulse(ring1, 0);
+    const ringAnim2 = pulse(ring2, 550);
+    ringAnim1.start();
+    ringAnim2.start();
+    const sweepLoop = Animated.loop(
+      Animated.timing(sweep, { toValue: 1, duration: 1150, useNativeDriver: true }),
+    );
+    sweepLoop.start();
+    return () => { ringAnim1.stop(); ringAnim2.stop(); sweepLoop.stop(); };
+  }, [reduced, ring1, ring2, sweep]);
+
+  const ringStyle = (v: Animated.Value) => ({
+    opacity: v.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 0.85, 0] }),
+    transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.3] }) }],
+  });
+
+  return (
+    <View style={bootStyles.layer}>
+      <LinearGradient colors={['rgba(93,111,240,0.16)', 'rgba(9,11,24,0)', 'rgba(157,140,255,0.10)']} locations={[0, 0.55, 1]} style={bootStyles.atmosphere} />
+      <View style={bootStyles.core}>
+        <Animated.View style={[bootStyles.ring, ringStyle(ring1)]} />
+        <Animated.View style={[bootStyles.ring, ringStyle(ring2)]} />
+        <BrandMark size={64} />
+      </View>
+      <Text style={bootStyles.word}>AKBARAL!</Text>
+      <Text style={bootStyles.tagline}>ONE INTELLIGENCE · EVERY SOLUTION</Text>
+      <View style={bootStyles.line}>
+        <Animated.View
+          style={{
+            width: '38%',
+            height: 2,
+            borderRadius: 1,
+            backgroundColor: palette.accent,
+            transform: [{
+              translateX: sweep.interpolate({ inputRange: [0, 1], outputRange: [-70, 190] }),
+            }],
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
+const bootStyles = StyleSheet.create({
+  layer: { ...StyleSheet.absoluteFillObject, backgroundColor: palette.bg, alignItems: 'center', justifyContent: 'center' },
+  atmosphere: { ...StyleSheet.absoluteFillObject },
+  core: { width: 96, height: 96, alignItems: 'center', justifyContent: 'center' },
+  ring: { position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 1, borderColor: palette.lineAccent },
+  word: { color: palette.text, fontSize: 19, fontWeight: '900', letterSpacing: 8, marginTop: 26, paddingLeft: 8 },
+  tagline: { color: palette.textFaint, fontSize: 8, fontWeight: '800', letterSpacing: 2.6, marginTop: 8, paddingLeft: 2.6 },
+  line: { width: 170, height: 2, backgroundColor: palette.surface2, borderRadius: 1, overflow: 'hidden', marginTop: 26, alignItems: 'flex-start' },
+});
+
 export default function App() {
   const [user, setUser] = useState<{ id: string; email: string; freeCredits: number; role: string } | null>(null);
   const [ready, setReady] = useState(false);
+  const [bootGone, setBootGone] = useState(false);
+  const bootFade = React.useRef(new Animated.Value(1)).current;
+  const bootStart = React.useRef(Date.now()).current;
+  const reducedMotion = useReducedMotion();
   const [pushNote, setPushNote] = useState<string | null>(null);
   const navigationRef = useNavigationContainerRef<{ Tasks: { taskId?: string; automationId?: string; viewAutomations?: boolean } | undefined }>();
 
@@ -164,6 +241,18 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
+  // Boot choreography: hold the branded splash for a beat after the app is
+  // ready, then crossfade into the live UI (rendered underneath — no jump).
+  React.useEffect(() => {
+    if (!ready || bootGone) return;
+    if (reducedMotion) { setBootGone(true); return; }
+    const wait = Math.max(0, 950 - (Date.now() - bootStart));
+    const timer = setTimeout(() => {
+      Animated.timing(bootFade, { toValue: 0, duration: 480, useNativeDriver: true }).start(() => setBootGone(true));
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [ready, bootGone, reducedMotion, bootFade, bootStart]);
+
   const handleLogout = async () => {
     await unregisterPushNotifications();
     await api.logout();
@@ -171,20 +260,7 @@ export default function App() {
     setPushNote(null);
   };
 
-  if (!ready) {
-    return (
-      <View style={{ flex: 1, backgroundColor: palette.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <BrandMark size={56} />
-        <ActivityIndicator color={palette.telemetry} size="large" style={{ marginTop: 22 }} />
-      </View>
-    );
-  }
-
-  if (!user) {
-    return <LoginScreen onLogin={setUser} />;
-  }
-
-  return (
+  const main = user ? (
     <NavigationContainer ref={navigationRef} theme={navTheme} linking={linking}>
       <StatusBar style="light" />
       <Tab.Navigator>
@@ -205,5 +281,20 @@ export default function App() {
         <Tab.Screen name="Settings" options={makeScreenOptions('Settings')}>{() => <SettingsScreen onLogout={handleLogout} />}</Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>
+  ) : (
+    <LoginScreen onLogin={setUser} />
   );
+
+  if (!bootGone) {
+    return (
+      <View style={{ flex: 1, backgroundColor: palette.bg }}>
+        {ready ? main : null}
+        <Animated.View style={{ opacity: bootFade }} pointerEvents={ready ? 'none' : 'auto'}>
+          <BootVisual reduced={reducedMotion} />
+        </Animated.View>
+      </View>
+    );
+  }
+
+  return main;
 }

@@ -34,7 +34,7 @@ function escapePdfText(text: string): string {
 }
 
 function formatAmount(cents: number, currency: string): string {
-  const symbol = currency === 'PKR' ? 'PKR ' : `${currency} `;
+  const symbol = currency === 'USD' ? '$' : `${currency} `;
   return `${symbol}${(cents / 100).toFixed(2)}`;
 }
 
@@ -76,13 +76,13 @@ export function renderInvoicePdf(invoice: InvoiceRow): string {
   }
   for (const item of items) {
     push(
-      `• ${String(item.description ?? 'item')} — ${formatAmount(Number(item.amountCents ?? 0), String(invoice.currency ?? 'PKR'))}`,
+      `• ${String(item.description ?? 'item')} — ${formatAmount(Number(item.amountCents ?? 0), String(invoice.currency ?? 'USD'))}`,
     );
   }
   y -= 10;
-  push(`Subtotal: ${formatAmount(Number(invoice.subtotal_cents ?? 0), String(invoice.currency ?? 'PKR'))}`, 12, true);
-  push(`Tax: ${formatAmount(Number(invoice.tax_cents ?? 0), String(invoice.currency ?? 'PKR'))}`);
-  push(`Total: ${formatAmount(Number(invoice.total_cents ?? 0), String(invoice.currency ?? 'PKR'))}`, 13, true);
+  push(`Subtotal: ${formatAmount(Number(invoice.subtotal_cents ?? 0), String(invoice.currency ?? 'USD'))}`, 12, true);
+  push(`Tax: ${formatAmount(Number(invoice.tax_cents ?? 0), String(invoice.currency ?? 'USD'))}`);
+  push(`Total: ${formatAmount(Number(invoice.total_cents ?? 0), String(invoice.currency ?? 'USD'))}`, 13, true);
   y -= 16;
   push('Thank you for using AKBARAL! — the honest AI workforce platform.', 9);
 

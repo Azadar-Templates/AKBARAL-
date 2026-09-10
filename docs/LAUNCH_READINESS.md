@@ -141,7 +141,7 @@ runtime image, `/api/ready` healthcheck, nightly verified backup cron);
 
 | Feature | Status | What is missing |
 | --- | --- | --- |
-| Payment providers | Code complete & live-tested against real API shapes; **needs production Stripe/Razorpay keys (PKR) and webhook endpoints registered in the provider dashboards**. Until then the platform honestly returns 402 `provider_not_configured`; manual settlement works. | Production credentials + provider-side webhook URL configuration. |
+| Payment providers | Code complete & live-tested against real API shapes; **needs production Stripe/Razorpay keys (USD) and webhook endpoints registered in the provider dashboards**. Until then the platform honestly returns 402 `provider_not_configured`; manual settlement works. | Production credentials + provider-side webhook URL configuration. |
 | Email flows (password reset, verification) | Implemented; **needs production SMTP credentials**. Without SMTP the flow returns an honest dev token (development only). | SMTP credentials in `.env.production`. |
 | Web app | Premium homepage (preserved, 200 live) + SPA shell served from `public/`, `/api` proxied through Next. Deep wiring of every platform surface into the web UI (task center, live logs, results views) is Milestone 12. | Full API wiring in the web UI — use the API/SPA until M12 lands. |
 | Monitoring hookup | `/api/metrics` + `/api/ready` are ready; scraping requires the admin bearer token. | Wire Prometheus/Grafana (or equivalent) at deploy; dedicated read-only metrics token is POST-LAUNCH. |
@@ -313,3 +313,26 @@ a single token source (`design-system/tokens.json`):
    platforms and runs on native drivers/compositor-only properties.
 5. **Assets**: new original AI-generated hero poster (obsidian/indigo);
    asset cache version `akbaral-ds-1`.
+
+## Cinematic transformation pass — hero film, loading identity, USD (2026-09-10)
+
+1. **Real hero video, not a placeholder**: original procedurally-rendered
+   film (12 s seamless loop, 272 KB) served and verified live — 200 on
+   full fetch, **206 on range requests** (iOS-safe), poster extracted
+   from the film, `canplay` cross-dissolve, error/save-data/reduced-motion
+   fallback to the canvas network. The `akbaral-hero-video` flag only
+   exists because the file exists.
+2. **Loading identity ships on web + Android** (and is specified for iOS
+   in the design system): branded boot veil with ring pulses and light
+   sweep; Android crossfades over pre-rendered UI — no white flash, no
+   layout jump; native splash image on the same `#06070f` canvas.
+3. **Pricing is USD everywhere** ($0/$50/$400 plans; USD quick-amounts;
+   invoices, marketplace, admin stats, mobile). The model carries USD
+   cents end-to-end (verified live: plans endpoint + manual purchase
+   order both USD); historical dev invoices keep their original PKR
+   label. Migration 0012 applied to the dev DB.
+4. **No functionality broken**: full suite 254/254, both typechecks and
+   the production build green; live smoke of auth, purchase order,
+   registry (4,001), OAuth providers; server log clean; no test was
+   removed or weakened (the currency model legitimately changed —
+   assertions were updated and a new USD catalog test added).

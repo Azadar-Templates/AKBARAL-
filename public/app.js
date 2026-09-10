@@ -148,6 +148,11 @@
     return `<span class="agent-sigil" style="--sigil-hue: ${hue}" aria-hidden="true">${esc(mono)}</span>`;
   }
 
+  function usd(cents) {
+    const n = Number(cents || 0) / 100;
+    return n % 1 === 0 ? `$${n.toLocaleString('en-US')}` : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
   function badge(status) {
     const color = status === 'active' || status === 'completed' || status === 'published' || status === 'enabled'
       ? 'green'
@@ -337,12 +342,35 @@
    *   when off-screen or when the tab is hidden.
    * ------------------------------------------------------------------ */
   function initCinematic() {
+    dismissBootVeil();
     initHeroMedia();
     initSystemStatus();
     initSectionRail();
     initPipelineSpine();
     initHeroReticle();
     initHeroScrollParallax();
+  }
+
+  /* Premium boot experience: the server-rendered #boot-veil dissolves
+     once the app has booted (never blocks input — pointer-events: none).
+     A pure-CSS safety animation hides it even if JS never runs. */
+  function dismissBootVeil() {
+    const veil = $('#boot-veil');
+    if (!veil) return;
+    if (motionPrefersReduced()) { veil.remove(); return; }
+    let done = false;
+    const dismiss = () => {
+      if (done) return;
+      done = true;
+      veil.classList.add('is-done');
+      setTimeout(() => veil.remove(), 650);
+    };
+    const timer = setTimeout(dismiss, 1500);
+    if (document.readyState === 'complete') {
+      setTimeout(dismiss, 650);
+    } else {
+      window.addEventListener('load', () => { setTimeout(dismiss, 500); clearTimeout(timer); }, { once: true });
+    }
   }
 
   function initHeroMedia() {
@@ -364,11 +392,20 @@
     // runtime, the original canvas network takes over.
     const hasVideo = document.querySelector('meta[name="akbaral-hero-video"]')?.content === '1';
     if (video && hasVideo && !saveData) {
-      video.classList.add('is-live');
+      // The poster is the loading state; the real film cross-dissolves in
+      // over it once frames are actually decodable (canplay).
       video.setAttribute('preload', 'auto');
-      const play = video.play();
-      if (play && play.catch) play.catch(() => { video.classList.remove('is-live'); startHeroNetwork(canvas, budget); });
-      video.addEventListener('error', () => { video.classList.remove('is-live'); startHeroNetwork(canvas, budget); });
+      const launch = () => {
+        video.classList.add('is-live');
+        const play = video.play();
+        if (play && play.catch) play.catch(() => { video.classList.remove('is-live'); startHeroNetwork(canvas, budget); });
+      };
+      if (video.readyState >= 2) {
+        launch();
+      } else {
+        video.addEventListener('canplay', launch, { once: true });
+        video.addEventListener('error', () => startHeroNetwork(canvas, budget), { once: true });
+      }
     } else {
       startHeroNetwork(canvas, budget);
     }
@@ -780,7 +817,11 @@
     $('#sched-form').addEventListener('submit', createScheduledAutomation);
     $('#sched-form').addEventListener('change', updateSchedForm);
     $('#employee-form').addEventListener('submit', createEmployee);
-    $('#credit-form').addEventListener('submit', purchaseCredits);
+      $$('#credit-form [data-amount]').forEach((chip) => chip.addEventListener('click', () => {
+    const input = $('#credit-form').elements.namedItem('amount_cents');
+    if (input) { input.value = chip.dataset.amount; input.focus(); }
+  }));
+  $('#credit-form').addEventListener('submit', purchaseCredits);
     $('#flag-form').addEventListener('submit', setFlag);
     $('#emergency-stop').addEventListener('click', emergencyStop);
     $('#system-resume').addEventListener('click', systemResume);
@@ -1631,7 +1672,7 @@
             <p>${esc(a.description || a.specialization || a.slug)}</p>
           </div>
         </div>
-        <div class="tags"><span>PKR ${Number(a.price_cents || 0) / 100}</span><span>${esc(a.install_count || 0)} installs</span>${tagsOf(a.tags).slice(0, 4).map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+        <div class="tags"><span>${usd(a.price_cents)}</span><span>${esc(a.install_count || 0)} installs</span>${tagsOf(a.tags).slice(0, 4).map((t) => `<span>${esc(t)}</span>`).join('')}</div>
         <div class="actions">
           <button class="btn btn-primary" data-install="${esc(a.slug)}">Install</button>
           <button class="btn btn-ghost" data-publish="${esc(a.slug)}">Publish</button>
@@ -1820,7 +1861,7 @@
     renderPlans(plans.plans || [], '#billing-plans');
     const invoices = $('#invoice-list');
     invoices.innerHTML = (account.invoices || []).length
-      ? account.invoices.map((inv) => `<div class="list-item"><div><b>${esc(inv.number)}</b><small>${esc(inv.status)} · PKR ${Number(inv.total_cents || 0) / 100}</small></div>${badge(inv.status)}</div>`).join('')
+      ? account.invoices.map((inv) => `<div class="list-item"><div><b>${esc(inv.number)}</b><small>${esc(inv.status)} · ${usd(inv.total_cents)}</small></div>${badge(inv.status)}</div>`).join('')
       : '<div class="list-item"><small>No invoices.</small></div>';
   }
 
@@ -1831,7 +1872,7 @@
       <article class="${plan.key === 'pro' ? 'featured' : ''}">
         <h3>${esc(plan.name)}</h3>
         <p class="muted">${esc(plan.description || '')}</p>
-        <p><b>PKR ${Number(plan.price_cents || 0) / 100}</b> / ${esc(plan.billing_interval || 'month')}</p>
+        <p><b>${usd(plan.price_cents)}</b> / ${esc(plan.billing_interval || 'month')}</p>
         <p>${esc(plan.monthly_credits || 0)} credits · ${esc(plan.max_agents || 0)} agents · ${esc(plan.max_workspaces || 0)} workspaces</p>
         <button class="btn btn-primary" data-plan="${esc(plan.key)}">${plan.key === 'free' ? 'Activate free' : 'Switch plan'}</button>
       </article>`).join('');
@@ -1868,12 +1909,12 @@
       ['Tasks', stats.tasks],
       ['Agents', stats.agents],
       ['Models', stats.models],
-      ['Revenue (PKR)', (Number(stats.revenuePaidCents || 0) / 100).toFixed(2)],
+      ['Revenue (USD)', usd(stats.revenuePaidCents)],
       ['Failed tasks', stats.failedTasks],
       ['Credits granted', stats.creditsGranted],
       ['Credits consumed', stats.creditsConsumed],
       ['Gross margin', analytics ? `${analytics.grossMarginPct}%` : '—'],
-      ['Cost / task (PKR)', analytics ? (Number(analytics.costPerTask || 0) / 100).toFixed(2) : '—'],
+      ['Cost / task (USD)', analytics ? usd(analytics.costPerTask) : '—'],
     ], '#admin-stats');
     const flags = await api('/api/admin/feature-flags');
     $('#flag-list').innerHTML = (flags.flags || []).map((f) => `<div class="list-item"><div><b>${esc(f.key)}</b><small>${esc(f.description || '')}</small></div>${badge(f.enabled ? 'enabled' : 'disabled')}</div>`).join('');

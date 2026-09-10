@@ -341,7 +341,7 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
     try {
       requireCredential('STRIPE_SECRET_KEY', 'stripe_payment');
       const amount = requireStringInput(input, 'amount', 'stripe_payment');
-      const currency = typeof input.currency === 'string' ? input.currency : 'pkr';
+      const currency = typeof input.currency === 'string' ? input.currency : 'usd';
       const body = new URLSearchParams({ amount, currency });
       const text = await externalJsonRequest('https://api.stripe.com/v1/payment_intents', {
         method: 'POST',

@@ -132,7 +132,7 @@ export function upsertPlan(input: {
         input.name,
         input.description ?? null,
         input.priceCents ?? 0,
-        input.currency ?? 'PKR',
+        input.currency ?? 'USD',
         input.billingInterval ?? 'month',
         input.monthlyCredits ?? 0,
         input.maxAgents ?? 3,
@@ -158,7 +158,7 @@ export function upsertPlan(input: {
       input.name,
       input.description ?? null,
       input.priceCents ?? 0,
-      input.currency ?? 'PKR',
+      input.currency ?? 'USD',
       input.billingInterval ?? 'month',
       input.monthlyCredits ?? 0,
       input.maxAgents ?? 3,
@@ -185,7 +185,7 @@ export function getPlanByKey(key: string): PlanRow | undefined {
 
 /**
  * Idempotently create the base pricing plan catalog.
- * Prices are in PKR cents (100 PKR = 10000 cents).
+ * Prices are in USD cents ($50.00 = 5000 cents).
  */
 export function ensureBootstrapPlans(): void {
   upsertPlan({
@@ -193,7 +193,7 @@ export function ensureBootstrapPlans(): void {
     name: 'Free Trial',
     description: '30-day trial with 5 free tasks.',
     priceCents: 0,
-    currency: 'PKR',
+    currency: 'USD',
     monthlyCredits: 5,
     maxAgents: 3,
     maxWorkspaces: 1,
@@ -205,8 +205,8 @@ export function ensureBootstrapPlans(): void {
     key: 'pro',
     name: 'AKBARAL Pro',
     description: 'Unlimited core agent usage with monthly credit allowance.',
-    priceCents: 499900, // 4,999 PKR per month
-    currency: 'PKR',
+    priceCents: 5000, // $50.00 per month
+    currency: 'USD',
     monthlyCredits: 100,
     maxAgents: 50,
     maxWorkspaces: 5,
@@ -218,8 +218,8 @@ export function ensureBootstrapPlans(): void {
     key: 'enterprise',
     name: 'Enterprise',
     description: 'Company-grade workspaces, customization and support.',
-    priceCents: 4999900, // 49,999 PKR per month
-    currency: 'PKR',
+    priceCents: 40000, // $400.00 per month
+    currency: 'USD',
     monthlyCredits: 2000,
     maxAgents: 10000,
     maxWorkspaces: 100,
@@ -459,7 +459,7 @@ export function createInvoice(input: {
       input.status ?? 'due',
       input.amountCents,
       input.amountCents,
-      input.currency ?? 'PKR',
+      input.currency ?? 'USD',
       input.lineItems ? JSON.stringify(input.lineItems) : null,
       input.provider ?? 'manual',
       input.dueAt ?? now,
@@ -499,7 +499,7 @@ export function createPayment(input: {
       input.providerPaymentId ?? null,
       input.status ?? 'pending',
       input.amountCents,
-      input.currency ?? 'PKR',
+      input.currency ?? 'USD',
       input.failureCode ?? null,
       input.failureReason ?? null,
       input.processedAt ?? null,
@@ -758,7 +758,7 @@ export function upsertAgentMarketplace(input: {
       [
         input.publisherUserId ?? null,
         input.priceCents ?? 0,
-        input.currency ?? 'PKR',
+        input.currency ?? 'USD',
         input.status ?? 'draft',
         input.tags ? JSON.stringify(input.tags) : null,
         now,
@@ -776,7 +776,7 @@ export function upsertAgentMarketplace(input: {
       input.agentId,
       input.publisherUserId ?? null,
       input.priceCents ?? 0,
-      input.currency ?? 'PKR',
+      input.currency ?? 'USD',
       input.status ?? 'draft',
       input.tags ? JSON.stringify(input.tags) : null,
       now,
@@ -813,7 +813,7 @@ export function createAgentOrder(input: { userId: string; agentId: string; amoun
   db.run(
     `INSERT INTO agent_orders (id, user_id, agent_id, amount_cents, currency, status, created_at)
      VALUES (?, ?, ?, ?, ?, 'completed', ?)`,
-    [id, input.userId, input.agentId, input.amountCents, input.currency ?? 'PKR', NOW()],
+    [id, input.userId, input.agentId, input.amountCents, input.currency ?? 'USD', NOW()],
   );
   // Install counting lives in installUserAgent (once per user); orders are
   // recorded per transaction and power the trending window instead.

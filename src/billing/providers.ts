@@ -60,7 +60,7 @@ export async function createStripeCheckout(input: {
   params.set('cancel_url', input.cancelUrl);
   params.set('client_reference_id', input.invoiceNumber);
   params.set('line_items[0][quantity]', '1');
-  params.set('line_items[0][price_data][currency]', 'pkr');
+  params.set('line_items[0][price_data][currency]', 'usd');
   params.set('line_items[0][price_data][unit_amount]', String(input.amountCents));
   params.set('line_items[0][price_data][product_data][name]', `${input.credits} AKBARAL credits`);
   try {
@@ -109,7 +109,7 @@ export async function createRazorpayOrder(input: {
       },
       body: JSON.stringify({
         amount: input.amountCents,
-        currency: 'PKR',
+        currency: 'USD',
         receipt: input.invoiceNumber,
         notes: { purpose: 'akbaral-credits' },
       }),

@@ -32,6 +32,23 @@ const WORLD_CATEGORIES_ROW_B = [
   ['Security', 50], ['DevOps', 50], ['Cloud', 50], ['Social media', 50],
 ];
 
+const DISCIPLINES = [
+  ['Research', 51, 'Market, competitor and technical research with source tracking'],
+  ['Software engineering', 50, 'Specifications, implementation, review and DevOps'],
+  ['Design & UX', 50, 'Interfaces, design systems and brand language'],
+  ['Data & analytics', 50, 'Analysis, modeling, spreadsheets and insight'],
+  ['Business & strategy', 50, 'Planning, go-to-market, operations and finance'],
+  ['Automation', 50, 'Workflows, integrations and scheduled operations'],
+];
+
+const EMPLOYEE_ROLES = [
+  ['Research Analyst', 'Continuous market and competitor intelligence'],
+  ['Data Scientist', 'Models, forecasts and decision support'],
+  ['Campaign Manager', 'Plans, executes and reports on campaigns'],
+  ['Operations Assistant', 'Scheduled workflows and routine operations'],
+  ['QA Verifier', 'Checks deliverables against verification rules'],
+];
+
 const PIPELINE_STAGES = [
   { n: '01', key: 'goal', label: 'User goal', note: 'State any goal in plain language — research, engineering, revenue, operations.' },
   { n: '02', key: 'understanding', label: 'Goal understanding', note: 'Intent detection decomposes the goal into structured, ordered work.' },
@@ -57,7 +74,7 @@ const TRACE_STEPS = [
 export default function Home() {
   return (
     <>
-<div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
+<div id="boot-veil" aria-hidden="true"><div className="boot-core"><span className="boot-ring"></span><span className="boot-ring r2"></span><span className="boot-mark">A!</span></div><div className="boot-word">AKBARAL!</div><div className="boot-tagline">ONE INTELLIGENCE · EVERY SOLUTION</div><div className="boot-line"><i></i></div></div><div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
   Skip to content</a><header className="site-header" id="site-header"><a className="brand" href="#/" aria-label="AKBARAL home"><span className="brand-mark" aria-hidden="true"><span className="brand-mark-glow"></span>
 
       A!</span><span className="brand-text">
@@ -138,17 +155,39 @@ export default function Home() {
 
         {/* Chapter index */}
         <nav className="section-rail aw-container" aria-label="Landing chapters">
-          <button type="button" data-scroll-to="master-ai"><i>01</i> Master AI</button>
-          <button type="button" data-scroll-to="agent-world"><i>02</i> Agent World</button>
-          <button type="button" data-scroll-to="factory"><i>03</i> Agent Factory</button>
-          <button type="button" data-scroll-to="automation"><i>04</i> Automation</button>
-          <button type="button" data-scroll-to="workspace"><i>05</i> Execution</button>
-          <button type="button" data-scroll-to="trust"><i>06</i> Security</button>
-          <button type="button" data-scroll-to="pricing"><i>07</i> Pricing</button>
+          <button type="button" data-scroll-to="intelligence"><i>01</i> Intelligence</button>
+          <button type="button" data-scroll-to="master-ai"><i>02</i> Master AI</button>
+          <button type="button" data-scroll-to="agent-world"><i>03</i> Agent World</button>
+          <button type="button" data-scroll-to="specialists"><i>04</i> Specialists</button>
+          <button type="button" data-scroll-to="execution"><i>05</i> Execution</button>
+          <button type="button" data-scroll-to="automation"><i>06</i> Automation</button>
+          <button type="button" data-scroll-to="trust"><i>07</i> Security</button>
+          <button type="button" data-scroll-to="pricing"><i>08</i> Pricing</button>
         </nav>
 
-        {/* ================= 01 · MASTER AI pipeline ================= */}
-        <div className="aw-container landing-section" id="master-ai">
+        {/* ================= 01 · AKBARAL! Intelligence — manifesto ================= */}
+        <div className="aw-container landing-section section-intelligence" id="intelligence" data-chapter="01">
+          <div className="manifesto" data-reveal>
+            <p className="eyebrow" data-kicker="AKBARAL! Intelligence"></p>
+            <h2 className="manifesto-line">A single intelligence,<br /><span className="grad-text">composed of thousands.</span></h2>
+            <p className="manifesto-sub">
+              AKBARAL! is not a chatbot and not a template library. It is one operating
+              system for autonomous work: a MASTER orchestrator that understands your goal,
+              plans the mission and dispatches real specialist agents — research, engineering,
+              design, data, business and automation — with real tools, verification and
+              honest credits.
+            </p>
+            <div className="manifesto-facts" aria-label="Platform facts">
+              <div><b>1</b><small>Master orchestrator</small></div>
+              <div><b>4,001</b><small>Specialist agents</small></div>
+              <div><b>80</b><small>Disciplines</small></div>
+              <div><b>1</b><small>Verified standard</small></div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= 02 · MASTER AI pipeline ================= */}
+        <div className="aw-container landing-section" id="master-ai" data-chapter="02">
           <div className="pipeline-wrap">
             <div className="pipeline-side" data-reveal>
               <p className="eyebrow" data-kicker="Master AI"></p>
@@ -160,7 +199,7 @@ export default function Home() {
               </p>
               <p className="trust-note">ARCHITECTURE REPRESENTATION — THE REAL PIPELINE RUNS IN YOUR WORKSPACE.</p>
             </div>
-            <div className="pipeline" id="pipeline-rail" aria-label="MASTER AI execution architecture">
+            <div className="pipeline" id="pipeline-rail" aria-label="MASTER AI execution architecture"><span className="pipe-head" aria-hidden="true"></span>
               {PIPELINE_STAGES.map((stage) => (
                 <div className="pipe-stage" data-reveal data-stage={stage.key} key={stage.key}>
                   <small>{stage.n}</small>
@@ -172,8 +211,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ================= 02 · Agent World ================= */}
-        <div className="aw-container landing-section" id="agent-world">
+        {/* ================= 03 · Agent World ================= */}
+        <div className="aw-container landing-section" id="agent-world" data-chapter="03">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Agent World"></p>
             <h2>Eighty disciplines.<br />Four thousand specialists.</h2>
@@ -210,8 +249,35 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ================= 03 · Agent Factory ================= */}
-        <div className="aw-container landing-section" id="factory">
+        {/* ================= 04 · Thousands of specialized agents ================= */}
+        <div className="aw-container landing-section" id="specialists" data-chapter="04">
+          <div className="section-head" data-reveal>
+            <p className="eyebrow" data-kicker="Specialist intelligence"></p>
+            <h2>Thousands of specialists.<br /><span className="grad-text">Every discipline.</span></h2>
+            <p className="sub">
+              Each of the 4,001 registry contracts is a distinct specialist — its own
+              instructions, tools, workflow and verification rules. Not clones. Not personas.
+              A living index you can search, run and extend.
+            </p>
+          </div>
+          <div className="discipline-index" data-reveal aria-label="Registry disciplines">
+            {DISCIPLINES.map(([name, count, note], i) => (
+              <div className="discipline-row" key={name}>
+                <small>{String(i + 1).padStart(2, '0')}</small>
+                <b>{name}</b>
+                <span>{note}</span>
+                <em>{count.toLocaleString()} agents</em>
+              </div>
+            ))}
+          </div>
+          <div className="world-note" data-reveal>
+            <p>The live registry grows through the Agent Factory and the marketplace — every entry is a real, deployable contract.</p>
+            <div className="actions"><a className="btn btn-outline" href="#/agents">Open the registry →</a></div>
+          </div>
+        </div>
+
+        {/* ================= 05 · Agent Factory ================= */}
+        <div className="aw-container landing-section" id="factory" data-chapter="05">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Agent Factory"></p>
             <h2>Manufacture intelligence.</h2>
@@ -246,42 +312,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ================= 04 · Automation ================= */}
-        <div className="aw-container landing-section" id="automation">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Automation"></p>
-            <h2>Intelligence on a schedule.</h2>
-            <p className="sub">
-              The same orchestrator that runs your tasks also runs them on real schedules —
-              timezone-aware cron, intervals and one-shot timers — with conditions, retries,
-              crash recovery and notifications. A credit is consumed only when a run succeeds.
-            </p>
-          </div>
-          <div className="auto-panel" data-reveal>
-            <div className="auto-strip" aria-label="Supported schedule forms">
-              <span className="cron-chip"><code>*/15 * * * *</code><small>cron · Asia/Karachi</small></span>
-              <span className="cron-chip"><code>0 9 * * 1-5</code><small>weekdays 09:00 · DST-safe</small></span>
-              <span className="cron-chip"><code>every 30m</code><small>interval</small></span>
-              <span className="cron-chip"><code>once · ISO 8601</code><small>one-shot</small></span>
-            </div>
-            <div className="auto-chain" aria-label="Automation run lifecycle">
-              <div className="auto-node"><i>A-01</i><b>Schedule</b><small>The engine computes the next run for each schedule and timezone.</small></div>
-              <div className="auto-node"><i>A-02</i><b>Conditions</b><small>A run proceeds only when its conditions hold.</small></div>
-              <div className="auto-node"><i>A-03</i><b>Agent steps</b><small>Registered specialists run through the MASTER orchestrator.</small></div>
-              <div className="auto-node"><i>A-04</i><b>Verify &amp; retry</b><small>Verification gates success; failures retry with backoff and timeouts.</small></div>
-              <div className="auto-node"><i>A-05</i><b>Notify</b><small>Push and in-app notifications — and honest credit refunds.</small></div>
-            </div>
-            <div className="world-note">
-              <p>Interrupted runs are recovered after a crash — or refunded. Every run is auditable, cancellable and isolated to your tenant.</p>
-              <div className="actions">
-                <a className="btn btn-outline" href="#/automations">Open Automations →</a>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ================= 05 · Workspace / execution ================= */}
-        <div className="aw-container landing-section" id="workspace">
+        {/* ================= 06 · Real task execution ================= */}
+        <div className="aw-container landing-section" id="execution" data-chapter="06">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Execution"></p>
             <h2>Watch the system work.</h2>
@@ -316,8 +348,90 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ================= 06 · Trust + security ================= */}
-        <div className="aw-container landing-section" id="trust">
+        {/* ================= 07 · Automation ================= */}
+        <div className="aw-container landing-section" id="automation" data-chapter="07">
+          <div className="section-head" data-reveal>
+            <p className="eyebrow" data-kicker="Automation"></p>
+            <h2>Intelligence on a schedule.</h2>
+            <p className="sub">
+              The same orchestrator that runs your tasks also runs them on real schedules —
+              timezone-aware cron, intervals and one-shot timers — with conditions, retries,
+              crash recovery and notifications. A credit is consumed only when a run succeeds.
+            </p>
+          </div>
+          <div className="auto-panel" data-reveal>
+            <div className="auto-strip" aria-label="Supported schedule forms">
+              <span className="cron-chip"><code>*/15 * * * *</code><small>cron · Asia/Karachi</small></span>
+              <span className="cron-chip"><code>0 9 * * 1-5</code><small>weekdays 09:00 · DST-safe</small></span>
+              <span className="cron-chip"><code>every 30m</code><small>interval</small></span>
+              <span className="cron-chip"><code>once · ISO 8601</code><small>one-shot</small></span>
+            </div>
+            <div className="auto-chain" aria-label="Automation run lifecycle">
+              <div className="auto-node"><i>A-01</i><b>Schedule</b><small>The engine computes the next run for each schedule and timezone.</small></div>
+              <div className="auto-node"><i>A-02</i><b>Conditions</b><small>A run proceeds only when its conditions hold.</small></div>
+              <div className="auto-node"><i>A-03</i><b>Agent steps</b><small>Registered specialists run through the MASTER orchestrator.</small></div>
+              <div className="auto-node"><i>A-04</i><b>Verify &amp; retry</b><small>Verification gates success; failures retry with backoff and timeouts.</small></div>
+              <div className="auto-node"><i>A-05</i><b>Notify</b><small>Push and in-app notifications — and honest credit refunds.</small></div>
+            </div>
+            <div className="world-note">
+              <p>Interrupted runs are recovered after a crash — or refunded. Every run is auditable, cancellable and isolated to your tenant.</p>
+              <div className="actions">
+                <a className="btn btn-outline" href="#/automations">Open Automations →</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= 08 · AI Employees ================= */}
+        <div className="aw-container landing-section" id="employees" data-chapter="08">
+          <div className="split-wrap">
+            <div className="split-copy" data-reveal>
+              <p className="eyebrow" data-kicker="AI Employees"></p>
+              <h2>Hire intelligence,<br /><span className="grad-text">not headcount.</span></h2>
+              <p className="sub">
+                Give an AI employee a role and it works inside your workspace on the same
+                verified execution standard as every agent — real tools, a full audit
+                trail and honest credits. Managed from your CRM, alongside contacts,
+                pipelines and campaigns.
+              </p>
+              <div className="actions"><a className="btn btn-primary" href="#/crm">Open AI Employees →</a></div>
+            </div>
+            <div className="employee-roster" data-reveal aria-label="Example AI employee roles">
+              <div className="roster-head">Example roles</div>
+              {EMPLOYEE_ROLES.map(([role, note]) => (
+                <div className="roster-row" key={role}>
+                  <b>{role}</b>
+                  <span>{note}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ================= 09 · Workspace ================= */}
+        <div className="aw-container landing-section" id="workspace" data-chapter="09">
+          <div className="section-head" data-reveal>
+            <p className="eyebrow" data-kicker="Workspace"></p>
+            <h2>Your intelligence<br /><span className="grad-text">has a home.</span></h2>
+            <p className="sub">
+              Projects, files and a knowledge base scoped to your tenant. Agents read and
+              write inside your workspace — every artifact stays yours, every action is logged.
+            </p>
+          </div>
+          <div className="workspace-shelf" data-reveal aria-label="Workspace capabilities">
+            <div className="shelf-row"><b>Projects</b><span>Group goals, tasks and files per initiative.</span></div>
+            <div className="shelf-row"><b>Files</b><span>Upload, store and let agents work on your documents.</span></div>
+            <div className="shelf-row"><b>Knowledge</b><span>Private search over everything your agents produce.</span></div>
+            <div className="shelf-row"><b>History</b><span>Full execution traces — steps, tools, evidence.</span></div>
+          </div>
+          <div className="world-note" data-reveal>
+            <p>Isolated per tenant. Uploads are validated and storage-keyed; knowledge search is scoped to your account only.</p>
+            <div className="actions"><a className="btn btn-outline" href="#/workspace">Open Workspace →</a></div>
+          </div>
+        </div>
+
+        {/* ================= 10 · Trust + security ================= */}
+        <div className="aw-container landing-section" id="trust" data-chapter="10">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Security &amp; trust"></p>
             <h2>Security-first architecture.</h2>
@@ -347,8 +461,8 @@ export default function Home() {
           <p className="trust-note" data-reveal>EVERY CONTROL ABOVE IS IMPLEMENTED AND COVERED BY THE PLATFORM TEST SUITE.</p>
         </div>
 
-        {/* ================= 07 · Pricing ================= */}
-        <section className="pricing aw-container landing-section" id="pricing">
+        {/* ================= 11 · Pricing ================= */}
+        <section className="pricing aw-container landing-section" id="pricing" data-chapter="11">
           <div className="section-head" data-reveal>
             <p className="eyebrow" data-kicker="Pricing"></p>
             <h2>Honest task accounting.</h2>
@@ -455,7 +569,7 @@ export default function Home() {
             Tool permissions (comma separated)<input name="tool_permissions" placeholder="web_search, page_fetch, knowledge_search" /></label><label>
             Verification rules (comma separated)<input name="verification_rules" /></label><label>
 
-            Price (PKR, optional)<input type="number" name="price_cents" placeholder="0" /></label><button className="btn btn-primary" type="submit">
+            Price (USD cents, optional)<input type="number" name="price_cents" placeholder="e.g. 1000 = $10" /></label><button className="btn btn-primary" type="submit">
 
             Create agent</button></form><div><div className="panel"><h3>
 
@@ -537,7 +651,7 @@ export default function Home() {
 
 
               Credits<input type="number" name="credits" min="1" defaultValue="10" required /></label><label>
-              Amount (PKR)<input type="number" name="amount_cents" min="1" defaultValue="2500" required /></label><button className="btn btn-primary" type="submit">
+              Amount (USD cents)<input type="number" name="amount_cents" min="100" defaultValue="1000" required /><div className="quick-amounts" aria-label="Quick amounts"><button type="button" data-amount="1000">$10</button><button type="button" data-amount="5000">$50</button><button type="button" data-amount="9000">$90</button><button type="button" data-amount="20000">$200</button><button type="button" data-amount="40000">$400</button></div></label><button className="btn btn-primary" type="submit">
 
               Request purchase</button></form><div id="credit-order"></div></div></div><div className="panel"><h3>
 

@@ -72,7 +72,7 @@ export function createMarketplaceRouter(): Router {
       throw new HttpError(403, 'agent is not published for installation', 'agent_not_published');
     }
     const priceCents = market?.price_cents ?? 0;
-    const order = createAgentOrder({ userId: req.auth!.userId, agentId: agent.id, amountCents: priceCents, currency: market?.currency ?? 'PKR' });
+    const order = createAgentOrder({ userId: req.auth!.userId, agentId: agent.id, amountCents: priceCents, currency: market?.currency ?? 'USD' });
     const { firstInstall } = installUserAgent({ userId: req.auth!.userId, agentId: agent.id });
     if (!firstInstall) {
       // Repeat install by the same user: keep it saved but never force the
@@ -102,7 +102,7 @@ export function createMarketplaceRouter(): Router {
     const priceCents = Number(body.price_cents ?? 0) || 0;
     db.run(
       `INSERT INTO agent_marketplace (id, agent_id, publisher_user_id, price_cents, currency, status, tags, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'PKR', 'published', NULL, ?, ?)
+       VALUES (?, ?, ?, ?, 'USD', 'published', NULL, ?, ?)
        ON CONFLICT(agent_id) DO UPDATE SET price_cents=?, status='published', publisher_user_id=?, updated_at=?`,
       [
         `mkt-${Date.now()}`,
