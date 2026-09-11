@@ -1,0 +1,22 @@
+# AKBARAL! — free automatic HTTPS via Let's Encrypt.
+# The domain comes from the AKBARAL_DOMAIN env var in
+# deploy/free-oracle/docker-compose.free.yml. Caddy obtains and renews
+# the certificate automatically; nothing to configure beyond DNS + ports.
+
+{$AKBARAL_DOMAIN} {
+	encode zstd gzip
+
+	# WebSocket / SSE execution streams pass through unchanged.
+	reverse_proxy akbaral:3000
+
+	header {
+		# The app sets its own security headers; Caddy adds transport hardening.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+	}
+}

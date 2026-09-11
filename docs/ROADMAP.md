@@ -1201,6 +1201,17 @@ kept lean. Equivalent interaction quality was hand-crafted instead.)
   10 routes, 254/254 tests, both typechecks, production build,
   `node --check`, full live API sweep.
 
+### M18 — Zero-cost launch infrastructure kit (2026-09-11)
+
+Free-tier launch path prepared and validated (no paid infrastructure):
+`deploy/free-oracle/` (docker-compose with Caddy TLS terminator, Caddyfile,
+idempotent VM bootstrap script — bash -n + structure checks green) and
+`docs/ZERO_COST_LAUNCH.md` (exact click-by-click checklist: Oracle Always
+Free VM, DuckDNS subdomain, Google AI Studio free key, deploy + smoke
+commands, honest limits, revenue-time upgrade path). Zero application
+code changes; same production image as the paid runbook. ARM-safe
+verified: no native dependencies (node:sqlite built-in).
+
 ---
 
 ## Verification protocol (every milestone)

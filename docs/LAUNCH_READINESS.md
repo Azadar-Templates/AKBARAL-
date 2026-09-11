@@ -442,3 +442,14 @@ typography alignment. Browser-verified: 70/70 viewport checks, 21-width
 hero word-fit sweep (fixed a real edge-clipping defect found by the
 audit), zero console errors on 10 routes. 254/254 tests, both typechecks,
 production build, live API sweep green.
+
+## Zero-cost launch path (2026-09-11)
+
+The production stack can launch at $0 upfront: Oracle Cloud Always Free
+(ARM VM, persistent volume), Caddy (free Let's Encrypt HTTPS), DuckDNS
+subdomain, and the Google Gemini free-tier API key as the real AI
+provider (the app's Google adapter + gemini-2.0-flash need no code
+change). Full user checklist and honest limits: docs/ZERO_COST_LAUNCH.md.
+Deployment kit: deploy/free-oracle/ (compose + Caddyfile + VM bootstrap,
+validated: script syntax + compose structure; not yet executed on a real
+host — pending the user's free accounts).
