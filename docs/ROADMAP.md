@@ -1164,6 +1164,44 @@ as playwright/puppeteer CDNs are network-blocked in the sandbox):
   overlay); all browser QA therefore runs against `next start` production
   output. Real-browser users are unaffected (verified in live preview logs).
 
+### M17 — SIGNATURE-7 full visual reconstruction (2026-09-11)
+
+Complete visual/UX reconstruction applying UI/UX Pro Max design
+intelligence (three-layer token architecture, component state matrices,
+micro-interaction discipline — the skill package itself is a Claude Code
+plugin, so its guidance was read and applied directly rather than
+"installed"; no 21st.dev components were imported: no MCP client exists
+in this environment, its registry needs credentials we do not hold, and
+the product's zero-runtime-dependency CSS architecture is deliberately
+kept lean. Equivalent interaction quality was hand-crafted instead.)
+
+- **Design system v4.0.0**: new component token layer (button heights
+  40/44/52, panel padding, focus ring, chip instrument) emitted to web +
+  mobile; display/chapter type scales added to tokens.
+- **Typography**: editorial display scale — chapter titles clamp to
+  3.8rem, hero display 600-weight, ghost chapter numerals larger and
+  quieter (13rem, 0.10 stroke), refined eyebrow tracking.
+- **Hero**: measured scale (title fits every width 320–2560 — the
+  unbreakable word "intelligence." previously painted past the viewport
+  edge at 320/390/1440+, masked by body overflow-x; now sized so the
+  longest word always fits, verified per-width in the real browser),
+  horizon seam where hero meets the story, larger status chip + 52px CTAs.
+- **MASTER workspace**: command-center treatment (30px panel, 1.06rem
+  goal field, focus glow, 44px run button).
+- **Agent Factory**: structured creation flow markers — 01 Define ·
+  02 Behavior · 03 Configure · 04 Publish (additive markup only).
+- **Agent World**: glass toolbar, stat display 3.8rem/600, sigil hover
+  glow, card lift.
+- **Automation**: connected workflow nodes (light seams between nodes).
+- **Billing**: 1.9rem/600 prices, featured tier halo ring.
+- **Per-chapter composition**: MASTER chapter's intro side is right-
+  aligned toward its pipeline (asymmetric editorial composition).
+- **Android**: title 28/-0.6, kicker tracking, stat 24 — same identity.
+- Verified: 70 route×viewport checks (22 widths) zero overflow/tap/font
+  failures, 21-width hero word-fit sweep, zero console/page errors on
+  10 routes, 254/254 tests, both typechecks, production build,
+  `node --check`, full live API sweep.
+
 ---
 
 ## Verification protocol (every milestone)

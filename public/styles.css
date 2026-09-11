@@ -402,6 +402,7 @@ form label + label { margin-top: 14px; }
 
 .hero-inner { position: relative; width: 100%; padding-top: 88px; padding-bottom: 118px; }
 .hero-copy { max-width: 920px; margin: 0 auto; text-align: center; }
+@media (min-width: 1024px) { .hero-copy { max-width: 1000px; } }
 .hero-system {
   display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap;
   font-family: var(--font-mono);
@@ -1456,7 +1457,7 @@ label { letter-spacing: 0.05em; }
 
 /* — Ultrawide: hold the composition together — */
 @media (min-width: 1921px) {
-  .hero-copy { max-width: 1040px; }
+  .hero-copy { max-width: 1120px; }
   .landing-section h2 { max-width: 24ch; }
 }
 
@@ -1753,7 +1754,7 @@ input:focus, textarea:focus, select:focus {
 @media (max-width: 430px) {
   .site-header { padding: 8px 8px 0; }
   .header-bar { padding: 0 12px; border-radius: 14px; gap: 8px; }
-  .hero-title { font-size: clamp(2.5rem, 12.5vw, 3.4rem); }
+  .hero-title { font-size: clamp(1.9rem, 9.6vw, 3.4rem); }
   .hero-meta { padding: 16px 18px; gap: 12px 20px; margin-top: 40px; }
   .section-rail { top: calc(var(--header-h) + 18px); margin-top: 18px; }
 }
@@ -1935,4 +1936,173 @@ input:focus, textarea:focus, select:focus {
 .btn { min-height: 40px; }
 @media (pointer: coarse) {
   .section-rail button { min-height: 44px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   AKBARAL! SIGNATURE-7 — full visual reconstruction
+   Design intelligence: three-layer tokens · component state matrices ·
+   editorial composition · restrained luxury. One signature identity.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ——— TYPOGRAPHY: editorial display scale ——— */
+h2 { font-size: clamp(2.05rem, 4.2vw, 3.6rem); font-weight: 600; }
+.landing-section .section-head h2 { font-size: clamp(2.1rem, 4.4vw, 3.8rem); letter-spacing: -0.024em; line-height: 1.04; }
+.landing-section .section-head { margin-bottom: 44px; }
+.landing-section .section-head .sub { font-size: 1.05rem; max-width: 60ch; }
+h3 { letter-spacing: -0.01em; }
+strong, b { font-weight: 600; }
+
+/* Chapter ghost numerals: quieter, larger, architectural */
+.landing-section[data-chapter]::before {
+  font-size: clamp(6rem, 15vw, 13rem);
+  font-weight: 600;
+  -webkit-text-stroke: 1px rgba(151, 144, 242, 0.10);
+  top: clamp(18px, 3vw, 44px);
+}
+
+/* ——— HERO: command-environment composition ——— */
+.hero-title { font-size: clamp(1.9rem, 9.5vw, 6.9rem); font-weight: 600; }
+.hero-title .hero-title-2 { color: rgba(151, 144, 242, 0.5); }
+.hero-system { font-size: 0.68rem; letter-spacing: 0.22em; padding: 9px 18px; }
+.hero-sub { font-size: clamp(1.04rem, 1.7vw, 1.28rem); }
+.btn-lg { min-height: var(--btn-h-lg); padding: 16px 34px; font-size: 0.78rem; letter-spacing: 0.16em; }
+.hero-actions .btn-primary { padding-left: 38px; padding-right: 38px; }
+/* Horizon: a single luminous seam where the hero meets the story */
+.hero::after {
+  content: "";
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(720px, 82%);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(151,144,242,0.4), transparent);
+  z-index: 7;
+}
+.hero-meta { gap: clamp(20px, 4vw, 60px); padding: 22px 30px; }
+.hero-meta b { font-weight: 600; }
+
+/* ——— NAVBAR: precision chrome ——— */
+.header-bar { height: 68px; border-radius: 16px; }
+.brand { letter-spacing: 0.2em; }
+.brand-mark { border-radius: 6px; }
+.main-nav a, .main-nav button[data-scroll-to] { font-size: 0.68rem; letter-spacing: 0.16em; }
+.main-nav a:hover { color: var(--text); }
+.main-nav a.active::after { height: 2px; border-radius: 1px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+.credit-pill { font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; border-radius: 999px; padding: 0 14px; }
+:root { --header-h: 68px; }
+
+/* ——— BUTTONS & MICRO-INTERACTIONS (state matrix: default/hover/active/disabled/focus) ——— */
+.btn { font-size: 0.72rem; }
+.btn-primary { transition: transform .2s var(--ease-soft), box-shadow .2s var(--ease-soft), filter .2s var(--ease-soft); }
+.btn-primary:hover { filter: brightness(1.04); box-shadow: 0 16px 44px rgba(0,0,0,0.45); }
+.btn-primary:active { transform: translateY(0) scale(0.985); box-shadow: 0 8px 22px rgba(0,0,0,0.4); }
+.btn-ghost { border-color: transparent; }
+.btn-ghost:hover { border-color: var(--line); }
+:focus-visible { outline: 2px solid rgba(151,144,242,0.6); outline-offset: 2px; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.list-item:focus-within { background: rgba(226,226,234,0.06); }
+
+/* ——— CHIPS / BADGES: one consistent instrument ——— */
+.badge { border-radius: 6px; padding: 4px 10px; font-size: 0.64rem; letter-spacing: 0.1em; }
+.agent-card .tags span { border-radius: 5px; padding: 3px 8px; }
+.eyebrow { letter-spacing: 0.3em; }
+
+/* ——— MASTER WORKSPACE: command center ——— */
+.master-panel { padding: 30px 32px; }
+#master-goal { font-size: 1.06rem; min-height: 124px; }
+#master-goal::placeholder { color: var(--text-faint); font-weight: 400; }
+#master-goal:focus { border-color: rgba(151,144,242,0.55); }
+.master-panel .btn-primary { min-height: var(--btn-h-md); }
+#master-output .panel { padding: 22px 26px; }
+.panel h3 { font-size: 0.72rem; letter-spacing: 0.2em; }
+.page-head h1 { font-size: clamp(1.7rem, 3.4vw, 2.5rem); font-weight: 600; letter-spacing: -0.02em; }
+.page-head .sub { font-size: 1rem; max-width: 62ch; }
+.form-row { gap: 12px; }
+
+/* ——— AGENT WORLD: intelligence network ——— */
+.world-stats .stat-count { font-size: clamp(2.3rem, 5vw, 3.8rem); font-weight: 600; }
+.agent-card { padding: 20px 20px 18px; }
+.agent-card:hover { transform: translateY(-3px); }
+.agent-card:hover .agent-sigil { border-color: rgba(151,144,242,0.5); }
+.agent-sigil { transition: border-color .25s var(--ease-soft), box-shadow .25s var(--ease-soft); }
+.agent-card:hover .agent-sigil { box-shadow: 0 0 24px rgba(115,120,232,0.18); }
+.toolbar { padding: 10px; border-radius: 14px; background: var(--glass-1-fill); border: 1px solid var(--glass-1-border); -webkit-backdrop-filter: blur(var(--glass-1-blur)); backdrop-filter: blur(var(--glass-1-blur)); }
+.toolbar input, .toolbar select { border: 0; background: rgba(5,5,8,0.5); }
+.toolbar input:focus, .toolbar select:focus { border-color: rgba(151,144,242,0.4); }
+
+/* ——— AGENT FACTORY: laboratory structure ——— */
+.form-kicker {
+  display: flex; align-items: center; gap: 10px;
+  margin: 22px 0 10px; padding-top: 18px;
+  border-top: 1px solid var(--line-faint);
+  font-family: var(--font-mono); font-size: 0.64rem; font-weight: 500;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--telemetry);
+}
+.form-kicker:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.form-kicker::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-faint), transparent); }
+.form-panel textarea { min-height: 96px; }
+
+/* ——— AUTOMATION: workflow engine ——— */
+.auto-node { position: relative; padding: 18px 20px; }
+.auto-node:not(:last-child)::after {
+  content: "";
+  position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  width: 1px; height: 14px;
+  background: linear-gradient(180deg, rgba(151,144,242,0.4), rgba(151,144,242,0.08));
+}
+
+/* ——— BILLING / PRICING: luxury commerce ——— */
+.price-grid article p b { font-size: 1.9rem; font-weight: 600; letter-spacing: -0.03em; }
+.price-grid article .plan-tier, .plan-tier { letter-spacing: 0.06em; font-weight: 600; }
+.price-grid article.featured { border-width: 1px; }
+.price-grid article.featured::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(151,144,242,0.22), 0 0 60px rgba(115,120,232,0.10);
+}
+.plan-specs li { padding: 10px 14px; }
+
+/* ——— TRUST PRINCIPLES: editorial ledger ——— */
+.pricing-rules small { font-size: 0.72rem; font-weight: 600; }
+.pricing-rules span { font-size: 0.84rem; line-height: 1.55; }
+
+/* ——— EXECUTION CONSOLE: precision instrument ——— */
+.demo-console { border-radius: 14px; }
+.demo-status { letter-spacing: 0.14em; }
+
+/* ——— FOOTER ——— */
+.footer-nav-bar a, .footer-link { font-size: 0.68rem; }
+
+/* ——— STATES: skeletons & empties ——— */
+.skeleton { border-radius: 10px; }
+.empty { border-radius: 14px; padding: 34px 24px; }
+
+/* ——— PER-CHAPTER COMPOSITION VARIATION (editorial, not card-grid) ——— */
+/* 02 MASTER: right-aligned emphasis */
+#master-ai .pipeline-side { text-align: right; margin-left: auto; }
+#master-ai .pipeline-side .eyebrow { flex-direction: row-reverse; }
+/* 03 AGENT WORLD: centered statistics statement */
+#agent-world .section-head { max-width: 760px; }
+/* 06 EXECUTION: full-bleed console emphasis */
+#execution .trace-panel { border-radius: 16px; }
+/* 10 TRUST: numbered ledger rhythm */
+#trust .control-ledger { gap: 8px; }
+
+/* ——— Ultrawide: hold composition ——— */
+@media (min-width: 1921px) {
+  .hero-title { font-size: 7.4rem; }
+  .landing-section .section-head h2 { font-size: 4rem; }
+}
+
+/* ——— Mobile: compact but breathable (no squeezed desktop) ——— */
+@media (max-width: 1023px) {
+  .master-panel { padding: 22px 20px; }
+  .landing-section .section-head { margin-bottom: 30px; }
+  .auto-node { padding: 15px 16px; }
+}
+@media (max-width: 560px) {
+  .hero-title { font-size: clamp(1.9rem, 9.6vw, 3.4rem); }
+  h2, .landing-section .section-head h2 { font-size: clamp(1.85rem, 8.5vw, 2.4rem); }
+  .price-grid article p b { font-size: 1.7rem; }
+  .world-stats .stat-count { font-size: 2.2rem; }
+  #master-ai .pipeline-side { text-align: left; margin-left: 0; }
+  #master-ai .pipeline-side .eyebrow { flex-direction: row; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar input, .toolbar select { width: 100%; }
 }

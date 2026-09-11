@@ -568,16 +568,16 @@ export default function Home() {
         Agent Factory</h1><p className="sub">Create, test, benchmark and version your own agents.</p></div></div><div className="cols-2"><form id="factory-form" className="panel form-panel"><h3>
 
 
-            Create custom agent</h3><label>
+            Create custom agent</h3><p className="form-kicker">01 · Define</p><label>
             Name<input name="name" required /></label><label>
             Specialization<input name="specialization" required /></label><label>
-            Description<textarea name="description" required defaultValue="" /></label><label>
+            Description<textarea name="description" required defaultValue="" /></label><p className="form-kicker">02 · Behavior</p><label>
 
-            System instructions<textarea name="system_instructions" rows={ 6 } required defaultValue="" /></label><label>
+            System instructions<textarea name="system_instructions" rows={ 6 } required defaultValue="" /></label><p className="form-kicker">03 · Configure</p><label>
             Capabilities (comma separated)<input name="capabilities" /></label><label>
 
             Tool permissions (comma separated)<input name="tool_permissions" placeholder="web_search, page_fetch, knowledge_search" /></label><label>
-            Verification rules (comma separated)<input name="verification_rules" /></label><label>
+            Verification rules (comma separated)<input name="verification_rules" /></label><p className="form-kicker">04 · Publish</p><label>
 
             Price (USD cents, optional)<input type="number" name="price_cents" placeholder="e.g. 1000 = $10" /></label><button className="btn btn-primary" type="submit">
 

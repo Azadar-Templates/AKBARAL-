@@ -206,6 +206,14 @@ When the iOS release begins, consume these tokens exactly as Android consumes
 `mobile/src/theme.ts` and the website consumes `public/tokens.css`.
 
 
+## Component tokens (v4.0.0)
+
+The third layer of the token architecture (primitive → semantic →
+**component**): button heights (40/44/52px + coarse-pointer 44), panel
+padding/radius, focus ring, chip instrument — emitted to `tokens.css`
+and consumed by the SIGNATURE-7 layer. Component state matrices
+(default/hover/active/disabled/focus) are defined per interactive class.
+
 ## Responsive contract (web · Android · future iOS)
 
 The responsive system is a token contract, not per-platform improvisation

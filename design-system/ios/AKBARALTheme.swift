@@ -1,7 +1,7 @@
 // ============================================================
 // AKBARALTheme.swift — AKBARAL! Design System tokens for iOS.
 //
-// GENERATED from design-system/tokens.json (v3.0.0) —
+// GENERATED from design-system/tokens.json (v4.0.0) —
 // run `node design-system/build.mjs` after token edits.
 //
 // STATUS: prepared design tokens for the FUTURE iOS app. There is

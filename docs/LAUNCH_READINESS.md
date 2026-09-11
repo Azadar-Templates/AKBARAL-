@@ -428,3 +428,17 @@ compositions. Android: SafeAreaProvider + inset-aware tab bar/login.
 iOS: responsive contract added to the design tokens (no fake app).
 Full battery green: 254/254 tests, both typechecks, production build,
 node --check, live API sweep (4,001 agents, six USD plans, auth, health).
+
+## SIGNATURE-7 visual reconstruction (2026-09-11, M17)
+
+Full visual pass applying Pro Max design intelligence by hand (no
+21st.dev dependencies added — none could be credentialed, and the
+zero-runtime CSS architecture is kept). Design system v4.0.0 with a
+component token layer; editorial typography scale; hero horizon;
+command-center MASTER; factory flow markers (Define/Behavior/Configure/
+Publish); agent toolbar + sigil glow; automation node seams; billing
+price emphasis + featured halo; asymmetric chapter composition; Android
+typography alignment. Browser-verified: 70/70 viewport checks, 21-width
+hero word-fit sweep (fixed a real edge-clipping defect found by the
+audit), zero console errors on 10 routes. 254/254 tests, both typechecks,
+production build, live API sweep green.

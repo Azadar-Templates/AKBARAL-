@@ -357,8 +357,8 @@ const styles = StyleSheet.create({
   atmoFieldCharcoal: { position: 'absolute', bottom: -140, left: -80, width: 460, height: 380, borderRadius: 190, backgroundColor: atmosphere.fieldCharcoal },
   screenContent: { padding: spacing.lg, paddingBottom: spacing.xxl },
   header: { marginBottom: spacing.lg },
-  kicker: { color: palette.telemetry, fontSize: typeScale.micro.fontSize, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 },
-  title: { color: palette.text, fontSize: 27, fontWeight: '900', letterSpacing: -0.5 },
+  kicker: { color: palette.telemetry, fontSize: typeScale.micro.fontSize, fontWeight: '700', letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 6 },
+  title: { color: palette.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 },
   card: {
     backgroundColor: glass[1].fill,
     borderRadius: radius.lg,
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
   },
   cardSheen: { position: 'absolute', top: 0, left: 10, right: 10, height: 1, backgroundColor: 'rgba(255,255,255,0.05)' },
   stat: { flex: 1, minWidth: 100, padding: spacing.md },
-  statValue: { color: palette.accent, fontSize: 23, fontWeight: '900', letterSpacing: -0.4 },
+  statValue: { color: palette.accent, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   statLabel: { color: palette.textDim, fontSize: 12, marginTop: 2 },
   buttonIvory: {
     backgroundColor: palette.ivory,

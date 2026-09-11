@@ -105,6 +105,16 @@ ${colorBlock(DARK, ':root')}
   --glass-3-highlight: ${tokens.glass.level3.highlight};
   --glass-3-shadow: ${tokens.glass.level3.shadow};
 
+  /* Component tokens (three-layer architecture: primitive → semantic → component) */
+  --btn-h-sm: ${tokens.component.button.heightSm}px;
+  --btn-h-md: ${tokens.component.button.heightMd}px;
+  --btn-h-lg: ${tokens.component.button.heightLg}px;
+  --btn-tracking: ${tokens.component.button.trackingEm}em;
+  --panel-pad: ${tokens.component.panel.paddingPx}px;
+  --panel-pad-m: ${tokens.component.panel.paddingMobilePx}px;
+  --focus-ring: ${tokens.component.focusRing};
+  --chip-h: ${tokens.component.chip.heightPx}px;
+
   /* Atmosphere (layered background fields) */
   --atmo-base: ${tokens.atmosphere.base};
   --atmo-base-high: ${tokens.atmosphere.baseHigh};

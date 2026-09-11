@@ -4,7 +4,7 @@
      node design-system/build.mjs
    Identity: obsidian foundation · indigo/violet atmosphere ·
    glass surfaces · cinematic lighting · technical elegance.
-   Version 3.0.0
+   Version 4.0.0
    ============================================================ */
 
 :root {
@@ -93,6 +93,16 @@
   --glass-3-blur: 30px;
   --glass-3-highlight: rgba(255,255,255,0.085);
   --glass-3-shadow: 0 30px 80px rgba(0,0,0,0.5);
+
+  /* Component tokens (three-layer architecture: primitive → semantic → component) */
+  --btn-h-sm: 40px;
+  --btn-h-md: 44px;
+  --btn-h-lg: 52px;
+  --btn-tracking: 0.13em;
+  --panel-pad: 26px;
+  --panel-pad-m: 20px;
+  --focus-ring: 0 0 0 3px rgba(151,144,242,0.16);
+  --chip-h: 40px;
 
   /* Atmosphere (layered background fields) */
   --atmo-base: #060608;
