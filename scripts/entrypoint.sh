@@ -17,8 +17,10 @@ fi
 if [ "${DISABLE_BACKUP_CRON:-false}" != "true" ]; then
   (
     while true; do
-      # Seconds until the next 01:17 UTC.
-      NOW_S=$(( ( (10#$(date -u +%H) * 60) + 10#$(date -u +%M) ) * 60 + 10#$(date -u +%S) ))
+      # Seconds since midnight UTC. POSIX arithmetic only: epoch % 86400
+      # avoids the leading-zero octal trap (08/09) that broke the bash-only
+      # `10#HH` form under /bin/sh (dash) on node:22-slim.
+      NOW_S=$(( $(date -u +%s) % 86400 ))
       TARGET_S=$(( (1 * 3600) + (17 * 60) ))
       if [ "$NOW_S" -ge "$TARGET_S" ]; then
         WAIT_S=$(( 86400 - NOW_S + TARGET_S ))
