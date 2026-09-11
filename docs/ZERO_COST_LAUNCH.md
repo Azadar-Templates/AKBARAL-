@@ -15,11 +15,15 @@
 > 1. **Oracle Always Free** (below) — needs a one-time card identity
 >    verification (never charged for Always Free).
 > 2. **Modal Starter (free $30/mo, no card) + Neon Free Postgres** —
->    the SQLite→PostgreSQL migration is DONE (2026-09-11): both engines
->    are now selected by DATABASE_URL alone, all 13 migrations ported
->    with parity verification, 4,001-agent seed + audit PASS on
->    PostgreSQL, 254 SQLite tests + 15 PostgreSQL integration tests
->    green, pg_dump backup/restore wired. See docs/DEPLOYMENT.md.
+>    READY TO DEPLOY (2026-09-11): SQLite→PostgreSQL migration done
+>    (both engines selected by DATABASE_URL; 13 migrations ported with
+>    parity verification; 4,001-agent seed + audit PASS on PostgreSQL;
+>    254 SQLite + 15 PostgreSQL tests green; pg_dump backup/restore
+>    wired). Modal wrapper `deploy/modal/akbaral_app.py` validated
+>    against SDK 1.5.5: always-on web service, HTTPS endpoint, secrets
+>    in Modal only, nightly volume backups. Runbook:
+>    `deploy/modal/README.md`. Remaining: user creates Neon + Modal
+>    accounts, creates the secret, runs `modal deploy` (all cardless).
 >
 > Cheapest turnkey paid path if budget appears: Zeabur Dev $5/mo
 > (persistent storage included) using the same GHCR image.

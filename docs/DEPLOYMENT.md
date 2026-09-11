@@ -196,3 +196,15 @@ OR IGNORE, scalar MAX/MIN, FTS5 MATCH → tsvector websearch).
   postgresql-client for this.
 - Connection security: TLS required (`sslmode=require`), credentials
   only ever in DATABASE_URL (env / secrets manager), masked in all logs.
+
+
+## Modal + Neon deployment (Path B) — 2026-09-11
+
+`deploy/modal/akbaral_app.py` deploys the public GHCR image to Modal as an
+always-on web service (0.25 vCPU / 1 GiB, `min_containers=1`) backed by
+Neon PostgreSQL. Verified against Modal SDK 1.5.5 + live docs; credentials
+live only in the `akbaral-production` Modal secret. Includes one-shot
+seed, nightly 01:17 UTC verified pg_dump onto a Modal volume, and a
+restore path with pre-restore safety snapshots. Full runbook:
+`deploy/modal/README.md`. Cost ≈ $14.3/mo of Modal's $30/mo free Starter
+credits; Neon Free hosts the database (0.5 GB, app ~36 MB).
