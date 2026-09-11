@@ -1212,6 +1212,22 @@ commands, honest limits, revenue-time upgrade path). Zero application
 code changes; same production image as the paid runbook. ARM-safe
 verified: no native dependencies (node:sqlite built-in).
 
+### M19 — Zero-cost hosting pivot + automated image publishing (2026-09-11)
+
+Oracle Cloud signup blocked in practice (card + identity verification +
+request-limit errors). Investigated the 2026 free-host landscape
+(Render/Koyeb/Fly/Railway/Zeabur/Back4App/SnapDeploy: no persistent
+disk, sleep, trial-only, or card — all disqualified for SQLite
+single-node architecture). New primary: ClawCloud Run (Kubernetes PaaS,
+real free $5/mo via >=180-day GitHub OAuth, no card, PVC volumes,
+managed TLS). Executed agent-side: GitHub Actions workflow
+(.github/workflows/docker-publish.yml) builds and publishes the
+production image to GHCR automatically on every push — verified green,
+image public at ghcr.io/azadar-templates/akbaral-:latest (+ sha tags
+for rollback). Kit: deploy/free-clawcloud/README.md (copy-paste env,
+volume, port, seed-once, verify, backup download, cost accounting).
+Zero application code changes.
+
 ---
 
 ## Verification protocol (every milestone)

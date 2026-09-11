@@ -1,5 +1,14 @@
 # AKBARAL! — Zero-Cost Launch Runbook (September 18 target)
 
+> **Path status (2026-09-11):** Oracle Cloud signup was blocked in
+> practice (card + identity verification + request-limit errors), so the
+> **primary path is now ClawCloud Run** (`deploy/free-clawcloud/`) —
+> genuinely free $5/month via GitHub OAuth (account ≥180 days), **no
+> credit card**, persistent volume, automatic HTTPS, and the production
+> image is prebuilt for you at `ghcr.io/azadar-templates/akbaral-:latest`.
+> The Oracle path below remains valid for whenever a card becomes
+> acceptable; the app and image are identical for both.
+
 **Goal:** publicly accessible AKBARAL! with HTTPS, persistent database,
 backups and a real AI provider — at **$0 upfront**, using only reputable
 providers' genuine free tiers. Upgrades happen from revenue, later.

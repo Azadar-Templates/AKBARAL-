@@ -453,3 +453,15 @@ change). Full user checklist and honest limits: docs/ZERO_COST_LAUNCH.md.
 Deployment kit: deploy/free-oracle/ (compose + Caddyfile + VM bootstrap,
 validated: script syntax + compose structure; not yet executed on a real
 host — pending the user's free accounts).
+
+## Zero-cost path update: ClawCloud Run primary (2026-09-11)
+
+Oracle Cloud blocked (card verification). New primary: ClawCloud Run —
+free $5/mo credit via GitHub OAuth (>=180-day account), no card,
+persistent PVC volume, managed HTTPS domain. Production image now
+CONTINUOUSLY PUBLISHED by GitHub Actions to ghcr.io/azadar-templates/
+akbaral- (free — public repo; no user setup required). Click-by-click
+kit: deploy/free-clawcloud/README.md. App sizing fits the credit
+(0.5 vCPU/1GiB/2Gi ≈ $4.3/mo). Honest risk: young provider — mitigated
+by nightly verified backups in the volume + portable GHCR image +
+documented 10-minute redeploy-anywhere path.
