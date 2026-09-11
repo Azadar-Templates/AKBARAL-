@@ -76,15 +76,15 @@ jobs:
         run: |
           echo "image:      ${{ env.IMAGE }}"
           echo "commit:     ${{ github.sha }}"
-          echo "digest:     sha256:${{ steps.build.outputs.digest }}"
+          echo "digest:     ${{ steps.build.outputs.digest }}"
           echo "immutable:  ${{ env.IMAGE }}:${{ github.sha }}"
           # Machine-readable record of the exact digest for this commit
           # (shows as a run annotation and in the job summary).
-          echo "::notice title=published-image::${{ env.IMAGE }}@sha256:${{ steps.build.outputs.digest }} (commit ${{ github.sha }})"
+          echo "::notice title=published-image::${{ env.IMAGE }}@${{ steps.build.outputs.digest }} (commit ${{ github.sha }})"
           {
             echo "## Published image"
             echo '```'
-            echo "${{ env.IMAGE }}@sha256:${{ steps.build.outputs.digest }}"
+            echo "${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
             echo '```'
             echo "commit: ${{ github.sha }}"
           } >> "$GITHUB_STEP_SUMMARY"
