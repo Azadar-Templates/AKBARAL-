@@ -80,7 +80,7 @@ const RULES: ReadonlyArray<readonly [string, string]> = [
   ['03', 'Failed, unverified or cancelled tasks are refunded automatically.'],
   ['04', 'Paid resources are clearly disclosed; Pro required where applicable.'],
   ['05', 'Every credit movement is visible in your billing ledger.'],
-  ['06', 'AKBARAL! clearly shows task status, execution progress and verification state \u2014 so you can understand what the system is doing and what was actually completed.'],
+  ['06', 'AKBARAL! shows task status, progress, and verification in real time.'],
 ];
 
 const styles = StyleSheet.create({

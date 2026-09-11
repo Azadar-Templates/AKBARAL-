@@ -1112,10 +1112,9 @@ Focused web + Android correction pass (glass system intact):
   now a professional "System status" entry with a live dot (still the
   real /api/health).
 - **Sixth billing principle** added on web (landing pricing-rules) and
-  Android (Billing screen): "06 — AKBARAL! clearly shows task status,
-  execution progress and verification state — so you can understand
-  what the system is doing and what was actually completed." Honest
-  capability disclosure; no fabricated claims.
+  Android (Billing screen): "06 — AKBARAL! shows task status, progress,
+  and verification in real time." Honest capability disclosure; no
+  fabricated claims. (Copy later shortened to this concise form.)
 - Assets stay `akbaral-lux-5`.
 
 ### M16 — Responsive UX reconstruction, browser-verified (2026-09-11)

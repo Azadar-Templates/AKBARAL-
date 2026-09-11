@@ -488,7 +488,7 @@ export default function Home() {
             <div><small>02</small><span>A free task is consumed only when work succeeds.</span></div>
             <div><small>03</small><span>Failed, unverified or cancelled tasks are refunded automatically.</span></div>
             <div><small>04</small><span>Paid resources are clearly disclosed; Pro required where applicable.</span></div>
-            <div><small>05</small><span>Every credit movement is visible in your billing ledger.</span></div><div><small>06</small><span>AKBARAL! clearly shows task status, execution progress and verification state — so you can understand what the system is doing and what was actually completed.</span></div>
+            <div><small>05</small><span>Every credit movement is visible in your billing ledger.</span></div><div><small>06</small><span>AKBARAL! shows task status, progress, and verification in real time.</span></div>
           </div>
         </section>
 
