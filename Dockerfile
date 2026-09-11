@@ -34,6 +34,11 @@ COPY db ./db
 COPY public ./public
 COPY scripts ./scripts
 RUN chmod +x scripts/entrypoint.sh
+# Build stamp: the commit that produced this image. CI passes
+# --build-arg GIT_SHA=<sha>; any runtime (Modal, Docker hosts) can then
+# prove which code it is running instead of trusting a mutable :latest tag.
+ARG GIT_SHA=unknown
+RUN echo "${GIT_SHA}" > /app/.image-version
 EXPOSE 3000 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

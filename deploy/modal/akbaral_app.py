@@ -23,18 +23,25 @@ One-shots: modal run deploy/modal/akbaral_app.py::seed_database
            modal run deploy/modal/akbaral_app.py::backup_database
 """
 
+import os
 import subprocess
 
 import modal
 
 APP_NAME = "akbaral-app"
-IMAGE_REF = "ghcr.io/azadar-templates/akbaral:latest"  # or pin: akbaral:b7debed1cca15795d369cf074b476b55ba8593f4
+# Override to pin an exact build:  AKBARAL_IMAGE="ghcr.io/azadar-templates/akbaral@sha256:<digest>"
+# (or the immutable per-commit tag ghcr.io/azadar-templates/akbaral:<full sha>).
+IMAGE_REF = os.environ.get("AKBARAL_IMAGE", "ghcr.io/azadar-templates/akbaral:latest")
 WORKDIR = "/app"  # image WORKDIR
 WEB_PORT = 3000  # public port: Next.js rewrites /api,/uploads,/ws to the internal API on :4000
 BACKUP_DIR = "/backups"
 BACKUP_VOLUME = "akbaral-backups"
 
-image = modal.Image.from_registry(IMAGE_REF, add_python="3.11")
+# force_build=True re-pulls the registry image on every deploy. Without it
+# Modal may reuse a CACHED image build even though :latest moved — which is
+# exactly how a stale pre-fix image kept serving after the fix was published
+# (2026-09-12 incident). Cost: a re-pull per deploy; worth it for correctness.
+image = modal.Image.from_registry(IMAGE_REF, add_python="3.11", force_build=True)
 
 app = modal.App(APP_NAME, image=image)
 
@@ -85,6 +92,27 @@ def web() -> None:
         ],
         cwd=WORKDIR,
     )
+
+
+@app.function(secrets=[production], timeout=300)
+def image_version() -> str:
+    """Prove which commit the RUNNING container is built from.
+
+    Reads the build stamp CI bakes into the image (/app/.image-version).
+    Run after any deploy: `modal run deploy/modal/akbaral_app.py::image_version`
+    — if the printed sha does not match the commit you expect, the deploy
+    is stale. Also prints the compiled json_extract translation line so the
+    PostgreSQL fix is verifiable at runtime, not assumed.
+    """
+    out = subprocess.run(
+        ["sh", "-c", "cat /app/.image-version && grep -o \"json->>.*\" /app/dist/src/db/database.js | head -1"],
+        cwd=WORKDIR,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    print(out.stdout.strip())
+    return out.stdout.strip()
 
 
 @app.function(secrets=[production], timeout=1800)

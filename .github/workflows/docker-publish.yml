@@ -54,6 +54,7 @@ jobs:
           echo "IMAGE_NAME=${NAME##*/}" >> "$GITHUB_ENV"
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -62,8 +63,38 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify published image (commit stamp + compiled PostgreSQL fix)
+        # Pulls EXACTLY the digest that was pushed (not a mutable tag) and
+        # fails the workflow unless the image provably contains this commit's
+        # code — a stale or half-built :latest can never pass silently.
+        run: |
+          DIGEST="sha256:${{ steps.build.outputs.digest }}"
+          echo "published digest: ${IMAGE}@${DIGEST}"
+          docker pull "${IMAGE}@${DIGEST}"
+          STAMP=$(docker run --rm "${IMAGE}@${DIGEST}" cat /app/.image-version)
+          echo "image .image-version: ${STAMP}"
+          if [ "${STAMP}" != "${{ github.sha }}" ]; then
+            echo "::error::image stamp mismatch — the published image was not built from this commit"
+            exit 1
+          fi
+          docker run --rm             -e FIX="::json->>'"             -e BUG='::json->>"'             "${IMAGE}@${DIGEST}" node -e '
+              const fs = require("fs");
+              const code = fs.readFileSync("/app/dist/src/db/database.js", "utf8");
+              if (!code.includes(process.env.FIX)) {
+                console.error("FAIL: single-quoted json_extract translation missing from compiled image");
+                process.exit(1);
+              }
+              if (code.includes(process.env.BUG)) {
+                console.error("FAIL: old double-quoted json_extract translation still present in compiled image");
+                process.exit(1);
+              }
+              console.log("image verification OK: PostgreSQL json_extract fix compiled in; old form absent");
+            '
 
       - name: Make package public (idempotent; public repo => public image)
         run: |
