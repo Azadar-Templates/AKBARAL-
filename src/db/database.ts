@@ -111,7 +111,11 @@ export function translateSqlForPg(sql: string): string {
     (_m, column) => {
       const key = /'\$\.[A-Za-z0-9_]+'/.exec(_m)?.[0] ?? "''";
       const prop = key.slice(3, -1);
-      return `(${column}::json->>${JSON.stringify(prop)})`;
+      // The JSON key MUST be single-quoted: PostgreSQL reads double-quoted
+      // tokens as identifiers (column references), so `->>"key"` fails with
+      // 'column "key" does not exist'. `prop` is regex-constrained to
+      // [A-Za-z0-9_]+, so single-quoting it is injection-safe.
+      return `(${column}::json->>'${prop}')`;
     },
   );
 

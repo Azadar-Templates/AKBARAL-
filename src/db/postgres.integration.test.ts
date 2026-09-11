@@ -15,7 +15,7 @@
  */
 import { strict as assert } from 'node:assert';
 import { describe, it, before, after } from 'node:test';
-import { db, Database, createUser, findUserByEmail, setUserPasswordHash, createTask, updateTaskStatus, consumeTaskCredit, refundTaskCredit, getCreditAccount, indexKnowledgeItem, searchKnowledge } from './index';
+import { db, Database, createUser, findUserByEmail, setUserPasswordHash, createTask, updateTaskStatus, consumeTaskCredit, refundTaskCredit, getCreditAccount, indexKnowledgeItem, searchKnowledge, listOrphanNonTerminalExecutions } from './index';
 import { translateSqlForPg, placeholdersToPg, resolveDbEngine } from './database';
 
 const PG_URL = process.env.PG_TEST_DATABASE_URL ?? '';
@@ -49,10 +49,18 @@ describe('dialect translation (engine-agnostic unit checks)', { skip: !RUN ? 're
     );
   });
 
-  it('translates json_extract to a json cast', () => {
+  it('translates json_extract to a json cast with a SINGLE-quoted key (regression: double quotes are PG identifiers)', () => {
+    // Regression for the 2026-09-12 production failure: the translator once
+    // emitted ->>"specialization", which PostgreSQL parses as a column
+    // reference and fails with: column "specialization" does not exist.
     assert.equal(
       translateSqlForPg("SELECT json_extract(config, '$.specialization') AS s FROM agents"),
-      "SELECT (config::json->>\"specialization\") AS s FROM agents",
+      "SELECT (config::json->>'specialization') AS s FROM agents",
+    );
+    // The exact production startup fragment (queue reconciliation).
+    assert.equal(
+      translateSqlForPg("AND json_extract(j.payload_json, '$.executionId') = e.id"),
+      "AND (j.payload_json::json->>'executionId') = e.id",
     );
   });
 
@@ -198,6 +206,53 @@ describe('PostgreSQL critical-path integration', { skip: !RUN ? 'requires PG_TES
 
     const misses = searchKnowledge(user.id, 'zimbabwe unicycle') as Array<{ id: string }>;
     assert.equal(misses.filter((m) => m.id === item.id).length, 0, 'FTS must not match unrelated terms');
+  });
+
+  it('regression (production 2026-09-12): queue reconciliation startup query executes on PostgreSQL', () => {
+    // Reproduces the exact production failure path: at API startup the
+    // execution-queue reconciliation runs listOrphanNonTerminalExecutions(),
+    // whose json_extract(j.payload_json, '$.executionId') must be translated
+    // to ->>'executionId'. Before the fix this threw:
+    //   Error: column "executionId" does not exist
+    const agent = db.get<{ id: string }>('SELECT id FROM agents WHERE owner_id IS NULL LIMIT 1');
+    assert.ok(agent, 'registry agent needed for the agent_executions FK');
+
+    // Execution owned by an active job -> must NOT be reported orphan…
+    db.run(
+      "INSERT INTO agent_executions (id, agent_id, status) VALUES ('exe-reg-owned-1', ?, 'running')",
+      [agent.id],
+    );
+    db.run(
+      "INSERT INTO execution_jobs (id, job_type, idempotency_key, status, payload_json) VALUES ('job-reg-1', 'agent_execution', 'idem-reg-1', 'running', ?)",
+      [JSON.stringify({ executionId: 'exe-reg-owned-1' })],
+    );
+    // …and an execution with no active job -> must be reported orphan.
+    db.run(
+      "INSERT INTO agent_executions (id, agent_id, status) VALUES ('exe-reg-orphan-1', ?, 'queued')",
+      [agent.id],
+    );
+    cleanup.push(() => {
+      db.run('DELETE FROM execution_jobs WHERE id = ?', ['job-reg-1']);
+      db.run('DELETE FROM agent_executions WHERE id IN (?, ?)', ['exe-reg-owned-1', 'exe-reg-orphan-1']);
+    });
+
+    const orphans = listOrphanNonTerminalExecutions();
+    const ids = orphans.map((o) => o.id);
+    assert.ok(ids.includes('exe-reg-orphan-1'), 'unowned execution must be reported as orphan');
+    assert.ok(!ids.includes('exe-reg-owned-1'), 'job-owned execution must NOT be reported as orphan');
+  });
+
+  it('regression: agent template search json_extract query executes on PostgreSQL', () => {
+    // The other json_extract consumer (agent-factory listTemplates) — search
+    // by specialization stored inside the agents config JSON.
+    const rows = db.all<Record<string, unknown>>(
+      "SELECT slug, json_extract(config, '$.specialization') AS specialization FROM agents WHERE owner_id IS NULL AND json_extract(config, '$.specialization') LIKE ? LIMIT 5",
+      ['%re%'],
+    );
+    assert.ok(rows.length > 0, 'specialization search must return registry agents');
+    for (const row of rows) {
+      assert.ok(typeof row.specialization === 'string' && row.specialization.length > 0, 'specialization must be extracted from the config JSON');
+    }
   });
 
   it('constructed Database instances report postgres and honor close()', () => {

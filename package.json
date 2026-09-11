@@ -29,7 +29,7 @@
     "audit:registry": "tsx scripts/audit-registry.ts",
     "scan:secrets": "tsx scripts/scan-secrets.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test:pg": "node scripts/pg-test-server.mjs --run sh -c \"npx tsx src/db/migrate.ts && npx tsx src/db/postgres.integration.test.ts\""
+    "test:pg": "node scripts/pg-test-server.mjs --run sh -c \"npx tsx src/db/migrate.ts && npx tsx src/db/seed.ts && npx tsx src/db/postgres.integration.test.ts\""
   },
   "dependencies": {
     "dotenv": "^16.4.5",
