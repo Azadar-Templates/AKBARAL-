@@ -60,6 +60,10 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          # Single-platform build: also load into the runner's docker daemon
+          # so the verification steps below run the EXACT pushed image
+          # without a second network pull.
+          load: true
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
@@ -68,21 +72,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Verify published image (commit stamp + compiled PostgreSQL fix)
-        # Pulls EXACTLY the digest that was pushed (not a mutable tag) and
-        # fails the workflow unless the image provably contains this commit's
-        # code — a stale or half-built :latest can never pass silently.
+      - name: Report published digest
         run: |
-          DIGEST="sha256:${{ steps.build.outputs.digest }}"
-          echo "published digest: ${IMAGE}@${DIGEST}"
-          docker pull "${IMAGE}@${DIGEST}"
-          STAMP=$(docker run --rm "${IMAGE}@${DIGEST}" cat /app/.image-version)
-          echo "image .image-version: ${STAMP}"
+          echo "image:      ${{ env.IMAGE }}"
+          echo "commit:     ${{ github.sha }}"
+          echo "digest:     sha256:${{ steps.build.outputs.digest }}"
+          echo "immutable:  ${{ env.IMAGE }}:${{ github.sha }}"
+
+      - name: Verify image commit stamp (proves not stale)
+        run: |
+          STAMP=$(docker run --rm "${{ env.IMAGE }}:${{ github.sha }}" cat /app/.image-version || true)
+          echo "image .image-version: '${STAMP}'"
           if [ "${STAMP}" != "${{ github.sha }}" ]; then
-            echo "::error::image stamp mismatch — the published image was not built from this commit"
+            echo "::error::image stamp mismatch (expected ${{ github.sha }}) - the published image was not built from this commit"
+            docker run --rm "${{ env.IMAGE }}:${{ github.sha }}" sh -c "ls -la /app/.image-version /app/dist/src/db/database.js" || true
             exit 1
           fi
-          docker run --rm             -e FIX="::json->>'"             -e BUG='::json->>"'             "${IMAGE}@${DIGEST}" node -e '
+          echo "stamp OK: image was built from ${{ github.sha }}"
+
+      - name: Verify compiled PostgreSQL json_extract fix in image
+        run: |
+          docker run --rm \
+            -e FIX="::json->>'" \
+            -e BUG='::json->>"' \
+            "${{ env.IMAGE }}:${{ github.sha }}" node -e '
               const fs = require("fs");
               const code = fs.readFileSync("/app/dist/src/db/database.js", "utf8");
               if (!code.includes(process.env.FIX)) {
@@ -93,7 +106,9 @@ jobs:
                 console.error("FAIL: old double-quoted json_extract translation still present in compiled image");
                 process.exit(1);
               }
-              console.log("image verification OK: PostgreSQL json_extract fix compiled in; old form absent");
+              const line = code.split("\\n").find((l) => l.includes(process.env.FIX));
+              console.log("image verification OK - fix line compiled in image:");
+              console.log(line.trim());
             '
 
       - name: Make package public (idempotent; public repo => public image)
