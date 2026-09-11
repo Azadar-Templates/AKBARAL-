@@ -76,6 +76,37 @@ What is honest and true about this plan:
    Rules**: allow source `0.0.0.0/0`, TCP **80** and **443** (22/SSH is
    already there).
 
+### Domain strategy (verified 2026-09-11)
+
+Market check performed with live DNS + provider sources:
+
+- **Freenom (.tk/.ml/.ga/.cf/.gq): dead** (free service ended 2024 after
+  the Meta lawsuit) — no free TLD registrations exist anywhere since.
+- **DigitalPlat (dpdns.org / us.kg):** free but a post-Freenom substitute
+  with a registry-suspension incident history and free-domain zone
+  reputation — rejected for production (unreliable/questionable).
+- **akbaral.is-a.dev:** verified TAKEN (resolves to a third party).
+- **pp.ua:** free but WHOIS publishes personal data; mixed reputation.
+- **eu.org:** ALIVE (nic.eu.org, free since 1996, nonprofit, on the
+  Public Suffix List — behaves like a registrable domain, works with
+  Cloudflare NS delegation + Let's Encrypt). `akbaral.eu.org` shows no
+  DNS record (available; the form itself is the final authority).
+  Approval is manual and unpredictable: officially "a few days"; user
+  reports range 24 h to 18+ months. Apply now as the strategic upgrade;
+  do not gate launch on it.
+
+**Launch name (instant, reliable): `akbaral.duckdns.org`** — created in
+step 2 below. Public-Suffix-Listed, 10+ year track record, automatic
+Let's Encrypt HTTPS via the Caddy kit, A-record + update token.
+
+**Strategic name (free upgrade when approved): `akbaral.eu.org`** —
+apply at nic.eu.org/arf (account = email-verified; must be the owner).
+At application time you must supply the nameservers that will host the
+zone: create a free Cloudflare account → Add site `akbaral.eu.org` →
+Cloudflare assigns two NS hosts → enter those in the eu.org form. When
+the acceptance email arrives (days to months), switch the stack by
+changing AKBARAL_DOMAIN + DNS — no rebuild.
+
 ### 2. DuckDNS subdomain  (~2 min)
 1. Go to **https://www.duckdns.org** → sign in with any of the listed
    providers (GitHub works).
