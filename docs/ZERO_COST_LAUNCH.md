@@ -1,13 +1,27 @@
 # AKBARAL! — Zero-Cost Launch Runbook (September 18 target)
 
-> **Path status (2026-09-11):** Oracle Cloud signup was blocked in
-> practice (card + identity verification + request-limit errors), so the
-> **primary path is now ClawCloud Run** (`deploy/free-clawcloud/`) —
-> genuinely free $5/month via GitHub OAuth (account ≥180 days), **no
-> credit card**, persistent volume, automatic HTTPS, and the production
-> image is prebuilt for you at `ghcr.io/azadar-templates/akbaral:latest`.
-> The Oracle path below remains valid for whenever a card becomes
-> acceptable; the app and image are identical for both.
+> **Path status (2026-09-11, verified):** ClawCloud Run **shut down**
+> (registrations closed 2026-04-23; product + free tiers terminated
+> 2026-05-11; VPS business closed 2026-06-30) — its kit is retired in
+> `deploy/free-clawcloud/`. The free-host market was re-verified the same
+> day: Zeabur Free has **no persistent storage**, Modal volumes are
+> eventually-consistent (unsafe for live SQLite), Render/Koyeb/Fly/
+> Railway/HF fail persistence or cardlessness. **No reputable free,
+> cardless, persistent-disk production host exists for this architecture
+> in September 2026.** The production image stays continuously published
+> at `ghcr.io/azadar-templates/akbaral:latest` for any Docker host.
+>
+> The two genuine zero-dollar paths that remain:
+> 1. **Oracle Always Free** (below) — needs a one-time card identity
+>    verification (never charged for Always Free).
+> 2. **Modal Starter (free $30/mo, no card) + a free Postgres** —
+>    requires migrating the backend from SQLite to Postgres first (the
+>    thin, typed repository layer makes this a contained backend
+>    project, not a rewrite). Documented POST-LAUNCH; pursue only as a
+>    deliberate decision.
+>
+> Cheapest turnkey paid path if budget appears: Zeabur Dev $5/mo
+> (persistent storage included) using the same GHCR image.
 
 **Goal:** publicly accessible AKBARAL! with HTTPS, persistent database,
 backups and a real AI provider — at **$0 upfront**, using only reputable
