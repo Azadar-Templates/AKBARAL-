@@ -413,3 +413,18 @@ with identical wording. Verified: 254/254 tests, both typechecks,
 production build, live sweep (nav-more gone, glass footer present,
 principle 06 present, USD six-tier pricing, 4,001 agents, real login
 round-trip, /api/health 200, no theme switch).
+
+## Responsive UX reconstruction, browser-verified (2026-09-11, M16)
+
+First genuinely browser-verified responsive pass (headless Chromium +
+puppeteer-core against the production build): 71 route×viewport checks
+across 320-3440px, zero real horizontal overflow (scroll-lock verified,
+clipping-ancestor-aware offender audit). Fixed: desktop-bar leakage of
+sheet-only nav links at 1024px (specificity bug), hero video overscan
+overflow, boot-sweep overflow, uneven footer chips. Enforced floors: no
+visible text under ~10px, 40px/44px touch targets, safe-area insets on
+anchored surfaces, lighter glass blur on mobile, per-class hero/panel
+compositions. Android: SafeAreaProvider + inset-aware tab bar/login.
+iOS: responsive contract added to the design tokens (no fake app).
+Full battery green: 254/254 tests, both typechecks, production build,
+node --check, live API sweep (4,001 agents, six USD plans, auth, health).

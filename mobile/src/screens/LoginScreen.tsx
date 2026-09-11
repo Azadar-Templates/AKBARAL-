@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
 import { api } from '../api/client';
@@ -7,6 +8,7 @@ import { palette, radius, spacing, shadow } from '../theme';
 import { Button, BrandMark, Card, FadeIn, Field, Pill } from '../components/ui';
 
 export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: string; freeCredits: number; role: string }) => void }) {
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [registerMode, setRegisterMode] = useState(false);
@@ -53,7 +55,7 @@ export function LoginScreen({ onLogin }: { onLogin: (user: { id: string; email: 
   return (
     <KeyboardAvoidingView style={styles.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <LinearGradient colors={['rgba(115,120,232,0.22)', 'rgba(8,8,10,0)', 'rgba(151,144,242,0.12)']} locations={[0, 0.5, 1]} style={styles.atmosphere} pointerEvents="none" />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: 24 + insets.top }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <FadeIn>
         <View style={styles.brandWrap}>
           <BrandMark />

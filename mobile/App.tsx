@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import { NavigationContainer, DarkTheme, Theme, useNavigationContainerRef } from '@react-navigation/native';
@@ -56,7 +57,7 @@ const tabIcons: Record<string, string> = {
   Settings: '⚙',
 };
 
-const makeScreenOptions = (name: string) => ({
+const makeScreenOptions = (name: string, bottomInset = 0) => ({
   headerShown: true,
   headerStyle: { backgroundColor: 'rgba(8,8,10,0.78)', borderBottomColor: 'rgba(226,226,234,0.09)', borderBottomWidth: StyleSheet.hairlineWidth },
   headerShadowVisible: false,
@@ -68,8 +69,8 @@ const makeScreenOptions = (name: string) => ({
     backgroundColor: 'rgba(8,8,10,0.86)',
     borderTopColor: 'rgba(226,226,234,0.09)',
     borderTopWidth: StyleSheet.hairlineWidth,
-    height: 62,
-    paddingBottom: 8,
+    height: 62 + bottomInset,
+    paddingBottom: 8 + bottomInset,
     paddingTop: 6,
     elevation: 0,
   },
@@ -152,6 +153,17 @@ const bootStyles = StyleSheet.create({
 });
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppShell />
+    </SafeAreaProvider>
+  );
+}
+
+/** Full app shell — owns all state; lives inside SafeAreaProvider so
+ *  useSafeAreaInsets() is legal here (tab bar + headers respect the
+ *  Android gesture bar / iOS home indicator). */
+function AppShell() {
   const [user, setUser] = useState<{ id: string; email: string; freeCredits: number; role: string } | null>(null);
   const [ready, setReady] = useState(false);
   const [bootGone, setBootGone] = useState(false);
@@ -159,6 +171,7 @@ export default function App() {
   const bootStart = React.useRef(Date.now()).current;
   const reducedMotion = useReducedMotion();
   const [pushNote, setPushNote] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
   const navigationRef = useNavigationContainerRef<{ Tasks: { taskId?: string; automationId?: string; viewAutomations?: boolean } | undefined }>();
 
   const openTaskById = (taskId: string) => {
@@ -265,7 +278,7 @@ export default function App() {
     <NavigationContainer ref={navigationRef} theme={navTheme} linking={linking}>
       <StatusBar style="light" />
       <Tab.Navigator>
-        <Tab.Screen name="Dashboard" options={makeScreenOptions('Dashboard')}>
+        <Tab.Screen name="Dashboard" options={makeScreenOptions('Dashboard', insets.bottom)}>
           {() => (
             <DashboardScreen
               user={user}
@@ -274,12 +287,12 @@ export default function App() {
             />
           )}
         </Tab.Screen>
-        <Tab.Screen name="MASTER" options={makeScreenOptions('MASTER')} component={MasterScreen} />
-        <Tab.Screen name="Tasks" options={makeScreenOptions('Tasks')} component={TasksScreen} />
-        <Tab.Screen name="Agents" options={makeScreenOptions('Agents')} component={AgentsScreen} />
-        <Tab.Screen name="Workspace" options={makeScreenOptions('Workspace')} component={WorkspaceScreen} />
-        <Tab.Screen name="Billing" options={makeScreenOptions('Billing')}>{() => <BillingScreen user={user} />}</Tab.Screen>
-        <Tab.Screen name="Settings" options={makeScreenOptions('Settings')}>{() => <SettingsScreen onLogout={handleLogout} />}</Tab.Screen>
+        <Tab.Screen name="MASTER" options={makeScreenOptions('MASTER', insets.bottom)} component={MasterScreen} />
+        <Tab.Screen name="Tasks" options={makeScreenOptions('Tasks', insets.bottom)} component={TasksScreen} />
+        <Tab.Screen name="Agents" options={makeScreenOptions('Agents', insets.bottom)} component={AgentsScreen} />
+        <Tab.Screen name="Workspace" options={makeScreenOptions('Workspace', insets.bottom)} component={WorkspaceScreen} />
+        <Tab.Screen name="Billing" options={makeScreenOptions('Billing', insets.bottom)}>{() => <BillingScreen user={user} />}</Tab.Screen>
+        <Tab.Screen name="Settings" options={makeScreenOptions('Settings', insets.bottom)}>{() => <SettingsScreen onLogout={handleLogout} />}</Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>
   ) : (

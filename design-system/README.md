@@ -204,3 +204,33 @@ pretends otherwise. What exists is real preparation:
 
 When the iOS release begins, consume these tokens exactly as Android consumes
 `mobile/src/theme.ts` and the website consumes `public/tokens.css`.
+
+
+## Responsive contract (web · Android · future iOS)
+
+The responsive system is a token contract, not per-platform improvisation
+(`tokens.json → responsive`):
+
+- **Breakpoints**: 320 · 390 · 430 (phones) → 600 · 768 (tablets portrait)
+  → 1024+ (laptop/desktop) → 1920+/2560+ (large/ultrawide, centered
+  compositions with atmospheric sides — never stretched).
+- **Touch**: minimum 44px targets on coarse pointers; 40px rows on
+  desktop hover UI. Inputs render at ≥16px (no iOS focus zoom).
+- **Typography**: no visible text below 0.62rem (~10px); display sizes
+  via `clamp()`.
+- **Safe areas**: every anchored surface (nav, sheets, footers, consent
+  banners) adds `safe-area-inset` padding; Android consumes the same
+  contract via `react-native-safe-area-context`.
+- **Composition per class**: phones = single column, full-width primary
+  actions ≤560px, horizontal scroll only inside a component's own
+  container; tablets = generous stacked panels (768–1023); desktop =
+  one-row nav, cinematic hero; ultrawide = centered, max-width 1200.
+- **Glass**: three material levels survive at every size, with lighter
+  blur/shadow budgets below 768px (performance).
+- **Media**: hero video covers, clips inside its container, poster
+  fallback, honors `prefers-reduced-motion`.
+
+Verified widths (real headless Chromium, production build): 320, 360,
+375, 390, 393, 414, 430, 568/844/932 landscape, 600, 640, 768, 820,
+834, 912, 1024, 1152, 1280, 1366, 1440, 1536, 1600, 1920, 2560, 3440 —
+zero horizontal page overflow across all public and app routes.

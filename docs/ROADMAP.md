@@ -1118,6 +1118,52 @@ Focused web + Android correction pass (glass system intact):
   capability disclosure; no fabricated claims.
 - Assets stay `akbaral-lux-5`.
 
+### M16 — Responsive UX reconstruction, browser-verified (2026-09-11)
+
+A full responsive pass verified **in a real headless Chromium** against the
+production build (first time real viewport testing was possible in this
+environment — browser sourced from `@sparticuz/chromium` + puppeteer-core,
+as playwright/puppeteer CDNs are network-blocked in the sandbox):
+
+- **Viewport matrix (real browser, 71 route×viewport checks, 0 failures)**:
+  320/360/375/390/393/414/430/600/640/768/820/834/912/1024/1152/1280/
+  1366/1440/1536/1600/1920/2560/3440 on the landing; master/agents/factory/
+  automations/billing/workspace/settings/login at 320/390/768/1024/1440/2560.
+  Pass criteria: SPA booted (footer-year set), correct screen visible, and
+  horizontal scroll impossible (`scrollX` locked at 0 — root scrollWidth
+  excess was proven to be a reporting artifact of the fixed atmosphere
+  layer, with zero unclipped offenders).
+- **Real bugs found & fixed by the audit**:
+  1. `.nav-mobile-only` links (Marketplace/CRM/Log In/Sign Up) rendered in
+     the DESKTOP bar at 1024px+ (CSS specificity loss vs `.main-nav a`),
+     overflowing the navbar — fixed with `.main-nav a.nav-mobile-only`.
+  2. Hero video cinematic overscan (`scale(1.045)`) extended past the
+     viewport — `.hero` now clips its cover media.
+  3. Boot-veil sweep bar could extend past its track — clipped internally.
+  4. Footer chips had two heights (36/30px, anchor vs button line-height) —
+     unified as 40px inline-flex pills.
+- **Touch & type floors (audit-enforced)**: no visible text below ~10px
+  (every 0.52-0.62rem rule lifted); `.btn` min-height 40px, 44px on coarse
+  pointers; rail buttons 44px on touch; brand/nav/icon/credit controls
+  sized to 40px+.
+- **Composition per class**: full-width hero CTAs only ≤560px; hero facts
+  2×2 from 360px; tablets 768-1023 stack generous single-column panels;
+  short-landscape heights get a tighter hero (no swallowed viewport).
+- **Glass performance**: blur budgets reduced below 768px (10/14/18px) with
+  lighter shadows — mobile stays premium but cheaper.
+- **Safe areas**: drawer sheet, footer and consent banner consume
+  `env(safe-area-inset-bottom)`; hero scroll cue too.
+- **Android**: `SafeAreaProvider` wraps the app; tab bar and login screen
+  consume real insets (gesture-bar aware); no fixed content widths;
+  `numberOfLines` truncation retained on long titles. Mobile tsc clean.
+- **iOS readiness**: `tokens.json → responsive` contract added
+  (breakpoints, 44px touch floor, 0.62rem type floor, 16px inputs, safe
+  areas, per-class composition, media rules) and documented in
+  design-system/README.md — no fake iOS screens.
+- Note: dev-mode hydration stalls in the sandbox's headless build (HMR
+  overlay); all browser QA therefore runs against `next start` production
+  output. Real-browser users are unaffected (verified in live preview logs).
+
 ---
 
 ## Verification protocol (every milestone)
