@@ -5,7 +5,7 @@
 > **primary path is now ClawCloud Run** (`deploy/free-clawcloud/`) —
 > genuinely free $5/month via GitHub OAuth (account ≥180 days), **no
 > credit card**, persistent volume, automatic HTTPS, and the production
-> image is prebuilt for you at `ghcr.io/azadar-templates/akbaral-:latest`.
+> image is prebuilt for you at `ghcr.io/azadar-templates/akbaral:latest`.
 > The Oracle path below remains valid for whenever a card becomes
 > acceptable; the app and image are identical for both.
 

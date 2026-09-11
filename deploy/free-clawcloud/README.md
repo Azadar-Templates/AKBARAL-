@@ -3,11 +3,11 @@
 **The production image is already built and published for you:**
 
 ```
-ghcr.io/azadar-templates/akbaral-:latest
+ghcr.io/azadar-templates/akbaral:latest
 ```
 
 (automatically rebuilt by GitHub Actions on every push — free, no setup
-was required. Rollback tag: `ghcr.io/azadar-templates/akbaral-:<commit-sha>`)
+was required. Rollback tag: `ghcr.io/azadar-templates/akbaral:<commit-sha>`)
 
 ClawCloud Run gives a **genuine free $5/month credit** to GitHub
 accounts **older than 180 days** — no credit card, no trial expiry.
@@ -44,7 +44,7 @@ In the ClawCloud console open **App Launchpad → Create App**:
 | Field | Value |
 | --- | --- |
 | Name | `akbaral` |
-| Image | `ghcr.io/azadar-templates/akbaral-:latest` (public — no credentials needed) |
+| Image | `ghcr.io/azadar-templates/akbaral:latest` (public — no credentials needed) |
 | CPU | `0.5` |
 | Memory | `1024` MiB |
 | Deployment mode | **Replicas: 1** (the app is single-node by design — do not scale to 2) |

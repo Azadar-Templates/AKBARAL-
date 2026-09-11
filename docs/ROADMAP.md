@@ -1223,7 +1223,7 @@ real free $5/mo via >=180-day GitHub OAuth, no card, PVC volumes,
 managed TLS). Executed agent-side: GitHub Actions workflow
 (.github/workflows/docker-publish.yml) builds and publishes the
 production image to GHCR automatically on every push — verified green,
-image public at ghcr.io/azadar-templates/akbaral-:latest (+ sha tags
+image public at ghcr.io/azadar-templates/akbaral:latest (+ sha tags
 for rollback). Kit: deploy/free-clawcloud/README.md (copy-paste env,
 volume, port, seed-once, verify, backup download, cost accounting).
 Zero application code changes.
