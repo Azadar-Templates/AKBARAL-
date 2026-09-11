@@ -46,8 +46,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image name (repo must be lowercased for GHCR)
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Compute image name (lowercase; strip trailing non-alphanumerics
+          so "AKBARAL-" becomes the valid repository "akbaral")
+        run: |
+          NAME=$(printf '%s' "${GITHUB_REPOSITORY,,}" | sed -E 's/[^a-z0-9]+$//')
+          echo "IMAGE=ghcr.io/${NAME}" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=${NAME##*/}" >> "$GITHUB_ENV"
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -69,4 +73,4 @@ jobs:
             "https://api.github.com/user/packages/container/${IMAGE_NAME}/visibility" \
             >/dev/null 2>&1 && echo "visibility: public ensured" || echo "visibility: left as-is (check manually)"
         env:
-          IMAGE_NAME: akbaral-
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
