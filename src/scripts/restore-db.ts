@@ -8,6 +8,7 @@
  * before replacing it. The process must be restarted after a restore.
  */
 import { restoreVerifiedBackup } from './backup-db';
+import { restorePgBackup } from './backup-pg';
 import { db } from '../db';
 
 const backupFile = process.argv[2];
@@ -17,6 +18,13 @@ if (!backupFile) {
 }
 
 try {
+  if (db.engine === 'postgres') {
+    const result = restorePgBackup({ dumpFile: backupFile, databaseUrl: process.env.DATABASE_URL ?? '' });
+    console.log(
+      `[akbaral] pg restore OK from ${result.restoredFrom} (pre-restore safety snapshot: ${result.preRestoreSafetyFile}). Restart the server now.`,
+    );
+    process.exit(0);
+  }
   const result = restoreVerifiedBackup({ backupFile, safetyDir: process.argv[3] ?? 'backups/pre-restore' });
   console.log(
     `[akbaral] restore OK from ${result.restoredFrom} (safety snapshot: ${result.safetyBackup}; ` +

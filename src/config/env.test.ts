@@ -48,8 +48,14 @@ describe('env', () => {
     assert.throws(() => validateEnvironment(), EnvConfigError);
     process.env.PORT = '3000';
     // Built from segments so the scanner does not treat the fixture as a real secret.
-    const badDatabaseUrl = ['postgres', '://user:pass@host/db'].join('');
-    process.env.DATABASE_URL = badDatabaseUrl;
+    // A well-formed postgres URL is now a VALID production engine (Neon);
+    // malformed and unsupported schemes still must be rejected.
+    const postgresUrl = ['postgres', '://user:pass@host/db'].join('');
+    process.env.DATABASE_URL = postgresUrl;
+    assert.doesNotThrow(() => validateEnvironment());
+    process.env.DATABASE_URL = ['postgres', '://'].join('');
+    assert.throws(() => validateEnvironment(), EnvConfigError);
+    process.env.DATABASE_URL = ['mysql', '://user:pass@host/db'].join('');
     assert.throws(() => validateEnvironment(), EnvConfigError);
     process.env.DATABASE_URL = 'file:./data/akbaral.db';
     process.env.HOST = '';

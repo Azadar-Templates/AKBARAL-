@@ -177,9 +177,27 @@ export function validateDatabaseUrl(databaseUrl: string): void {
   if (value === ':memory:') {
     return;
   }
+  if (/^postgres(ql)?:\/\//i.test(value)) {
+    // PostgreSQL (Neon) production engine. Only structural sanity here —
+    // the URL contains credentials and is never logged.
+    const parsed = (() => {
+      try {
+        return new URL(value);
+      } catch {
+        return null;
+      }
+    })();
+    if (!parsed || !parsed.hostname) {
+      throw new EnvConfigError('DATABASE_URL postgres URL is malformed');
+    }
+    if (value.includes('\0')) {
+      throw new EnvConfigError('DATABASE_URL contains a NUL byte');
+    }
+    return;
+  }
   if (!value.startsWith('file:')) {
     throw new EnvConfigError(
-      'DATABASE_URL is unsupported by this deployment. Use file:<path> or :memory: (SQLite backend).',
+      'DATABASE_URL is unsupported by this deployment. Use file:<path>, :memory: (SQLite) or postgres:// (PostgreSQL).',
     );
   }
   const target = value.slice('file:'.length).trim();

@@ -163,3 +163,36 @@ backup automation is POST-LAUNCH.
 6. Point monitoring at `/api/metrics` (admin token) and `/api/ready`.
 7. TLS termination in front of :3000 (Caddy/nginx/AWS ALB), `TRUST_PROXY=1`.
 8. Walk the restore drill on staging once.
+
+
+## PostgreSQL production engine (Neon) — added 2026-09-11
+
+The stack now runs on either engine, selected purely by `DATABASE_URL`:
+
+- `file:./data/akbaral.db` / `:memory:` → SQLite (local dev, tests)
+- `postgres://…` / `postgresql://…`   → PostgreSQL (Neon production)
+
+No application code changes between engines: the repository layer's
+synchronous API is preserved on PostgreSQL through a worker-thread
+SharedArrayBuffer bridge (one-query-at-a-time, same transaction
+atomicity), with a dialect translator covering the six SQLite-isms the
+repositories use (placeholders, strftime defaults, json_extract, INSERT
+OR IGNORE, scalar MAX/MIN, FTS5 MATCH → tsvector websearch).
+
+- Migrations: `db/migrations/` (SQLite) and `db/migrations-pg/`
+  (PostgreSQL) are applied automatically by the same entrypoint; the
+  `_migrations` ledger tracks each engine separately.
+- Seed + audit: identical commands (`db:seed`, `audit:registry`) —
+  verified on PostgreSQL: 4,001 agents seeded, audit PASS.
+- Tests: `npm test` (SQLite, 254) and `npm run test:pg` (PostgreSQL
+  integration via an in-process PGlite wire-protocol server, 15 —
+  covers the credit consume/refund idempotency, triggers, transactions,
+  FTS search, and the dialect translator).
+- Backups: the nightly cron and both CLIs are engine-aware. PostgreSQL
+  uses `pg_dump` (plain SQL, verified COPY data for core tables, same
+  30-snapshot retention) and `psql` restore with an automatic
+  pre-restore safety snapshot. Credentials travel via child env vars
+  only — never argv, never logs. The runtime image installs
+  postgresql-client for this.
+- Connection security: TLS required (`sslmode=require`), credentials
+  only ever in DATABASE_URL (env / secrets manager), masked in all logs.

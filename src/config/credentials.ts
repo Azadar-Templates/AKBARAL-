@@ -250,7 +250,11 @@ export function getConfigStatus(): ConfigStatus {
       host: env.host,
       port: env.port,
       database: {
-        backend: env.databaseUrl === ':memory:' ? 'sqlite:memory' : 'sqlite:file',
+        backend: /^postgres(ql)?:\/\//i.test(env.databaseUrl)
+          ? 'postgres'
+          : env.databaseUrl === ':memory:'
+            ? 'sqlite:memory'
+            : 'sqlite:file',
         configured: true,
       },
       uploadDir: env.uploadDir,

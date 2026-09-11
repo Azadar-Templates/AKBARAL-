@@ -1228,6 +1228,35 @@ for rollback). Kit: deploy/free-clawcloud/README.md (copy-paste env,
 volume, port, seed-once, verify, backup download, cost accounting).
 Zero application code changes.
 
+### M20 — Dual-engine database: SQLite + PostgreSQL (Neon) (2026-09-11)
+
+Production-safe SQLite→PostgreSQL migration with zero API/functionality
+changes, preserving SQLite for local dev and the test suite:
+
+- `src/db/database.ts` — one `Database` class, two engines selected by
+  DATABASE_URL; PostgreSQL runs the node-postgres client in a worker
+  thread behind a SharedArrayBuffer/Atomics bridge that preserves the
+  synchronous repository contract and one-at-a-time transaction
+  semantics. A single dialect translator (unit-tested) covers `?`
+  placeholders, strftime→to_char ISO timestamps, json_extract→json cast,
+  INSERT OR IGNORE→ON CONFLICT DO NOTHING, scalar MAX/MIN→GREATEST/LEAST
+  (paren-aware), FTS5 MATCH→tsvector websearch, PRAGMA blocked. int8
+  parsed as number for SQLite row-shape parity; credentials masked.
+- `db/migrations-pg/` — all 13 migrations ported (65 tables, 158
+  indexes incl. new GIN, 19 triggers as BEFORE UPDATE plpgsql
+  functions, FTS5 → generated tsvector mirror, explicit rowid
+  surrogate) with automated parity verification per file.
+- Engine-aware migrate/seed/audit/verify/backup/restore; pg_dump/psql
+  backup with COPY-data verification, env-only credentials,
+  pre-restore safety snapshot; postgresql-client added to the image.
+- Verified: SQLite 254/254; PostgreSQL integration 15/15 (credit
+  consume→refund→double-refund idempotency, triggers, rollback, FTS,
+  dedup guard) via a PGlite wire-protocol harness (`npm run test:pg`);
+  4,001-agent seed + `audit:registry` PASS + `verify:db` PASS on
+  PostgreSQL; server+mobile tsc; production build ships the bridge
+  worker. env.test.ts updated to the new DATABASE_URL contract
+  (postgres URLs valid; malformed/other schemes rejected).
+
 ---
 
 ## Verification protocol (every milestone)

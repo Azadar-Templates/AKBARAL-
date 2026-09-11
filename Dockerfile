@@ -23,7 +23,7 @@ ENV NODE_ENV=production
 ENV AKBARAL_UPLOAD_DIR=/data/uploads
 ENV DATABASE_URL=file:/data/akbaral.db
 ENV HOST=0.0.0.0
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates postgresql-client && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /data/uploads /data/backups
 VOLUME ["/data"]
 COPY --from=build /app/node_modules ./node_modules

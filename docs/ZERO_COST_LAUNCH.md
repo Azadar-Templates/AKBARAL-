@@ -14,11 +14,12 @@
 > The two genuine zero-dollar paths that remain:
 > 1. **Oracle Always Free** (below) — needs a one-time card identity
 >    verification (never charged for Always Free).
-> 2. **Modal Starter (free $30/mo, no card) + a free Postgres** —
->    requires migrating the backend from SQLite to Postgres first (the
->    thin, typed repository layer makes this a contained backend
->    project, not a rewrite). Documented POST-LAUNCH; pursue only as a
->    deliberate decision.
+> 2. **Modal Starter (free $30/mo, no card) + Neon Free Postgres** —
+>    the SQLite→PostgreSQL migration is DONE (2026-09-11): both engines
+>    are now selected by DATABASE_URL alone, all 13 migrations ported
+>    with parity verification, 4,001-agent seed + audit PASS on
+>    PostgreSQL, 254 SQLite tests + 15 PostgreSQL integration tests
+>    green, pg_dump backup/restore wired. See docs/DEPLOYMENT.md.
 >
 > Cheapest turnkey paid path if budget appears: Zeabur Dev $5/mo
 > (persistent storage included) using the same GHCR image.

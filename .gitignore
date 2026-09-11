@@ -36,3 +36,6 @@ Thumbs.db
 
 # Next.js
 .next/
+
+# Local PostgreSQL test harness data (PGlite)
+.pglite-test/

@@ -3,9 +3,20 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { Database } from './database';
 
-export const MIGRATIONS_DIR = path.resolve(process.cwd(), 'db', 'migrations');
 const args = process.argv.slice(2);
 const statusOnly = args.includes('--status');
+
+/**
+ * Migrations ship in two dialects with identical intent:
+ *   db/migrations/     — SQLite (local development and the test suite)
+ *   db/migrations-pg/  — PostgreSQL (Neon production)
+ * The engine is selected by DATABASE_URL; checksums are tracked per
+ * engine in the same _migrations ledger.
+ */
+export function resolveMigrationsDir(engine: 'sqlite' | 'postgres'): string {
+  return path.resolve(process.cwd(), 'db', engine === 'postgres' ? 'migrations-pg' : 'migrations');
+}
+export const MIGRATIONS_DIR = resolveMigrationsDir('sqlite');
 
 interface MigrationRecord {
   name: string;
@@ -27,9 +38,9 @@ function checksum(sql: string): string {
   return createHash('sha256').update(sql).digest('hex');
 }
 
-export function listMigrationFiles(): string[] {
+export function listMigrationFiles(dir: string = MIGRATIONS_DIR): string[] {
   const files = fs
-    .readdirSync(MIGRATIONS_DIR)
+    .readdirSync(dir)
     .filter((file) => file.endsWith('.sql'))
     .sort();
 
@@ -37,6 +48,7 @@ export function listMigrationFiles(): string[] {
 }
 
 export function applyMigrations(database: Database): string[] {
+  const dir = resolveMigrationsDir(database.engine);
   ensureMigrationTable(database);
 
   const applied = new Map(
@@ -47,11 +59,11 @@ export function applyMigrations(database: Database): string[] {
 
   const appliedNow: string[] = [];
 
-  for (const file of listMigrationFiles()) {
+  for (const file of listMigrationFiles(dir)) {
     const existing = applied.get(file);
 
     if (existing) {
-      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+      const sql = fs.readFileSync(path.join(dir, file), 'utf8');
       const fileChecksum = checksum(sql);
       if (existing.checksum !== fileChecksum) {
         throw new Error(
@@ -63,7 +75,7 @@ export function applyMigrations(database: Database): string[] {
       continue;
     }
 
-    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+    const sql = fs.readFileSync(path.join(dir, file), 'utf8');
     const fileChecksum = checksum(sql);
 
     database.transaction((tx) => {
@@ -78,14 +90,15 @@ export function applyMigrations(database: Database): string[] {
 }
 
 export function printStatus(database: Database): void {
+  const dir = resolveMigrationsDir(database.engine);
   ensureMigrationTable(database);
   const appliedRecords = database.all<MigrationRecord>(
     'SELECT name, checksum, applied_at FROM _migrations ORDER BY name',
   );
   const appliedNames = new Set(appliedRecords.map((row) => row.name));
-  const files = listMigrationFiles();
+  const files = listMigrationFiles(dir);
 
-  console.log(`migration directory: ${MIGRATIONS_DIR}`);
+  console.log(`migration directory: ${dir}`);
   console.log(`database:            ${database.filePath}`);
   console.log('');
   console.log('applied migrations:');

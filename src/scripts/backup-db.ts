@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { db, Database } from '../db';
+import { createVerifiedPgBackup } from './backup-pg';
 
 export interface BackupResult {
   file: string;
@@ -215,6 +216,22 @@ export function restoreVerifiedBackup(options: { backupFile: string; safetyDir: 
 const isDirectRun = process.argv[1] !== undefined && /backup-db\.(ts|js)$/.test(process.argv[1]);
 if (isDirectRun) {
   try {
+    // Engine dispatch: the PostgreSQL backend uses pg_dump (see backup-pg.ts);
+    // SQLite keeps its VACUUM-INTO verified snapshots. Same CLI contract, so
+    // the container's nightly cron needs no changes.
+    if (db.engine === 'postgres') {
+      const result = createVerifiedPgBackup({
+        backupDir: process.argv[2] ?? 'backups',
+        keep: Number(process.argv[3] ?? 30),
+        databaseUrl: process.env.DATABASE_URL ?? '',
+      });
+      console.log(
+        `[akbaral] pg backup OK: ${result.file} (${result.sizeBytes} bytes, sha256 ${result.sha256.slice(0, 16)}…, ` +
+          `verified COPY data for ${result.tablesVerified.length} core tables)`,
+      );
+      db.close();
+      process.exit(0);
+    }
     const backupDir = process.argv[2] ?? 'backups';
     const keep = Number(process.argv[3] ?? 30);
     const result = createVerifiedBackup({ backupDir, keep: Number.isFinite(keep) ? keep : 30 });
