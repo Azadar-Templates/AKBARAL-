@@ -21,7 +21,7 @@ This document is the evidence-based audit that drives the completion phases. Not
 - **master** (2): `POST /api/master` (goal → understanding → planning → orchestration) + workflow detail
 - **tasks** (8): list/get/cancel/research/files×3/execution-detail
 - **agents** (4): list/detail/categories/save · **factory** (15) · **marketplace** (10) · **world** (3)
-- **billing** (7): plans/account/usage/switch/webhook/invoice-PDF · **trust** (6): feedback + ratings + admin feedback
+- **billing** (7): plans/account/usage/switch/webhook/invoice-PDF · **trust** (6): /api/feedback + ratings + admin feedback
 - **projects** (10) · **automations** (10) · **crm** (16) · **admin** (18) · **notifications** (5) · **files** (5) · **tools** (4) · **models** (3) · **realtime** (WS)
 
 ### 1.3 Auth & security (verified)

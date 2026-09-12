@@ -22,6 +22,7 @@ import { createFactoryRouter } from './routes/factory';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createWorldRouter } from './routes/world';
 import { createPublicRouter } from './routes/public';
+import { createContactRouter } from './routes/contact';
 import { createRealtimeRouter } from './routes/realtime';
 import { createNotificationsRouter } from './routes/notifications';
 import { createCrmRouter } from './routes/crm';
@@ -174,6 +175,9 @@ export function createApiServer(): ApiServer {
   app.use('/api/world', createWorldRouter());
   // Public read-only catalog (powers the /agents directory page; platform agents only)
   app.use('/api/public', createPublicRouter());
+  // Public contact form — strict dedicated rate limit (anti-abuse).
+  app.use('/api/contact', rateLimit({ prefix: 'contact', max: 5, windowMs: 60_000 }));
+  app.use('/api/contact', createContactRouter());
   app.use('/api', createRealtimeRouter());
   app.use('/api/notifications', createNotificationsRouter());
   app.use('/api/crm', createCrmRouter());

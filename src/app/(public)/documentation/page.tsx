@@ -18,7 +18,7 @@ const API_GROUPS = [
   { group: 'Marketplace & Agent World', endpoints: 'listings, install, reviews, favorites under /api/marketplace and /api/world' },
   { group: 'Billing', endpoints: 'GET /api/billing/plans · /account · /usage · POST /switch · webhook (signature-verified)' },
   { group: 'Projects · Automations · CRM', endpoints: 'CRUD under /api/projects, /api/automations, /api/crm (ownership enforced)' },
-  { group: 'Feedback & trust', endpoints: 'POST /api/trust/feedback · task ratings · admin feedback review' },
+  { group: 'Feedback & trust', endpoints: 'POST /api/feedback · GET /api/feedback/mine · task ratings · admin feedback review' },
   { group: 'Platform', endpoints: 'GET /api/health (status + database check) · /api/models (honest provider availability) · /api/notifications · realtime execution stream' },
 ];
 
