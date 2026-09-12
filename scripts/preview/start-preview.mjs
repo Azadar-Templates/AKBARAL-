@@ -118,6 +118,24 @@ function killTree() {
     }
   }
   children = [];
+  // Deterministic port cleanup: a crashed wrapper can leave orphaned
+  // workers still holding the preview ports (verified in testing — killing
+  // the `next dev` wrapper left next-server serving). Orphans would block
+  // the respawn with EADDRINUSE, so the restart clears every process
+  // matching the preview command lines. Patterns never match this
+  // supervisor (scripts/preview/start-preview.mjs).
+  const patterns = [
+    'next dev -H 0.0.0.0',
+    'next-server',
+    'tsx src/index.ts',
+    'scripts/start-dev.mjs',
+    'scripts/preview/gemini-fixture-server.mjs',
+  ];
+  for (const pattern of patterns) {
+    try {
+      execFileSync('pkill', ['-f', pattern]);
+    } catch {}
+  }
 }
 
 async function main() {
