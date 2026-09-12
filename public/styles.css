@@ -2106,3 +2106,16 @@ strong, b { font-weight: 600; }
   .toolbar { flex-direction: column; align-items: stretch; }
   .toolbar input, .toolbar select { width: 100%; }
 }
+
+/* ── ZA141251SA owner console (private) ─────────────────────────────────── */
+.econ-today .econ-chronology { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.econ-today .econ-chronology li { border-left: 2px solid var(--accent, #6c7bff); padding-left: 12px; }
+.econ-today .econ-chronology small { display: block; opacity: 0.7; margin-bottom: 2px; }
+.econ-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.econ-controls .check { display: flex; gap: 8px; align-items: center; }
+.econ-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.econ-table th, .econ-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(128, 138, 157, 0.18); }
+.econ-table th { opacity: 0.75; font-weight: 600; }
+.econ-list { display: grid; gap: 8px; max-height: 420px; overflow-y: auto; }
+.econ-events { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.econ-events small { display: block; opacity: 0.7; }

@@ -19,6 +19,8 @@ import { createAdminRouter } from './routes/admin';
 import { createToolsRouter } from './routes/tools';
 import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
+import { createEconomyRouter } from './routes/economy';
+import { economyScheduler } from './economy/operations';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createWorldRouter } from './routes/world';
 import { createPublicRouter } from './routes/public';
@@ -108,6 +110,10 @@ export function createApiServer(): ApiServer {
   // reconciling open runs against the authoritative job state).
   automationScheduler.start();
 
+  // ZA141251SA economy scheduler: durable, idempotent ticks; idle unless the
+  // owner enables autonomous operation (kill switch checked every tick).
+  economyScheduler.start();
+
   app.set('trust proxy', env.trustProxy);
   app.use(securityHeaders);
   app.use(cacheHeaders);
@@ -171,6 +177,8 @@ export function createApiServer(): ApiServer {
   app.use('/api/tools', createToolsRouter());
   app.use('/api/models', createModelsRouter());
   app.use('/api/factory', createFactoryRouter());
+  // ZA141251SA private agent economy — owner/super_admin only, invisible to users.
+  app.use('/api/economy', createEconomyRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
   app.use('/api/world', createWorldRouter());
   // Public read-only catalog (powers the /agents directory page; platform agents only)

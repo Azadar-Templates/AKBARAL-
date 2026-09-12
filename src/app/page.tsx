@@ -669,6 +669,20 @@ export default function Home() {
         Invoices</h3><div id="invoice-list" className="list"></div></div></div></section>
 
       {/* ================= Admin ================= */}
+      <section className="screen screen-default" id="screen-economy" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Private"></p><h1>
+
+        ZA141251SA Owner Console</h1><p className="sub">Private agent economy — owner account only. Realized revenue, treasury, opportunities and autonomous operation controls.</p></div></div><div className="stat-grid" id="economy-stats" aria-live="polite"></div><div className="panel"><h3>
+
+        What did ZA141251SA do today?</h3><div id="economy-today" className="econ-today"></div></div><div className="panel"><h3>
+
+        Autonomous operation</h3><div className="econ-controls"><label className="check"><input type="checkbox" id="econ-autonomous" /> Enable autonomous operation (policy-gated, positive economics only)</label><label className="check"><input type="checkbox" id="econ-discovery" /> Enable opportunity discovery</label><button className="btn btn-danger" id="econ-kill" type="button">Engage kill switch</button><button className="btn" id="econ-tick" type="button">Run one scheduler tick now</button></div><p className="sub" id="econ-policy-note"></p></div><div className="panel"><h3>
+
+        Opportunities</h3><div id="economy-opportunities" className="econ-list"></div></div><div className="panel"><h3>
+
+        Treasury ledger</h3><div id="economy-ledger" className="econ-list"></div></div><div className="panel"><h3>
+
+        Activity &amp; security events</h3><div id="economy-events" className="econ-list"></div></div></div></section>
+
       <section className="screen screen-default" id="screen-admin" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Control"></p><h1>
 
         Admin Control Center</h1><p className="sub">System health, feature flags and emergency controls.</p></div></div><div className="stat-grid" id="admin-stats"></div><div className="panel"><h3>

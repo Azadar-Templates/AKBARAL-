@@ -911,6 +911,7 @@
     bindLandingNav();
     bindLegalModal();
     bindFooter();
+    bindEconomy();
     initAds();
     initCinematic();
     window.addEventListener('hashchange', navigate);
@@ -1079,6 +1080,14 @@
     if (view === 'crm') { showScreen('crm'); await loadCrm(); return; }
     if (view === 'billing') { showScreen('billing'); await loadBilling(); return; }
     if (view === 'settings') { showScreen('settings'); await loadSettings(); void loadConnectedAccounts(); return; }
+    if (view === 'economy') {
+      // ZA141251SA private owner console — owner/super_admin only, invisible
+      // to ordinary users (no nav entry; reached via #/economy).
+      if (!['owner', 'super_admin'].includes(state.user?.role || '')) { toast('Owner access required', 'err'); showScreen('dashboard'); return; }
+      showScreen('economy');
+      await loadEconomy();
+      return;
+    }
     if (view === 'admin') {
       if (!['admin', 'super_admin'].includes(state.user?.role || '')) { toast('Admin access required', 'err'); showScreen('dashboard'); return; }
       showScreen('admin');
@@ -1257,6 +1266,7 @@
       crm: 'screen-crm',
       billing: 'screen-billing',
       admin: 'screen-admin',
+      economy: 'screen-economy',
       settings: 'screen-settings',
     };
     const screen = document.getElementById(map[name]);
@@ -2099,6 +2109,65 @@
       $('#credit-order').textContent = e.message;
       toast(e.message, 'err');
     }
+  }
+
+  // ── ZA141251SA private economy (owner console) ─────────────────────────
+  async function loadEconomy() {
+    const [dashboard, today] = await Promise.all([
+      api('/api/economy/dashboard'),
+      api('/api/economy/report/today'),
+    ]);
+    const t = dashboard.treasury || {};
+    const money = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`;
+    $('#economy-stats').innerHTML = [
+      ['Realized revenue', money(t.realizedRevenueCents), 'only RECEIVED counts'],
+      ['Net profit', money(t.netProfitCents), ''],
+      ['Expenses', money(t.totalExpensesCents), `reserved ${money(t.reservedCents)}`],
+      ['Agents', String(dashboard.agents.economyAgentCount), `${dashboard.agents.activeAgents} active`],
+      ['Opportunities', String(dashboard.opportunities.current), `${dashboard.opportunities.completed} completed / ${dashboard.opportunities.failed} failed`],
+      ['Blocked (policy)', String(dashboard.opportunities.blocked), ''],
+    ].map(([label, value, note]) => `<div class="stat"><span class="stat-label">${label}</span><strong class="stat-value">${value}</strong><small>${esc(note)}</small></div>`).join('');
+    $('#economy-today').innerHTML = today.chronology.length
+      ? `<ol class="econ-chronology">${today.chronology.map((e) => `<li><small>${esc(new Date(e.ts).toLocaleTimeString())} · ${esc(e.kind)} · ${esc(e.actor)}</small><div>${esc(e.summary)}</div></li>`).join('')}</ol>`
+      : '<p class="sub">No autonomous activity recorded today.</p>';
+    const opps = dashboard.opportunities.recent || [];
+    $('#economy-opportunities').innerHTML = opps.length
+      ? `<table class="econ-table"><thead><tr><th>Opportunity</th><th>Status</th><th>Expected net</th><th>ROI</th></tr></thead><tbody>${opps.map((o) => `<tr><td>${esc(o.title.slice(0, 90))}</td><td>${badge(o.status)}</td><td>${money(o.expectedNetCents)}</td><td>${o.roi === null ? '—' : Number(o.roi).toFixed(2)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub">No opportunities yet. Discovery runs when enabled and a search provider is configured.</p>';
+    const ledger = await api('/api/economy/ledger?limit=15');
+    $('#economy-ledger').innerHTML = (ledger.ledger || []).length
+      ? `<table class="econ-table"><thead><tr><th>When</th><th>Category</th><th>Amount</th><th>Purpose</th></tr></thead><tbody>${ledger.ledger.map((row) => `<tr><td><small>${esc(new Date(row.ts).toLocaleString())}</small></td><td>${esc(row.category)} ${row.direction === 'credit' ? '↑' : '↓'}</td><td>${money(row.amount_cents)}</td><td>${esc(String(row.purpose || '').slice(0, 80))}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub">No treasury movements yet.</p>';
+    const events = await api('/api/economy/events?limit=25');
+    $('#economy-events').innerHTML = (events.events || []).length
+      ? `<ul class="econ-events">${events.events.map((e) => `<li><small>${esc(new Date(e.ts).toLocaleString())} · ${esc(e.kind)}</small><div>${esc(e.summary)}</div></li>`).join('')}</ul>`
+      : '<p class="sub">No events yet.</p>';
+    $('#econ-autonomous').checked = Boolean(dashboard.policy.autonomousEnabled);
+    $('#econ-discovery').checked = Boolean(dashboard.policy.discoveryEnabled);
+    const kill = document.querySelector('#econ-kill');
+    kill.textContent = dashboard.policy.killSwitch ? 'Release kill switch' : 'Engage kill switch';
+    kill.classList.toggle('btn-danger', !dashboard.policy.killSwitch);
+    $('#econ-policy-note').textContent = `Daily spend cap $${(dashboard.policy.maxDailySpendCents / 100).toFixed(2)} · min expected net ${dashboard.policy.minExpectedNetCents}c · min ROI ${dashboard.policy.minRoi} · concurrency ${dashboard.policy.maxConcurrentExecutions} · agent cap ${dashboard.policy.maxEconomyAgents}. ${dashboard.honesty.note}`;
+  }
+
+  function bindEconomy() {
+    $('#econ-autonomous').addEventListener('change', async (event) => {
+      try { await api('/api/economy/policy', { method: 'PATCH', body: JSON.stringify({ autonomous_enabled: event.target.checked }) }); toast(`Autonomous operation ${event.target.checked ? 'enabled' : 'disabled'}`, 'ok'); }
+      catch (e) { toast(e.message, 'err'); event.target.checked = !event.target.checked; }
+    });
+    $('#econ-discovery').addEventListener('change', async (event) => {
+      try { await api('/api/economy/policy', { method: 'PATCH', body: JSON.stringify({ discovery_enabled: event.target.checked }) }); toast(`Discovery ${event.target.checked ? 'enabled' : 'disabled'}`, 'ok'); }
+      catch (e) { toast(e.message, 'err'); event.target.checked = !event.target.checked; }
+    });
+    $('#econ-kill').addEventListener('click', async () => {
+      const engage = !$('#econ-kill').textContent.startsWith('Release');
+      try { await api('/api/economy/kill-switch', { method: 'POST', body: JSON.stringify({ engage }) }); toast(engage ? 'Kill switch ENGAGED — autonomous work halts' : 'Kill switch released', 'ok'); await loadEconomy(); }
+      catch (e) { toast(e.message, 'err'); }
+    });
+    $('#econ-tick').addEventListener('click', async () => {
+      try { const r = await api('/api/economy/tick', { method: 'POST', body: JSON.stringify({}) }); toast(`Tick: ${(r.notes || []).join(' · ') || 'nothing to do'}`, 'ok'); await loadEconomy(); }
+      catch (e) { toast(e.message, 'err'); }
+    });
   }
 
   async function loadAdmin() {
