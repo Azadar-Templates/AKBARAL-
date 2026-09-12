@@ -34,7 +34,7 @@ export class ModelRouter {
       return MODEL_SPECS;
     }
     return rows
-      .filter((row) => String(row.status ?? 'enabled') !== 'disabled')
+      .filter((row) => !['disabled', 'retired'].includes(String(row.status ?? 'enabled')))
       .map((row) => ({
       key: String(row.key),
       name: String(row.name),
@@ -109,17 +109,26 @@ export class ModelRouter {
       }
     }
 
-    const primary = candidates[0];
-    if (!primary) {
+    if (candidates.length === 0) {
       throw new Error('no models registered');
     }
+    // Prefer the best-scoring model whose provider is actually CONFIGURED.
+    // Routing to an unconfigured provider as the primary (only to fall
+    // through the chain anyway) reports a misleading "unavailable" decision
+    // for every request when a perfectly good provider IS configured.
+    // Only when no model is configured at all does the top scorer surface
+    // as an honest unavailable decision.
+    const firstConfigured = candidates.find(({ model }) => this.credentialsAvailable(model).available);
+    const primary = firstConfigured ?? candidates[0];
     const credential = this.credentialsAvailable(primary.model);
     return {
       model: primary.model,
       providerKey: primary.model.providerKey,
       available: credential.available,
       requiredEnvKey: credential.envKey,
-      reason: `scored ${primary.score} for ${requirements.answerQuality ?? 'balanced'} quality`,
+      reason: firstConfigured
+        ? `scored ${primary.score} for ${requirements.answerQuality ?? 'balanced'} quality (best configured model)`
+        : `scored ${primary.score} for ${requirements.answerQuality ?? 'balanced'} quality (no provider configured)`,
     };
   }
 

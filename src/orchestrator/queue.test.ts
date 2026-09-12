@@ -389,6 +389,44 @@ describe('M3 execution engine', () => {
     fixture.setMode('ok');
   });
 
+  it('permanent provider 404: dead model ID is not retried, task fails honestly, credit refunds', async () => {
+    configureFixtureProvider(fixture.baseUrl);
+    fixture.setMode('not_found');
+    const { queue } = freshQueue({ maxAttempts: 3 });
+    const balanceBefore = topUp();
+    const dispatched = createAgentTask({ userId, agentSlug: AGENT, goal: 'What is AKBARAL! in 5 short bullet points' });
+
+    const { job } = queue.enqueueAgentExecution({
+      executionId: dispatched.executionId,
+      agentSlug: AGENT,
+      taskId: dispatched.taskId,
+      userId,
+    });
+    queue.start();
+
+    await waitFor(() => getJob(job.id)?.status === 'failed', 10000, 'permanent 404 failure');
+    assert.equal(getJob(job.id)?.attempts, 1, 'a dead model ID is permanent — no retries');
+    assert.equal(getJob(job.id)?.error_code, 'provider_call_failed');
+    assert.equal(findTaskById(dispatched.taskId)?.status, 'failed', 'the task must NOT complete on a 404');
+    assert.equal(freeCredits(), balanceBefore, 'credit refunded after the 404 failure');
+
+    // The stored error identifies the model/endpoint configuration problem
+    // (never a credential, never a raw provider body).
+    const taskError = String(findTaskById(dispatched.taskId)?.error_message ?? '');
+    assert.ok(taskError.includes('HTTP 404'), 'task error names the status');
+    assert.ok(
+      taskError.includes('configuration problem'),
+      `task error identifies the configuration problem: ${taskError}`,
+    );
+    assert.ok(!taskError.includes('test-fixture-key'), 'task error must not contain the API key');
+    assert.ok(!taskError.includes('NOT_FOUND'), 'raw provider body must not be echoed');
+
+    const attempts = db.all('SELECT * FROM job_attempts WHERE job_id = ?', [job.id]) as Array<{ status: string }>;
+    assert.equal(attempts.length, 1);
+    queue.stop();
+    fixture.setMode('ok');
+  });
+
   it('timeout: slow provider exceeds the step budget; job timed_out and credit refunded', async () => {
     configureFixtureProvider(fixture.baseUrl);
     fixture.setDelay(3000);

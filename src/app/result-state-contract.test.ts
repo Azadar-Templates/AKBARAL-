@@ -137,14 +137,14 @@ describe('task-result state separation (incident regression)', () => {
       payload: {
         type: 'agent_result',
         content: '## Specialist deliverable\n\nThe actual Gemini-generated answer.',
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.8-flash',
         provider: 'google',
         latencyMs: 1234,
         verification: { passed: true, score: 1 },
       },
     });
     assert.ok(html.includes('The actual Gemini-generated answer.'), 'model answer visible');
-    assert.ok(html.includes('gemini-2.0-flash'), 'model chip visible');
+    assert.ok(html.includes('gemini-3.8-flash'), 'model chip visible');
     assert.ok(html.includes('verification 100%'), 'verification chip visible');
     assertNoKnowledgeState(html, 'agent_result rendering');
   });

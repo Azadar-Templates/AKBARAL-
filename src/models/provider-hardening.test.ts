@@ -182,7 +182,7 @@ describe('provider hardening (Phase 4)', () => {
       process.env.GOOGLE_BASE_URL = fixture.baseUrl;
       const taskId = freshTaskId();
       const result = await modelRouter.complete(
-        { capability: ['research'], preferredModelKey: 'gemini-2.0-flash', taskId },
+        { capability: ['research'], preferredModelKey: 'gemini-3.8-flash', taskId },
         [{ role: 'user', content: 'Analyze this goal with the real Google adapter path.' }],
       );
 
@@ -342,6 +342,7 @@ describe('provider hardening (Phase 4)', () => {
       { status: 500, mustInclude: 'server error', mustNotInclude: 'credentials' },
       { status: 503, mustInclude: 'server error', mustNotInclude: 'credentials' },
       { status: 400, mustInclude: 'rejected the request', mustNotInclude: 'credentials' },
+      { status: 404, mustInclude: 'model or endpoint does not exist', mustNotInclude: 'rejected the request credentials' },
     ];
     for (const { status, mustInclude, mustNotInclude } of cases) {
       const message = safeProviderErrorMessage('google', status, '{"echoed":"AIzaAbCdEfGh123456789012345678"}');
@@ -354,6 +355,7 @@ describe('provider hardening (Phase 4)', () => {
 
   it('ProviderCallError.retryable: 4xx is permanent, 429/5xx/network are transient', () => {
     assert.equal(new ProviderCallError('openai', 'm', 400).retryable, false);
+    assert.equal(new ProviderCallError('google', 'm', 404).retryable, false, '404 (dead model) is permanent');
     assert.equal(new ProviderCallError('openai', 'm', 401).retryable, false);
     assert.equal(new ProviderCallError('openai', 'm', 403).retryable, false);
     assert.equal(new ProviderCallError('openai', 'm', 404).retryable, false);
@@ -399,7 +401,7 @@ describe('provider hardening (Phase 4)', () => {
         process.env.GOOGLE_BASE_URL = fixture.baseUrl;
         await assert.rejects(
           modelRouter.complete(
-            { capability: ['research'], preferredModelKey: 'gemini-2.0-flash' },
+            { capability: ['research'], preferredModelKey: 'gemini-3.8-flash' },
             [{ role: 'user', content: 'trigger the blocked shape' }],
           ),
           (error: unknown) => {
@@ -417,6 +419,60 @@ describe('provider hardening (Phase 4)', () => {
         delete process.env.GOOGLE_BASE_URL;
         await fixture.close();
       }
+    }
+  });
+
+  it('google HTTP 404: honest model/endpoint diagnosis, permanent, no secrets', async () => {
+    const fixture = await startRawFixture((_req, res) => {
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          error: {
+            code: 404,
+            message: 'models/gemini-2.0-flash is not found for API version v1beta',
+            status: 'NOT_FOUND',
+          },
+        }),
+      );
+    });
+    try {
+      process.env.GOOGLE_API_KEY = 'test-google-key';
+      // The fixture base carries the real API version segment so the request
+      // path matches production exactly (…/v1beta/models/{model}:generateContent).
+      process.env.GOOGLE_BASE_URL = `${fixture.baseUrl}/v1beta`;
+      await assert.rejects(
+        modelRouter.complete(
+          { capability: ['research'], preferredModelKey: 'gemini-3.8-flash' },
+          [{ role: 'user', content: 'What is AKBARAL! in 5 short bullet points' }],
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof ProviderCallError, '404 maps to ProviderCallError');
+          assert.equal(error.status, 404);
+          assert.equal(error.retryable, false, 'a dead model ID is permanent — never retried');
+          // The honest diagnosis: names the model and API version, states it
+          // is a configuration problem, not a credentials problem. The router
+          // fallback chain tries every current google model before failing,
+          // so the surfaced attempt error may name any of them.
+          const currentModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+          assert.ok(error.message.includes('HTTP 404'), `names the status: ${error.message}`);
+          assert.ok(
+            currentModels.some((key) => error.message.includes(key)),
+            `names a current model: ${error.message}`,
+          );
+          assert.ok(error.message.includes('v1beta'), `names the API version: ${error.message}`);
+          assert.ok(error.message.includes('configuration problem'), `states the problem class: ${error.message}`);
+          assert.ok(!error.message.includes('credentials problem;'), 'must not confuse with the credentials bucket');
+          assert.ok(!error.message.includes('server error'), 'must not confuse with the outage bucket');
+          // No secret material anywhere in the diagnosis.
+          assertNoCredentialMaterial(error.message, '404 error message');
+          return true;
+        },
+      );
+    } finally {
+      delete process.env.GOOGLE_API_KEY;
+      delete process.env.GOOGLE_BASE_URL;
+      await fixture.close();
     }
   });
 

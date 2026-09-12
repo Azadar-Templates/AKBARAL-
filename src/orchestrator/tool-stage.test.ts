@@ -98,7 +98,7 @@ async function startGeminiFixture(answer: string): Promise<GeminiFixture> {
         JSON.stringify({
           candidates: [{ content: { parts: [{ text: answer }], role: 'model' }, finishReason: 'STOP' }],
           usageMetadata: { promptTokenCount: 350, candidatesTokenCount: 240, totalTokenCount: 590 },
-          modelVersion: 'gemini-2.0-flash',
+          modelVersion: 'gemini-3.8-flash',
         }),
       );
     });
@@ -282,7 +282,7 @@ describe('bounded tool stage — "No knowledge results" regression', () => {
       // Task completed through verification with the Gemini output.
       const output = outputOf(executionId);
       assert.equal(output.provider, 'google');
-      assert.equal(output.model, 'gemini-2.0-flash');
+      assert.equal(output.model, 'gemini-3.8-flash');
       assert.ok(String(output.content).includes('Specialist deliverable'));
 
       // Usage accounting recorded on the model_runs table.

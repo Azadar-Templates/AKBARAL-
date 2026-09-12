@@ -33,7 +33,8 @@ export type ModelFixtureMode =
   | 'refusal' // agents return a bare refusal (must fail verification)
   | 'fabricate' // agents return invented citations (must fail verification)
   | 'down' // 500 for every request
-  | 'unauthorized'; // 401 for every request, body echoes the auth header (redaction test)
+  | 'unauthorized' // 401 for every request, body echoes the auth header (redaction test)
+  | 'not_found'; // 404 for every request (dead model ID, Google-style error body)
 
 
 export async function startModelFixture(
@@ -140,6 +141,24 @@ This content invents citations that no source tool produced.`;
         res.statusCode = 500;
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ error: { message: 'fixture provider down' } }));
+        return;
+      }
+
+      if (currentMode === 'not_found') {
+        // Google-style NOT_FOUND body, exactly like the production incident
+        // where a retired model ID (gemini-2.0-flash, shut down 2026-06-01)
+        // is requested.
+        res.statusCode = 404;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 404,
+              message: 'models/gemini-2.0-flash is not found for API version v1beta',
+              status: 'NOT_FOUND',
+            },
+          }),
+        );
         return;
       }
 

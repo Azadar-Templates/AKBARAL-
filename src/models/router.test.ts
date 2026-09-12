@@ -14,7 +14,7 @@ describe('model router', () => {
     const saved = process.env.GOOGLE_API_KEY;
     process.env.GOOGLE_API_KEY = 'test-key';
     try {
-      const decision = modelRouter.route({ preferredModelKey: 'gemini-2.0-flash', capability: ['research'] });
+      const decision = modelRouter.route({ preferredModelKey: 'gemini-3.8-flash', capability: ['research'] });
       assert.equal(decision.model.providerKey, 'google');
       assert.equal(decision.available, true);
       assert.equal(decision.requiredEnvKey, 'GOOGLE_API_KEY');

@@ -359,6 +359,25 @@ export class AnthropicProvider implements ModelProvider {
 }
 
 /** Google Generative Language adapter (Gemini). */
+/**
+ * Diagnose a Google HTTP 404 honestly: the model ID or endpoint does not
+ * exist for the configured API version. Google retires model IDs (e.g.
+ * gemini-2.0-flash was shut down 2026-06-01 and 404s ever since), so the
+ * failure names the model and the API version — a configuration problem,
+ * never a credential problem, and no secret material is included.
+ */
+function googleNotFound(model: ModelSpec, baseUrl: string): ProviderCallError {
+  // Extract the API version segment (v1, v1beta, …) from the endpoint path;
+  // never echo the full URL (defensive: it must stay out of messages).
+  const apiVersion = /\/(v\d+[a-z]*)\/?/.exec(baseUrl)?.[1] ?? 'unknown';
+  return new ProviderCallError(
+    'google',
+    `google returned HTTP 404: model "${model.key}" was not found for API version ${apiVersion} — the model is retired or does not exist at this endpoint; update the model catalog (this is a configuration problem, not a credentials problem)`,
+    404,
+    { retryable: false },
+  );
+}
+
 export class GoogleProvider implements ModelProvider {
   readonly key = 'google';
 
@@ -377,14 +396,23 @@ export class GoogleProvider implements ModelProvider {
       .join('\n');
 
     const started = Date.now();
+    const baseUrl = resolveBaseUrl(spec);
     // The API key travels in the x-goog-api-key HEADER, never in the URL —
     // URLs can leak into logs; headers do not.
-    const { json } = await runJsonRequest(
-      this.key,
-      `${resolveBaseUrl(spec)}/models/${model.key}:generateContent`,
-      { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined },
-    );
+    let json: Record<string, unknown>;
+    try {
+      ({ json } = await runJsonRequest(
+        this.key,
+        `${baseUrl}/models/${model.key}:generateContent`,
+        { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined },
+      ));
+    } catch (error) {
+      if (error instanceof ProviderCallError && error.status === 404) {
+        throw googleNotFound(model, baseUrl);
+      }
+      throw error;
+    }
     const candidates = json.candidates as Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> | undefined;
     const blockReason = (json.promptFeedback as { blockReason?: string } | undefined)?.blockReason;
     if (blockReason) {
@@ -434,13 +462,14 @@ export class GoogleProvider implements ModelProvider {
       .map((message) => message.content)
       .join('\n');
     const started = Date.now();
+    const baseUrl = resolveBaseUrl(spec);
     let text = '';
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     try {
       await externalStreamingRequest(
         this.key,
-        `${resolveBaseUrl(spec)}/models/${model.key}:streamGenerateContent?alt=sse`,
+        `${baseUrl}/models/${model.key}:streamGenerateContent?alt=sse`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', 'x-goog-api-key': apiKey },
@@ -474,6 +503,9 @@ export class GoogleProvider implements ModelProvider {
       );
     } catch (error) {
       if (error instanceof ExternalHttpError) {
+        if (error.status === 404) {
+          throw googleNotFound(model, baseUrl);
+        }
         throw new ProviderCallError(this.key, error.message, error.status);
       }
       throw error;

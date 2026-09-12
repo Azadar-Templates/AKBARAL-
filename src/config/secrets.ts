@@ -89,6 +89,9 @@ export function safeProviderErrorMessage(
   if (status >= 500) {
     return `${providerKey} returned a server error (HTTP ${status})`;
   }
+  if (status === 404) {
+    return `${providerKey} returned HTTP 404 — the model or endpoint does not exist for this API version; this is a model-catalog/endpoint configuration problem, not a credentials problem`;
+  }
   return `${providerKey} rejected the request (HTTP ${status})`;
 }
 

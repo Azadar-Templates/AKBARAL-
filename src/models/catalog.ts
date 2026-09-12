@@ -5,6 +5,9 @@ import {
   registerTool,
 } from '../db';
 
+/** ISO timestamp for catalog sync writes. */
+const NOW = () => new Date().toISOString();
+
 /**
  * Model/Provider/Tool catalog.
  *
@@ -128,20 +131,56 @@ export const MODEL_SPECS: ModelSpec[] = [
     isDefault: false,
     capabilities: ['reasoning', 'coding', 'writing', 'analysis', 'long_context'],
   },
+  // Google Gemini models — verified against the official model list and
+  // pricing (ai.google.dev/gemini-api/docs/models, September 2026).
+  // gemini-2.0-flash was shut down by Google on 2026-06-01 (release notes:
+  // "Use gemini-3.5-flash or gemini-3.1-flash-lite instead") and returns
+  // HTTP 404 from generativelanguage.googleapis.com — it must never come
+  // back into this catalog.
   {
-    key: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash',
+    key: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
     providerKey: 'google',
     capability: 'llm',
     modality: 'multimodal',
-    contextTokens: 1000000,
-    maxOutputTokens: 8192,
-    costInputPerMillionCents: 10,
-    costOutputPerMillionCents: 40,
+    contextTokens: 1048576,
+    maxOutputTokens: 65536,
+    costInputPerMillionCents: 75,
+    costOutputPerMillionCents: 375,
     latencyMs: 700,
     reliability: 0.98,
+    isDefault: true,
+    capabilities: ['reasoning', 'coding', 'research', 'writing', 'speed', 'long_context', 'vision'],
+  },
+  {
+    key: 'gemini-3.5-flash',
+    name: 'Gemini 3.5 Flash',
+    providerKey: 'google',
+    capability: 'llm',
+    modality: 'multimodal',
+    contextTokens: 1048576,
+    maxOutputTokens: 65536,
+    costInputPerMillionCents: 150,
+    costOutputPerMillionCents: 900,
+    latencyMs: 750,
+    reliability: 0.98,
     isDefault: false,
-    capabilities: ['speed', 'long_context', 'vision', 'research', 'writing'],
+    capabilities: ['research', 'writing', 'speed', 'long_context', 'vision'],
+  },
+  {
+    key: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash-Lite',
+    providerKey: 'google',
+    capability: 'llm',
+    modality: 'multimodal',
+    contextTokens: 1048576,
+    maxOutputTokens: 65536,
+    costInputPerMillionCents: 25,
+    costOutputPerMillionCents: 150,
+    latencyMs: 400,
+    reliability: 0.97,
+    isDefault: false,
+    capabilities: ['speed', 'research', 'writing'],
   },
   {
     key: 'dall-e-3',
@@ -367,6 +406,27 @@ export function syncModelCatalog(): void {
       isDefault: model.isDefault ?? false,
     });
   }
+  // Retire catalog-managed models that are no longer in MODEL_SPECS.
+  // Providers retire model IDs (e.g. Google shut gemini-2.0-flash down on
+  // 2026-06-01 — every call then fails HTTP 404), so a stale DB row must
+  // never stay routable. Only rows belonging to a catalog provider are
+  // touched: operator-disabled rows keep their status, and rows for
+  // providers outside this catalog are left alone entirely.
+  const catalogKeys = new Set(MODEL_SPECS.map((model) => model.key));
+  const catalogProviderKeys = Array.from(new Set(PROVIDER_SPECS.map((provider) => provider.key)));
+  const managed = db.all(
+    `SELECT key, status FROM models WHERE provider_key IN (${catalogProviderKeys.map(() => '?').join(', ')})`,
+    catalogProviderKeys,
+  ) as Array<{ key: string; status: string }>;
+  for (const row of managed) {
+    if (row.status === 'retired' || row.status === 'disabled') {
+      continue;
+    }
+    if (!catalogKeys.has(row.key)) {
+      db.run("UPDATE models SET status = 'retired', updated_at = ? WHERE key = ?", [NOW(), row.key]);
+    }
+  }
+
   for (const tool of TOOL_SPECS) {
     registerTool({
       key: tool.key,
