@@ -124,6 +124,21 @@ export class ModelRouter {
   }
 
   /**
+   * When EVERY provider in the chain was unconfigured, the old behavior
+   * surfaced only the last chain entry ("openai is not configured…"),
+   * misleading users into thinking a single key was missing. The honest
+   * error aggregates every required credential.
+   */
+  private unconfiguredChainError(unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }>): Error {
+    const required = [...new Set(unconfigured.map((d) => d.requiredEnvKey).filter((k): k is string => Boolean(k)))];
+    const error = new Error(
+      `AI providers are not configured; set at least one of ${required.join(', ')} (provider configuration is server-side only)`,
+    ) as Error & { code?: string };
+    error.code = 'provider_not_configured';
+    return error;
+  }
+
+  /**
    * Run a chat completion through the routed primary model, then fall back to
    * the next available model if the provider fails or is not configured.
    */
@@ -132,6 +147,7 @@ export class ModelRouter {
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
+    const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
       if (!decision.available) {
         const error = new Error(
@@ -140,6 +156,7 @@ export class ModelRouter {
         error.code = 'provider_not_configured';
         error.requiredEnvKey = decision.requiredEnvKey ?? undefined;
         lastError = error;
+        unconfigured.push({ providerKey: decision.providerKey, requiredEnvKey: decision.requiredEnvKey });
         continue;
       }
       const provider = createProvider(decision.providerKey);
@@ -172,6 +189,9 @@ export class ModelRouter {
       }
     }
 
+    if (unconfigured.length === chain.length) {
+      throw this.unconfiguredChainError(unconfigured);
+    }
     if (lastError instanceof Error) {
       throw lastError;
     }
@@ -202,6 +222,7 @@ export class ModelRouter {
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
+    const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
       if (!decision.available) {
         const error = new Error(
@@ -210,6 +231,7 @@ export class ModelRouter {
         error.code = 'provider_not_configured';
         error.requiredEnvKey = decision.requiredEnvKey ?? undefined;
         lastError = error;
+        unconfigured.push({ providerKey: decision.providerKey, requiredEnvKey: decision.requiredEnvKey });
         continue;
       }
       const provider = createProvider(decision.providerKey);
@@ -244,6 +266,9 @@ export class ModelRouter {
       }
     }
 
+    if (unconfigured.length === chain.length) {
+      throw this.unconfiguredChainError(unconfigured);
+    }
     if (lastError instanceof Error) {
       throw lastError;
     }
