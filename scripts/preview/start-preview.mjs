@@ -124,10 +124,16 @@ function killTree() {
   // the respawn with EADDRINUSE, so the restart clears every process
   // matching the preview command lines. Patterns never match this
   // supervisor (scripts/preview/start-preview.mjs).
+  // NOTE: patterns must match the REAL server processes, not just their
+  // launchers. The api server's actual cmdline is
+  //   node --require …/tsx/dist/preflight.cjs --import …/loader.mjs src/index.ts
+  // — the literal 'tsx src/index.ts' only matched the npm wrapper and left
+  // the real server orphaned on :4000, which crashed every respawn with
+  // EADDRINUSE (found in live testing).
   const patterns = [
     'next dev -H 0.0.0.0',
     'next-server',
-    'tsx src/index.ts',
+    'src/index.ts',
     'scripts/start-dev.mjs',
     'scripts/preview/gemini-fixture-server.mjs',
   ];
@@ -135,6 +141,23 @@ function killTree() {
     try {
       execFileSync('pkill', ['-f', pattern]);
     } catch {}
+  }
+}
+
+/** Wait until nothing accepts connections on the preview ports. */
+async function waitForPortsFree() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let busy = false;
+    for (const port of [WEB_PORT, API_PORT, FIXTURE_PORT]) {
+      try {
+        await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(500) });
+        busy = true; // something still answers
+      } catch {
+        // refused/timeout = free (or at least not accepting)
+      }
+    }
+    if (!busy) return;
+    await new Promise((r) => setTimeout(r, 500));
   }
 }
 
@@ -148,6 +171,8 @@ async function main() {
     log(`adopted already-healthy stack (web :${WEB_PORT}, api :${API_PORT}) — monitoring, no respawn`);
   } else {
     log(`stack not healthy (web=${existing.web} api=${existing.api}) — cold start`);
+    killTree(); // clear any orphans holding the ports (e.g. a half-dead old stack)
+    await waitForPortsFree();
     ensureDatabase();
     spawnTree();
   }
@@ -172,7 +197,7 @@ async function main() {
       failures = 0;
       log(`stack unhealthy ${RESTART_AFTER_FAILURES}x — restarting (restart #${restarts})`);
       killTree();
-      await new Promise((r) => setTimeout(r, 2000));
+      await waitForPortsFree();
       ensureDatabase();
       spawnTree();
     }
