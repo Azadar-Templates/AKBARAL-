@@ -1,219 +1,135 @@
-# AKBARAL! — Final Production Readiness
+# AKBARAL! — Final Production Readiness (Phase 4)
 
-**Branch:** `arena/01a07c3c-akbaral` · **Base commit:** `6c3a544` → latest local hardening + trust/feedback
-**Date:** 2026-09-08 (re-verified after trust/feedback, agent-visibility, rate-limit and SSRF redirect hardening)
+**Branch:** `arena/01a085d2-akbaral` · **HEAD:** `69e8fa0` (pushed, tree clean)
+**Date:** 2026-09-12 — after Phase 0 (audit), Phase 1a/1b/1c (public site), Phase 2 (contact + feedback), Phase 3 (full QA matrix against the running stack)
+**Target launch:** 18 September 2026
 
-> This file is the single verification record. It is updated after the real quality
-> gate and the live end-to-end suite. Every row either PASSED against this checkout
-> or is explicitly BLOCKED by an external credential (never faked).
-
----
-
-## 0. Quality gate (actual run, from current working tree)
-
-| Step | Result | Exact evidence |
-| --- | --- | --- |
-| `npm install` | ✅ PASS | `up to date, audited 107 packages`, `0 vulnerabilities` |
-| `npm run db:migrate` | ✅ PASS | `database is up to date` (migrations 0001–0005) |
-| `npm run db:seed` | ✅ PASS | 4,000 definitions; plans/models/tools/agents/admin synced; idempotent re-run keeps operator state |
-| `npm run typecheck` | ✅ PASS | 0 errors |
-| `npm run build` | ✅ PASS | clean `tsc -p tsconfig.json` |
-| `npm test` | ✅ PASS | 18 suites / 65 tests / 0 failures |
-| `npm run audit:registry` | ✅ PASS | 4,000 unique slugs / instructions / full contracts / workflows |
-| Mobile `npm install` | ✅ PASS | installed (37 npm audit advisories in the Expo dependency graph) |
-| Mobile `npx tsc --noEmit` | ✅ PASS | clean |
-| Mobile `npx expo config` | ✅ PASS | valid Expo 51 config, `ai.akbaral.mobile` |
-| Mobile Android export | ✅ PASS | 730 modules / 1.87 MB `.hbc` |
-| Mobile iOS export | ✅ PASS | 731 modules / 1.86 MB `.hbc` |
+> This is the single verification record. Every row was verified against THIS
+> checkout and the running stack (Next :3000 + API :4000 + `data/akbaral.db`,
+> 4,001 agents, QA accounts) during Phase 3, or is explicitly marked EXTERNAL /
+> USER-ACTION — never faked. Earlier records live in git history
+> (2026-09-08 pass: 65 tests; superseded by this file).
 
 ---
 
-## 1. Critical fix — WebSocket / SSE execution authorization
+## Item 1 — Deployment & infrastructure
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| README no longer says unauthenticated | ✅ PASS | `/ws/executions/:executionId?token=<accessToken>`; README note says owner-only |
-| Upgrade-time token required | ✅ PASS | unauth WS connection → `UNAUTH_REJECTED` |
-| Non-owner rejected | ✅ PASS | cross-tenant WS → `CT_REJECTED` |
-| Owner stream works | ✅ PASS | `ws_messages=6`, `sse_messages=5`, `REALTIME_OK` |
-| SSE non-owner rejected | ✅ PASS | `403 you do not have access to this execution` |
-| Execution GET non-owner rejected | ✅ PASS | `403 you do not have access to this execution` |
-| Tool-context tenant isolation | ✅ PASS | foreign `execution_id` → `403 execution context does not belong to the current user` |
+| Production container platform | ✅ LIVE (user-confirmed) | Modal, `@modal.web_server` app, `deploy/modal/akbaral_app.py` |
+| Production database | ✅ LIVE (user-confirmed) | Neon PostgreSQL (free tier, no card), TLS endpoint |
+| Registry pipeline | ✅ PASS | GitHub Actions `docker-publish` on every push to the branch |
+| GHCR image for current HEAD | ✅ BUILT | `sha256:32797b04357487b93a9bf7dfe3d97a9f795f03690285c500e628f32ec4b7d683`, tags `latest` + `69e8fa0…`, created 2026-09-12T11:42Z, CI run 34691670372 **success** — includes the full public site + Phase 3 fix |
+| Production running THIS image | 🔴 USER ACTION | Production still runs the pre-site digest `sha256:b0854e17…58d386` (= `9954357`). After this report: `modal deploy` (CLI is user-side; sandbox egress blocked) |
+| Single-instance constraint | 🟡 DOCUMENTED | SQLite volume for app DB; Neon PG for platform data; multi-replica prerequisites listed in §11 history (Redis limiter, queue, stream bus) — not claimed |
 
----
+## Item 2 — Domain & TLS cutover readiness
 
-## 2. Feature matrix
-
-| Feature | Result | Reason / note |
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Register | ✅ PASS | `201`, returns `{user}` only, no secret leakage |
-| Login | ✅ PASS | JWT access + opaque refresh + session; correct host/login |
-| Logout | ✅ PASS | `204`; refresh-after-logout → `401`; old access token → `401 session is no longer active` |
-| Refresh rotation | ✅ PASS | refresh mints a new token, rotates session, old refresh + old access are rejected |
-| Session / token verification | ✅ PASS | `/api/auth/me` refresh path, `/api/me` access path, refresh rotation |
-| Password reset | ✅ PASS | dev token path; reset `200`; revokes all sessions; re-login with new password works; old password `401 invalid_credentials` |
-| RBAC | ✅ PASS | non-admin `/api/admin/stats` → `403 insufficient permissions`; admin login → `200` stats |
-| MASTER natural-language goal | ✅ PASS | goal → workflow `wfl_...`; intents = 2, steps = 4 |
-| Plan → workflow detail | ✅ PASS | 4 steps, `planned` status |
-| Task decomposition / specialist selection | ✅ PASS | MASTER selects `web-research-001`; generic agents route through specialist contract |
-| Model selection | ✅ PASS | router scores capabilities/cost/latency; 5 models enabled in catalog |
-| `db:seed` re-run preserves operator disables | ✅ PASS | `src/models/catalog.ts` keeps `disabled` status for models/providers an admin disabled |
-| Workflow execution (research) | ✅ PASS | Agent #001 `completed`, 2 verified sources, 4.5s |
-| Failure/retry + refund | ✅ PASS | generic agent with no key → `failed: openai is not configured; set OPENAI_API_KEY`, credits 5→5 (refunded) |
-| Result verification | ✅ PASS | research output logs verification passed; source extraction + citation fields |
-| 4,000+ registry | ✅ PASS | `total=4004`, 80 categories |
-| Genuine differentiation | ✅ PASS | `audit:registry`: 4,000 unique slugs, instructions, workflow contracts |
-| Agent metadata / permissions | ✅ PASS | detail shows capabilities, tool permissions, workflow |
-| Agent execution | ✅ PASS | research success; generic agent honest failure without keys |
-| Agent Factory | ✅ PASS | create → security(2) → benchmark(47) → version(1.0.1); non-owner `403` |
-| Marketplace | ✅ PASS | 4,000 published; install returns order id |
-| OpenAI / Anthropic / Google adapters | ✅ PASS | present in `src/models/client.ts`, catalog specs, router tests |
-| Model capability routing | ✅ PASS | `src/models/router.test.ts`; scored primary/fallback chain |
-| Primary/fallback routing | ✅ PASS | `fallbackChain` includes all unscored candidates, deduped |
-| `provider_not_configured` | ✅ PASS | generic agent returns `openai is not configured; set OPENAI_API_KEY`, refunds with `provider_not_configured` log code |
-| Cost / latency tracking | ✅ PASS | `recordModelRun` records tokens, latency, cost; admin stats show `modelRuns` |
-| Failure handling | ✅ PASS | provider failure → fallback chain; no key → honest not-configured |
-| web_search | ✅ PASS | real HTTP search against compliant provider, `ok=true` |
-| page_fetch | ✅ PASS | real HTTP fetch through the agent path; direct-tool call to private IP is **correctly blocked** by SSRF (SSRF security check) |
-| code_repository_read | ✅ PASS | path traversal guard; non-repo/binary refused |
-| file_parse_text | ✅ PASS | owner `ok=true`, content parsed; cross-tenant refused |
-| knowledge_search | ✅ PASS | owner results=1, other tenant results=0; `POST /api/files/:id/knowledge` returns `{knowledge:{id}}`; search `results[]` carry item `id` |
-| excel_build | ✅ PASS | CSV export `ok=true` |
-| image_render | ✅ PASS | `provider_not_configured` / `OPENAI_API_KEY` required |
-| New user 5 free / 30-day trial | ✅ PASS | `/api/me`: `freeCredits=5`, `trial.active=true` |
-| Success consumes one | ✅ PASS | research task `freeCredits` 5→4; completed stays consumed |
-| Failure refunds | ✅ PASS | generic failed task returns to 5 |
-| Pro-required does NOT consume | ✅ PASS | after 5 dispatches, 6th → `402 requires_pro`, final credits = 0 |
-| Concurrent double-spend guard | ✅ PASS | 7 concurrent dispatches → exactly 5 accepted, 2 rejected `402`; credit account correctly 0 |
-| Billing plans/subscription/invoice/payment | ✅ PASS | 3 plans; account `trialing`; custom credit order `pending` invoice |
-| Webhook verification | ✅ PASS | signature check; missing secret → `webhook_not_configured` |
-| Entitlement checks | ✅ PASS | `/api/billing/account` returns entitlements; exhausted credit → `requires_pro` |
-| Workspace projects/files/knowledge/workflow/history | ✅ PASS | project + upload + parse + download + FTS search + workflow detail + task/execution history |
-| Authenticated WS + SSE + replay | ✅ PASS | `ws_messages=6`, `sse_messages=5`, after-cursor replay implemented |
-| Tenant isolation | ✅ PASS | WS/SSE/GET/tool all 403 for non-owner |
-| CRM contacts/pipelines/deals/campaigns/automations/employees | ✅ PASS | all entity create verified; ownership asserts present |
-| Web facade | ✅ PASS | `/` returns `200`, SPA served; realtime log rows deduped in master view |
-| Admin emergency stop / resume | ✅ PASS | `POST /api/admin/emergency-stop` + `POST /api/admin/system/resume`; executor rejects with `503 emergency_stop` and does NOT consume a credit (live: research `503` then `202` after resume) |
-| Mobile API connection | ✅ PASS | `EXPO_PUBLIC_API_BASE_URL` + `app.json extra.apiBaseUrl`; production base documented |
-| Mobile auth / MASTER / agents / workspace / billing source | ✅ PASS | source app connects to the implemented API (typechecked + Metro export clean) |
-| Rate limits | ✅ PASS | global/api + auth middleware in `app.ts` |
-| Secret protection | ✅ PASS | `.env` git-ignored; only `.env.example` committed; no keys in client code |
-| Path traversal + upload security | ✅ PASS | repo path guard, 25 MB limit, multer disk storage, hidden storage keys, user-scoped reads |
-| Prompt-injection defenses | ✅ PASS | agent instructions include verification/security rules; SSRF guards |
-| Webhook security | ✅ PASS | HMAC signature verify |
-| Audit logs | ✅ PASS | auth/factory/admin/session/trust events write to audit table; `/api/factory/audit` admin-only |
-| Task ratings | ✅ PASS | `POST/GET /api/tasks/:id/rating`; owner-only, completed-only, 1–5 validation, unique per (user, task) |
-| Feedback / bug / feature / abuse | ✅ PASS | `POST /api/feedback`, `GET /api/feedback/mine`; user-owned rows only |
-| Admin feedback moderation | ✅ PASS | `GET /api/admin/feedback`, `PATCH /api/admin/feedback/:id/status`; admin/super_admin only; audit logged |
-| No fake trust data | ✅ PASS | ratings/feedback created only from real authenticated user actions; schema has no seed/review rows |
-| Agent privacy / IDOR guard | ✅ PASS | unpublished custom agents are hidden from list/detail/install/save and cannot be dispatched by other users; owner and published marketplace agents remain visible |
-| SSRF redirect safety | ✅ PASS | page/search fetches now validate every redirect hop; a public source cannot redirect into a private address or off the trusted provider host |
-| Rate-limit global-bypass guard | ✅ PASS | per-route AND per-IP global buckets; spraying many paths cannot exceed a layer's combined budget |
-| Prompt-injection defense | ✅ PASS | every model call wraps the user request as untrusted data behind a trusted system guard; Factory security review flags override language |
+| Domain | 🟡 READY, NOT CUT OVER | `akbaral.duckdns.org` (DuckDNS, PSL-listed, A-record + token) — intentionally unchanged per user instruction; cutover happens ONLY on the user's word |
+| TLS | 🟡 VIA PLATFORM | Modal serves TLS on its URLs; DuckDNS points at the Modal web endpoint at cutover |
+| App origin handling | ✅ PASS | App binds `0.0.0.0`, no hardcoded localhost in browser-facing code, mobile API base from `EXPO_PUBLIC_API_BASE_URL` |
 
----
+## Item 3 — Secrets & configuration
 
-## 3. Blocked (external credentials only)
-
-| Capability | Status | Exact credential required |
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Real OpenAI chat (generic agents) | BLOCKED | `OPENAI_API_KEY` |
-| Real Anthropic chat | BLOCKED | `ANTHROPIC_API_KEY` |
-| Real Google model | BLOCKED | `GOOGLE_API_KEY` |
-| Image rendering via OpenAI | BLOCKED | `OPENAI_API_KEY` |
-| YouTube publish | BLOCKED | `YOUTUBE_ACCESS_TOKEN` |
-| Instagram publish | BLOCKED | `INSTAGRAM_ACCESS_TOKEN` |
-| X post | BLOCKED | `X_BEARER_TOKEN` |
-| Shopify product | BLOCKED | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_ACCESS_TOKEN` |
-| Twilio message | BLOCKED | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` |
-| Stripe/Razorpay settle | BLOCKED | `STRIPE_SECRET_KEY` + `BILLING_WEBHOOK_SECRET` (custom credit order returns `pending` without it) |
-| Maps | BLOCKED | `GOOGLE_API_KEY` |
-| Real email reset/delivery | BLOCKED | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`; dev token path verified |
-| OAuth logins | BLOCKED | provider client id/secret pairs |
+| No secrets in repo/chat/client | ✅ PASS | grep-audited; provider config is server-side only (asserted in the router error message itself) |
+| Missing-key behavior | ✅ HONEST | Every unconfigured integration reports its exact env key; **Phase 3 fix:** when no provider is configured the error now aggregates ALL keys ("AI providers are not configured; set at least one of OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY") instead of naming only the last chain entry |
+| Modal production secret | 🔴 USER ACTION | `GOOGLE_API_KEY` into Modal secret `akbaral-production` — unlocks real provider execution + MASTER E2E (P0 #4) |
+| OAuth credentials | 🟡 OPTIONAL | Providers honestly report `configured:false` with required-credential lists; login is fully functional without them |
+| Payments | 🟡 BY DESIGN | Manual purchase-review flow (honest `pending` invoices) until revenue justifies a card-requiring processor |
 
-**No blocked flow is faked.** Missing credentials produce honest `provider_not_configured` / `webhook_not_configured` / `requiredCredential` responses and never consume free credits.
+## Item 4 — Database, migrations & data
 
----
-
-## 4. Bugs found and fixed in this pass
-
-| Bug | Before | After |
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Invalid login/password-reset errors | HTTP 500 generic | HTTP 401 `invalid_credentials` / 403 `account_not_active` / 400 validation / 409 conflict |
-| Model catalog disabled on missing key | generic agent → `no models registered` | models stay operator-`enabled`; missing key → `provider_not_configured`, credit refunded |
-| Upload never placed at `storage_key` | owner download/parse failed | `processUpload` writes the target file, parses from it, cleans multer temp |
-| Upload parse read deleted temp | server crash on multipart upload | parse reads persisted target |
-| Tool-context async error | unhandled rejection crashed server | wrapped with `asyncRoute` → structured 403 |
-| Access tokens survived logout/password-reset | access JWT valid after session revoked | `requireAuth`, WS upgrade/connect now require a live db session |
-| Refresh token rotation | old refresh token stayed valid forever | `rotateRefreshSession` revokes the old session before minting a new one |
-| SSRF with page-fetch proxy | source URL was not validated when a proxy was configured | source URL is always protocol/private checked (provider flag only relaxes trusted internal proxy) |
-| Mobile API default | client fell back to `http://127.0.0.1:3000` | now uses `app.json extra.apiBaseUrl` / `EXPO_PUBLIC_API_BASE_URL` / production URL |
-| Agent audit | counted only basic contracts | now verifies cost metadata, fallback strategy, API requirements, DB distinct slugs, version rows |
+| Migrations | ✅ PASS | 0001–0013 apply cleanly (SQLite dev + PG test); production Neon NEVER manually altered — fixes go through dialect/repository layer with regression tests |
+| Dual-engine repositories | ✅ PASS | PG dialect suite 17/17; SQLite suite 268/268 |
+| Agent registry | ✅ PASS | 4,001 agents (4,000 catalog + flagship #001) across 80 categories, integrity audit green, preserved through all phases |
+| Health/readiness | ✅ PASS | `/api/health` honest DB round-trip (503 when degraded); `/api/ready` gates on DB + migrations + uploads + queue |
 
----
+## Item 5 — Public web surface
 
-## 5. Security findings & posture
-
-- **Authentication / sessions:** JWT access + opaque refresh; session is checked on every
-  authenticated API request and on WebSocket upgrade/connect. Logout, password reset, and
-  refresh rotation revoke the live session.
-- **Authorization / IDOR:** project, task, execution, file, tool-context, CRM, factory and
-  marketplace mutation routes all resolve the owning user. No cross-tenant read was observed
-  in live E2E.
-- **SSRF:** HTTP fetches deny private/loopback/link-local ranges; a proxy can only be used when
-  `AKBARAL_ALLOW_PRIVATE_PROVIDER=1` is explicitly set, and source URLs are still validated.
-- **Path traversal / file uploads:** repository reads are root-confined; uploads use random
-  server-generated storage keys and user-scoped reads.
-- **SQL injection:** all repositories use parameterized statements.
-- **XSS:** web client `esc()`s all user-supplied values before `innerHTML`; tokens are kept in
-  localStorage (acceptable for the current no-cookie SPA) — consider httpOnly cookie storage
-  if the threat model requires it.
-- **CSRF:** bearer-token auth; no ambient cookie credentials.
-- **Secrets:** no committed API/private keys found in the working tree or `git` history grep;
-  `.env` is gitignored. Production refuses to start with a missing/placeholder
-  `SESSION_SECRET` (verified: `NODE_ENV=production SESSION_SECRET=short` exits 1).
-- **WebSocket token transport:** bearer token is sent via `?token=` (browser WebSocket limitation).
-  This is documented; in a deployment where proxy logs must never see auth material, hide
-  `/ws/**` behind a TLS-terminating gateway or use a signed short-lived one-time ticket.
-
----
-
-## 6. Exact remaining deployment steps
-
-1. Add the external credentials from §3 in the deployment secret store.
-2. Build `docker build -t akbaral .`; mount a persistent volume at `/data`
-   (`DATABASE_URL=file:/data/akbaral.db`, `AKBARAL_UPLOAD_DIR=/data/uploads`).
-3. Run `npm run db:migrate` then `npm run db:seed` once against production DB.
-4. Start `npm run start` (or entrypoint) behind TLS; health check `/api/health`.
-5. Point the web origin and mobile `EXPO_PUBLIC_API_BASE_URL` at the public API URL;
-   rebuild the Expo app with real secrets (never in `.env`).
-6. Schedule `scripts/backup.sh`.
-7. For multi-instance, swap the SQLite repository layer to PostgreSQL and move
-   background execution to a queue.
-
----
-
-## 6.5 Remaining (implemented but needs external credential / operator decision)
-
-| Item | Status | Why it is not claimed "hot" today |
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Real OpenAI / Anthropic / Google model calls | IMPLEMENTED, needs credential | Adapters are real; `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` must be supplied. Missing key returns `provider_not_configured`, refunds the task credit, never fabricates output. |
-| Real email reset / verification / campaigns | IMPLEMENTED, needs credential | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`; dev token path verified, production returns `provider_not_configured`. |
-| Stripe / Razorpay settlement | IMPLEMENTED, needs credential | `STRIPE_SECRET_KEY` / `RAZORPAY_KEY_ID`+`RAZORPAY_KEY_SECRET`; without them orders stay `pending` and are settled by admin/manual path only. |
-| OAuth login | IMPLEMENTED, needs credential | `GOOGLE/GITHUB/APPLE/MS_*` client ids/secrets; email/password path verified. |
-| Social / commerce / messaging tools | IMPLEMENTED, needs credential | YouTube, Instagram, X, Shopify, Twilio return `provider_not_configured` until tokens are supplied. |
-| Multi-instance scaling | REMAINING | SQLite is single-writer; replace repositories with PostgreSQL and move background execution to a queue before running multiple replicas. |
-| Shared rate-limit / metrics store | REMAINING | Current limiter is in-memory per process; swap `src/server/middleware/rate-limit.ts` to Redis for multi-instance. |
-| Realtime fan-out across replicas | REMAINING | WebSocket + SSE live in-process; use a shared stream bus (Redis pub/sub) for multi-replica. |
-| Production secret store | OPERATOR DECISION | Surface values through the deployment secret manager; nothing is committed or client-exposed. |
+| Routes | ✅ PASS | 14/14 return 200: `/`, `/features`, `/pricing`, `/security`, `/about`, `/privacy`, `/terms`, `/agents`, `/agent-factory`, `/help`, `/faq`, `/documentation`, `/contact`, `/feedback` |
+| SEO | ✅ PASS | `/sitemap.xml` (14 routes), `/robots.txt`, per-page metadata; `/ads.txt` honest 404 (AdSense unconfigured) |
+| Agents explorer | ✅ PASS | Live over the real registry (search/categories/pagination/detail), no internal fields, no `systemInstructions` leak |
+| A11y/responsive | ✅ PASS (static) | viewport meta, skip links, labels, focus styles, breakpoints — honest note: no visual browser testing possible in sandbox |
+| Identity | ✅ PASS | Premium obsidian/indigo v4.0.0 preserved; hero-loop.mp4 kept; glass discipline; footer glass strip |
 
-No remaining item is faked or dressed as complete — the code deliberately reports `provider_not_configured` / `webhook_not_configured` / `requires_pro` where its external dependency is missing.
+## Item 6 — API surface & observability
 
----
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Endpoints | ✅ PASS | 24 route files, ~98 endpoints, all mounted and smoke-tested in Phase 3 |
+| Auth matrix | ✅ PASS | register/login/logout/refresh rotation (new token + old revoked)/RBAC 403/invalid-token 401/OAuth states/password-reset honest |
+| Admin | ✅ PASS | `/api/admin/*` behind `requireAuth` + `requireRole('admin','super_admin')`; `/api/metrics` admin-only Prometheus |
+| Logs | ✅ PASS | Structured JSON request logs, clean during full QA sweep, no secret or PII leakage |
 
-## 7. Verdict
+## Item 7 — Security posture (Phase 3 evidence)
 
-The architecture is **verified** across the gate + live E2E. It is **production-ready
-at the credential boundary** — all non-key flows PASS and all blocked features are
-honest, documented, and wired. It will not be claimed fully live until the external
-credentials in §3 are supplied.
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Headers | ✅ PASS | CSP `default-src 'self'`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `strict-origin-when-cross-origin`, permissions-policy |
+| SQL injection | ✅ PASS | Zero string-interpolated SQL (grep audit of db/routes/services); parameterized throughout; raw fragments only via `sql` tag |
+| IDOR / authz | ✅ PASS | Other-user task 404; factory agent PATCH/test 403 for non-owner; WS/SSE cross-tenant rejected |
+| SSRF | ✅ PASS | `isPrivateHostname` guard (`src/security/ssrf.ts`) on fetch/search endpoints |
+| Rate limits | ✅ PASS | Global 300/min + auth 30/min + contact 5/min (429 verified); honeypot + validation on public forms |
+| Secret redaction | ✅ PASS | `redactSecrets` on email-delivery errors; production error handler returns generic message; full messages only in development |
+
+## Item 8 — Task engine & provider execution
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Workflow engine | ✅ PASS | Goal → UNDERSTANDING → … stages observed live; multi-step workflows, retry/transient-recovery, cancellation all suite-verified |
+| No fake success | ✅ PASS | Without provider keys, tasks fail honestly with the aggregated configuration error; heuristics are labeled as heuristics, never as model output |
+| Retry policy | ✅ PASS | Permanent errors (`provider_not_configured` et al.) never retried (attempts=1); transient errors retried — classifier contract now regression-locked |
+| File pipeline | ✅ PASS | Project upload → task attach → knowledge index → FTS search, all verified live |
+| Free-task trust policy | ✅ PASS | Live run: 2 tasks failed → 2 credits consumed / 2 refunded = **net zero**; paid-resource requirement restores; honest Pro message |
+
+## Item 9 — Billing, feedback & support
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Six tiers | ✅ PASS | $0/$10/$50/$90/$200/$400 → 5/25/100/250/750/2000 credits (LOCKED); switch 202; six-tier public page matches API |
+| Custom credits | ✅ PASS | Manual flow → pending invoice (`inv_…`, provider `manual`), admin-settled |
+| Webhook | ✅ HONEST | 503 without signature secret (never fakes success) |
+| Contact | ✅ PASS | 201 + reference, honeypot 400, validation 400, 429 rate limit, admin visibility confirmed |
+| Feedback | ✅ PASS | `/api/feedback`, `/api/feedback/mine`, admin queue; public `/feedback` page session-gated |
+
+## Item 10 — Quality gate (actual run, this checkout, 2026-09-12)
+
+| Step | Result |
+| --- | --- |
+| `tsc --noEmit` (root + client) | ✅ 0 errors |
+| `next build` (production) | ✅ clean, all routes |
+| `npm test` (SQLite) | ✅ **268/268** (was 265; +3 Phase 3 regression tests) |
+| `npm run test:pg` (PG dialect) | ✅ **17/17** |
+| Registry integrity | ✅ 4,001 agents, 80 categories |
+| CI (GitHub Actions) | ✅ success on `69e8fa0` → GHCR `sha256:32797b04…7d683` |
+
+## Item 11 — Mobile
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Expo app | ✅ CODE-COMPLETE | Screens + API wiring verified in prior phases; tokens iOS-only per standing rule; Android/iOS bundles exported clean |
+| Production build/distribution | 🟡 P1 | EAS build is post-web-launch acceptable; no fake store claims made |
+
+## Item 12 — Launch checklist & verdict
+
+**Exact remaining steps (all user-side):**
+
+1. `GOOGLE_API_KEY` → Modal secret `akbaral-production` (unlocks real provider execution; optional but recommended before launch).
+2. `modal deploy` with the new image (`sha256:32797b04…` / `latest`) — puts the public site + Phase 3 fix into production.
+3. Verify prod `/api/health` + a public route return 200 on the Modal URL.
+4. Say the word → DuckDNS `akbaral.duckdns.org` A-record cutover to the Modal endpoint.
+5. (Optional, any time) OAuth credentials; Android EAS build.
+
+**Verdict:** code-side there are **zero remaining launch blockers**. All flows
+are either verified live or fail honestly at a documented external boundary.
+The project is **production-ready at the credential/deploy boundary** — launch
+proceeds on 18 September 2026 once the user-side steps above are executed.
+Nothing in this report is faked, mocked, or dressed as complete.
