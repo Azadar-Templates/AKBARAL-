@@ -19,6 +19,7 @@
  * wrapped as {__buf__} in both directions. No credentials are ever logged.
  */
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { normalizeSslMode } from './pg-connection.mjs';
 
 const STATE_IDLE = 0;
 const STATE_REQ = 1;
@@ -53,7 +54,12 @@ if (!isMainThread && parentPort && workerData) {
       return Number.isSafeInteger(n) ? n : v;
     });
     const { Client } = pg;
-    client = new Client({ connectionString });
+    // SSL hardening: upgrade remote sslmode (Neon default 'require') to an
+    // EXPLICIT verify-full — same behavior under pg 8.x, no deprecation
+    // warning, and refuses plaintext/unverified remote connections. The
+    // normalized string is never logged.
+    const { connectionString: normalized } = normalizeSslMode(connectionString);
+    client = new Client({ connectionString: normalized });
     await client.connect();
   } catch (error) {
     fatal(`postgres connect failed: ${error instanceof Error ? error.message : String(error)}`);
