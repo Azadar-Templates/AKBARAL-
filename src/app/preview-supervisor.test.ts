@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -17,7 +16,8 @@ import assert from 'node:assert/strict';
  * itself or that a respawn can race an orphan still holding a port.
  */
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repoRoot = process.cwd() + '/';
+assert.ok(existsSync(`${repoRoot}next.config.mjs`), 'tests must run from the repository root');
 const supervisorPath = join(repoRoot, 'scripts', 'preview', 'start-preview.mjs');
 const source = readFileSync(supervisorPath, 'utf8');
 
