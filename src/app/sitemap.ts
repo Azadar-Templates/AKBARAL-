@@ -6,7 +6,7 @@ import type { MetadataRoute } from 'next';
  */
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = process.env.AKBARAL_SITE_URL ?? 'https://akbaral.duckdns.org';
-  const routes = ['/', '/features', '/pricing', '/security', '/about', '/privacy', '/terms'];
+  const routes = ['/', '/features', '/agents', '/agent-factory', '/pricing', '/security', '/about', '/help', '/faq', '/documentation', '/privacy', '/terms'];
   const now = new Date();
   return routes.map((route) => ({
     url: `${base}${route}`,

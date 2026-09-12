@@ -55,6 +55,11 @@ export interface AgentSearchFilter {
    * agents remain visible.
    */
   userId?: string;
+  /**
+   * Restrict to platform registry agents (owner_id IS NULL) — used by the
+   * public catalog endpoint, which must never expose user-created agents.
+   */
+  platformOnly?: boolean;
 }
 
 /**
@@ -153,6 +158,9 @@ export function discoverAgents(filter: AgentSearchFilter = {}): { agents: AgentV
     if (likes.length > 0) {
       where.push(`(${likes.join(' OR ')})`);
     }
+  }
+  if (filter.platformOnly) {
+    where.push('a.owner_id IS NULL');
   }
   if (filter.userId) {
     where.push(

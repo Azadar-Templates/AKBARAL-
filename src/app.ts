@@ -21,6 +21,7 @@ import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createWorldRouter } from './routes/world';
+import { createPublicRouter } from './routes/public';
 import { createRealtimeRouter } from './routes/realtime';
 import { createNotificationsRouter } from './routes/notifications';
 import { createCrmRouter } from './routes/crm';
@@ -171,6 +172,8 @@ export function createApiServer(): ApiServer {
   app.use('/api/factory', createFactoryRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
   app.use('/api/world', createWorldRouter());
+  // Public read-only catalog (powers the /agents directory page; platform agents only)
+  app.use('/api/public', createPublicRouter());
   app.use('/api', createRealtimeRouter());
   app.use('/api/notifications', createNotificationsRouter());
   app.use('/api/crm', createCrmRouter());

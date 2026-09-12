@@ -4,7 +4,9 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "lib": [
-      "ES2022"
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
     ],
     "rootDir": ".",
     "outDir": "dist",
