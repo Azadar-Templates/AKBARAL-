@@ -90,6 +90,41 @@ describe('preview stack contract', () => {
     new vm.Script(source, { filename: 'public/app.js' });
   });
 
+  it('the platform error page text ("Something went wrong. Please try again.") is foreign to this application', () => {
+    // Incident (twice now): the browser preview showed that message and it
+    // was initially suspected as an app defect. It is the sandbox preview
+    // PLATFORM's own error page, shown when the preview port is dead — the
+    // string exists nowhere in this codebase (source, bundles, git history).
+    // This regression lock guarantees that stays true: if a future change
+    // ever introduces that copy (e.g. an error boundary), the string would
+    // become ambiguous with the platform page and this test fails loudly.
+    const foreignMarkers = [
+      'Something went wrong. Please try again.',
+      'something went wrong',
+    ];
+    const surfaces = [
+      'src/app/page.tsx',
+      'src/app/layout.tsx',
+      'public/app.js',
+      'public/styles.css',
+      'public/tokens.css',
+    ];
+    for (const surface of surfaces) {
+      const source = readRepo(surface).toLowerCase();
+      for (const marker of foreignMarkers) {
+        assert.ok(
+          !source.includes(marker.toLowerCase()),
+          `"${surface}" must never contain the platform error copy ("${marker}") — it would mask preview-platform outages as app defects`,
+        );
+      }
+    }
+    // The app's real user-facing failure surfaces must keep existing so a
+    // runtime failure is reported by the app itself, never by a blank shell.
+    const appJs = readRepo('public/app.js');
+    assert.ok(appJs.includes('friendlyTaskError'), 'SPA keeps its honest failure renderer');
+    assert.ok(appJs.includes("toast(e.message, 'err')"), 'SPA keeps the toast error surface');
+  });
+
   it('the page shell mounts the SPA and references the versioned assets', () => {
     const page = readRepo('src/app/page.tsx');
     const layout = readRepo('src/app/layout.tsx');
