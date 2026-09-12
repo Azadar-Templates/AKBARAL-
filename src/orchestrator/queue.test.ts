@@ -356,6 +356,39 @@ describe('M3 execution engine', () => {
     fixture.setMode('ok');
   });
 
+  it('permanent provider 401: unauthorized is not retried, task fails honestly, credit refunds', async () => {
+    configureFixtureProvider(fixture.baseUrl);
+    fixture.setMode('unauthorized');
+    const { queue } = freshQueue({ maxAttempts: 3 });
+    const balanceBefore = topUp();
+    const dispatched = createAgentTask({ userId, agentSlug: AGENT, goal: 'permanent 401 test' });
+
+    const { job } = queue.enqueueAgentExecution({
+      executionId: dispatched.executionId,
+      agentSlug: AGENT,
+      taskId: dispatched.taskId,
+      userId,
+    });
+    queue.start();
+
+    await waitFor(() => getJob(job.id)?.status === 'failed', 10000, 'permanent 401 failure');
+    assert.equal(getJob(job.id)?.attempts, 1, 'a rejected API key is permanent — no retries');
+    assert.equal(getJob(job.id)?.error_code, 'provider_call_failed');
+    assert.equal(findTaskById(dispatched.taskId)?.status, 'failed');
+    assert.equal(freeCredits(), balanceBefore, 'credit refunded after permanent provider failure');
+
+    // The 401 body deliberately echoes the Authorization header; the stored
+    // task error must never contain it.
+    const taskError = String(findTaskById(dispatched.taskId)?.error_message ?? '');
+    assert.ok(!taskError.includes('test-fixture-key'), 'task error must not contain the API key');
+    assert.ok(taskError.includes('HTTP 401'), 'task error must honestly name the status');
+
+    const attempts = db.all('SELECT * FROM job_attempts WHERE job_id = ?', [job.id]) as Array<{ status: string }>;
+    assert.equal(attempts.length, 1);
+    queue.stop();
+    fixture.setMode('ok');
+  });
+
   it('timeout: slow provider exceeds the step budget; job timed_out and credit refunded', async () => {
     configureFixtureProvider(fixture.baseUrl);
     fixture.setDelay(3000);

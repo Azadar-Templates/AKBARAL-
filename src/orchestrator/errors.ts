@@ -32,6 +32,8 @@ export interface ErrorClassification {
 export function classifyExecutionError(error: {
   code?: string | null;
   message: string;
+  /** Explicit retryability from a typed provider error overrides inference. */
+  retryable?: boolean | null;
 }): ErrorClassification {
   const message = error.message ?? '';
   let code = error.code ?? '';
@@ -48,6 +50,12 @@ export function classifyExecutionError(error: {
     }
   }
 
+  if (error.retryable !== undefined && error.retryable !== null) {
+    // Typed signal (e.g. ProviderCallError.retryable) wins: a permanent 4xx
+    // provider failure must not burn the retry budget, and a transient 5xx
+    // must stay retryable even when the code alone looks generic.
+    return { code, retryable: error.retryable };
+  }
   return {
     code,
     retryable: !PERMANENT_ERROR_CODES.has(code),

@@ -77,8 +77,19 @@ export function safeProviderErrorMessage(
   _body: string,
 ): string {
   // Never echo raw provider bodies: they can contain error/request echoes and
-  // are not needed for an honest failure diagnostic.
-  return `${providerKey} returned HTTP ${status}; provider did not authorize the request`;
+  // are not needed for an honest failure diagnostic. The status class IS
+  // diagnostic, so it is reported honestly (a 500 is a provider outage, not
+  // an authorization problem).
+  if (status === 401 || status === 403) {
+    return `${providerKey} rejected the request credentials (HTTP ${status}); check the provider API key`;
+  }
+  if (status === 429) {
+    return `${providerKey} rate limited the request (HTTP 429); retry after the provider cooldown`;
+  }
+  if (status >= 500) {
+    return `${providerKey} returned a server error (HTTP ${status})`;
+  }
+  return `${providerKey} rejected the request (HTTP ${status})`;
 }
 
 export function safeErrorMessage(error: unknown): string {

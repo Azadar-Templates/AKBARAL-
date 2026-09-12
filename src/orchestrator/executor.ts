@@ -557,7 +557,11 @@ export async function runGenericAgentExecution(
     if ((error as { code?: string }).code === 'verification_failed') {
       appendLog(executionId, stream, 'Output rejected by verification; task will fail and the free credit will be refunded', 'warn', 'verification', { message });
     }
-    return failExecution(executionId, task?.id, message, stream, { deferTaskFailure: options.deferTaskFailure });
+    return failExecution(executionId, task?.id, message, stream, {
+      deferTaskFailure: options.deferTaskFailure,
+      code: (error as { code?: string }).code,
+      retryable: (error as { retryable?: boolean }).retryable,
+    });
   }
 }
 
@@ -642,14 +646,19 @@ async function failExecution(
   taskId: string | undefined,
   message: string,
   stream: ExecutionStream | undefined,
-  options?: { deferTaskFailure?: boolean },
-): Promise<{ status: string; output: null; error: string; code: string }> {
+  options?: { deferTaskFailure?: boolean; code?: string; retryable?: boolean },
+): Promise<{ status: string; output: null; error: string; code: string; retryable?: boolean }> {
   const start = Date.now();
-  const code = message.startsWith('verification_failed')
-    ? 'verification_failed'
-    : (message.includes('not configured') || message.includes('provider_not_configured'))
-      ? 'provider_not_configured'
-      : 'execution_failed';
+  // Typed error metadata (e.g. ProviderCallError.code/.retryable) is passed
+  // through so the queue's retry decision is exact instead of inferred from
+  // the message text; the message-based fallbacks stay for untyped errors.
+  const code = options?.code
+    ?? (message.startsWith('verification_failed')
+      ? 'verification_failed'
+      : (message.includes('not configured') || message.includes('provider_not_configured'))
+        ? 'provider_not_configured'
+        : 'execution_failed');
+  const retryable = options?.retryable;
   updateAgentExecutionStatus({
     id: executionId,
     status: 'failed',
@@ -664,13 +673,13 @@ async function failExecution(
     // Queue-driven execution: task reconciliation (fail + refund) is decided
     // by the queue after retry classification — an attempt failure alone must
     // not terminal-fail the task.
-    return { status: 'failed', output: null, error: message, code };
+    return { status: 'failed', output: null, error: message, code, ...(retryable === undefined ? {} : { retryable }) };
   }
 
   if (taskId) {
     reconcileTaskFailed({ taskId, code, message, executionId, stream });
   }
-  return { status: 'failed', output: null, error: message, code };
+  return { status: 'failed', output: null, error: message, code, ...(retryable === undefined ? {} : { retryable }) };
 }
 
 /**

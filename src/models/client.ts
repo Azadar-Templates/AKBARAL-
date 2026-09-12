@@ -31,11 +31,18 @@ export class ProviderCallError extends Error {
   readonly code = 'provider_call_failed';
   readonly providerKey: string;
   readonly status?: number;
+  /**
+   * Whether a retry can plausibly succeed: rate limits, provider 5xx and
+   * network/timeout failures are transient; 4xx (auth, bad request, not
+   * found) are permanent and must not burn the retry budget.
+   */
+  readonly retryable: boolean;
 
   constructor(providerKey: string, message: string, status?: number) {
     super(message);
     this.providerKey = providerKey;
     this.status = status;
+    this.retryable = status === undefined || status === 408 || status === 429 || status >= 500;
   }
 }
 
@@ -82,6 +89,16 @@ function resolveProviderSpec(key: string) {
  * OPENAI_BASE_URL) allow enterprise proxies, Azure-style gateways and
  * self-hosted OpenAI-compatible endpoints without code changes.
  */
+/**
+ * Per-request provider timeout. Default 60s; operators (and the timeout
+ * regression test) can override via AKBARAL_PROVIDER_TIMEOUT_MS (min 1s so a
+ * misconfiguration cannot disable the timeout entirely).
+ */
+function providerTimeoutMs(): number {
+  const parsed = Number.parseInt(process.env.AKBARAL_PROVIDER_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 1000 ? parsed : 60_000;
+}
+
 function resolveBaseUrl(spec: { key: string; baseUrl?: string }): string {
   const override = process.env[`${spec.key.toUpperCase()}_BASE_URL`];
   const base = (override && override.trim()) || spec.baseUrl;
@@ -102,7 +119,7 @@ async function runJsonRequest(
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      timeoutMs: 60_000,
+      timeoutMs: providerTimeoutMs(),
     });
     return { status: result.status, json: result.json };
   } catch (error) {
@@ -359,10 +376,12 @@ export class GoogleProvider implements ModelProvider {
       .join('\n');
 
     const started = Date.now();
+    // The API key travels in the x-goog-api-key HEADER, never in the URL —
+    // URLs can leak into logs; headers do not.
     const { json } = await runJsonRequest(
       this.key,
-      `${resolveBaseUrl(spec)}/models/${model.key}:generateContent?key=${apiKey}`,
-      { 'Content-Type': 'application/json' },
+      `${resolveBaseUrl(spec)}/models/${model.key}:generateContent`,
+      { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined },
     );
     const candidates = json.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined;
@@ -398,10 +417,10 @@ export class GoogleProvider implements ModelProvider {
     try {
       await externalStreamingRequest(
         this.key,
-        `${resolveBaseUrl(spec)}/models/${model.key}:streamGenerateContent?alt=sse&key=${apiKey}`,
+        `${resolveBaseUrl(spec)}/models/${model.key}:streamGenerateContent?alt=sse`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents,
             systemInstruction: system ? { parts: [{ text: system }] } : undefined,

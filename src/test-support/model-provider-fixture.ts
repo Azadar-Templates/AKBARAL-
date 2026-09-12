@@ -32,7 +32,9 @@ export type ModelFixtureMode =
   | 'thin_output' // agents return too-thin output (must fail verification)
   | 'refusal' // agents return a bare refusal (must fail verification)
   | 'fabricate' // agents return invented citations (must fail verification)
-  | 'down'; // 500 for every request
+  | 'down' // 500 for every request
+  | 'unauthorized'; // 401 for every request, body echoes the auth header (redaction test)
+
 
 export async function startModelFixture(
   mode: ModelFixtureMode = 'ok',
@@ -138,6 +140,22 @@ This content invents citations that no source tool produced.`;
         res.statusCode = 500;
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ error: { message: 'fixture provider down' } }));
+        return;
+      }
+
+      if (currentMode === 'unauthorized') {
+        // Deliberately echoes the Authorization header back in the body: a
+        // hostile/buggy provider. AKBARAL must never surface it.
+        res.statusCode = 401;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            error: {
+              message: 'invalid api key',
+              echoed_authorization: req.headers.authorization ?? '(none)',
+            },
+          }),
+        );
         return;
       }
 

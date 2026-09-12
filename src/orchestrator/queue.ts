@@ -382,6 +382,7 @@ export class ExecutionQueue {
     const classified = classifyExecutionError({
       code: outcome.value.code,
       message: outcome.value.error ?? 'execution failed',
+      retryable: (outcome.value as { retryable?: boolean }).retryable,
     });
     await this.handleJobFailure(job, attemptId, classified, outcome.value.error ?? 'execution failed');
   }
