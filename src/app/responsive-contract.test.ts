@@ -72,7 +72,7 @@ describe('responsive + honest error-state contract', () => {
 
   it('the misleading "No knowledge results." empty state is gone from the client', () => {
     assert.ok(!appJs.includes('No knowledge results.'), 'generic empty state must not exist');
-    assert.match(appJs, /Your knowledge base is empty/, 'empty-base state exists');
+    assert.match(appJs, /No documents indexed yet/, 'empty-base state exists');
     assert.match(appJs, /No matches for/, 'genuine no-match state exists');
     assert.match(appJs, /Knowledge search failed/, 'search-failure state exists (never faked as empty)');
   });

@@ -605,7 +605,7 @@ export default function Home() {
             Create</button></form><div id="project-list" className="list"></div></div><div className="panel"><h3>
 
 
-            Knowledge search</h3><form id="knowledge-form"><input placeholder="Search your knowledge" required aria-label="Search knowledge" /><button className="btn btn-primary" type="submit">
+            Knowledge search</h3><p className="panel-note">Tool · searches documents you have indexed. Task results appear on the MASTER screen and in Task Center — not here.</p><form id="knowledge-form"><input placeholder="Search your knowledge" required aria-label="Search knowledge" /><button className="btn btn-primary" type="submit">
 
             Search</button></form><div id="knowledge-results" className="list"></div></div></div><div className="panel" id="project-workspace"><div className="empty-state">Select a project to inspect its files, tasks, workflows and knowledge.</div></div></div></section>
 

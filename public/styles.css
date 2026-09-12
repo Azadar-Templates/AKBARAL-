@@ -354,6 +354,20 @@ form label + label { margin-top: 14px; }
 .state-card.state-ok { background: color-mix(in srgb, var(--green) 6%, transparent); }
 .state-card.state-ok h4 { color: var(--green); }
 
+/* Task-result sub-sections (MASTER finalResult / research reports). */
+.result-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-faint); min-width: 0; }
+.result-facts { margin-top: 16px; display: grid; gap: 8px; min-width: 0; }
+.result-facts .list-item-link span { color: var(--accent-2); font-size: 0.74rem; flex-shrink: 0; }
+
+/* Tool-scope note under panel headings (knowledge search et al). */
+.panel-note { margin: -6px 0 14px; font-size: 0.76rem; color: var(--text-faint); line-height: 1.5; }
+
+/* Raw result disclosure — transparency without burying the answer. */
+.raw-result { margin-top: 14px; border-top: 1px solid var(--line-faint); padding-top: 12px; }
+.raw-result summary { cursor: pointer; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint); }
+.raw-result summary:hover { color: var(--text-2); }
+.raw-result pre { margin-top: 10px; max-height: 320px; overflow: auto; }
+
 /* Honest empty states (workspace, lists). */
 .empty-state { padding: 26px 20px; text-align: center; color: var(--text-faint); font-size: 0.85rem; line-height: 1.6; border: 1px dashed var(--line-faint); border-radius: var(--radius); }
 .section-label { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-faint); margin: 18px 0 10px; }

@@ -145,12 +145,60 @@
     return { title: entry.title, detail: entry.detail, code: key };
   }
 
-  /** Render the terminal result card under the execution console. */
-  function renderMasterResult(ok, payload) {
-    const root = $('#master-result');
+  /* ============================================================
+     TASK OUTCOME RENDERER — the single terminal task-result view.
+
+     Four UI state machines, strictly separated — a state from one machine
+     must NEVER be rendered by another:
+       1. KNOWLEDGE state   -> #knowledge-results only (workspace tool panel)
+       2. TOOL state        -> execution console log lines only
+       3. EXECUTION state   -> console state chip + live logs (non-terminal)
+       4. TERMINAL RESULT   -> THIS renderer only (#master-result, task detail)
+
+     Payload shapes rendered with their REAL content — never a placeholder,
+     never a knowledge/tool state, never fabricated output:
+       - agent_result           (specialist agents; model content + verification)
+       - web_research_report    (Agent #001; report.summary + facts + sources)
+       - MASTER finalResult     (workflow document; executiveSummary + sections)
+       - { content } / string   (generic real content)
+     ============================================================ */
+  function renderTaskOutcome(root, input) {
     if (!root) return;
-    root.hidden = false;
-    if (ok && payload && typeof payload === 'object' && payload.type === 'agent_result') {
+    const status = input.status;
+    const payload = input.payload;
+
+    if (status === 'failed' || status === 'cancelled') {
+      const friendly = friendlyTaskError(input.code, input.message);
+      root.innerHTML = `<div class="state-card state-error">
+        <h4>${esc(friendly.title)}</h4>
+        <p>${esc(friendly.detail)}</p>
+        ${input.message ? `<p class="state-kv">${esc(String(input.message).slice(0, 400))}</p>` : ''}
+      </div>`;
+      return;
+    }
+
+    if (status !== 'completed') {
+      // Non-terminal execution state: explicitly still running, never a
+      // result claim.
+      root.innerHTML = `<div class="state-card"><h4>Execution ${esc(String(status || 'running'))}</h4><p>The task is still running. The result appears here when it finishes.</p></div>`;
+      return;
+    }
+
+    // --- completed: render the actual payload content by its real shape ---
+    if (typeof payload === 'string' && payload.trim()) {
+      root.innerHTML = `<div class="result-block"><div class="result-body">${esc(payload)}</div></div>`;
+      return;
+    }
+    if (!payload || typeof payload !== 'object') {
+      // Honest no-content completion: a completed task without a content
+      // payload is stated exactly as that — never replaced by a knowledge
+      // or tool state, never fabricated.
+      root.innerHTML = `<div class="state-card state-ok"><h4>Completed</h4><p>The execution finished successfully, but no result content was attached to it.</p></div>`;
+      return;
+    }
+
+    // Specialist agent result: the model's verified answer.
+    if (payload.type === 'agent_result') {
       const v = payload.verification || {};
       const meta = [
         payload.model ? String(payload.model) : null,
@@ -164,23 +212,70 @@
       </div>`;
       return;
     }
-    if (ok && payload && typeof payload === 'object' && payload.type === 'research_result') {
+
+    // Agent #001 web research report: summary + verified-source facts.
+    if (payload.type === 'web_research_report' && payload.report) {
+      const report = payload.report;
+      const facts = Array.isArray(report.facts) ? report.facts : [];
+      const sources = Array.isArray(report.sources) ? report.sources : [];
+      const meta = [
+        report.provider ? String(report.provider) : null,
+        report.verifiedSources != null ? `${report.verifiedSources} verified source${Number(report.verifiedSources) === 1 ? '' : 's'}` : null,
+        report.durationMs != null ? `${report.durationMs} ms` : null,
+      ].filter(Boolean);
       root.innerHTML = `<div class="result-block">
-        <div class="result-meta">${payload.model ? `<span>${esc(String(payload.model))}</span>` : ''}${payload.provider ? `<span>${esc(String(payload.provider))}</span>` : ''}</div>
-        <div class="result-body">${esc(String(payload.content || payload.report || ''))}</div>
+        <div class="result-meta">${meta.map((x) => `<span>${esc(x)}</span>`).join('')}</div>
+        <div class="result-body">${esc(String(report.summary || ''))}</div>
+        ${facts.length ? `<div class="result-facts"><p class="section-label">Verified facts</p>${facts.map((f) => `<div class="list-item"><div><b>${esc(String((f && f.statement) || '')).slice(0, 240)}</b><small>${esc(String((f && f.source) || ''))}</small></div>${badge('verified')}</div>`).join('')}</div>` : ''}
+        ${sources.length ? `<div class="result-facts"><p class="section-label">Sources</p>${sources.slice(0, 10).map((s) => `<a class="list-item list-item-link" href="${esc(String((s && s.url) || '#'))}" target="_blank" rel="noopener noreferrer"><div><b>${esc(String((s && s.title) || (s && s.url) || 'source'))}</b></div><span>open →</span></a>`).join('')}</div>` : ''}
       </div>`;
       return;
     }
-    if (ok) {
-      root.innerHTML = `<div class="state-card state-ok"><h4>Completed</h4><p>The execution finished successfully.</p></div>`;
+
+    // MASTER workflow finalResult document: executive summary + the real
+    // per-specialist section content.
+    if (Array.isArray(payload.sections) || typeof payload.executiveSummary === 'string') {
+      const sections = Array.isArray(payload.sections) ? payload.sections : [];
+      const completedSections = sections.filter((s) => String(s && s.status) === 'completed');
+      const meta = [
+        payload.mode ? `synthesis: ${String(payload.mode)}` : null,
+        completedSections.length ? `${completedSections.length} completed step${completedSections.length === 1 ? '' : 's'}` : null,
+      ].filter(Boolean);
+      const sectionHtml = completedSections.map((s) => `
+        <div class="result-section">
+          <p class="section-label">${esc(String(s.specialization || s.agentSlug || `step ${s.stepOrder}`))}${s.verified === false ? ' · unverified' : ''}</p>
+          <div class="result-body">${esc(String(s.content || ''))}</div>
+        </div>`).join('');
+      const failedSections = sections.filter((s) => String(s && s.status) !== 'completed');
+      root.innerHTML = `<div class="result-block">
+        ${meta.length ? `<div class="result-meta">${meta.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+        <div class="result-body">${esc(String(payload.executiveSummary || ''))}</div>
+        ${sectionHtml}
+        ${failedSections.length ? `<p class="state-kv">${failedSections.length} step${failedSections.length === 1 ? '' : 's'} did not complete.</p>` : ''}
+      </div>`;
       return;
     }
-    const friendly = friendlyTaskError(payload?.code, payload?.message);
-    root.innerHTML = `<div class="state-card state-error">
-      <h4>${esc(friendly.title)}</h4>
-      <p>${esc(friendly.detail)}</p>
-      ${payload?.message ? `<p class="state-kv">${esc(String(payload.message).slice(0, 400))}</p>` : ''}
-    </div>`;
+
+    // Generic real content payload.
+    const genericContent = payload.content ?? payload.report?.summary ?? payload.summary ?? null;
+    if (typeof genericContent === 'string' && genericContent.trim()) {
+      root.innerHTML = `<div class="result-block"><div class="result-body">${esc(genericContent)}</div></div>`;
+      return;
+    }
+    root.innerHTML = `<div class="state-card state-ok"><h4>Completed</h4><p>The execution finished successfully, but no result content was attached to it.</p></div>`;
+  }
+
+  /** Render the terminal result card under the execution console. */
+  function renderMasterResult(ok, payload) {
+    const root = $('#master-result');
+    if (!root) return;
+    root.hidden = false;
+    renderTaskOutcome(root, {
+      status: ok ? 'completed' : 'failed',
+      payload: ok ? payload : undefined,
+      code: ok ? undefined : payload?.code,
+      message: ok ? undefined : payload?.message,
+    });
   }
 
   function clearMasterResult() {
@@ -1500,6 +1595,10 @@
       return;
     }
     const { task, executions, events, logs } = body;
+    let parsedOutput = null;
+    if (task.output_data) {
+      try { parsedOutput = JSON.parse(task.output_data); } catch { parsedOutput = null; }
+    }
     const output = task.output_data ? safeJsonPretty(task.output_data) : null;
     const error = task.error_message || (executions || []).find((x) => x.error_message)?.error_message;
     const newest = (executions || [])[0];
@@ -1527,7 +1626,8 @@
         <div class="stat"><span>Duration</span><b>${newest && newest.duration_ms ? Math.round(newest.duration_ms / 100) / 10 + 's' : '—'}</b></div>
       </div>
       ${error ? `<div class="panel danger-panel"><h3>Error</h3><pre>${esc(String(error))}</pre></div>` : ''}
-      ${output ? `<div class="panel"><h3>Result</h3><pre>${esc(output)}</pre></div>` : ''}
+      ${task.status === 'completed' || parsedOutput ? `<div class="panel"><h3>Result</h3><div id="task-outcome"></div>${output ? `<details class="raw-result"><summary>Raw result data</summary><pre>${esc(output)}</pre></details>` : ''}</div>` : ''}
+      ${isLive ? `<div class="panel"><h3>Live execution</h3><p class="sub">This task is still running (${esc(String(newest.status))}). The result appears here when it finishes.</p></div>` : ''}
       ${(executions || []).length ? `
       <div class="panel">
         <h3>Executions</h3>
@@ -1554,6 +1654,17 @@
         <h3>Execution log ${isLive ? '<span class="live-indicator">● live</span>' : ''}</h3>
         <div class="log-console" id="task-log" role="log" aria-live="polite"></div>
       </div>`;
+
+    // Terminal result: shared outcome renderer — the actual answer, never a
+    // knowledge/tool state, never raw JSON as the primary view.
+    const outcomeRoot = $('#task-outcome');
+    if (outcomeRoot) {
+      renderTaskOutcome(outcomeRoot, {
+        status: String(task.status || 'unknown'),
+        payload: parsedOutput,
+        message: error,
+      });
+    }
 
     const logRoot = $('#task-log');
     const seen = new Set();
@@ -1971,8 +2082,10 @@
       return;
     }
     // Honest distinction: an empty knowledge base is not a failed search.
+    // Informational SECONDARY state, scoped to this tool panel only — this
+    // is never a task result and never replaces task output anywhere.
     root.innerHTML = indexed === 0
-      ? '<div class="empty-state">Your knowledge base is empty. Open a project file and index its content — indexed documents become searchable here.</div>'
+      ? '<div class="empty-state">No documents indexed yet. This panel only searches your own indexed knowledge — upload a file in a project to make it searchable. Task results are shown on the MASTER screen and in Task Center.</div>'
       : `<div class="empty-state">No matches for “${esc(query)}” across ${indexed} indexed item${indexed === 1 ? '' : 's'}. Try broader terms.</div>`;
   }
 
