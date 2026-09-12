@@ -1465,17 +1465,52 @@ export function indexKnowledgeItem(input: {
   return { id };
 }
 
+/**
+ * Number of knowledge items a user has indexed. Lets clients distinguish
+ * "your knowledge base is empty" from "no matches for this query" — an
+ * honest-empty vs no-results distinction required by the UX contract.
+ */
+export function countKnowledgeItems(userId: string): number {
+  const row = db.get<{ total: number }>('SELECT COUNT(*) AS total FROM knowledge_items WHERE user_id = ?', [userId]);
+  return row?.total ?? 0;
+}
+
 export function searchKnowledge(userId: string, query: string, limit = 20, projectId?: string): Array<Record<string, unknown>> {
   const projectFilter = projectId ? ' AND ki.project_id = ?' : '';
-  return db.all(
-    `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type, ki.project_id
-     FROM knowledge_fts fts
-     JOIN knowledge_items ki ON ki.rowid = fts.rowid
-     WHERE knowledge_fts MATCH ? AND ki.user_id = ?${projectFilter}
-     ORDER BY ki.indexed_at DESC
-     LIMIT ?`,
-    projectId ? [query, userId, projectId, limit] : [query, userId, limit],
-  ) as Array<Record<string, unknown>>;
+  const run = (match: string): Array<Record<string, unknown>> =>
+    db.all(
+      `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type, ki.project_id
+       FROM knowledge_fts fts
+       JOIN knowledge_items ki ON ki.rowid = fts.rowid
+       WHERE knowledge_fts MATCH ? AND ki.user_id = ?${projectFilter}
+       ORDER BY ki.indexed_at DESC
+       LIMIT ?`,
+      projectId ? [match, userId, projectId, limit] : [match, userId, limit],
+    ) as Array<Record<string, unknown>>;
+
+  const exact = run(query);
+  if (exact.length > 0) {
+    return exact;
+  }
+  // FTS5 MATCH is implicit-AND across tokens: a full sentence (e.g. an agent
+  // passing a task goal) matches only documents containing EVERY word. When
+  // the exact query has no hits, retry with OR semantics over the query's
+  // tokens so real knowledge is retrievable — an honest widening, never a
+  // fabrication (only genuinely indexed rows can match).
+  const tokens = query
+    .split(/[\s,.;:!?()[\]{}"'\-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3)
+    .slice(0, 8);
+  if (tokens.length > 1) {
+    const orQuery = tokens.map((token) => `"${token.replace(/"/g, '')}"`).join(' OR ');
+    try {
+      return run(orQuery);
+    } catch {
+      return exact;
+    }
+  }
+  return exact;
 }
 
 /**

@@ -381,6 +381,45 @@ describe('provider hardening (Phase 4)', () => {
     assert.equal(classifyExecutionError({ code: 'execution_failed', message: 'boom' }).retryable, true);
   });
 
+  it('google blocked/empty responses fail explicitly instead of returning empty text', async () => {
+    const blockedShapes = [
+      // Safety-blocked prompt: promptFeedback carries the block reason.
+      { promptFeedback: { blockReason: 'SAFETY' } },
+      // Truncated response with no content: finishReason carries the cause.
+      { candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] },
+    ];
+    for (const shape of blockedShapes) {
+      const fixture = await startRawFixture((_req, res) => {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(shape));
+      });
+      try {
+        process.env.GOOGLE_API_KEY = 'test-google-key';
+        process.env.GOOGLE_BASE_URL = fixture.baseUrl;
+        await assert.rejects(
+          modelRouter.complete(
+            { capability: ['research'], preferredModelKey: 'gemini-2.0-flash' },
+            [{ role: 'user', content: 'trigger the blocked shape' }],
+          ),
+          (error: unknown) => {
+            assert.ok(error instanceof ProviderCallError, 'blocked responses are explicit provider errors');
+            assert.ok(
+              /blocked the request|returned no content/.test(error.message),
+              `honest cause in message: ${error.message}`,
+            );
+            assertNoCredentialMaterial(error.message, 'blocked-response error message');
+            return true;
+          },
+        );
+      } finally {
+        delete process.env.GOOGLE_API_KEY;
+        delete process.env.GOOGLE_BASE_URL;
+        await fixture.close();
+      }
+    }
+  });
+
   it('client bundles never contain provider credential key names or key-shaped literals', () => {
     const publicDir = join(process.cwd(), 'public');
     const bundles = readdirSync(publicDir).filter((file) => file.endsWith('.js'));

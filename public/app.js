@@ -83,6 +83,109 @@
     const labelEl = $('#master-core-label');
     if (core) core.dataset.state = next;
     if (labelEl) labelEl.textContent = label || next;
+    const consoleState = $('#master-console-state');
+    if (consoleState) {
+      consoleState.dataset.state = next === 'thinking' || next === 'executing' ? 'running' : next;
+      consoleState.textContent = label || next;
+    }
+  }
+
+  /**
+   * Honest, actionable failure copy for every real task failure mode.
+   * Never claims success; never hides the underlying reason — the raw
+   * message is always shown alongside the explanation.
+   */
+  function friendlyTaskError(code, message) {
+    const msg = String(message || '');
+    const m = {
+      provider_not_configured: {
+        title: 'No AI provider configured',
+        detail: 'This deployment has no model provider key, so the task cannot run. The operator must configure a model provider (see the Environment panel on the MASTER screen for live availability). Your free task credit was refunded.',
+      },
+      provider_auth: {
+        title: 'AI provider rejected the credentials',
+        detail: 'The model provider answered that the API key is invalid or unauthorized. The operator must fix the provider key. Your free task credit was refunded.',
+      },
+      provider_rate_limited: {
+        title: 'AI provider rate limit',
+        detail: 'The model provider is rate-limiting this deployment right now. The task was retried with backoff and then stopped honestly. Your free task credit was refunded — try again shortly.',
+      },
+      provider_outage: {
+        title: 'AI provider outage',
+        detail: 'The model provider returned a server error. The task was retried and then stopped honestly. Your free task credit was refunded — try again shortly.',
+      },
+      verification_failed: {
+        title: 'Result rejected by verification',
+        detail: 'The model produced output, but it did not meet this agent\'s verification contract (substance, structure or goal coverage). Nothing unverified is ever returned as a success. Your free task credit was refunded.',
+      },
+      timed_out: {
+        title: 'Execution timed out',
+        detail: 'The execution exceeded its time budget and was stopped. Your free task credit was refunded.',
+      },
+      cancelled: {
+        title: 'Task cancelled',
+        detail: 'This task was cancelled. Your free task credit was refunded.',
+      },
+      requires_pro: {
+        title: 'Free tasks exhausted',
+        detail: 'All free task credits are used. AKBARAL Pro is required to run more tasks.',
+      },
+    };
+    let key = code || '';
+    if (!key || !m[key]) {
+      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) key = 'provider_auth';
+      else if (msg.includes('HTTP 429')) key = 'provider_rate_limited';
+      else if (msg.includes('HTTP 5') || msg.includes('server error')) key = 'provider_outage';
+      else if (msg.includes('not configured')) key = 'provider_not_configured';
+      else if (msg.includes('verification_failed')) key = 'verification_failed';
+      else if (msg.includes('timed_out')) key = 'timed_out';
+    }
+    const entry = m[key];
+    if (!entry) return { title: 'Task failed', detail: 'The task failed honestly. The raw error is shown below.', code: code || 'execution_failed' };
+    return { title: entry.title, detail: entry.detail, code: key };
+  }
+
+  /** Render the terminal result card under the execution console. */
+  function renderMasterResult(ok, payload) {
+    const root = $('#master-result');
+    if (!root) return;
+    root.hidden = false;
+    if (ok && payload && typeof payload === 'object' && payload.type === 'agent_result') {
+      const v = payload.verification || {};
+      const meta = [
+        payload.model ? String(payload.model) : null,
+        payload.provider ? String(payload.provider) : null,
+        payload.latencyMs != null ? `${payload.latencyMs} ms` : null,
+        v.score != null ? `verification ${typeof v.score === 'number' ? Math.round(v.score * 100) + '%' : String(v.score)}` : null,
+      ].filter(Boolean);
+      root.innerHTML = `<div class="result-block">
+        <div class="result-meta">${meta.map((x) => `<span>${esc(x)}</span>`).join('')}</div>
+        <div class="result-body">${esc(String(payload.content || ''))}</div>
+      </div>`;
+      return;
+    }
+    if (ok && payload && typeof payload === 'object' && payload.type === 'research_result') {
+      root.innerHTML = `<div class="result-block">
+        <div class="result-meta">${payload.model ? `<span>${esc(String(payload.model))}</span>` : ''}${payload.provider ? `<span>${esc(String(payload.provider))}</span>` : ''}</div>
+        <div class="result-body">${esc(String(payload.content || payload.report || ''))}</div>
+      </div>`;
+      return;
+    }
+    if (ok) {
+      root.innerHTML = `<div class="state-card state-ok"><h4>Completed</h4><p>The execution finished successfully.</p></div>`;
+      return;
+    }
+    const friendly = friendlyTaskError(payload?.code, payload?.message);
+    root.innerHTML = `<div class="state-card state-error">
+      <h4>${esc(friendly.title)}</h4>
+      <p>${esc(friendly.detail)}</p>
+      ${payload?.message ? `<p class="state-kv">${esc(String(payload.message).slice(0, 400))}</p>` : ''}
+    </div>`;
+  }
+
+  function clearMasterResult() {
+    const root = $('#master-result');
+    if (root) { root.hidden = true; root.innerHTML = ''; }
   }
 
   function skeleton(rootSelector, count = 3) {
@@ -1069,7 +1172,7 @@
     if (taskMatch) { showScreen('task'); await loadTaskDetail(taskMatch[1]); return; }
     if (view.split('?')[0] === 'oauth/callback') { await handleOAuthCallback(view); return; }
     if (view === 'dashboard') { showScreen('dashboard'); await loadDashboard(); return; }
-    if (view === 'master') { showScreen('master'); await loadProjects(); return; }
+    if (view === 'master') { showScreen('master'); await loadProjects(); void loadMasterInfo(); return; }
     if (view === 'agents') { showScreen('agents'); await loadAgentWorld(); return; }
     if (view === 'factory') { showScreen('factory'); await loadFactory(); return; }
     if (view === 'marketplace') { showScreen('marketplace'); await loadMarketplace(); return; }
@@ -1403,6 +1506,7 @@
     const isLive = newest && !['completed', 'failed', 'cancelled'].includes(String(newest.status));
     const logCount = (logs || []).length;
 
+    const failure = task.status !== 'completed' && error ? friendlyTaskError(undefined, error) : null;
     root.innerHTML = `
       <div class="page-head">
         <div>
@@ -1415,6 +1519,7 @@
           <a class="btn btn-ghost btn-sm" href="#/dashboard">← Dashboard</a>
         </div>
       </div>
+      ${failure ? `<div class="panel danger-panel"><h3>${esc(failure.title)}</h3><p class="sub">${esc(failure.detail)}</p></div>` : ''}
       <div class="stat-grid">
         <div class="stat"><span>Status</span><b>${esc(task.status || '—')}</b></div>
         <div class="stat"><span>Executions</span><b>${(executions || []).length}</b></div>
@@ -1598,7 +1703,9 @@
       location.hash = '#/master';
       await loadMasterExecution(executionId);
     } catch (e) {
-      toast(e.message, 'err');
+      const friendly = friendlyTaskError(e.code, e.message);
+      toast(`${friendly.title}: ${e.message}`, 'err');
+      renderMasterResult(false, { code: e.code, message: e.message });
     }
   }
 
@@ -1608,6 +1715,7 @@
     if (!goal) return;
     const projectId = $('#master-project').value || null;
     $('#master-output').textContent = 'Planning…';
+    clearMasterResult();
     setCoreState('thinking', 'planning');
     try {
       // Response shape: { workflow: { id, status }, plan: { intents, steps, notes } }.
@@ -1620,8 +1728,9 @@
       await api(`/api/workflows/${workflowId}/run`, { method: 'POST', body: JSON.stringify({}) });
       await loadWorkflowProgress(workflowId);
     } catch (e) {
-      $('#master-output').textContent = `Error: ${e.message}`;
+      $('#master-output').textContent += `\nError: ${e.message}`;
       setCoreState('error', 'error');
+      renderMasterResult(false, { code: e.code, message: e.message });
       toast(e.message, 'err');
     }
   }
@@ -1659,14 +1768,20 @@
         render(workflow, body?.steps);
         if (['completed', 'failed', 'cancelled'].includes(workflow.status)) {
           out.textContent += `\nFinal status: ${workflow.status}\n`;
+          let parsedResult = null;
           if (workflow.result_json) {
-            try { out.textContent += JSON.stringify(JSON.parse(workflow.result_json), null, 2).slice(0, 4000); }
+            try { parsedResult = JSON.parse(workflow.result_json); out.textContent += JSON.stringify(parsedResult, null, 2).slice(0, 4000); }
             catch { out.textContent += String(workflow.result_json).slice(0, 4000); }
           } else if (workflow.error_message) {
             out.textContent += `${workflow.error_message}\n`;
           }
           const ok = workflow.status === 'completed';
           setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
+          if (ok) {
+            renderMasterResult(true, parsedResult?.finalResult ?? parsedResult);
+          } else {
+            renderMasterResult(false, { code: 'execution_failed', message: workflow.error_message || `workflow ${workflow.status}` });
+          }
           try { await loadMe(); } catch {}
           return;
         }
@@ -1692,6 +1807,7 @@
 
   async function loadMasterExecution(executionId) {
     const out = $('#master-output');
+    clearMasterResult();
     out.textContent = `Streaming execution ${executionId}…\n`;
     const seen = new Set();
     let misses = 0;
@@ -1715,19 +1831,32 @@
           for (const log of body.logs) {
             if (log.id && !seen.has(log.id)) {
               seen.add(log.id);
-              out.textContent += `[${log.created_at || ''}] ${log.message}\n`;
+              // DOM nodes (not innerHTML) keep log text inert; classes color
+              // warnings/errors honestly in the console.
+              const line = document.createElement('div');
+              if (log.level === 'warn') line.className = 'log-warn';
+              else if (log.level === 'error') line.className = 'log-err';
+              line.textContent = `[${log.created_at || ''}] ${log.message}`;
+              out.appendChild(line);
+              out.scrollTop = out.scrollHeight;
             }
           }
         }
         const exec = body.execution || {};
-        if (exec.status === 'completed' || exec.status === 'failed') {
+        if (exec.status === 'completed' || exec.status === 'failed' || exec.status === 'cancelled') {
           out.textContent += `\nFinal status: ${exec.status}\n`;
+          let parsedOutput = null;
           if (exec.output_data) {
-            try { out.textContent += JSON.stringify(JSON.parse(exec.output_data), null, 2); }
+            try { parsedOutput = JSON.parse(exec.output_data); out.textContent += JSON.stringify(parsedOutput, null, 2); }
             catch { out.textContent += String(exec.output_data); }
           }
           const ok = exec.status === 'completed';
           setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
+          if (ok) {
+            renderMasterResult(true, parsedOutput);
+          } else {
+            renderMasterResult(false, { code: exec.status === 'cancelled' ? 'cancelled' : undefined, message: exec.error_message || `execution ${exec.status}` });
+          }
           try { await loadMe(); } catch {}
           return;
         }
@@ -1741,6 +1870,30 @@
 
   async function showWorkflow(run) {
     $('#master-output').textContent = typeof run === 'string' ? run : JSON.stringify(run, null, 2);
+  }
+
+  /**
+   * Environment panel on the MASTER screen: honest model-provider
+   * availability from /api/models (env key NAMES only — values never leave
+   * the server). If no provider is configured the user sees why tasks
+   * cannot run before spending anything.
+   */
+  async function loadMasterInfo() {
+    const body = await api('/api/models').catch(() => null);
+    const root = $('#master-info-body');
+    if (!root) return;
+    if (!body || !Array.isArray(body.providers)) {
+      root.innerHTML = '<div class="info-line"><span>Model providers</span><b>unavailable</b></div>';
+      return;
+    }
+    const configured = body.providers.filter((p) => p.configured && p.status === 'enabled');
+    const line = configured.length
+      ? configured.map((p) => `${p.name} (${p.key})`).join(' · ')
+      : 'none configured';
+    root.innerHTML = `
+      <div class="info-line"><span>Model providers</span><b>${esc(line)}</b></div>
+      <div class="info-line"><span>Free credits</span><b>${state.user?.freeCredits ?? '—'} tasks</b></div>
+      ${configured.length ? '' : '<p class="info-note">No model provider is configured on this deployment. Tasks will fail honestly and free credits are refunded automatically.</p>'}`;
   }
 
   async function loadProjects() {
@@ -1772,25 +1925,55 @@
   }
 
   async function openProject(projectId, name) {
-    const body = await api(`/api/projects/${projectId}`).catch(() => null);
     const root = $('#project-workspace');
-    if (!body) { root.textContent = 'Could not load project.'; return; }
+    root.innerHTML = '<div class="list-item"><small>Loading project…</small></div>';
+    const body = await api(`/api/projects/${projectId}`).catch((e) => ({ __error: e.message }));
+    if (body.__error) {
+      root.innerHTML = `<div class="state-card state-error"><h4>Could not load project</h4><p>${esc(body.__error)}</p></div>`;
+      return;
+    }
+    const files = body.files || [];
+    const tasks = body.tasks || [];
+    const workflows = body.workflows || [];
+    const recentTasks = tasks.slice(0, 6).map((t) => `
+      <a class="list-item list-item-link" href="#/tasks/${esc(t.id)}">
+        <div><b>${esc(t.title || t.goal || t.id)}</b><small>${esc(t.status || '')}</small></div>
+        <span>${badge(t.status)}</span>
+      </a>`).join('');
     root.innerHTML = `<h3>${esc(name || 'Project')}</h3>
-      <div class="list-item"><b>Files</b><span>${(body.files || []).length}</span></div>
-      <div class="list-item"><b>Tasks</b><span>${(body.tasks || []).length}</span></div>
-      <div class="list-item"><b>Workflows</b><span>${(body.workflows || []).length}</span></div>`;
+      <div class="stat-grid">
+        <div class="stat"><span>Files</span><b>${files.length}</b></div>
+        <div class="stat"><span>Tasks</span><b>${tasks.length}</b></div>
+        <div class="stat"><span>Workflows</span><b>${workflows.length}</b></div>
+      </div>
+      ${recentTasks ? `<p class="section-label">Recent tasks</p><div class="list">${recentTasks}</div>` : '<div class="empty-state">No tasks in this project yet. Run a MASTER goal with this project selected.</div>'}`;
   }
 
   async function searchKnowledge(event) {
     event.preventDefault();
     const query = event.target.querySelector('input').value.trim();
     if (!query) return;
-    const body = await api('/api/files/knowledge/search', { method: 'POST', body: JSON.stringify({ query }) }).catch((e) => { toast(e.message, 'err'); return null; });
     const root = $('#knowledge-results');
-    if (!body) return;
-    root.innerHTML = (body.results || []).length
-      ? body.results.map((r) => `<div class="list-item"><div><b>${esc(r.title || r.source_type || 'result')}</b><small>${esc(String(r.content || '').slice(0, 120))}…</small></div>${badge(r.source_type)}</div>`).join('')
-      : '<div class="list-item"><small>No knowledge results.</small></div>';
+    root.innerHTML = '<div class="list-item"><small>Searching…</small></div>';
+    let body;
+    try {
+      body = await api('/api/files/knowledge/search', { method: 'POST', body: JSON.stringify({ query }) });
+    } catch (e) {
+      // Search itself failed (never pretend it succeeded with zero results).
+      root.innerHTML = `<div class="state-card state-error"><h4>Knowledge search failed</h4><p>${esc(e.message)}</p></div>`;
+      toast(e.message, 'err');
+      return;
+    }
+    const results = body.results || [];
+    const indexed = Number(body.knowledgeItems ?? 0);
+    if (results.length) {
+      root.innerHTML = results.map((r) => `<div class="list-item"><div><b>${esc(r.title || r.source_type || 'result')}</b><small>${esc(String(r.content || '').slice(0, 120))}…</small></div>${badge(r.source_type)}</div>`).join('');
+      return;
+    }
+    // Honest distinction: an empty knowledge base is not a failed search.
+    root.innerHTML = indexed === 0
+      ? '<div class="empty-state">Your knowledge base is empty. Open a project file and index its content — indexed documents become searchable here.</div>'
+      : `<div class="empty-state">No matches for “${esc(query)}” across ${indexed} indexed item${indexed === 1 ? '' : 's'}. Try broader terms.</div>`;
   }
 
   async function loadFactory() {

@@ -147,6 +147,10 @@ export class ModelRouter {
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
+    // A real provider ATTEMPT failure (auth, outage, block, timeout) is the
+    // diagnostic that matters: it must never be masked by a later "not
+    // configured" skip for a different provider in the fallback chain.
+    let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
       if (!decision.available) {
@@ -177,6 +181,7 @@ export class ModelRouter {
         return result;
       } catch (error) {
         lastError = error;
+        lastAttemptError = error;
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
@@ -191,6 +196,12 @@ export class ModelRouter {
 
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
+    }
+    // Prefer the real attempt error: if any configured provider was actually
+    // called and failed, that failure is the honest reason this request
+    // failed — not the absence of some other provider's key.
+    if (lastAttemptError instanceof Error) {
+      throw lastAttemptError;
     }
     if (lastError instanceof Error) {
       throw lastError;
@@ -222,6 +233,10 @@ export class ModelRouter {
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
+    // A real provider ATTEMPT failure (auth, outage, block, timeout) is the
+    // diagnostic that matters: it must never be masked by a later "not
+    // configured" skip for a different provider in the fallback chain.
+    let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
       if (!decision.available) {
@@ -254,6 +269,7 @@ export class ModelRouter {
         return result;
       } catch (error) {
         lastError = error;
+        lastAttemptError = error;
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
@@ -268,6 +284,12 @@ export class ModelRouter {
 
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
+    }
+    // Prefer the real attempt error: if any configured provider was actually
+    // called and failed, that failure is the honest reason this request
+    // failed — not the absence of some other provider's key.
+    if (lastAttemptError instanceof Error) {
+      throw lastAttemptError;
     }
     if (lastError instanceof Error) {
       throw lastError;

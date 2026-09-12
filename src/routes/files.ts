@@ -1,5 +1,5 @@
 import { Router, type Response } from 'express';
-import { findProjectById, getFile, indexKnowledgeItem, searchKnowledge, hasProjectRole } from '../db';
+import { findProjectById, getFile, indexKnowledgeItem, searchKnowledge, countKnowledgeItems, hasProjectRole } from '../db';
 import { upload, processUpload, getStoredFile } from '../services/files';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
@@ -76,7 +76,9 @@ export function createFilesRouter(): Router {
     const body = getBody(req);
     const query = requireString(body, 'query', 'query');
     const results = searchKnowledge(req.auth!.userId, query, 20);
-    res.status(200).json({ results });
+    // `knowledgeItems` lets the client distinguish an empty knowledge base
+    // from a query that genuinely matched nothing.
+    res.status(200).json({ results, knowledgeItems: countKnowledgeItems(req.auth!.userId) });
   }
 
   // Documented client path.

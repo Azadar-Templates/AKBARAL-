@@ -38,11 +38,12 @@ export class ProviderCallError extends Error {
    */
   readonly retryable: boolean;
 
-  constructor(providerKey: string, message: string, status?: number) {
+  constructor(providerKey: string, message: string, status?: number, options?: { retryable?: boolean }) {
     super(message);
     this.providerKey = providerKey;
     this.status = status;
-    this.retryable = status === undefined || status === 408 || status === 429 || status >= 500;
+    this.retryable =
+      options?.retryable ?? (status === undefined || status === 408 || status === 429 || status >= 500);
   }
 }
 
@@ -384,8 +385,30 @@ export class GoogleProvider implements ModelProvider {
       { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined },
     );
-    const candidates = json.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined;
+    const candidates = json.candidates as Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> | undefined;
+    const blockReason = (json.promptFeedback as { blockReason?: string } | undefined)?.blockReason;
+    if (blockReason) {
+      // Honest, explicit failure: a safety-blocked request must never surface
+      // as a silently-empty output that later fails verification confusingly.
+      // Safety blocks are deterministic — retrying cannot help.
+      throw new ProviderCallError(
+        this.key,
+        `google blocked the request (promptFeedback.blockReason: ${blockReason})`,
+        undefined,
+        { retryable: false },
+      );
+    }
     const text = candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+    const finishReason = candidates?.[0]?.finishReason;
+    if (!text && candidates && finishReason && finishReason !== 'STOP') {
+      const retryable = finishReason === 'MAX_TOKENS' || finishReason === 'RECITATION';
+      throw new ProviderCallError(
+        this.key,
+        `google returned no content (finishReason: ${finishReason})`,
+        undefined,
+        { retryable },
+      );
+    }
     const usage = json.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
     return {
       text,

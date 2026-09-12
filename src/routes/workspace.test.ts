@@ -257,6 +257,26 @@ describe('Milestone 5: workspace/files/projects', () => {
       assert.match(result.content, /alpha/);
     }
 
+    // The personal knowledge-search endpoint reports the indexed-item count
+    // so clients can distinguish an empty knowledge base from a no-match
+    // query (the "No knowledge results" UX fix).
+    const personal = await fetch(`${baseUrl}/api/files/knowledge/search`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({ query: 'quantum' }),
+    });
+    assert.equal(personal.status, 200);
+    const personalBody = (await personal.json()) as { results: unknown[]; knowledgeItems: number };
+    assert.ok(Array.isArray(personalBody.results));
+    assert.equal(
+      typeof personalBody.knowledgeItems,
+      'number',
+      'knowledgeItems count must be present for honest empty states',
+    );
+    // Text uploads are auto-indexed into the owner's personal knowledge
+    // base, so the count honestly reflects the two uploaded notes.
+    assert.equal(personalBody.knowledgeItems, 2);
+
     // Shared workspace knowledge: the owner's project-scoped search must also
     // surface content uploaded by another member (uploaded in the role-matrix
     // test above as 'member uploaded workspace notes').

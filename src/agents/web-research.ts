@@ -138,7 +138,15 @@ export async function searchWeb(query: string, limit = 5): Promise<WebSearchResu
   const url = new URL(endpoint);
   url.searchParams.set('q', query);
 
-  const body = await httpText(url.toString(), 15_000, assertProviderHttpUrl);
+  let body: string;
+  try {
+    body = await httpText(url.toString(), 15_000, assertProviderHttpUrl);
+  } catch (error) {
+    // Name the search endpoint host (never a credential) so the failure is
+    // actionable: unreachable endpoints are an operator configuration issue.
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`search endpoint ${url.host} unreachable (${reason}); set AKBARAL_SEARCH_ENDPOINT to a reachable search provider`);
+  }
   const contentType = body.trimStart().startsWith('{') ? 'json' : 'html';
 
   if (contentType === 'json') {

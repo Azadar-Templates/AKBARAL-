@@ -611,19 +611,56 @@ async function runBoundedToolStage(input: {
       };
     }
     if (result.ok) {
+      // A tool that SUCCEEDED but returned zero results is not context: an
+      // empty result set injected as "verified tool context" teaches the
+      // model that no knowledge/sources exist for the goal, which produces
+      // honest-but-useless "no results" answers. Zero-result tools are
+      // logged honestly and skipped; the model then runs model-only.
+      const resultCount = Array.isArray((result.data as { results?: unknown } | undefined)?.results)
+        ? ((result.data as { results: unknown[] }).results).length
+        : null;
+      if (resultCount === 0) {
+        summaries.push({
+          tool,
+          ok: true,
+          results: 0,
+          note:
+            tool === 'knowledge_search'
+              ? 'knowledge base has no indexed items matching this query'
+              : 'search returned no results for this query',
+        });
+        appendLog(
+          input.executionId,
+          input.stream,
+          tool === 'knowledge_search'
+            ? 'Tool knowledge_search matched nothing (no indexed knowledge for this query); continuing model-only'
+            : `Tool ${tool} returned no results; continuing model-only`,
+          'info',
+          'tool',
+          { tool, results: 0 },
+        );
+        continue;
+      }
       const content = result.content.slice(0, 2400);
       contextParts.push(`--- TOOL ${tool} (real result) ---\n${content}`);
       if (tool === 'web_search') {
         sourceContextUsed = true;
       }
-      summaries.push({ tool, ok: true, durationMs: result.durationMs, characters: content.length });
-      appendLog(input.executionId, input.stream, `Tool ${tool} returned real context (${content.length} chars)`, 'info', 'tool', { tool });
+      summaries.push({ tool, ok: true, durationMs: result.durationMs, characters: content.length, ...(resultCount === null ? {} : { results: resultCount }) });
+      appendLog(input.executionId, input.stream, `Tool ${tool} returned real context (${content.length} chars, ${resultCount ?? 'unknown'} result(s))`, 'info', 'tool', { tool });
     } else {
       summaries.push({ tool, ok: false, code: result.code ?? 'tool_failed', error: result.error ?? 'unknown error' });
+      // Make the failure actionable without hiding it: name the tool, the
+      // reason and the operator knob that enables real web context.
+      const errorText = result.error ?? 'unknown error';
+      const hint =
+        tool === 'web_search' && errorText.includes('fetch failed') && !errorText.includes('AKBARAL_SEARCH_ENDPOINT')
+          ? ' (search endpoint unreachable; set AKBARAL_SEARCH_ENDPOINT to a reachable search provider to enable real web context)'
+          : '';
       appendLog(
         input.executionId,
         input.stream,
-        `Tool ${tool} unavailable (${result.code ?? 'tool_failed'}: ${result.error ?? 'unknown error'}); continuing without it`,
+        `Tool ${tool} unavailable (${result.code ?? 'tool_failed'}: ${result.error ?? 'unknown error'}); continuing without it${hint}`,
         'warn',
         'tool',
         { tool, code: result.code ?? 'tool_failed', requiredCredential: result.requiredCredential ?? null },

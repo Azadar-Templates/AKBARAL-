@@ -541,14 +541,16 @@ export default function Home() {
           MASTER AI</h1><p className="sub">Describe a goal. MASTER plans, picks specialists and runs the workflow.</p></div><div className="master-core" id="master-core" data-state="idle" role="status" aria-label="MASTER core status"><div className="core-ring r1"></div><div className="core-ring r2"></div><div className="core-spark"></div><span className="master-core-label" id="master-core-label">
 
 
-            idle</span></div></div><div className="panel master-panel"><form id="master-form"><label>
+            idle</span></div></div><div className="master-layout"><div className="master-side"><div className="panel master-panel"><form id="master-form"><label>
 
 
             Goal<textarea id="master-goal" rows={ 4 } placeholder="e.g. Research the Pakistani AI market and build a go-to-market plan." required defaultValue="" /></label><div className="form-row"><label>
 
 
               Project <select id="master-project"><option value="">— none —</option></select></label><button className="btn btn-primary" id="master-plan-btn" type="submit">
-              Plan &amp; run</button></div></form></div><div id="master-output" className="output" aria-live="polite"></div></div></section>
+              Plan &amp; run</button></div></form></div><div className="panel master-info" id="master-info"><h3>
+            Environment</h3><div id="master-info-body" className="master-info-body"><div className="info-line"><span>Model providers</span><b>Loading…</b></div></div></div></div><div className="panel master-console-panel"><div className="master-console-head"><b>
+            Execution console</b><span id="master-console-state" className="console-state">idle</span></div><div id="master-output" className="output master-console" aria-live="polite"><div className="console-hint">Describe a goal and run MASTER. Plans, specialist execution, live logs and verified results stream here.</div></div><div id="master-result" hidden></div></div></div></div></section>
 
       {/* ================= Task Center (detail) ================= */}
       <section className="screen screen-default" id="screen-task" hidden><div className="aw-container"><div id="task-detail-root"></div></div></section>
@@ -605,7 +607,7 @@ export default function Home() {
 
             Knowledge search</h3><form id="knowledge-form"><input placeholder="Search your knowledge" required aria-label="Search knowledge" /><button className="btn btn-primary" type="submit">
 
-            Search</button></form><div id="knowledge-results" className="list"></div></div></div><div className="panel" id="project-workspace"></div></div></section>
+            Search</button></form><div id="knowledge-results" className="list"></div></div></div><div className="panel" id="project-workspace"><div className="empty-state">Select a project to inspect its files, tasks, workflows and knowledge.</div></div></div></section>
 
       {/* ================= Automations (scheduled workflows) ================= */}
       <section className="screen screen-default" id="screen-automations" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Automation"></p><h1>
