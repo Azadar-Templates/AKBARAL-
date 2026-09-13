@@ -35,6 +35,13 @@ const STATUS = join(STATE_DIR, 'status.json');
 const FIXTURE_PORT = Number(process.env.PREVIEW_FIXTURE_PORT ?? 32911);
 const WEB_PORT = Number(process.env.PREVIEW_WEB_PORT ?? 3000);
 const API_PORT = Number(process.env.PREVIEW_API_PORT ?? 4000);
+// The Arena sandbox id changes when the workspace is restored into a new VM.
+// Recording it (and the derived public preview URL) makes the CORRECT preview
+// URL always discoverable from data/preview/status.json — a stale bookmarked
+// URL from a previous sandbox otherwise keeps serving that old VM's runtime
+// (the exact failure a user hit on 2026-09-13).
+const SANDBOX_ID = process.env.E2B_SANDBOX_ID ?? null;
+const PREVIEW_URL = SANDBOX_ID ? `https://${WEB_PORT}-${SANDBOX_ID}.e2b.app` : null;
 
 const ENV = {
   ...process.env,
@@ -58,7 +65,7 @@ function log(line) {
 function writeStatus(state) {
   try {
     mkdirSync(STATE_DIR, { recursive: true });
-    writeFileSync(STATUS, JSON.stringify({ ...state, at: new Date().toISOString() }, null, 2));
+    writeFileSync(STATUS, JSON.stringify({ ...state, sandboxId: SANDBOX_ID, previewUrl: PREVIEW_URL, at: new Date().toISOString() }, null, 2));
   } catch {}
 }
 

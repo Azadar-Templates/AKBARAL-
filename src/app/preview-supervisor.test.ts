@@ -74,8 +74,7 @@ test('the historically broken pattern is gone (orphan regression)', () => {
   }
 });
 
-test('respawn waits for the preview ports to be free before spawning', () => {
-  const restartPath = source.match(
+test('respawn waits for the preview ports to be free before spawning', () => {  const restartPath = source.match(
     /stack unhealthy [\s\S]{0,400}?killTree\(\);[^\n]*\s*await waitForPortsFree\(\);\s*ensureDatabase\(\);\s*spawnTree\(\);/,
   );
   assert.ok(
@@ -88,5 +87,28 @@ test('respawn waits for the preview ports to be free before spawning', () => {
   assert.ok(
     !!coldStartPath,
     'cold-start path must run killTree → waitForPortsFree → spawnTree (clears orphaned half-dead stacks)',
+  );
+});
+
+test('status.json records the live sandbox id and derived preview URL (stale-URL regression)', () => {
+  // A user was served by a PREVIOUS sandbox's runtime because the preview URL
+  // from an older sandbox kept resolving while the workspace had been restored
+  // into a new VM. The supervisor must publish the CURRENT sandbox id so the
+  // correct URL (https://{port}-{sandboxId}.e2b.app) is always discoverable.
+  assert.ok(
+    source.includes('E2B_SANDBOX_ID'),
+    'supervisor must read E2B_SANDBOX_ID from the environment',
+  );
+  assert.ok(
+    /sandboxId:\s*SANDBOX_ID/.test(source),
+    'writeStatus must include sandboxId in status.json',
+  );
+  assert.ok(
+    /previewUrl:\s*PREVIEW_URL/.test(source),
+    'writeStatus must include the derived previewUrl in status.json',
+  );
+  assert.ok(
+    /https:\/\/\$\{WEB_PORT\}-\$\{SANDBOX_ID\}\.e2b\.app/.test(source),
+    'preview URL must be derived as https://{port}-{sandboxId}.e2b.app',
   );
 });
