@@ -1,5 +1,18 @@
 # AKBARAL! — Zero-Cost Launch Runbook (September 18 target)
 
+> **UPDATE (2026-09-13, final) — Path E: SNAPDEPLOY FREE is now the primary
+> production path.** Zeabur's dashboard turned out to offer only "Buy New
+> Server" / "Bind External Server" — the Free plan no longer includes
+> hosted compute (kit retired in `deploy/free-zeabur/`). SnapDeploy is the
+> one remaining host verified from its own current docs to be genuinely
+> **$0, no-card, Docker-native**: 2 containers × **512 MB RAM**, GitHub
+> deploys that build **our Dockerfile**, per-container env secrets, free
+> SSL subdomain, auto-sleep 15 min/wake ~60 s. WebSockets are paid there —
+> our app's realtime stream falls back to SSE over `/api/*` (built in), so
+> no functionality is lost. Kit + setup: **`deploy/free-snapdeploy/README.md`**.
+> The `AKBARAL_ROLES=both|web|api` switch (Path D) covers the split layout
+> if a 512 MB container ever proves too tight.
+
 > **UPDATE (2026-09-13, later) — Path D: ZEABUR FREE is now the primary
 > production path.** Path C (Render) was killed at signup: **Render demands
 > a payment method** even for free compute services (live finding,

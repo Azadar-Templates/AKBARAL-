@@ -10,7 +10,9 @@ name: keep-alive
 #
 # One-time setup: add the repository secret
 #   PRODUCTION_PING_URL = https://<your-production-url>
-# Until it exists, every run skips gracefully (no failures, no noise).
+# and, for a split (two-container) deployment, additionally
+#   PRODUCTION_API_PING_URL = https://<your-api-container-url>
+# Until they exist, every run skips gracefully (no failures, no noise).
 
 on:
   schedule:
@@ -32,6 +34,18 @@ jobs:
           cat /tmp/health-body 2>/dev/null || true
           if [ "$code" != "200" ]; then
             echo "::warning title=production heartbeat::/api/health returned $code (service may be cold-starting or unhealthy — retry manually if this persists)"
+          fi
+
+      - name: Ping the API container (split deployments)
+        if: ${{ env.API_URL != '' }}
+        env:
+          API_URL: ${{ secrets.PRODUCTION_API_PING_URL }}
+        run: |
+          code=$(curl -s -o /tmp/api-health-body -w '%{http_code}' --max-time 30 "$API_URL/api/health" || true)
+          echo "$(date -u +%FT%TZ) $API_URL/api/health -> HTTP $code"
+          cat /tmp/api-health-body 2>/dev/null || true
+          if [ "$code" != "200" ]; then
+            echo "::warning title=api heartbeat::/api/health returned $code (API container may be cold-starting or unhealthy)"
           fi
 
       - name: Not configured yet — skip silently
