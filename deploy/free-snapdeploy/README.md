@@ -45,6 +45,16 @@ allows a **second** container: split with `AKBARAL_ROLES` (below).
 
 ## One-time setup (~5 minutes, $0, no card)
 
+> **Note on the "Environment Variables Detected" screen:** SnapDeploy's
+> scanner treats every UNCOMMENTED `VAR=` entry in `.env.example` as a
+> required input — which is why it originally demanded SMTP/social/search
+> credentials. Fixed at `d674217`+: optional integrations are commented
+> out in `.env.example` (the app always treated them as optional and fails
+> honestly per-capability; locked by `src/config/env.test.ts`). Re-scan
+> after this commit and only the core set below is requested. If a stale
+> scan still shows optional fields, entering them EMPTY is safe — the code
+> treats empty strings as not-configured.
+
 1. **snapdeploy.dev/register** (email or GitHub; no payment method).
 2. **Connect the GitHub repo** `Azadar-Templates/AKBARAL-` (install their
    GitHub app when prompted) and create a container:

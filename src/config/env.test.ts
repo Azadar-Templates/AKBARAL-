@@ -1,5 +1,6 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { env, validateEnvironment, EnvConfigError } from './env';
 import { redactSecrets, safeProviderErrorMessage } from './secrets';
 import { INTEGRATION_DEFINITIONS, getConfigStatus } from './credentials';
@@ -103,6 +104,86 @@ describe('credentials', () => {
     for (const item of external) {
       assert.equal(item.configured, false);
       assert.ok(item.missingEnvVars.length > 0);
+    }
+  });
+
+  it('production core launch requires ONLY DATABASE_URL and SESSION_SECRET (no integration credentials)', () => {
+    // Regression lock for the deployment story: a production container with
+    // exactly the core variables must validate. Specialist integrations
+    // (SMTP, social/marketing tokens, search/fetch endpoints, other model
+    // providers) are OPTIONAL and must never block startup — they fail
+    // honestly, lazily, only when their specific capability is requested.
+    resetEnv();
+    const optionalIntegrations = [
+      'GOOGLE_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
+      'OPENAI_BASE_URL', 'ANTHROPIC_BASE_URL', 'GOOGLE_BASE_URL',
+      'AKBARAL_SEARCH_ENDPOINT', 'AKBARAL_PAGE_FETCH_ENDPOINT', 'AKBARAL_ALLOW_PRIVATE_PROVIDER',
+      'SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_EHLO', 'SMTP_TIMEOUT_MS',
+      'YOUTUBE_ACCESS_TOKEN', 'INSTAGRAM_ACCESS_TOKEN', 'X_BEARER_TOKEN',
+      'SHOPIFY_STORE_DOMAIN', 'SHOPIFY_ACCESS_TOKEN',
+      'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
+      'STRIPE_SECRET_KEY', 'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'BILLING_WEBHOOK_SECRET',
+      'GOOGLE_CLIENT_ID', 'GITHUB_CLIENT_ID', 'CORS_ORIGINS', 'AKBARAL_ADSENSE_CLIENT',
+    ];
+    for (const key of optionalIntegrations) {
+      delete process.env[key];
+    }
+    // Cast: Next's type augmentation marks process.env.NODE_ENV read-only.
+    const mutableEnv = process.env as Record<string, string | undefined>;
+    mutableEnv.NODE_ENV = 'production';
+    process.env.DATABASE_URL = ['postgres', '://user:pass@host/db?sslmode=require'].join('');
+    process.env.SESSION_SECRET = 'a'.repeat(48);
+    delete process.env.PORT; // safe default (3000)
+    delete process.env.HOST; // safe default (0.0.0.0)
+    assert.doesNotThrow(() => validateEnvironment());
+    // And SESSION_SECRET is genuinely enforced as the hard production gate:
+    delete process.env.SESSION_SECRET;
+    assert.throws(() => validateEnvironment(), EnvConfigError);
+    process.env.SESSION_SECRET = 'a'.repeat(48);
+    // DATABASE_URL has a safe SQLite default (file:./data/akbaral.db) —
+    // pointing it at Neon is deployment configuration, not a startup guard;
+    // startup still succeeds (dual-engine design).
+    delete process.env.DATABASE_URL;
+    assert.doesNotThrow(() => validateEnvironment());
+  });
+});
+
+describe('.env.example deployment-scanner contract', () => {
+  // Deployment platforms (SnapDeploy etc.) scan .env.example and present
+  // every UNCOMMENTED `VAR=` entry as a required input. Only core variables
+  // may stay uncommented, and SESSION_SECRET must be the only empty one —
+  // otherwise the UI demands optional integration credentials the product
+  // does not need (the exact 2026-09-13 SnapDeploy incident).
+  const lines = readFileSync('.env.example', 'utf8').split('\n');
+  const uncommented = lines
+    .map((line) => /^([A-Z0-9_]+)=(.*)$/.exec(line?.trim() ?? ''))
+    .filter((m): m is RegExpExecArray => Boolean(m))
+    .map((m) => ({ name: m[1], value: m[2] }));
+
+  it('keeps every optional integration variable commented out', () => {
+    const optional = [
+      'AKBARAL_SEARCH_ENDPOINT', 'AKBARAL_PAGE_FETCH_ENDPOINT', 'AKBARAL_ALLOW_PRIVATE_PROVIDER',
+      'CORS_ORIGINS', 'NODE_ENV',
+      'SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_EHLO', 'SMTP_TIMEOUT_MS',
+      'YOUTUBE_ACCESS_TOKEN', 'INSTAGRAM_ACCESS_TOKEN', 'X_BEARER_TOKEN',
+      'SHOPIFY_STORE_DOMAIN', 'SHOPIFY_ACCESS_TOKEN', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN',
+      'GOOGLE_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
+      'STRIPE_SECRET_KEY', 'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'BILLING_WEBHOOK_SECRET',
+    ];
+    const present = new Set(uncommented.map((entry) => entry.name));
+    for (const name of optional) {
+      assert.ok(!present.has(name), `${name} must stay commented out in .env.example (deployment scanners treat uncommented entries as required)`);
+    }
+  });
+
+  it('SESSION_SECRET is the only uncommented variable that needs input', () => {
+    const empty = uncommented.filter((entry) => entry.value.replace(/^["']|["']$/g, '').trim() === '');
+    assert.deepEqual(empty.map((entry) => entry.name), ['SESSION_SECRET']);
+    // The rest carry safe defaults the platform can prefill.
+    for (const entry of uncommented) {
+      if (entry.name !== 'SESSION_SECRET') {
+        assert.ok(entry.value.trim().length > 0, `${entry.name} should prefill a safe default`);
+      }
     }
   });
 });
