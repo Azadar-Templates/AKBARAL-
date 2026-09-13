@@ -1,16 +1,15 @@
 name: keep-alive
 
-# Render free web services spin down after 15 minutes without inbound
-# traffic (render.com/docs/free). AKBARAL! runs its execution queue and
-# automation scheduler in-process, so a sleeping service stalls tasks.
-# This scheduled ping keeps production awake — and it doubles as an
-# external production heartbeat in the Actions history.
+# Free-tier production hosts spin down idle services (Zeabur Free Plan:
+# services sleep when idle and wake on the next request). AKBARAL! runs its
+# execution queue and automation scheduler in-process, so a sleeping service
+# stalls tasks. This scheduled ping keeps production awake — and it doubles
+# as an external production heartbeat in the Actions history.
 #
-# Runs every 13 minutes. A month of always-awake service (~720 h) still
-# fits Render's 750 free instance-hours.
+# Runs every 13 minutes (provider-neutral: works with any host URL).
 #
 # One-time setup: add the repository secret
-#   PRODUCTION_PING_URL = https://<your-render-service>.onrender.com
+#   PRODUCTION_PING_URL = https://<your-production-url>
 # Until it exists, every run skips gracefully (no failures, no noise).
 
 on:

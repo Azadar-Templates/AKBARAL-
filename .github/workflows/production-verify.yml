@@ -1,14 +1,17 @@
 name: production-verify
 
 # REAL production verification of the AKBARAL! MASTER flow through the live
-# Modal deployment (https://azadar-templates--akbaral.modal.run), including
-# the real Gemini provider path (GOOGLE_API_KEY lives only in the Modal
-# secret "akbaral-production" — never in this repository or these logs).
+# deployment, including the real Gemini provider path (GOOGLE_API_KEY lives
+# only in the host's secret store — never in this repository or these logs).
+#
+# Target resolution order: the base_url workflow input → the
+# PRODUCTION_BASE_URL repository secret → the legacy Modal URL. Production
+# currently lives on the Zeabur free plan (deploy/free-zeabur/README.md).
 #
 # This exercises PRODUCTION: it registers a throwaway verification account
 # and consumes exactly one of its free credits. The Arena dev sandbox has no
-# egress to modal.run, so this workflow is the agent-executable evidence
-# channel for production behavior.
+# egress to production hosts, so this workflow is the agent-executable
+# evidence channel for production behavior.
 #
 # Triggers: on pushes to the working branch that touch the verification
 # tooling (workflow_dispatch is reserved for when this file reaches the
@@ -46,4 +49,7 @@ jobs:
       - name: Run the REAL production E2E (MASTER flow via Gemini)
         run: node scripts/verify-production-e2e.mjs
         env:
-          AKBARAL_BASE_URL: ${{ inputs.base_url || 'https://azadar-templates--akbaral.modal.run' }}
+          # Priority: workflow input → repository secret → the legacy Modal
+          # URL (kept only as the historical default; production now lives
+          # wherever PRODUCTION_BASE_URL points — see deploy/free-zeabur/).
+          AKBARAL_BASE_URL: ${{ inputs.base_url || secrets.PRODUCTION_BASE_URL || 'https://azadar-templates--akbaral.modal.run' }}

@@ -1,5 +1,30 @@
 # AKBARAL! — Zero-Cost Launch Runbook (September 18 target)
 
+> **UPDATE (2026-09-13, later) — Path D: ZEABUR FREE is now the primary
+> production path.** Path C (Render) was killed at signup: **Render demands
+> a payment method** even for free compute services (live finding,
+> 2026-09-13 — kit retired in `deploy/free-render/`). The market was
+> re-verified from official sources the same day:
+>
+> - **Zeabur Free Plan**: CHOSEN — $0/mo, **no card**, auto-sleep/wake,
+>   prebuilt Docker images from any registry (`ghcr.io/azadar-templates/…`),
+>   HTTP/TCP ports with `*.zeabur.app` TLS domains, per-service env vars,
+>   WebSocket-capable platform. Kit + 5-minute setup:
+>   **`deploy/free-zeabur/README.md`**.
+> - Zerops: $15 one-time promo credit only (not permanent free).
+> - Back4App Containers free: 256 MB RAM — too small for this stack.
+> - Koyeb: paid-only for new users (Mistral acquisition, 2026-02);
+>   HF Spaces: Docker Spaces paid to create; Fly/Railway/Northflank/GCP/
+>   Oracle: card or trial; Vercel/Netlify/Cloudflare/Deno: serverless-only.
+>
+> No application changes were needed: the exact CI image, Neon PostgreSQL,
+> the env-secret model, migrations-on-boot and single-container queue
+> semantics all carry over. One deployment-plumbing switch
+> (`AKBARAL_ROLES=both|web|api` in `scripts/start-prod.mjs`) was added so
+> the same image can split tiers across the free plan's 2 services if its
+> per-container memory cap ever proves too tight (measured: dev-mode stack
+> 815 MB, estimated prod 300–450 MB).
+
 > **UPDATE (2026-09-13) — Path C: RENDER FREE is now the primary production
 > path.** Two things changed since the 2026-09-11 analysis below:
 >
