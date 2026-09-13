@@ -42,3 +42,6 @@ Thumbs.db
 
 # Python deploy-tooling cache
 **/__pycache__/
+
+# Local deployment secret copies (value lives only in the workspace file — never committed)
+SESSION_SECRET.txt

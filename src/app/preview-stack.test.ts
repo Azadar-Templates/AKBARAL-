@@ -91,16 +91,21 @@ describe('preview stack contract', () => {
   });
 
   it('the platform error page text ("Something went wrong. Please try again.") is foreign to this application', () => {
-    // Incident (twice now): the browser preview showed that message and it
-    // was initially suspected as an app defect. It is the sandbox preview
-    // PLATFORM's own error page, shown when the preview port is dead — the
-    // string exists nowhere in this codebase (source, bundles, git history).
-    // This regression lock guarantees that stays true: if a future change
-    // ever introduces that copy (e.g. an error boundary), the string would
-    // become ambiguous with the platform page and this test fails loudly.
+    // Incident (three platform messages misreported as app defects so far):
+    // 1. "Something went wrong. Please try again." — the sandbox preview
+    //    PLATFORM's page, shown when the preview port is dead/paused.
+    // 2. "The AI took too long to respond. Please try again." — the Arena
+    //    assistant PLATFORM's response timeout (shown when an agent turn
+    //    runs long); zero occurrences in this codebase (verified 2026-09-13).
+    // Both are foreign: the string exists nowhere in this codebase (source,
+    // bundles, git history). This regression lock guarantees that stays true:
+    // if a future change ever introduces that copy (e.g. an error boundary),
+    // the string would become ambiguous with the platform page and this test
+    // fails loudly.
     const foreignMarkers = [
       'Something went wrong. Please try again.',
       'something went wrong',
+      'the ai took too long to respond',
     ];
     const surfaces = [
       'src/app/page.tsx',
