@@ -145,9 +145,18 @@ if (ALLOW_FIXTURE) {
 ok(sections.length >= 1 && /AKBARAL/i.test(answerText), `finalResult carries a real answer about AKBARAL (${answerText.length} chars)`);
 
 // ── 8. Selected model + verification (from the execution logs) ────────────
-const list = await j('/api/tasks', { headers: auth });
-const completedTask = (list.body?.tasks ?? []).find((t) => ['completed', 'succeeded'].includes(String(t.status)));
+const taskList = await j('/api/tasks', { headers: auth });
+const completedTask = (taskList.body?.tasks ?? []).find((t) => ['completed', 'succeeded'].includes(String(t.status)));
 ok(Boolean(completedTask), `Task Center lists the completed task (${completedTask?.id ?? 'none'})`);
+if (!completedTask) {
+  // Graceful failure path: a failed/cancelled workflow must produce a clean
+  // report (with the workflow's own error) — never an unhandled crash.
+  console.log(`      workflow status: ${wf?.status ?? 'unknown'}; error: ${wf?.error_message ?? 'none'}`);
+  const meFail = await j('/api/me', { headers: auth });
+  console.log(`      credits after failed run: ${meFail.body?.user?.freeCredits} (before ${creditsBefore}) — refund behavior observable above`);
+  console.log('\nPRODUCTION E2E: FAILED (workflow did not complete — no task to inspect)');
+  process.exit(1);
+}
 const detail = await j(`/api/tasks/${completedTask.id}`, { headers: auth });
 const detailText = detail.text;
 const modelLogLines = (detail.body?.logs ?? [])
