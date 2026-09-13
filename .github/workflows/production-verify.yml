@@ -1,0 +1,40 @@
+name: production-verify
+
+# REAL production verification of the AKBARAL! MASTER flow through the live
+# Modal deployment (https://azadar-templates--akbaral.modal.run), including
+# the real Gemini provider path (GOOGLE_API_KEY lives only in the Modal
+# secret "akbaral-production" — never in this repository or these logs).
+#
+# Manual dispatch only: this exercises PRODUCTION (it registers a throwaway
+# verification account and consumes exactly one of its free credits).
+# The Arena dev sandbox has no egress to modal.run, so this workflow is the
+# agent-executable evidence channel for production behavior.
+#
+# Evidence rules (mirrored from the runbook):
+#   - fixture/mock success never counts as production evidence; the script
+#     itself rejects the fixture's canned answer in this mode
+#   - no secrets are needed or printed: registration is a public API
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Production base URL to verify'
+        required: false
+        default: 'https://azadar-templates--akbaral.modal.run'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run the REAL production E2E (MASTER flow via Gemini)
+        run: node scripts/verify-production-e2e.mjs
+        env:
+          AKBARAL_BASE_URL: ${{ inputs.base_url || 'https://azadar-templates--akbaral.modal.run' }}
