@@ -24,6 +24,13 @@
  * Exit code 0 = every check passed.
  */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Crash visibility: if anything throws unhandled (e.g. network), report it as
+// an annotation so the failure mode is diagnosable without raw log access.
+process.on('unhandledRejection', (err) => {
+  console.log(`::error title=E2E crashed::${String(err).slice(0, 280).replace(/%/g, '%25').replace(/\r?\n/g, ' ')}`);
+  console.error(err);
+  process.exit(1);
+});
 
 const BASE = (process.env.AKBARAL_BASE_URL ?? 'https://aztar-templates--invalid.example').replace(/\/+$/, '');
 if (BASE.includes('invalid.example')) {
@@ -40,7 +47,15 @@ const FIXTURE_SIGNATURE = 'One intelligence system**: AKBARAL! is an autonomous 
 
 let failures = 0;
 let warnings = 0;
-const ok = (cond, label) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}`); if (!cond) failures += 1; };
+// In CI, mirror every FAIL as a GitHub Actions annotation (::error::) — the
+// annotations API is readable even when raw log download is blocked.
+const ok = (cond, label) => {
+  console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}`);
+  if (!cond) {
+    failures += 1;
+    if (process.env.GITHUB_ACTIONS === 'true') console.log(`::error title=E2E check failed::${label.replace(/%/g, '%25').replace(/\r?\n/g, ' ')}`);
+  }
+};
 const warn = (cond, label) => { if (!cond) { warnings += 1; console.log(`WARN  ${label}`); } };
 
 const surfaces = []; // every response body seen — scanned for key material at the end
