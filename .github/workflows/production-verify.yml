@@ -5,10 +5,14 @@ name: production-verify
 # the real Gemini provider path (GOOGLE_API_KEY lives only in the Modal
 # secret "akbaral-production" — never in this repository or these logs).
 #
-# Manual dispatch only: this exercises PRODUCTION (it registers a throwaway
-# verification account and consumes exactly one of its free credits).
-# The Arena dev sandbox has no egress to modal.run, so this workflow is the
-# agent-executable evidence channel for production behavior.
+# This exercises PRODUCTION: it registers a throwaway verification account
+# and consumes exactly one of its free credits. The Arena dev sandbox has no
+# egress to modal.run, so this workflow is the agent-executable evidence
+# channel for production behavior.
+#
+# Triggers: on pushes to the working branch that touch the verification
+# tooling (workflow_dispatch is reserved for when this file reaches the
+# default branch — GitHub only registers dispatchable workflows there).
 #
 # Evidence rules (mirrored from the runbook):
 #   - fixture/mock success never counts as production evidence; the script
@@ -22,6 +26,11 @@ on:
         description: 'Production base URL to verify'
         required: false
         default: 'https://azadar-templates--akbaral.modal.run'
+  push:
+    branches: [arena/01a085d2-akbaral]
+    paths:
+      - 'scripts/verify-production-e2e.mjs'
+      - '.github/workflows/production-verify.yml'
 
 jobs:
   verify:
