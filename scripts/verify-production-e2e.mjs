@@ -73,6 +73,16 @@ console.log(`goal: "${GOAL}"\n`);
 
 // ── 1. Liveness + readiness (production database round trip) ──────────────
 const health = await j('/api/health');
+// Modal's edge refuses everything with 404 + this body when the workspace is
+// disabled (account/billing state) — surface it explicitly instead of a
+// confusing wall of 404s.
+if (/modal-http:\s*workspace\s+\S+\s+is disabled/i.test(health.text)) {
+  const notice = (/\S+\s+is disabled/i.exec(health.text) ?? [''])[0];
+  console.log(`\nPRODUCTION BLOCKED: the Modal workspace is disabled — ${notice}`);
+  console.log('Modal is refusing every request at its edge; the app never receives them.');
+  console.log('Fix (user-side): reactivate the workspace in the Modal dashboard (billing/plan), then re-run this verification.');
+  process.exit(3);
+}
 ok(health.res.status === 200 && health.body?.status === 'ok', `GET /api/health -> ${health.res.status} (status: ${health.body?.status}, db: ${health.body?.checks?.database ?? health.body?.database ?? 'n/a'})`);
 const ready = await j('/api/ready');
 ok(ready.res.status === 200 && ready.body?.status === 'ready', `GET /api/ready -> ${ready.res.status} (status: ${ready.body?.status})`);
