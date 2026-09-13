@@ -1,5 +1,34 @@
 # AKBARAL! — Zero-Cost Launch Runbook (September 18 target)
 
+> **UPDATE (2026-09-13) — Path C: RENDER FREE is now the primary production
+> path.** Two things changed since the 2026-09-11 analysis below:
+>
+> 1. **Modal Starter hit its $1 free-usage cap** — the workspace is disabled
+>    at the edge (`modal-http: workspace … is disabled`) and traffic is
+>    refused. Modal is no longer the production dependency.
+> 2. **The production architecture became stateless** (Neon PostgreSQL,
+>    Path B) — so "no persistent disk on free tiers" stopped being a
+>    disqualifier. Re-verified the market on 2026-09-13:
+>    - **Render free**: CHOSEN — 750 instance-hrs/mo, 0.1 CPU/512 MB,
+>      cardless, WebSockets, prebuilt-image deploys, `render.yaml` Blueprint
+>      at the repo root. Kit + one-time setup:
+>      **`deploy/free-render/README.md`**.
+>    - Koyeb: new sign-ups **paid-only** since the Mistral AI acquisition
+>      (2026-02-18).
+>    - Hugging Face Spaces: Docker/Gradio Spaces now **paid to create**.
+>    - Fly.io / Railway / Northflank / GCP / Oracle: card or trial-only.
+>    - Vercel / Netlify / Cloudflare / Deno: serverless-only (would require
+>      an architecture rewrite).
+>
+> What Path C preserves: the exact CI image
+> (`ghcr.io/azadar-templates/akbaral`), Neon PostgreSQL, the env-secret
+> model, migrations-on-boot, single-container queue semantics, and every
+> API/auth/MASTER/agent/verification/credits behavior — no application
+> changes. Honest free-tier trade-offs (15-min sleep + keep-alive ping,
+> 512 MB RAM, ephemeral uploads as on Modal) are documented in the kit.
+> The Modal wrapper stays in-tree and works again if that workspace is
+> ever re-enabled.
+
 > **Path status (2026-09-11, verified):** ClawCloud Run **shut down**
 > (registrations closed 2026-04-23; product + free tiers terminated
 > 2026-05-11; VPS business closed 2026-06-30) — its kit is retired in

@@ -1,0 +1,63 @@
+# AKBARAL! — Render Blueprint (free production path, 2026-09-13)
+#
+# Deploys the CI-published public image (ghcr.io/azadar-templates/akbaral —
+# built by .github/workflows/docker-publish.yml on every push) as ONE free
+# web service backed by the existing Neon PostgreSQL database.
+#
+# What this preserves from the Modal production architecture (Path B):
+#   - the exact CI-verified production image (no rebuild, no code changes)
+#   - Neon/PostgreSQL as the database (same DATABASE_URL as Modal used)
+#   - the same env-var secret model (values live only in the host's secret
+#     store — never in this repo)
+#   - migrations on boot (container entrypoint), single container (the
+#     in-process execution queue and automation scheduler must never run
+#     twice against one database)
+#
+# Free-tier facts (verified against render.com/docs on 2026-09-13):
+#   - plan "free" = 0.1 CPU / 512 MB, 750 instance-hours/month (a single
+#     always-awake service uses ~720h — fits)
+#   - spins down after 15 min without inbound traffic (a keep-alive ping
+#     prevents this — .github/workflows/keep-alive.yml)
+#   - ephemeral filesystem (same as Modal: Neon holds all durable state;
+#     uploaded files were already ephemeral on Modal)
+#   - WebSockets supported on web services
+#
+# One-time setup (see deploy/free-render/README.md): Render dashboard →
+# New → Blueprint → select this repo. Render prompts for the sync:false
+# values below (paste from Neon / Modal dashboards — never into chat).
+
+services:
+  - type: web
+    name: akbaral
+    runtime: image # pull the prebuilt CI image — no build on Render
+    image:
+      url: ghcr.io/azadar-templates/akbaral:latest # pin to :<full-commit-sha> for reproducibility
+    plan: free # 0.1 CPU / 512 MB — free forever, cardless
+    region: oregon # switch to frankfurt if your Neon database is in the EU
+    healthCheckPath: /api/health # honest liveness: 200 only when the DB round-trips
+    maxShutdownDelaySeconds: 60 # let the execution queue drain on deploys
+    numInstances: 1 # NEVER scale up: the in-process queue/scheduler must run exactly once
+    envVars:
+      # Neon PostgreSQL connection string (paste when prompted; same value
+      # the Modal secret akbaral-production used).
+      - key: DATABASE_URL
+        sync: false
+      # Production session signing key (>= 32 chars). Render generates a
+      # base64 256-bit value; paste the old Modal value instead to keep
+      # existing sessions valid.
+      - key: SESSION_SECRET
+        sync: false
+      # Real Google Gemini key (paste when prompted; copy from the Modal
+      # secret akbaral-production). Travels only in the x-goog-api-key
+      # header, never in URLs/logs/responses.
+      - key: GOOGLE_API_KEY
+        sync: false
+      # The container serves the web tier on :3000 (Next.js rewrites /api,
+      # /uploads and /ws to the internal API on :4000). This tells Render's
+      # router which port to hit.
+      - key: PORT
+        value: "3000"
+      # No persistent disk on free (same as Modal): disable the in-container
+      # backup cron — backups run via the Neon/backup runbook instead.
+      - key: DISABLE_BACKUP_CRON
+        value: "1"

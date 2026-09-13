@@ -1,0 +1,43 @@
+name: keep-alive
+
+# Render free web services spin down after 15 minutes without inbound
+# traffic (render.com/docs/free). AKBARAL! runs its execution queue and
+# automation scheduler in-process, so a sleeping service stalls tasks.
+# This scheduled ping keeps production awake — and it doubles as an
+# external production heartbeat in the Actions history.
+#
+# Runs every 13 minutes. A month of always-awake service (~720 h) still
+# fits Render's 750 free instance-hours.
+#
+# One-time setup: add the repository secret
+#   PRODUCTION_PING_URL = https://<your-render-service>.onrender.com
+# Until it exists, every run skips gracefully (no failures, no noise).
+
+on:
+  schedule:
+    - cron: '*/13 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping production /api/health
+        if: ${{ env.PING_URL != '' }}
+        env:
+          PING_URL: ${{ secrets.PRODUCTION_PING_URL }}
+        run: |
+          code=$(curl -s -o /tmp/health-body -w '%{http_code}' --max-time 30 "$PING_URL/api/health" || true)
+          echo "$(date -u +%FT%TZ) $PING_URL/api/health -> HTTP $code"
+          cat /tmp/health-body 2>/dev/null || true
+          if [ "$code" != "200" ]; then
+            echo "::warning title=production heartbeat::/api/health returned $code (service may be cold-starting or unhealthy — retry manually if this persists)"
+          fi
+
+      - name: Not configured yet — skip silently
+        if: ${{ env.PING_URL == '' }}
+        env:
+          PING_URL: ${{ secrets.PRODUCTION_PING_URL }}
+        run: |
+          echo "PRODUCTION_PING_URL not set — nothing to ping (setup: deploy/free-render/README.md)."
