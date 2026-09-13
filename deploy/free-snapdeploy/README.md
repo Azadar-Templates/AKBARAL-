@@ -53,16 +53,35 @@ allows a **second** container: split with `AKBARAL_ROLES` (below).
    - Port: **3000** (the image `EXPOSE`s 3000+4000; only :3000 is public —
      Next rewrites `/api`, `/uploads`, `/ws` to the in-container API)
    - Size: Small (512 MB)
-3. **Environment variables** (paste values — never into chat/PRs):
-   - `DATABASE_URL` — the existing Neon pooled connection string (the same
-     value the Modal secret `akbaral-production` used)
-   - `SESSION_SECRET` — the old Modal value (keeps sessions valid) or any
-     ≥32-char random string
-   - `GOOGLE_API_KEY` — the real Gemini key (copy from the Modal secret in
-     the Modal dashboard)
-   - `DISABLE_BACKUP_CRON=1` — backups stay with the Neon runbook
-   - `SEED_DATABASE=true` **only if** the Neon database is empty (fresh
-     project); remove it after the first successful boot
+3. **Environment variables** (paste values — never into chat/PRs) — the
+   MINIMAL core-production set, classified against the code
+   (`src/config/env.ts`):
+   - `DATABASE_URL` — **REQUIRED**. The Neon pooled PostgreSQL string
+     (`postgres://…?sslmode=require`) — the same value the Modal secret
+     used. The detected example value (`file:./data/akbaral.db`) is the
+     SQLite dev default and must be replaced.
+   - `SESSION_SECRET` — **REQUIRED + GENERATE SECURELY** (the app refuses
+     to start in production without ≥32 random chars; placeholder values
+     are blacklisted). Generate once: `openssl rand -base64 48`. Reusing
+     the old Modal value keeps existing sessions valid.
+   - `GOOGLE_API_KEY` — **REQUIRED** for the core MASTER→Gemini path
+     (copy from the Modal secret). Without it the Google provider reports
+     not-configured honestly and MASTER cannot run a model.
+   - `TRUST_PROXY=1` — **recommended**: SnapDeploy fronts the container
+     with one TLS proxy; this makes rate limiting and security logs use
+     real client IPs.
+   - `DISABLE_BACKUP_CRON=1` — **required on ephemeral disks** (backups
+     stay with the Neon runbook).
+   - `SEED_DATABASE=true` — **only if the Neon database is empty** (fresh
+     project); remove after the first successful boot.
+   - `AKBARAL_PUBLIC_WEB_URL=https://<container-url>` — optional polish;
+     only used in email links (which are SMTP-gated anyway).
+   Everything else SnapDeploy detected from `.env.example` is OPTIONAL
+   (integrations report not-configured honestly) or has a safe in-code
+   default — leave it unset. **Do NOT set** `GOOGLE_BASE_URL`,
+   `OPENAI/ANTHROPIC_BASE_URL`, or `AKBARAL_ALLOW_PRIVATE_PROVIDER` —
+   those are preview/fixture switches (diverting Gemini away from Google
+   or relaxing SSRF validation); production must keep them unset/0.
 4. Deploy. The entrypoint runs migrations against Neon, then starts
    API `:4000` + web `:3000` (`AKBARAL_ROLES=both`, the default).
 5. **Keep-alive** (strongly recommended): add the repo secret
