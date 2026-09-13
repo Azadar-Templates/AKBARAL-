@@ -50,6 +50,80 @@ const DEFAULT_SEARCH_ENDPOINT = 'https://html.duckduckgo.com/html/';
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (compatible; AKBARALMasterAI/1.0; +https://akbaral.ai)';
 
+// ── PHASE 2 hardening: query sanitization, controlled retries, rate limit ────
+
+const MAX_QUERY_CHARS = 400;
+const SEARCH_ATTEMPTS = 2; // 1 attempt + 1 controlled retry
+const SEARCH_RETRY_BACKOFF_MS = 250;
+const SEARCH_RATE_WINDOW_MS = 60_000;
+const DEFAULT_SEARCH_RATE_LIMIT = 60;
+const searchRateHits: number[] = [];
+
+/**
+ * Sanitize a search query before it reaches the provider: collapse
+ * whitespace, strip control characters, cap length. Never mutates the
+ * semantic content beyond whitespace/control cleanup.
+ */
+export function sanitizeQuery(raw: string): string {
+  return raw
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_QUERY_CHARS);
+}
+
+/** Test-only: clear the in-process search rate-limit window. */
+export function __resetSearchRateLimitForTests(): void {
+  searchRateHits.length = 0;
+}
+
+/** In-process sliding-window rate limit for outbound search calls. */
+function applySearchRateLimit(): void {
+  const rawLimit = Number(process.env.AKBARAL_SEARCH_RATE_LIMIT);
+  const max =
+    Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.floor(rawLimit) : DEFAULT_SEARCH_RATE_LIMIT;
+  const now = Date.now();
+  while (searchRateHits.length > 0 && now - searchRateHits[0] >= SEARCH_RATE_WINDOW_MS) {
+    searchRateHits.shift();
+  }
+  if (searchRateHits.length >= max) {
+    throw new Error(`search rate limit reached (${max}/${SEARCH_RATE_WINDOW_MS / 1000}s); retry shortly`);
+  }
+  searchRateHits.push(now);
+}
+
+/**
+ * Retry only transient provider failures: network-level errors, 5xx and 429.
+ * Client errors (other 4xx) and parse errors fail immediately — retrying a
+ * malformed request can never help.
+ */
+function isRetryableSearchFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /status (5\d\d|429)\b|aborted|network|fetch failed|econn|etimedout|enotfound|too many redirects/i.test(
+    error.message,
+  );
+}
+
+/**
+ * Production transport policy: the search endpoint must speak HTTPS unless the
+ * operator explicitly trusted an internal (private) provider. Prevents a
+ * cleartext search configuration from silently shipping in production.
+ */
+function assertSearchEndpointTransport(url: URL): void {
+  if (
+    url.protocol !== 'https:' &&
+    process.env.NODE_ENV === 'production' &&
+    process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER !== '1'
+  ) {
+    throw new Error(
+      'search endpoint must use HTTPS in production (set AKBARAL_SEARCH_ENDPOINT to an https:// URL, or set AKBARAL_ALLOW_PRIVATE_PROVIDER=1 only for a trusted internal provider)',
+    );
+  }
+}
+
+
 function searchEndpoint(): string {
   return process.env.AKBARAL_SEARCH_ENDPOINT || DEFAULT_SEARCH_ENDPOINT;
 }
@@ -134,17 +208,39 @@ export function extractText(html: string): string {
  * compliant proxy without changing the agent code.
  */
 export async function searchWeb(query: string, limit = 5): Promise<WebSearchResult[]> {
+  // PHASE 2 hardening, in order: sanitize the query, enforce the outbound
+  // rate limit, validate the endpoint (SSRF + production HTTPS policy), then
+  // fetch with a strict timeout and at most one controlled retry.
+  const sanitized = sanitizeQuery(query);
+  if (!sanitized) {
+    throw new Error('search query must not be empty');
+  }
+  applySearchRateLimit();
+
   const endpoint = assertProviderHttpUrl(searchEndpoint());
   const url = new URL(endpoint);
-  url.searchParams.set('q', query);
+  assertSearchEndpointTransport(url);
+  url.searchParams.set('q', sanitized);
 
-  let body: string;
-  try {
-    body = await httpText(url.toString(), 15_000, assertProviderHttpUrl);
-  } catch (error) {
+  let body: string | null = null;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= SEARCH_ATTEMPTS; attempt += 1) {
+    try {
+      body = await httpText(url.toString(), 15_000, assertProviderHttpUrl);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt < SEARCH_ATTEMPTS && isRetryableSearchFailure(error)) {
+        await new Promise((resolve) => setTimeout(resolve, SEARCH_RETRY_BACKOFF_MS));
+        continue;
+      }
+      break;
+    }
+  }
+  if (body === null) {
     // Name the search endpoint host (never a credential) so the failure is
     // actionable: unreachable endpoints are an operator configuration issue.
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = lastError instanceof Error ? lastError.message : String(lastError);
     throw new Error(`search endpoint ${url.host} unreachable (${reason}); set AKBARAL_SEARCH_ENDPOINT to a reachable search provider`);
   }
   const contentType = body.trimStart().startsWith('{') ? 'json' : 'html';
@@ -174,9 +270,13 @@ function parseHtmlResults(html: string, limit: number): WebSearchResult[] {
     const descriptionMatch = block.match(
       /<a[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
     );
+    const normalizedUrl = normalizeSearchUrl(urlMatch);
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      continue; // non-http(s) results (e.g. javascript: or relative) are dropped
+    }
     results.push({
       title: extractText(titleMatch),
-      url: normalizeSearchUrl(urlMatch),
+      url: normalizedUrl,
       description: descriptionMatch ? extractText(descriptionMatch[1]) : '',
     });
   }
@@ -220,7 +320,7 @@ function parseJsonResults(body: string, limit: number): WebSearchResult[] {
         description: typeof description === 'string' ? description : String(description),
       };
     })
-    .filter((item) => item.title.length > 0 && item.url.startsWith('http'));
+    .filter((item) => item.title.length > 0 && /^https?:\/\//i.test(item.url));
 }
 
 /**

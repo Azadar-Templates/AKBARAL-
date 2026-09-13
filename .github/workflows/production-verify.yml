@@ -33,6 +33,7 @@ on:
     branches: [arena/01a085d2-akbaral]
     paths:
       - 'scripts/verify-production-e2e.mjs'
+      - 'scripts/verify-gemini-direct.ts'
       - '.github/workflows/production-verify.yml'
 
 jobs:
@@ -53,3 +54,37 @@ jobs:
           # URL (kept only as the historical default; production now lives
           # wherever PRODUCTION_BASE_URL points — see deploy/free-zeabur/).
           AKBARAL_BASE_URL: ${{ inputs.base_url || secrets.PRODUCTION_BASE_URL || 'https://azadar-templates--akbaral.modal.run' }}
+
+  # ── PHASE 1: real Gemini DIRECT verification (code path of this commit) ──
+  # The Arena sandbox has no egress; this runner does. If GOOGLE_API_KEY is
+  # present as a repository secret, the real provider path (request/response,
+  # streaming, credential-failure and unconfigured classification, usage
+  # accounting) is verified against the REAL Google API. The key is only ever
+  # passed via env and headers — never printed, never echoed.
+  secret-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      has_google_key: ${{ steps.check.outputs.has_google_key }}
+    steps:
+      - name: Detect whether GOOGLE_API_KEY is configured (presence only)
+        id: check
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -n "$GOOGLE_API_KEY" ]; then echo "has_google_key=true" >> "$GITHUB_OUTPUT"; else echo "has_google_key=false" >> "$GITHUB_OUTPUT"; fi
+
+  real-gemini-direct:
+    needs: secret-gate
+    if: needs.secret-gate.outputs.has_google_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the REAL Gemini provider path (direct, no mocks)
+        run: npx tsx scripts/verify-gemini-direct.ts
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}

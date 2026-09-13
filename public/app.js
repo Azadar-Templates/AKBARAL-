@@ -1279,7 +1279,7 @@
     if (view === 'billing') { showScreen('billing'); await loadBilling(); return; }
     if (view === 'settings') { showScreen('settings'); await loadSettings(); void loadConnectedAccounts(); return; }
     if (view === 'economy') {
-      // ZA141251SA private owner console — owner/super_admin only, invisible
+      // Private owner console — owner/super_admin only, invisible
       // to ordinary users (no nav entry; reached via #/economy).
       if (!['owner', 'super_admin'].includes(state.user?.role || '')) { toast('Owner access required', 'err'); showScreen('dashboard'); return; }
       showScreen('economy');
@@ -2407,7 +2407,7 @@
     }
   }
 
-  // ── ZA141251SA private economy (owner console) ─────────────────────────
+  // ── Private economy (owner console) ──────────────────────────────
   async function loadEconomy() {
     const [dashboard, today] = await Promise.all([
       api('/api/economy/dashboard'),

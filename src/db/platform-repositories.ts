@@ -1475,6 +1475,25 @@ export function countKnowledgeItems(userId: string): number {
   return row?.total ?? 0;
 }
 
+/**
+ * Convert a raw user query into a SAFE FTS match expression: every whitespace
+ * token is quoted as a literal phrase so FTS5 query syntax (and characters
+ * like '-', '(', '*', ':') can never be interpreted — a hyphenated term such
+ * as "zanzibar-quantum" previously parsed as a column reference and threw
+ * "no such column". On the PostgreSQL engine the translated
+ * websearch_to_tsquery accepts the same quoted phrases.
+ */
+export function ftsSafeQuery(raw: string): string {
+  const tokens = raw
+    .split(/\s+/)
+    .map((token) => token.replace(/["*()+:]/g, ''))
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return '""';
+  }
+  return tokens.map((token) => `"${token}"`).join(' ');
+}
+
 export function searchKnowledge(userId: string, query: string, limit = 20, projectId?: string): Array<Record<string, unknown>> {
   const projectFilter = projectId ? ' AND ki.project_id = ?' : '';
   const run = (match: string): Array<Record<string, unknown>> =>
@@ -1488,7 +1507,14 @@ export function searchKnowledge(userId: string, query: string, limit = 20, proje
       projectId ? [match, userId, projectId, limit] : [match, userId, limit],
     ) as Array<Record<string, unknown>>;
 
-  const exact = run(query);
+  let exact: Array<Record<string, unknown>> = [];
+  try {
+    exact = run(ftsSafeQuery(query));
+  } catch {
+    // A malformed match expression can never match — treat as zero results
+    // and let the widened OR pass (below) try the individual tokens.
+    exact = [];
+  }
   if (exact.length > 0) {
     return exact;
   }
@@ -1519,15 +1545,20 @@ export function searchKnowledge(userId: string, query: string, limit = 20, proje
  * Access control happens at the route layer (workspace membership required).
  */
 export function searchProjectKnowledge(projectId: string, query: string, limit = 20): Array<Record<string, unknown>> {
-  return db.all(
-    `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type, ki.project_id, ki.user_id
-     FROM knowledge_fts fts
-     JOIN knowledge_items ki ON ki.rowid = fts.rowid
-     WHERE knowledge_fts MATCH ? AND ki.project_id = ?
-     ORDER BY ki.indexed_at DESC
-     LIMIT ?`,
-    [query, projectId, limit],
-  ) as Array<Record<string, unknown>>;
+  try {
+    return db.all(
+      `SELECT ki.id, ki.title, ki.content, ki.source_type, ki.mime_type, ki.project_id, ki.user_id
+       FROM knowledge_fts fts
+       JOIN knowledge_items ki ON ki.rowid = fts.rowid
+       WHERE knowledge_fts MATCH ? AND ki.project_id = ?
+       ORDER BY ki.indexed_at DESC
+       LIMIT ?`,
+      [ftsSafeQuery(query), projectId, limit],
+    ) as Array<Record<string, unknown>>;
+  } catch {
+    // Never a 500 for a strange query: an honest empty result instead.
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------

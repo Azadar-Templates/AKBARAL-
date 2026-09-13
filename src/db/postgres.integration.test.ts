@@ -218,6 +218,15 @@ describe('PostgreSQL critical-path integration', { skip: !RUN ? 'requires PG_TES
 
     const misses = searchKnowledge(user.id, 'zimbabwe unicycle') as Array<{ id: string }>;
     assert.equal(misses.filter((m) => m.id === item.id).length, 0, 'FTS must not match unrelated terms');
+
+    // Regression (production 2026-09-13, caught by the user-journey QA): a
+    // HYPHENATED query used to crash the SQLite FTS5 parser ("no such
+    // column") and 500. The sanitized match expression must work on BOTH
+    // engines and must never throw on special characters.
+    const hyphenated = searchKnowledge(user.id, 'quantum-flux capacitor') as Array<{ id: string }>;
+    assert.ok(Array.isArray(hyphenated), 'hyphenated query must not throw');
+    const hostile = searchKnowledge(user.id, '"*(quantum):flux" -capacitor') as Array<{ id: string }>;
+    assert.ok(Array.isArray(hostile), 'FTS-syntax-shaped query must not throw');
   });
 
   it('regression (production 2026-09-12): queue reconciliation startup query executes on PostgreSQL', () => {

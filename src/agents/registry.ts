@@ -303,9 +303,15 @@ export function getAgentBySlug(slug: string): AgentView | undefined {
 }
 
 export function listCategories(): Array<{ slug: string; name: string; description: string; icon: string; count: number }> {
+  // Counts are REGISTRY-ONLY (owner_id IS NULL) so they always match the
+  // registry-scoped listings they annotate (public catalog + explorer).
+  // Fix (2026-09-13, caught by the user-journey QA): user-created agents used
+  // to inflate these counts, leaking the existence/count of PRIVATE agents
+  // into the public category listing while the agents themselves stayed
+  // hidden — an inconsistent, leaky public surface.
   const rows = db.all(
     `SELECT c.slug, c.name, c.description, c.icon, COUNT(a.id) AS count
-     FROM agent_categories c LEFT JOIN agents a ON a.category_id = c.id
+     FROM agent_categories c LEFT JOIN agents a ON a.category_id = c.id AND a.owner_id IS NULL
      GROUP BY c.id ORDER BY c.name ASC`,
   ) as Array<Record<string, unknown>>;
   return rows.map((row) => ({

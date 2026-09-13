@@ -130,6 +130,29 @@ describe('preview stack contract', () => {
     assert.ok(appJs.includes("toast(e.message, 'err')"), 'SPA keeps the toast error surface');
   });
 
+  it('the private mission codename never appears in any client-served surface', () => {
+    // PHASE 5 security final pass (2026-09-13): the ZA project codename must
+    // never ship to public browsers — not in the SSR page (even inside a
+    // hidden section), not in scripts, styles or metadata. The owner console
+    // is genericized; all mission DATA stays server-side behind
+    // requireRole('owner','super_admin') (403 for everyone else, verified by
+    // the economy/mission-chat batteries).
+    const clientSurfaces = [
+      'src/app/page.tsx',
+      'src/app/layout.tsx',
+      'public/app.js',
+      'public/styles.css',
+      'public/tokens.css',
+    ];
+    for (const surface of clientSurfaces) {
+      const source = readRepo(surface);
+      assert.ok(
+        !/ZA\d+[A-Z]|ZA141251SA/i.test(source),
+        `"${surface}" must never contain the private mission codename`,
+      );
+    }
+  });
+
   it('the page shell mounts the SPA and references the versioned assets', () => {
     const page = readRepo('src/app/page.tsx');
     const layout = readRepo('src/app/layout.tsx');

@@ -12,16 +12,34 @@ import http from 'node:http';
 export interface ResearchFixtureServer {
   baseUrl: string;
   port: number;
+  searchRequestCount: () => number;
   close(): Promise<void>;
 }
 
 export async function startResearchFixture(options?: {
   failSearch?: boolean;
   noResults?: boolean;
+  failFirstSearchWith?: number;
+  alwaysSearchStatus?: number;
+  includeNonHttpResults?: boolean;
 }): Promise<ResearchFixtureServer> {
+  let searchRequestCount = 0;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (url.pathname === '/search') {
+      searchRequestCount += 1;
+      if (options?.alwaysSearchStatus) {
+        res.statusCode = options.alwaysSearchStatus;
+        res.setHeader('content-type', 'text/plain');
+        res.end(`search failed with ${options.alwaysSearchStatus}`);
+        return;
+      }
+      if (options?.failFirstSearchWith && searchRequestCount === 1) {
+        res.statusCode = options.failFirstSearchWith;
+        res.setHeader('content-type', 'text/plain');
+        res.end(`transient failure ${options.failFirstSearchWith}`);
+        return;
+      }
       if (options?.failSearch) {
         res.statusCode = 500;
         res.setHeader('content-type', 'text/plain');
@@ -33,23 +51,29 @@ export async function startResearchFixture(options?: {
         res.end(JSON.stringify({ results: [] }));
         return;
       }
+      const port = (server.address() as { port: number }).port;
+      const goodResults = [
+        {
+          title: 'AKBARAL Overview',
+          url: `http://127.0.0.1:${port}/source/1`,
+          description: 'AKBARAL is a Master AI operating platform with specialist agents.',
+        },
+        {
+          title: 'Agent Orchestration',
+          url: `http://127.0.0.1:${port}/source/2`,
+          description: 'The platform routes user goals through an AI orchestrator.',
+        },
+      ];
+      if (options?.includeNonHttpResults) {
+        // Malicious/malformed entries a hostile provider might return.
+        goodResults.push(
+          { title: 'Script Injection', url: 'javascript:alert(1)', description: 'must be dropped' },
+          { title: 'Relative Path', url: '/relative/source', description: 'must be dropped' },
+          { title: 'Weird Scheme', url: 'httpx://evil.example/x', description: 'must be dropped' },
+        );
+      }
       res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify({
-          results: [
-            {
-              title: 'AKBARAL Overview',
-              url: `http://127.0.0.1:${(server.address() as { port: number }).port}/source/1`,
-              description: 'AKBARAL is a Master AI operating platform with specialist agents.',
-            },
-            {
-              title: 'Agent Orchestration',
-              url: `http://127.0.0.1:${(server.address() as { port: number }).port}/source/2`,
-              description: 'The platform routes user goals through an AI orchestrator.',
-            },
-          ],
-        }),
-      );
+      res.end(JSON.stringify({ results: goodResults }));
       return;
     }
     if (url.pathname === '/fetch') {
@@ -76,6 +100,14 @@ export async function startResearchFixture(options?: {
   const address = server.address() as { port: number };
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
+  // Save the prior values so closing a NESTED fixture restores the enclosing
+  // fixture's configuration instead of wiping it.
+  const previous = {
+    searchEndpoint: process.env.AKBARAL_SEARCH_ENDPOINT,
+    pageFetchEndpoint: process.env.AKBARAL_PAGE_FETCH_ENDPOINT,
+    allowPrivateProvider: process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER,
+  };
+
   process.env.AKBARAL_SEARCH_ENDPOINT = `${baseUrl}/search`;
   process.env.AKBARAL_PAGE_FETCH_ENDPOINT = `${baseUrl}/fetch`;
   // Test-only: allow the local trusted fixture to act as the search/fetch proxy.
@@ -84,10 +116,15 @@ export async function startResearchFixture(options?: {
   return {
     baseUrl,
     port: address.port,
+    searchRequestCount: () => searchRequestCount,
     close(): Promise<void> {
-      delete process.env.AKBARAL_SEARCH_ENDPOINT;
-      delete process.env.AKBARAL_PAGE_FETCH_ENDPOINT;
-      delete process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER;
+      const restore = (key: string, value: string | undefined): void => {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      };
+      restore('AKBARAL_SEARCH_ENDPOINT', previous.searchEndpoint);
+      restore('AKBARAL_PAGE_FETCH_ENDPOINT', previous.pageFetchEndpoint);
+      restore('AKBARAL_ALLOW_PRIVATE_PROVIDER', previous.allowPrivateProvider);
       return new Promise((resolve) => server.close(() => resolve()));
     },
   };
