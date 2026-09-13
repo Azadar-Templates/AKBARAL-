@@ -2423,6 +2423,16 @@
       ['Opportunities', String(dashboard.opportunities.current), `${dashboard.opportunities.completed} completed / ${dashboard.opportunities.failed} failed`],
       ['Blocked (policy)', String(dashboard.opportunities.blocked), ''],
     ].map(([label, value, note]) => `<div class="stat"><span class="stat-label">${label}</span><strong class="stat-value">${value}</strong><small>${esc(note)}</small></div>`).join('');
+    const w = dashboard.revenueWindows || { todayCents: 0, last7DaysCents: 0, last30DaysCents: 0, lifetimeCents: 0 };
+    $('#economy-windows').innerHTML = [
+      ['Revenue today', money(w.todayCents), 'realized only (received/settled)'],
+      ['Revenue 7 days', money(w.last7DaysCents), ''],
+      ['Revenue 30 days', money(w.last30DaysCents), ''],
+      ['Revenue lifetime', money(w.lifetimeCents), ''],
+      ['Pending (not income)', money((dashboard.revenueStates || {}).pendingCents), 'awaiting evidence'],
+      ['Expected (estimate)', money((dashboard.revenueStates || {}).expectedCents), 'never counted as income'],
+    ].map(([label, value, note]) => `<div class="stat"><span class="stat-label">${label}</span><strong class="stat-value">${value}</strong><small>${esc(note)}</small></div>`).join('');
+    loadMissionChat().catch(() => {});
     $('#economy-today').innerHTML = today.chronology.length
       ? `<ol class="econ-chronology">${today.chronology.map((e) => `<li><small>${esc(new Date(e.ts).toLocaleTimeString())} · ${esc(e.kind)} · ${esc(e.actor)}</small><div>${esc(e.summary)}</div></li>`).join('')}</ol>`
       : '<p class="sub">No autonomous activity recorded today.</p>';
@@ -2446,6 +2456,23 @@
     $('#econ-policy-note').textContent = `Daily spend cap $${(dashboard.policy.maxDailySpendCents / 100).toFixed(2)} · min expected net ${dashboard.policy.minExpectedNetCents}c · min ROI ${dashboard.policy.minRoi} · concurrency ${dashboard.policy.maxConcurrentExecutions} · agent cap ${dashboard.policy.maxEconomyAgents}. ${dashboard.honesty.note}`;
   }
 
+  async function loadMissionChat() {
+    const root = $('#mission-history');
+    if (!root) return;
+    const agent = ($('#mission-agent')?.value || '').trim();
+    if (!agent) {
+      const threads = await api('/api/economy/chat/threads');
+      root.innerHTML = (threads.threads || []).length
+        ? `<p class="sub">Existing threads: ${(threads.threads).map((t) => `<button class="btn btn-sm" data-thread="${esc(t.agentSlug)}" type="button">${esc(t.agentSlug)} · ${t.messageCount} msg</button>`).join(' ')}</p>`
+        : '<p class="sub">Enter an agent slug (e.g. web-research-001) to start a private mission chat. Every message is audited.</p>';
+      return;
+    }
+    const history = await api(`/api/economy/agents/${encodeURIComponent(agent)}/chat`);
+    root.innerHTML = (history.messages || []).length
+      ? `<div class="econ-chronology">${(history.messages).map((m) => `<div class="list-item"><div><b>${m.direction === 'owner' ? 'You' : esc(history.agent.name)}</b>${m.status === 'failed' ? ' <span class="badge badge-failed">failed</span>' : ''}<small>${esc(new Date(m.created_at).toLocaleString())}${m.model_key ? ' · ' + esc(m.model_key) : ''}</small><div>${esc(m.content)}</div></div></div>`).join('')}</div>`
+      : '<p class="sub">No messages yet with this agent.</p>';
+  }
+
   function bindEconomy() {
     $('#econ-autonomous').addEventListener('change', async (event) => {
       try { await api('/api/economy/policy', { method: 'PATCH', body: JSON.stringify({ autonomous_enabled: event.target.checked }) }); toast(`Autonomous operation ${event.target.checked ? 'enabled' : 'disabled'}`, 'ok'); }
@@ -2463,6 +2490,27 @@
     $('#econ-tick').addEventListener('click', async () => {
       try { const r = await api('/api/economy/tick', { method: 'POST', body: JSON.stringify({}) }); toast(`Tick: ${(r.notes || []).join(' · ') || 'nothing to do'}`, 'ok'); await loadEconomy(); }
       catch (e) { toast(e.message, 'err'); }
+    });
+    $('#mission-send')?.addEventListener('click', async () => {
+      const agent = ($('#mission-agent')?.value || '').trim();
+      const content = ($('#mission-input')?.value || '').trim();
+      if (!agent || !content) { toast('Enter an agent slug and a message', 'err'); return; }
+      const button = $('#mission-send');
+      button.disabled = true;
+      try {
+        const result = await api(`/api/economy/agents/${encodeURIComponent(agent)}/chat`, { method: 'POST', body: JSON.stringify({ content }) });
+        $('#mission-input').value = '';
+        if (result.agentMessage && result.agentMessage.status === 'failed') toast('Agent reply failed honestly (no provider configured) — see the thread', 'err');
+        await loadMissionChat();
+      } catch (e) { toast(e.message, 'err'); }
+      finally { button.disabled = false; }
+    });
+    $('#mission-agent')?.addEventListener('change', () => { loadMissionChat().catch(() => {}); });
+    $('#mission-history')?.addEventListener('click', (event) => {
+      const thread = event.target.closest('[data-thread]');
+      if (!thread) return;
+      $('#mission-agent').value = thread.getAttribute('data-thread');
+      loadMissionChat().catch(() => {});
     });
   }
 

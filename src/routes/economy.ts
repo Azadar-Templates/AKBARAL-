@@ -1,9 +1,19 @@
 import { Router } from 'express';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
-import { HttpError } from '../server/http';
+import { HttpError, asyncRoute } from '../server/http';
 import { appendAuditLog } from '../db';
-import { getEconomyPolicy, listEconomyEvents, listExecutions, listOpportunities, getOpportunity, updateEconomyPolicy } from '../db/economy-repositories';
+import { getEconomyPolicy, listEconomyEvents, listExecutions, listOpportunities, getOpportunity, updateEconomyPolicy, listMissionThreads } from '../db/economy-repositories';
+import { MissionChatError, missionChatHistory, missionChatWithAgent } from '../economy/mission-chat';
+import { rateLimit } from '../server/middleware/rate-limit';
+
+/** Map MissionChatError to the standard HttpError envelope (async-safe). */
+function toHttpError(error: unknown): unknown {
+  if (error instanceof MissionChatError) {
+    return new HttpError(error.statusCode, error.message, error.code);
+  }
+  return error;
+}
 import { DISCOVERY_CATEGORIES, type RiskLevel } from '../economy/policy';
 import { evaluateOpportunity as evaluate } from '../economy/operations';
 import { runDiscovery, startExecution, runExecution, reconcileStaleExecutions, economyScheduler } from '../economy/operations';
@@ -304,6 +314,29 @@ export function createEconomyRouter(): Router {
   router.get('/agents', (_req, res) => {
     res.status(200).json({ agents: listAgentProfiles() });
   });
+
+  // ── Owner ↔ agent mission chat (Section 5; owner-only via the router guard) ──
+  router.get('/chat/threads', (req: AuthenticatedRequest, res) => {
+    res.status(200).json({ threads: listMissionThreads(req.auth!.userId) });
+  });
+
+  router.get('/agents/:slug/chat', (req: AuthenticatedRequest, res) => {
+    res.status(200).json(missionChatHistory(req.auth!.userId, req.params.slug));
+  });
+
+  router.post(
+    '/agents/:slug/chat',
+    rateLimit({ prefix: 'mission-chat', max: 30, windowMs: 60_000 }),
+    asyncRoute(async (req: AuthenticatedRequest, res) => {
+      const content = typeof req.body?.content === 'string' ? req.body.content : '';
+      try {
+        const result = await missionChatWithAgent({ ownerUserId: req.auth!.userId, agentSlug: req.params.slug, content });
+        res.status(200).json(result);
+      } catch (error) {
+        throw toHttpError(error);
+      }
+    }),
+  );
 
   // ── AKBARAL! improvements (G) ───────────────────────────────────────────
   router.get('/improvements', (_req, res) => {

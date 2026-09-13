@@ -9,6 +9,7 @@ import {
   listSettlements,
   listUpgrades,
   revenueTotals,
+  revenueWindows,
   ledgerExpenseTotals,
   ledgerAgentBreakdown,
 } from '../db/economy-repositories';
@@ -23,6 +24,7 @@ import { treasurySummary } from './treasury';
 export interface EconomyDashboard {
   treasury: ReturnType<typeof treasurySummary>;
   revenueStates: { realizedCents: number; pendingCents: number; expectedCents: number };
+  revenueWindows: { todayCents: number; last7DaysCents: number; last30DaysCents: number; lifetimeCents: number };
   agents: {
     economyAgentCount: number;
     activeAgents: number;
@@ -83,6 +85,7 @@ export function buildDashboard(): EconomyDashboard {
   return {
     treasury: summary,
     revenueStates: { realizedCents: revenue.realizedCents, pendingCents: revenue.pendingCents, expectedCents: revenue.expectedCents },
+    revenueWindows: revenueWindows(),
     agents: {
       economyAgentCount: profiles.length,
       activeAgents: profiles.filter((profile) => profile.status === 'active').length,

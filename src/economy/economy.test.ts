@@ -8,6 +8,7 @@ import {
   getExecution,
   getOpportunity,
   insertOpportunity,
+  insertRevenue,
   listExecutions,
   listAgentProfiles,
   listEconomyEvents,
@@ -42,7 +43,7 @@ import {
   treasurySummary,
   ECONOMY_SYSTEM_EMAIL,
 } from './treasury';
-import { buildDailyReport } from './report';
+import { buildDailyReport, buildDashboard } from './report';
 import { createApiServer, type ApiServer } from '../app';
 
 /**
@@ -437,6 +438,62 @@ describe('ZA141251SA agent economy', () => {
     });
     assert.equal(outcome.status, 'rejected');
     assert.equal(outcome.blockedReason, 'agent cap reached');
+  });
+
+  // ── D2: child-hierarchy gates (max depth + per-parent children) ─────────
+  it('enforces max agent depth and per-parent child limits (no uncontrolled recursion)', () => {
+    updateEconomyPolicy({ max_economy_agents: listAgentProfiles().length + 10, max_agent_depth: 2, max_children_per_agent: 4 });
+
+    // L0 parent (top-level, no parent) → L1 child → L2 grandchild: allowed.
+    const parent = expandCapability({ gap: 'depth-gate parent', specialization: 'depth-parent', systemInstructions: 'Test parent agent.' });
+    assert.equal(parent.status, 'testing');
+    const child = expandCapability({ gap: 'depth-gate child', specialization: 'depth-child', systemInstructions: 'Test child agent.', parentAgentSlug: parent.agentSlug });
+    assert.equal(child.status, 'testing');
+    const grandchild = expandCapability({ gap: 'depth-gate grandchild', specialization: 'depth-grandchild', systemInstructions: 'Test grandchild agent.', parentAgentSlug: child.agentSlug });
+    assert.equal(grandchild.status, 'testing');
+
+    // L3 great-grandchild: REJECTED (depth 3 > cap 2).
+    const tooDeep = expandCapability({ gap: 'depth-gate too deep', specialization: 'depth-gg', systemInstructions: 'Test.', parentAgentSlug: grandchild.agentSlug });
+    assert.equal(tooDeep.status, 'rejected');
+    assert.match(tooDeep.blockedReason ?? '', /max agent depth reached/);
+
+    // Unknown parent: REJECTED.
+    const ghost = expandCapability({ gap: 'ghost parent', specialization: 'ghost-child', systemInstructions: 'Test.', parentAgentSlug: 'no-such-agent-xyz' });
+    assert.equal(ghost.status, 'rejected');
+    assert.equal(ghost.blockedReason, 'parent agent not found');
+
+    // Per-parent children cap: with cap 1, a second child of parent is REJECTED.
+    updateEconomyPolicy({ max_children_per_agent: 1 });
+    const secondChild = expandCapability({ gap: 'over children cap', specialization: 'second-child', systemInstructions: 'Test.', parentAgentSlug: parent.agentSlug });
+    assert.equal(secondChild.status, 'rejected');
+    assert.match(secondChild.blockedReason ?? '', /parent child limit reached/);
+    updateEconomyPolicy({ max_children_per_agent: 4 });
+
+    // Every rejection is audited.
+    const events = listEconomyEvents(300).map((e) => e.summary);
+    assert.ok(events.some((x) => x.includes('depth limit')), 'depth rejection audited');
+    assert.ok(events.some((x) => x.includes('children')), 'children-cap rejection audited');
+  });
+
+  // ── L2: revenue windows (today / 7d / 30d / lifetime, realized only) ────
+  it('computes honest revenue windows — realized revenue only, correct time buckets', () => {
+    const daysAgo = (d: number): string => new Date(Date.now() - d * 24 * 3600 * 1000).toISOString();
+    const old = insertRevenue({ state: 'settled', amountCents: 100_00, evidence: 'bank statement (test fixture)' });
+    db.run('UPDATE economy_revenue SET received_at = ?, settled_at = ? WHERE id = ?', [daysAgo(40), daysAgo(40), old.id]);
+    const mid = insertRevenue({ state: 'received', amountCents: 50_00, evidence: 'payment confirmation (test fixture)' });
+    db.run('UPDATE economy_revenue SET received_at = ? WHERE id = ?', [daysAgo(10), mid.id]);
+    const fresh = insertRevenue({ state: 'received', amountCents: 25_00, evidence: 'payment confirmation (test fixture)' });
+    db.run('UPDATE economy_revenue SET received_at = ? WHERE id = ?', [daysAgo(0.04), fresh.id]);
+    // Expected revenue NEVER counts toward any window.
+    insertRevenue({ state: 'expected', amountCents: 999_00 });
+
+    const windows = buildDashboard().revenueWindows;
+    assert.ok(windows.todayCents >= 25_00, 'today includes the fresh received row');
+    assert.ok(windows.last7DaysCents >= 25_00, '7d includes the fresh row');
+    assert.ok(windows.last30DaysCents >= 75_00, '30d includes fresh + mid');
+    assert.ok(windows.lifetimeCents >= 175_00, 'lifetime includes all realized rows');
+    assert.ok(windows.todayCents < windows.lifetimeCents, '40-day-old row excluded from today');
+    assert.ok(windows.todayCents <= windows.last7DaysCents && windows.last7DaysCents <= windows.last30DaysCents && windows.last30DaysCents <= windows.lifetimeCents, 'windows are monotonic');
   });
 
   // ── H/P: treasury accounting + revenue states ────────────────────────────

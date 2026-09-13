@@ -673,9 +673,12 @@ export default function Home() {
       {/* ================= Admin ================= */}
       <section className="screen screen-default" id="screen-economy" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Private"></p><h1>
 
-        ZA141251SA Owner Console</h1><p className="sub">Private agent economy — owner account only. Realized revenue, treasury, opportunities and autonomous operation controls.</p></div></div><div className="stat-grid" id="economy-stats" aria-live="polite"></div><div className="panel"><h3>
+        ZA141251SA Owner Console</h1><p className="sub">Private agent economy — owner account only. Realized revenue, treasury, opportunities and autonomous operation controls.</p></div></div><div className="stat-grid" id="economy-stats" aria-live="polite"></div><div className="stat-grid" id="economy-windows" aria-live="polite"></div><div className="panel"><h3>
 
         What did ZA141251SA do today?</h3><div id="economy-today" className="econ-today"></div></div><div className="panel"><h3>
+        Mission chat (owner ↔ agent)</h3><div className="econ-controls"><input id="mission-agent" placeholder="agent slug, e.g. web-research-001" aria-label="Agent slug" /><input id="mission-input" placeholder="Message the agent — ask about status, earnings, costs, capabilities" aria-label="Mission message" /><button className="btn btn-primary" id="mission-send" type="button">
+
+        Send</button></div><div id="mission-history" className="econ-list"></div><p className="sub" id="mission-note"></p></div><div className="panel"><h3>
 
         Autonomous operation</h3><div className="econ-controls"><label className="check"><input type="checkbox" id="econ-autonomous" /> Enable autonomous operation (policy-gated, positive economics only)</label><label className="check"><input type="checkbox" id="econ-discovery" /> Enable opportunity discovery</label><button className="btn btn-danger" id="econ-kill" type="button">Engage kill switch</button><button className="btn" id="econ-tick" type="button">Run one scheduler tick now</button></div><p className="sub" id="econ-policy-note"></p></div><div className="panel"><h3>
 

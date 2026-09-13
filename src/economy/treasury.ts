@@ -1,8 +1,9 @@
 import { createId, db } from '../db';
 import { findUserByEmail, createUser } from '../db';
 import { agentFactory } from '../orchestrator/agent-factory';
+import { getAgentBySlug } from '../agents/registry';
 import {
-  countAgentProfiles,
+  countAgentProfiles, countAgentChildren, agentHierarchyDepth,
   getEconomyPolicy,
   getExpansion,
   getImprovement,
@@ -350,12 +351,41 @@ export interface ExpansionOutcome {
 
 export function expandCapability(input: { gap: string; specialization: string; systemInstructions: string; parentAgentSlug?: string | null; name?: string }): ExpansionOutcome {
   const policy = currentPolicy();
-  const profileCount = countAgentProfiles();
-  if (profileCount >= policy.maxEconomyAgents) {
+
+  const rejectExpansion = (reason: string, summary: string): ExpansionOutcome => {
     const expansion = insertExpansion({ gap: input.gap, parentAgentSlug: input.parentAgentSlug ?? null });
     updateExpansion(expansion.id, { status: 'rejected', decided_at: new Date().toISOString() });
-    recordEconomyEvent({ kind: 'expansion', actor: input.parentAgentSlug ?? 'system', summary: `expansion REJECTED: agent cap reached (${profileCount}/${policy.maxEconomyAgents}) — no uncontrolled replication` });
-    return { expansionId: expansion.id, agentSlug: '', status: 'rejected', blockedReason: 'agent cap reached' };
+    recordEconomyEvent({ kind: 'expansion', actor: input.parentAgentSlug ?? 'system', summary });
+    return { expansionId: expansion.id, agentSlug: '', status: 'rejected', blockedReason: reason };
+  };
+
+  // Hierarchy gates (Section 2): no uncontrolled recursive spawning.
+  if (input.parentAgentSlug) {
+    if (!getAgentBySlug(input.parentAgentSlug)) {
+      return rejectExpansion('parent agent not found', `expansion REJECTED: parent ${input.parentAgentSlug} does not exist`);
+    }
+    const parentDepth = agentHierarchyDepth(input.parentAgentSlug);
+    if (parentDepth + 1 > policy.maxAgentDepth) {
+      return rejectExpansion(
+        `max agent depth reached (${parentDepth}+1 > ${policy.maxAgentDepth})`,
+        `expansion REJECTED: depth limit (parent ${input.parentAgentSlug} at depth ${parentDepth}, cap ${policy.maxAgentDepth}) — no uncontrolled recursion`,
+      );
+    }
+    const children = countAgentChildren(input.parentAgentSlug);
+    if (children >= policy.maxChildrenPerAgent) {
+      return rejectExpansion(
+        `parent child limit reached (${children}/${policy.maxChildrenPerAgent})`,
+        `expansion REJECTED: parent ${input.parentAgentSlug} already has ${children} children (cap ${policy.maxChildrenPerAgent})`,
+      );
+    }
+  }
+
+  const profileCount = countAgentProfiles();
+  if (profileCount >= policy.maxEconomyAgents) {
+    return rejectExpansion(
+      'agent cap reached',
+      `expansion REJECTED: agent cap reached (${profileCount}/${policy.maxEconomyAgents}) — no uncontrolled replication`,
+    );
   }
   const systemUserId = getEconomySystemUserId();
   const created = agentFactory.create({

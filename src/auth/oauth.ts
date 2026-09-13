@@ -8,6 +8,7 @@ import {
   type OAuthProviderKey,
 } from '../db/oauth-repositories';
 import { createUser, findUserByEmail, findUserById, updateUserLastLogin, createSession, appendSecurityLog, appendAuditLog } from '../db';
+import { syncConfiguredOwnerIdentity } from './owner-identity';
 import { hashToken, newBearerToken, signAccessToken } from '../security';
 import { HttpError } from '../server/http';
 
@@ -609,6 +610,9 @@ export async function completeOAuthLink(input: {
 }
 
 function issueSession(userId: string, ip: string | null, userAgent: string | null): { refreshToken: string; sessionId: string; accessToken: string } {
+  // Configured owner identity: promote before signing so a Google-identity
+  // login matching AKBARAL_OWNER_EMAIL carries the owner role immediately.
+  syncConfiguredOwnerIdentity(userId);
   const refreshToken = newBearerToken();
   const session = createSession({
     userId,

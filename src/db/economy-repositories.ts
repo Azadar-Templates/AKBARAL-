@@ -39,6 +39,8 @@ export interface EconomyPolicyRow {
   settlement_threshold_cents: number;
   settlement_destination: string;
   max_economy_agents: number;
+  max_agent_depth: number;
+  max_children_per_agent: number;
   economy_model_key: string | null;
   discovery_categories_json: string;
 }
@@ -317,6 +319,100 @@ export function revenueTotals(): { realizedCents: number; pendingCents: number; 
   };
 }
 
+/**
+ * Realized-revenue windows for the owner dashboard. Only RECEIVED/SETTLED
+ * revenue counts (the honesty rule); expected/pending are excluded so no
+ * estimate can ever appear as income.
+ */
+export function revenueWindows(): { todayCents: number; last7DaysCents: number; last30DaysCents: number; lifetimeCents: number } {
+  const now = Date.now();
+  const iso = (msAgo: number): string => new Date(now - msAgo).toISOString();
+  const day = 24 * 3600 * 1000;
+  const realized = "state IN ('received','settled')";
+  const sum = (since?: string): number => {
+    const row = since
+      ? db.get<{ total: number | null }>('SELECT SUM(amount_cents) AS total FROM economy_revenue WHERE ' + realized + ' AND received_at >= ?', [since])
+      : db.get<{ total: number | null }>('SELECT SUM(amount_cents) AS total FROM economy_revenue WHERE ' + realized);
+    return Number(row?.total ?? 0);
+  };
+  return {
+    todayCents: sum(iso(day)),        // trailing 24h
+    last7DaysCents: sum(iso(7 * day)),
+    last30DaysCents: sum(iso(30 * day)),
+    lifetimeCents: sum(),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mission chat (owner ↔ agent; owner-only surface, fully audited)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface MissionChatMessageRow {
+  id: string;
+  owner_user_id: string;
+  agent_slug: string;
+  direction: 'owner' | 'agent';
+  content: string;
+  status: string;
+  model_key: string | null;
+  error_code: string | null;
+  created_at: string;
+}
+
+export function insertMissionMessage(input: {
+  ownerUserId: string;
+  agentSlug: string;
+  direction: 'owner' | 'agent';
+  content: string;
+  status?: 'completed' | 'failed';
+  modelKey?: string | null;
+  errorCode?: string | null;
+}): MissionChatMessageRow {
+  const id = createId('mcm');
+  const ts = NOW();
+  db.run(
+    'INSERT INTO mission_chat_messages (id, owner_user_id, agent_slug, direction, content, status, model_key, error_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, input.ownerUserId, input.agentSlug, input.direction, input.content, input.status ?? 'completed', input.modelKey ?? null, input.errorCode ?? null, ts],
+  );
+  return {
+    id,
+    owner_user_id: input.ownerUserId,
+    agent_slug: input.agentSlug,
+    direction: input.direction,
+    content: input.content,
+    status: input.status ?? 'completed',
+    model_key: input.modelKey ?? null,
+    error_code: input.errorCode ?? null,
+    created_at: ts,
+  };
+}
+
+export function listMissionMessages(ownerUserId: string, agentSlug: string, limit = 200): MissionChatMessageRow[] {
+  return db.all<MissionChatMessageRow>(
+    'SELECT * FROM mission_chat_messages WHERE owner_user_id = ? AND agent_slug = ? ORDER BY created_at ASC, id ASC LIMIT ?',
+    [ownerUserId, agentSlug, Math.min(limit, 500)],
+  );
+}
+
+export function listMissionThreads(ownerUserId: string): Array<{ agentSlug: string; messageCount: number; lastMessageAt: string; lastDirection: string }> {
+  // No correlated subquery over grouped columns: PostgreSQL rejects it
+  // ("subquery uses ungrouped column"), SQLite merely tolerates it. Keep the
+  // query portable and fetch the last direction per (few) threads separately.
+  const rows = db.all<{ agent_slug: string; n: number; last_at: string }>(
+    `SELECT agent_slug, COUNT(*) AS n, MAX(created_at) AS last_at
+     FROM mission_chat_messages WHERE owner_user_id = ? GROUP BY agent_slug ORDER BY last_at DESC`,
+    [ownerUserId],
+  );
+  return rows.map((r) => {
+    const last = db.get<{ direction: string }>(
+      'SELECT direction FROM mission_chat_messages WHERE owner_user_id = ? AND agent_slug = ? ORDER BY created_at DESC, id DESC LIMIT 1',
+      [ownerUserId, r.agent_slug],
+    );
+    return { agentSlug: r.agent_slug, messageCount: Number(r.n), lastMessageAt: r.last_at, lastDirection: last?.direction ?? 'owner' };
+  });
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Ledger (idempotent by ref_id UNIQUE)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -562,6 +658,35 @@ export interface AgentProfileRow {
   objectives: string | null;
   status: string;
   enabled_at: string;
+}
+
+/** Children count for a parent agent (hierarchy gate). */
+export function countAgentChildren(parentAgentSlug: string): number {
+  const row = db.get<{ n: number | null }>('SELECT COUNT(*) AS n FROM economy_agent_profiles WHERE parent_agent_slug = ?', [parentAgentSlug]);
+  return Number(row?.n ?? 0);
+}
+
+/** A single agent profile by slug (hierarchy gate lookups). */
+export function getAgentProfileBySlug(agentSlug: string): AgentProfileRow | undefined {
+  return db.get<AgentProfileRow>('SELECT * FROM economy_agent_profiles WHERE agent_slug = ?', [agentSlug]);
+}
+
+/** Depth of an agent in the child hierarchy (top-level = 0). Cycle-safe. */
+export function agentHierarchyDepth(agentSlug: string): number {
+  let depth = 0;
+  let current: string | null = agentSlug;
+  const seen = new Set<string>();
+  while (current && !seen.has(current) && depth < 100) {
+    seen.add(current);
+    const row: { parent: string | null } | undefined = db.get<{ parent: string | null }>(
+      'SELECT parent_agent_slug AS parent FROM economy_agent_profiles WHERE agent_slug = ?',
+      [current],
+    );
+    if (!row || !row.parent) return depth;
+    current = row.parent;
+    depth += 1;
+  }
+  return depth;
 }
 
 export function upsertAgentProfile(input: { agentSlug: string; parentAgentSlug?: string | null; objectives?: string | null }): void {

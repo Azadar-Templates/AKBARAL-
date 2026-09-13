@@ -16,6 +16,18 @@
 import { strict as assert } from 'node:assert';
 import { describe, it, before, after } from 'node:test';
 import { db, Database, createUser, findUserByEmail, setUserPasswordHash, createTask, updateTaskStatus, consumeTaskCredit, refundTaskCredit, getCreditAccount, indexKnowledgeItem, searchKnowledge, listOrphanNonTerminalExecutions } from './index';
+import {
+  insertMissionMessage,
+  listMissionMessages,
+  listMissionThreads,
+  insertRevenue,
+  revenueWindows,
+  insertExpansion,
+  upsertAgentProfile,
+  agentHierarchyDepth,
+  countAgentChildren,
+} from './economy-repositories';
+import { syncConfiguredOwnerIdentity } from '../auth/owner-identity';
 import { translateSqlForPg, placeholdersToPg, resolveDbEngine } from './database';
 
 const PG_URL = process.env.PG_TEST_DATABASE_URL ?? '';
@@ -262,5 +274,71 @@ describe('PostgreSQL critical-path integration', { skip: !RUN ? 'requires PG_TES
     assert.equal(one?.ready, 1);
     extra.close();
     assert.equal(extra.isOpen, false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Economy/mission-chat paths (migration 0015) — PG parity for the ZA141251SA
+// owner-only surfaces added in the final production build.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('economy + mission chat parity (PG)', { skip: !RUN ? 'requires PG_TEST_DATABASE_URL' : false }, () => {
+  it('stores and lists mission chat messages + threads identically to SQLite', () => {
+    const owner = createUser({ email: `pg-mission-${Date.now()}@akbaral.test`, passwordHash: null, name: 'PG Mission Owner' });
+    insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'owner', content: 'status?' });
+    const agentMsg = insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'agent', content: 'All tasks idle; honest zero earnings.', modelKey: 'gemini-2.5-flash' });
+    insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'code-review-001', direction: 'owner', content: 'hello' });
+
+    const thread = listMissionMessages(owner.id, 'web-research-001');
+    assert.equal(thread.length, 2);
+    assert.equal(thread[0].direction, 'owner');
+    assert.equal(thread[1].model_key, 'gemini-2.5-flash');
+
+    const threads = listMissionThreads(owner.id);
+    assert.equal(threads.length, 2);
+    const wr = threads.find((t) => t.agentSlug === 'web-research-001')!;
+    assert.equal(wr.messageCount, 2);
+    assert.equal(wr.lastDirection, 'agent');
+    assert.ok(wr.lastMessageAt >= agentMsg.created_at);
+  });
+
+  it('computes revenue windows on PG (realized-only time buckets)', () => {
+    const daysAgo = (d: number): string => new Date(Date.now() - d * 24 * 3600 * 1000).toISOString();
+    const old = insertRevenue({ state: 'settled', amountCents: 100_00, evidence: 'pg fixture' });
+    db.run('UPDATE economy_revenue SET received_at = ?, settled_at = ? WHERE id = ?', [daysAgo(40), daysAgo(40), old.id]);
+    const fresh = insertRevenue({ state: 'received', amountCents: 25_00, evidence: 'pg fixture' });
+    db.run('UPDATE economy_revenue SET received_at = ? WHERE id = ?', [daysAgo(0.04), fresh.id]);
+    insertRevenue({ state: 'expected', amountCents: 999_00 });
+
+    const windows = revenueWindows();
+    assert.ok(windows.todayCents >= 25_00, 'today bucket works on PG');
+    assert.ok(windows.lifetimeCents >= 125_00, 'lifetime bucket works on PG');
+    assert.ok(windows.todayCents < windows.lifetimeCents, 'old row excluded from today on PG');
+  });
+
+  it('promotes the configured owner identity on PG (one-way, changes>0)', () => {
+    const email = `pg-owner-${Date.now()}@akbaral.test`;
+    createUser({ email, passwordHash: null, name: 'PG Owner' });
+    process.env.AKBARAL_OWNER_EMAIL = email;
+    try {
+      const result = syncConfiguredOwnerIdentity();
+      assert.deepEqual(result, { promoted: true, email });
+      assert.equal(findUserByEmail(email)!.role, 'owner');
+      // One-way: second sync is a no-op.
+      assert.equal(syncConfiguredOwnerIdentity()!.promoted, false);
+    } finally {
+      delete process.env.AKBARAL_OWNER_EMAIL;
+    }
+  });
+
+  it('tracks child-agent hierarchy depth + children counts on PG', () => {
+    const stamp = Date.now();
+    const parent = `pg-hier-parent-${stamp}`;
+    const child = `pg-hier-child-${stamp}`;
+    insertExpansion({ gap: 'pg parity', agentSlug: parent });
+    upsertAgentProfile({ agentSlug: parent, parentAgentSlug: null, objectives: 'pg' });
+    upsertAgentProfile({ agentSlug: child, parentAgentSlug: parent, objectives: 'pg' });
+    assert.equal(agentHierarchyDepth(parent), 0, 'top-level agent depth 0');
+    assert.equal(agentHierarchyDepth(child), 1, 'child depth 1');
+    assert.equal(countAgentChildren(parent), 1, 'children counted on PG');
   });
 });

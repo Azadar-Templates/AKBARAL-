@@ -13,6 +13,7 @@ import {
   appendAuditLog,
   countRecentSecurityEvents,
 } from '../db';
+import { syncConfiguredOwnerIdentity } from './owner-identity';
 import {
   hashPassword,
   verifyPassword,
@@ -171,6 +172,12 @@ export async function login(input: { email: string; password: string; ipAddress?
     throw new HttpError(403, 'account is not active', 'account_not_active');
   }
 
+  // Configured owner identity: if this account's email matches
+  // AKBARAL_OWNER_EMAIL, promote it (one-way, audited) so the issued access
+  // token carries the owner role immediately.
+  syncConfiguredOwnerIdentity(user.id);
+  const freshOwner = findUserByEmail(email);
+
   const now = Date.now();
   const refreshToken = newBearerToken();
   const session = createSession({
@@ -186,7 +193,7 @@ export async function login(input: { email: string; password: string; ipAddress?
   const accessToken = signAccessToken({
     sub: user.id,
     email: user.email,
-    role: user.role,
+    role: freshOwner?.role ?? user.role,
     sid: session.id,
   });
 

@@ -27,6 +27,8 @@ export interface PolicySnapshot {
   settlementThresholdCents: number;
   settlementDestination: string;
   maxEconomyAgents: number;
+  maxAgentDepth: number;
+  maxChildrenPerAgent: number;
   economyModelKey: string | null;
   discoveryCategories: string[];
 }
@@ -51,6 +53,8 @@ export function snapshotPolicy(row: EconomyPolicyRow): PolicySnapshot {
     settlementThresholdCents: row.settlement_threshold_cents,
     settlementDestination: row.settlement_destination,
     maxEconomyAgents: row.max_economy_agents,
+    maxAgentDepth: row.max_agent_depth,
+    maxChildrenPerAgent: row.max_children_per_agent,
     economyModelKey: row.economy_model_key ?? null,
     discoveryCategories: categories,
   };

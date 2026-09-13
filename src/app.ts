@@ -20,6 +20,7 @@ import { createToolsRouter } from './routes/tools';
 import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createEconomyRouter } from './routes/economy';
+import { syncConfiguredOwnerIdentity } from './auth/owner-identity';
 import { economyScheduler } from './economy/operations';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createWorldRouter } from './routes/world';
@@ -109,6 +110,11 @@ export function createApiServer(): ApiServer {
   // execution queue — it ticks once per second, firing due automations and
   // reconciling open runs against the authoritative job state).
   automationScheduler.start();
+
+  // Configured owner identity (AKBARAL_OWNER_EMAIL): promote the matching
+  // active account to the owner role server-side (audited, one-way). Also
+  // runs on every login so a first Google-identity login lands as owner.
+  syncConfiguredOwnerIdentity();
 
   // ZA141251SA economy scheduler: durable, idempotent ticks; idle unless the
   // owner enables autonomous operation (kill switch checked every tick).
