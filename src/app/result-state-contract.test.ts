@@ -334,6 +334,14 @@ function loadPreviewRenderers(): {
   };
 }
 
+describe('free-tier realtime transport contract (SSE through the Next proxy)', () => {
+  it('Next gzip compression stays OFF so proxied SSE streams are never buffered', () => {
+    const config = readFileSync(join(process.cwd(), 'next.config.mjs'), 'utf8');
+    assert.ok(/compress:\s*false/.test(config), 'next.config.mjs must keep compress: false (gzip buffers proxied text/event-stream responses — verified 2026-09-14)');
+    assert.ok(config.includes('text/event-stream'), 'the compress flag documents WHY (SSE realtime transport)');
+  });
+});
+
 describe('PART 2 preview renderers (website + data)', () => {
   it('the website preview is a SANDBOXED iframe (allow-scripts only, never same-origin), with responsive toggles and export actions', () => {
     const { renderWebsitePreview } = loadPreviewRenderers();

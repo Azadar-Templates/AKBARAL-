@@ -11,6 +11,14 @@ import { verifyAccessToken } from '../security';
  * execution logs as they are appended. In addition to the live socket, logs are
  * always persisted to `agent_execution_logs`, so a client can reconnect and
  * replay from the last-seen log timestamp.
+ *
+ * Free-tier mode (AKBARAL_REALTIME_TRANSPORT=sse): hosts whose edge proxy does
+ * not pass WebSocket upgrades (e.g. SnapDeploy Free) run the identical stream
+ * over the SSE endpoint (/api/executions/:id/events, src/routes/realtime.ts).
+ * In that mode the authenticated upgrade path is not registered; WebSocket
+ * attempts are refused immediately (403 + destroy) so the browser client's
+ * built-in fallback switches to SSE without waiting. Payloads, authentication
+ * and ownership isolation are identical on both channels.
  */
 
 export interface ExecutionLogMessage {
@@ -116,6 +124,20 @@ export class ExecutionStream {
       });
     });
 
+    // SSE-only free-tier mode: the full authenticated upgrade path below is
+    // NOT registered. Instead a minimal refusal handler answers and destroys
+    // every WebSocket attempt immediately — verified empirically: without any
+    // handler Node leaves the handshake dangling until the client times out,
+    // whereas an explicit 403 makes the browser's existing fallback switch to
+    // the SSE channel instantly. Default (unset or any other value) registers
+    // the WebSocket path exactly as before.
+    if (process.env.AKBARAL_REALTIME_TRANSPORT === 'sse') {
+      server.on('upgrade', (_request, socket) => {
+        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+        socket.destroy();
+      });
+      return;
+    }
     server.on('upgrade', (request, socket, head) => {
       const url = new URL(request.url ?? '/', 'http://localhost');
       if (!url.pathname.startsWith('/ws/executions/')) {

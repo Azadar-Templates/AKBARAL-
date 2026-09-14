@@ -65,7 +65,13 @@ export function createRealtimeRouter(): Router {
     send(initial);
 
     const interval = setInterval(() => {
-      const rows = cursor ? listExecutionLogsAfter(req.params.id, cursor, 100) : [];
+      // Always tail. listExecutionLogsAfter with an empty cursor returns from
+      // the beginning — critical for the early connector: a client that
+      // subscribes BEFORE the first log exists must still receive every log
+      // as it is persisted. (Regression, 2026-09-14: the previous
+      // `cursor ? … : []` never initialized the cursor when the initial
+      // replay was empty, so early connectors received nothing at all.)
+      const rows = listExecutionLogsAfter(req.params.id, cursor, 100);
       if (rows.length > 0) {
         send(rows as unknown as Array<Record<string, unknown>>);
       }

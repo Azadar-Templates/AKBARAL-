@@ -95,7 +95,13 @@ async function start(): Promise<void> {
   activeServer = api;
   const { port } = await api.listen();
   console.log(`[akbaral] api listening on ${env.host}:${port}`);
-  console.log(`[akbaral] realtime logs at /ws/executions/:executionId`);
+  console.log(
+    `[akbaral] realtime logs at ${
+      process.env.AKBARAL_REALTIME_TRANSPORT === 'sse'
+        ? '/api/executions/:id/events (SSE-only mode — free-tier compatible)'
+        : '/ws/executions/:executionId'
+    }`,
+  );
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));

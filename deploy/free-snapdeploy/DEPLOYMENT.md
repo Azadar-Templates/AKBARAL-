@@ -30,7 +30,7 @@
 
 ## Environment variables — the complete list
 
-Enter exactly these five (the first three are secrets — paste from your
+Enter exactly these six (the first three are secrets — paste from your
 records; never into chat):
 
 ```
@@ -39,7 +39,19 @@ SESSION_SECRET=<one-time: openssl rand -base64 48 — or reuse the old Modal val
 GOOGLE_API_KEY=<your real Gemini key — same value the Modal secret used>
 TRUST_PROXY=1
 DISABLE_BACKUP_CRON=1
+AKBARAL_REALTIME_TRANSPORT=sse
 ```
+
+`AKBARAL_REALTIME_TRANSPORT=sse` runs the realtime execution-log stream over
+Server-Sent Events instead of WebSockets — required on the Free tier, whose
+edge proxy does not pass WebSocket upgrades (that capability is gated behind
+the paid Always-On plan). Nothing else changes: the SSE channel
+(`/api/executions/:id/events`) is the already-shipped fallback with identical
+payloads, authentication and per-user ownership isolation; the browser client
+switches to it automatically and instantly (the WebSocket attempt is refused
+immediately rather than timing out). MASTER workspace progress updates were
+always HTTP polling and are unaffected. Do NOT buy Always-On for this —
+realtime functionality is fully preserved on Free.
 
 Add this ONE more **only if** the Neon database is still empty (fresh
 project) — and remove it after the first successful boot:
