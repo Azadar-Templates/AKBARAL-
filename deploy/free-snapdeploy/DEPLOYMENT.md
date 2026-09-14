@@ -1,16 +1,22 @@
 # AKBARAL! — SnapDeploy Deployment Configuration (exact inputs)
 
-> Everything below is pre-verified agent-side (2026-09-13, commit `ed22583`+):
-> the CI image builds green, the container boot path (entrypoint → 14
-> migrations → `AKBARAL_ROLES=both` → API :4000 + web :3000) was booted
-> locally in full production mode and passed the complete E2E (registration
-> → MASTER → gemini-3.8-flash → verification → finalResult → Task Center →
-> exact credit math → zero key leakage), and the failure→refund path was
-> proven with real DB transactions (consume −1 → automatic refund +1 on
-> `provider_not_configured`). The only thing that cannot be done from the
-> Arena sandbox is the SnapDeploy account itself (their dashboard is
-> unreachable from the sandbox network, and account creation + secret
-> pasting is inherently the owner's action).
+> Everything below is pre-verified agent-side (re-verified 2026-09-14 at
+> commits `a3c88d4`/`08e6dd6`, QA 443/443 + PG 22/22):
+> the CI image builds green (docker-publish run 34825404831 on `a3c88d4`),
+> and the exact container boot path was re-run in FULL production mode from
+> the built `dist` artifacts: `node dist/src/db/migrate.js` → **16
+> migrations** → `dist/src/db/seed.js` (4,001-agent registry) →
+> `scripts/start-prod.mjs` with `NODE_ENV=production AKBARAL_ROLES=both`
+> (mandatory SESSION_SECRET guard active, throwaway local secret) → API
+> :4000 + web :3000 → `/api/health` ok, `/api/ready` ready, robots/sitemap
+> 200, public surfaces codename-free, and the complete E2E (registration →
+> MASTER → verification → finalResult → Task Center → exact credit math 5→4
+> → zero key leakage) PASSED through the production Next.js server. The
+> failure→refund path was proven earlier with real DB transactions (consume
+> −1 → automatic refund +1 on `provider_not_configured`). The only thing
+> that cannot be done from the Arena sandbox is the SnapDeploy account
+> itself (their dashboard is unreachable from the sandbox network, and
+> account creation + secret pasting is inherently the owner's action).
 
 ## Container form — exact values
 
@@ -50,7 +56,7 @@ disabled and fail honestly per-capability. Do NOT set `GOOGLE_BASE_URL`,
 
 ## What the container does on boot (no action needed)
 
-1. `scripts/entrypoint.sh` → `node dist/src/db/migrate.js` (14 migrations,
+1. `scripts/entrypoint.sh` → `node dist/src/db/migrate.js` (16 migrations,
    idempotent — safe on every restart against Neon)
 2. `SEED_DATABASE=true` only → seeds the 4,001-agent registry, plans,
    model catalog, feature flags (skip on the existing production DB)
