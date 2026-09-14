@@ -5,7 +5,7 @@ import { db, findUserByEmail } from '../db';
 import { applyMigrations } from '../db/migrate';
 import { syncAgentRegistry, getAgentBySlug } from '../agents/registry';
 import { listEconomyEvents, listMissionMessages } from '../db/economy-repositories';
-import { missionChatWithAgent, missionChatHistory, MissionChatError } from './mission-chat';
+import { missionChatWithAgent, missionChatWithGroup, missionChatHistory, MissionChatError } from './mission-chat';
 import { configuredOwnerEmail, syncConfiguredOwnerIdentity } from '../auth/owner-identity';
 import { createApiServer, type ApiServer } from '../app';
 
@@ -290,6 +290,71 @@ describe('ZA141251SA mission chat + configured owner identity', () => {
         body: JSON.stringify({ content: 'hello' }),
       });
       assert.equal(response.status, 404);
+    });
+
+    // ── PART 6: owner ↔ approved agent GROUP chat ──────────────────────────
+    it('group chat: bounds (1-5 agents), registry-only members, owner-only endpoint', async () => {
+      const ownerToken = await loginAs(ownerEmail);
+      // Non-owner and anonymous are refused.
+      assert.equal((await fetch(`${baseUrl}/api/economy/chat/group`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401);
+      const userToken = await loginAs(email);
+      const forbidden = await fetch(`${baseUrl}/api/economy/chat/group`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${userToken}` }, body: JSON.stringify({ agents: [AGENT_SLUG], content: 'hi' }) });
+      assert.equal(forbidden.status, 403, 'group chat is owner-only');
+
+      // Validation: empty group, >5 agents, unknown agent.
+      const empty = await fetch(`${baseUrl}/api/economy/chat/group`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` }, body: JSON.stringify({ agents: [], content: 'hi' }) });
+      assert.equal(empty.status, 400);
+      const tooMany = await fetch(`${baseUrl}/api/economy/chat/group`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` }, body: JSON.stringify({ agents: ['a', 'b', 'c', 'd', 'e', 'f'], content: 'hi' }) });
+      assert.equal(tooMany.status, 400);
+      const unknown = await fetch(`${baseUrl}/api/economy/chat/group`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` }, body: JSON.stringify({ agents: ['no-such-agent-xyz'], content: 'hi' }) });
+      assert.equal(unknown.status, 404);
+
+      // Without a provider the group call fails HONESTLY per agent: every
+      // member returns a structured failed reply, nothing is fabricated.
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.OPENAI_BASE_URL;
+      const group = ['web-research-001', 'marketing-strategist-001'];
+      const ownerId = findUserByEmail(ownerEmail)!.id;
+      const result = await missionChatWithGroup({ ownerUserId: ownerId, agentSlugs: group, content: 'Status and revenue report.' });
+      assert.equal(result.replies.length, 2);
+      for (const reply of result.replies) {
+        assert.ok(group.includes(reply.agentSlug));
+        assert.equal(reply.agentMessage.status, 'failed', 'honest structured failure without a provider');
+        assert.ok(reply.agentMessage.content.length > 0, 'failure detail is present');
+      }
+      // Duplicates collapse to a single thread per agent.
+      const deduped = await missionChatWithGroup({ ownerUserId: ownerId, agentSlugs: ['web-research-001', 'web-research-001', '  '], content: 'again' });
+      assert.equal(deduped.replies.length, 1);
+    });
+
+    it('group chat: each reply is a REAL per-agent provider call (audited, redacted)', async () => {
+      modelFixture = await startJsonServer((_req, body) => {
+        capturedRequests.push(body);
+        return { choices: [{ message: { content: `Real reply with no secrets. Reference: ${Math.random()}` } }], usage: { prompt_tokens: 40, completion_tokens: 60 } };
+      });
+      process.env.OPENAI_API_KEY = 'group-chat-fixture-key';
+      process.env.OPENAI_BASE_URL = `${modelFixture.url}/v1`;
+      const ownerToken = await loginAs(ownerEmail);
+      const group = ['web-research-001', 'marketing-strategist-001'];
+      const response = await fetch(`${baseUrl}/api/economy/chat/group`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+        body: JSON.stringify({ agents: group, content: 'Report status.' }),
+      });
+      assert.equal(response.status, 200);
+      const result = (await response.json()) as { replies: Array<{ agentSlug: string; agentMessage: { status: string; content: string } }> };
+      assert.equal(result.replies.length, 2);
+      assert.deepEqual(result.replies.map((r) => r.agentSlug), group);
+      for (const reply of result.replies) {
+        assert.equal(reply.agentMessage.status, 'completed');
+        assert.match(reply.agentMessage.content, /Real reply/);
+      }
+      // TWO distinct provider calls happened (one per agent), both captured.
+      assert.equal(capturedRequests.slice(-2).length, 2);
+      await modelFixture.close();
+      modelFixture = undefined as unknown as { url: string; close(): Promise<void> };
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.OPENAI_BASE_URL;
     });
   });
 });

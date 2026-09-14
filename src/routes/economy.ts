@@ -4,8 +4,10 @@ import { requireRole } from '../server/middleware/rbac';
 import { HttpError, asyncRoute } from '../server/http';
 import { appendAuditLog } from '../db';
 import { getEconomyPolicy, listEconomyEvents, listExecutions, listOpportunities, getOpportunity, updateEconomyPolicy, listMissionThreads } from '../db/economy-repositories';
-import { MissionChatError, missionChatHistory, missionChatWithAgent } from '../economy/mission-chat';
+import { MissionChatError, missionChatHistory, missionChatWithAgent, missionChatWithGroup } from '../economy/mission-chat';
 import { rateLimit } from '../server/middleware/rate-limit';
+import { readinessPayload } from '../server/health';
+import { getBody } from '../server/middleware/validation';
 
 /** Map MissionChatError to the standard HttpError envelope (async-safe). */
 function toHttpError(error: unknown): unknown {
@@ -40,6 +42,11 @@ import {
   requestResource,
   retireResource,
   treasurySummary,
+  agentAccounts,
+  listTransfers,
+  proposeTreasuryTransfer,
+  decideTreasuryTransfer,
+  TreasuryTransferError,
 } from '../economy/treasury';
 
 /**
@@ -55,7 +62,18 @@ export function createEconomyRouter(): Router {
 
   // ── Dashboard + reports (L) ─────────────────────────────────────────────
   router.get('/dashboard', (_req, res) => {
-    res.status(200).json(buildDashboard());
+    const dashboard = buildDashboard();
+    // System health (PART 5): the same real readiness checks /api/ready runs —
+    // database, migrations, uploads, execution queue — plus uptime.
+    const readiness = readinessPayload();
+    res.status(200).json({
+      ...dashboard,
+      systemHealth: {
+        status: readiness.status,
+        uptimeSeconds: readiness.uptimeSeconds,
+        checks: readiness.checks.map((check) => ({ name: check.name, ok: check.ok })),
+      },
+    });
   });
 
   router.get('/report/today', (_req, res) => {
@@ -334,6 +352,80 @@ export function createEconomyRouter(): Router {
         res.status(200).json(result);
       } catch (error) {
         throw toHttpError(error);
+      }
+    }),
+  );
+
+  // ── Treasury transfers + agent accounts (PART 8 / PART 10) ───────────────
+  router.get('/accounts', (_req, res) => {
+    res.status(200).json({ accounts: agentAccounts() });
+  });
+
+  router.get('/transfers', (_req, res) => {
+    res.status(200).json({ transfers: listTransfers() });
+  });
+
+  router.post('/transfers', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    try {
+      const result = proposeTreasuryTransfer({
+        sourceAgentSlug: String(body?.source_agent_slug ?? ''),
+        amountCents: Number(body?.amount_cents ?? 0),
+        reason: String(body?.reason ?? ''),
+        idempotencyKey: String(body?.idempotency_key ?? ''),
+        proposedBy: req.auth!.userId,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof TreasuryTransferError) {
+        throw new HttpError(error.statusCode, error.message, error.code);
+      }
+      throw error;
+    }
+  });
+
+  router.post('/transfers/:id/approve', (req: AuthenticatedRequest, res) => {
+    try {
+      const transfer = decideTreasuryTransfer(req.params.id, 'approve', req.auth!.userId);
+      res.status(200).json({ transfer });
+    } catch (error) {
+      if (error instanceof TreasuryTransferError) {
+        throw new HttpError(error.statusCode, error.message, error.code);
+      }
+      throw error;
+    }
+  });
+
+  router.post('/transfers/:id/reject', (req: AuthenticatedRequest, res) => {
+    try {
+      const transfer = decideTreasuryTransfer(req.params.id, 'reject', req.auth!.userId);
+      res.status(200).json({ transfer });
+    } catch (error) {
+      if (error instanceof TreasuryTransferError) {
+        throw new HttpError(error.statusCode, error.message, error.code);
+      }
+      throw error;
+    }
+  });
+
+  // ── Owner ↔ agent group chat (PART 6: approved agent groups) ────────────
+  router.post(
+    '/chat/group',
+    rateLimit({ prefix: 'mission-chat-group', max: 10, windowMs: 60_000 }),
+    asyncRoute(async (req: AuthenticatedRequest, res) => {
+      const body = getBody(req);
+      const agents = Array.isArray(body?.agents)
+        ? (body.agents as unknown[]).filter((a): a is string => typeof a === 'string')
+        : [];
+      const content = typeof body?.content === 'string' ? body.content : '';
+      try {
+        const result = await missionChatWithGroup({ ownerUserId: req.auth!.userId, agentSlugs: agents, content });
+        res.status(200).json(result);
+      } catch (error) {
+        if (error instanceof MissionChatError) {
+          throw new HttpError(error.statusCode, error.message, error.code);
+        }
+        throw error;
       }
     }),
   );

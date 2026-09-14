@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, createProject, findProjectById, listProjectsByUser, findUserByEmail } from '../db';
+import { db, createProject, findProjectById, listProjectsByUser, findUserByEmail, getWorkflow } from '../db';
 import {
   hasProjectRole,
   projectRole,
@@ -9,6 +9,11 @@ import {
   removeProjectMember,
   listProjectArtifacts,
   searchProjectKnowledge,
+  ARTIFACT_KINDS,
+  insertProjectArtifact,
+  latestProjectArtifact,
+  getProjectArtifactByVersion,
+  listProjectArtifactVersions,
   type ProjectRole,
 } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
@@ -191,6 +196,126 @@ export function createProjectsRouter(): Router {
       res.status(200).json({ projectId: project.id, results });
     }),
   );
+
+  // ------------------------------------------------- versioned artifacts ---
+  // Versioned project deliverables (website HTML, documents, data, images).
+  // Append-only history; "undo" = revert creates a NEW version with an older
+  // version's content. Access follows workspace membership exactly like the
+  // rest of the project surface (reads: viewer+, writes: member+).
+
+  function requireArtifactKind(kind: string): void {
+    if (!ARTIFACT_KINDS.has(kind)) {
+      throw new HttpError(404, 'unknown artifact kind', 'not_found');
+    }
+  }
+
+  router.get('/:id/artifacts/:kind', (req: AuthenticatedRequest, res) => {
+    requireArtifactKind(req.params.kind);
+    requireProjectAccess(req, 'viewer');
+    const artifact = latestProjectArtifact(String(req.params.id), req.params.kind);
+    if (!artifact) {
+      res.status(200).json({ artifact: null, note: `no ${req.params.kind} artifact in this project yet` });
+      return;
+    }
+    res.status(200).json({ artifact });
+  });
+
+  router.get('/:id/artifacts/:kind/versions', (req: AuthenticatedRequest, res) => {
+    requireArtifactKind(req.params.kind);
+    requireProjectAccess(req, 'viewer');
+    res.status(200).json({ versions: listProjectArtifactVersions(String(req.params.id), req.params.kind) });
+  });
+
+  router.get('/:id/artifacts/:kind/v/:version', (req: AuthenticatedRequest, res) => {
+    requireArtifactKind(req.params.kind);
+    requireProjectAccess(req, 'viewer');
+    const version = Number(req.params.version);
+    const artifact = Number.isInteger(version) ? getProjectArtifactByVersion(String(req.params.id), req.params.kind, version) : undefined;
+    if (!artifact) {
+      throw new HttpError(404, 'artifact version not found', 'not_found');
+    }
+    res.status(200).json({ artifact });
+  });
+
+  router.post('/:id/artifacts/:kind/revert/:version', (req: AuthenticatedRequest, res) => {
+    requireArtifactKind(req.params.kind);
+    requireProjectAccess(req, 'member');
+    const version = Number(req.params.version);
+    const target = Number.isInteger(version) ? getProjectArtifactByVersion(String(req.params.id), req.params.kind, version) : undefined;
+    if (!target) {
+      throw new HttpError(404, 'artifact version not found', 'not_found');
+    }
+    const latest = latestProjectArtifact(String(req.params.id), req.params.kind);
+    if (latest && latest.version === target.version) {
+      res.status(200).json({ artifact: latest, note: 'already the latest version' });
+      return;
+    }
+    const artifact = insertProjectArtifact({
+      projectId: String(req.params.id),
+      userId: req.auth!.userId,
+      kind: req.params.kind,
+      title: `${target.title} (revert to v${target.version})`,
+      content: target.content,
+      sourceWorkflowId: target.source_workflow_id,
+    });
+    res.status(201).json({ artifact, revertedTo: target.version });
+  });
+
+  router.get('/:id/artifacts/:kind/download', (req: AuthenticatedRequest, res) => {
+    requireArtifactKind(req.params.kind);
+    requireProjectAccess(req, 'viewer');
+    const artifact = latestProjectArtifact(String(req.params.id), req.params.kind);
+    if (!artifact) {
+      throw new HttpError(404, 'artifact version not found', 'not_found');
+    }
+    const safeTitle = artifact.title.replace(/[^a-z0-9-_]+/gi, '-').slice(0, 60) || 'artifact';
+    res.setHeader('content-type', artifact.kind === 'website' ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8');
+    res.setHeader('content-disposition', `attachment; filename="${safeTitle}-v${artifact.version}.html"`);
+    res.status(200).send(artifact.content);
+  });
+
+  // Manual (re)capture: store a completed workflow's HTML deliverable as the
+  // next website version — the same extraction the automatic capture uses.
+  router.post('/:id/artifacts/:kind', (req: AuthenticatedRequest, res) => {
+    requireArtifactKind(req.params.kind);
+    requireProjectAccess(req, 'member');
+    if (req.params.kind !== 'website') {
+      throw new HttpError(400, 'only website artifacts can be captured from workflows today', 'invalid_request');
+    }
+    const body = getBody(req);
+    const workflowId = requireString(body, 'workflow_id', 'workflow_id');
+    const workflow = getWorkflow(workflowId);
+    if (!workflow || String(workflow.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'workflow not found', 'not_found');
+    }
+    if (String(workflow.project_id ?? '') !== String(req.params.id)) {
+      throw new HttpError(400, 'workflow does not belong to this project', 'invalid_request');
+    }
+    if (String(workflow.status) !== 'completed' || !workflow.result_json) {
+      throw new HttpError(400, 'only completed workflows can be captured', 'invalid_request');
+    }
+    let parsed: { finalResult?: { sections?: Array<{ status?: string; content?: string }> } };
+    try {
+      parsed = JSON.parse(String(workflow.result_json)) as typeof parsed;
+    } catch {
+      throw new HttpError(400, 'workflow result is not readable', 'invalid_request');
+    }
+    const section = (parsed.finalResult?.sections ?? []).find(
+      (candidate) => String(candidate?.status) === 'completed' && typeof candidate?.content === 'string' && /^\s*(<!doctype html|<html[\s>])/i.test(candidate.content.trim()),
+    );
+    if (!section?.content) {
+      throw new HttpError(400, 'the workflow produced no complete HTML document to capture', 'invalid_request');
+    }
+    const artifact = insertProjectArtifact({
+      projectId: String(req.params.id),
+      userId: req.auth!.userId,
+      kind: 'website',
+      title: String(workflow.goal ?? 'Project website').slice(0, 120),
+      content: section.content,
+      sourceWorkflowId: workflowId,
+    });
+    res.status(201).json({ artifact });
+  });
 
   // ------------------------------------------------------------ artifacts ---
 

@@ -162,6 +162,95 @@
        - MASTER finalResult     (workflow document; executiveSummary + sections)
        - { content } / string   (generic real content)
      ============================================================ */
+  /** A complete HTML document (the website-builder deliverable shape). */
+  function isFullHtmlDocument(value) {
+    return /^\s*(<!doctype html|<html[\s>])/i.test(String(value || '').trim());
+  }
+
+  /** Parse a JSON string that is an array of objects → table rows. */
+  function tryParseJsonTable(value) {
+    const text = String(value || '').trim();
+    if (!text.startsWith('[')) return null;
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((row) => row && typeof row === 'object' && !Array.isArray(row))) {
+        return parsed;
+      }
+      return null;
+    } catch { return null; }
+  }
+
+  /**
+   * Website preview (PART 2): renders the real HTML deliverable inside a
+   * sandboxed iframe (srcdoc). The sandbox allows scripts but NOT
+   * same-origin/allow-top-navigation — the artifact can never touch the app.
+   * Viewport toggle gives the responsive preview; open/download use a real
+   * Blob of the same content.
+   */
+  function renderWebsitePreview(root, html, meta) {
+    const id = `wp-${Math.random().toString(36).slice(2, 9)}`;
+    const versionLine = meta ? `<span class="wp-version">v${esc(String(meta.version))} · ${esc(String(meta.title || 'website'))}</span>` : '';
+    root.innerHTML += `
+      <div class="website-preview" id="${id}">
+        <div class="wp-toolbar">
+          <div class="wp-viewports">
+            <button type="button" class="wp-vp active" data-w="${100}" title="Desktop">Desktop</button>
+            <button type="button" class="wp-vp" data-w="820" title="Tablet">Tablet</button>
+            <button type="button" class="wp-vp" data-w="390" title="Mobile">Mobile</button>
+          </div>
+          <div class="wp-actions">
+            ${versionLine}
+            <button type="button" class="wp-open">Open ↗</button>
+            <button type="button" class="wp-download">Download</button>
+          </div>
+        </div>
+        <div class="wp-frame-wrap"><iframe class="wp-frame" sandbox="allow-scripts" title="Website preview" style="width:100%"></iframe></div>
+      </div>`;
+    const container = document.getElementById(id);
+    const frame = container.querySelector('.wp-frame');
+    frame.srcdoc = html;
+    container.querySelectorAll('.wp-vp').forEach((button) => {
+      button.addEventListener('click', () => {
+        container.querySelectorAll('.wp-vp').forEach((b) => b.classList.remove('active'));
+        button.classList.add('active');
+        const width = Number(button.getAttribute('data-w'));
+        frame.style.width = width >= 100 ? '100%' : `${width}px`;
+      });
+    });
+    container.querySelector('.wp-open').addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    });
+    container.querySelector('.wp-download').addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `akbaral-website${meta ? `-v${meta.version}` : ''}.html`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    });
+  }
+
+  /** Data preview (PART 2): a real table for JSON-array results. */
+  function renderDataTable(root, rows) {
+    const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))].slice(0, 8);
+    root.innerHTML += `
+      <div class="result-block">
+        <div class="result-meta"><span>${rows.length} rows · ${columns.length} columns</span></div>
+        <div class="table-scroll"><table class="econ-table data-table"><thead><tr>${columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.slice(0, 50).map((row) => `<tr>${columns.map((c) => `<td>${esc(String(row[c] ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        ${rows.length > 50 ? `<p class="state-kv">Showing 50 of ${rows.length} rows.</p>` : ''}
+      </div>`;
+  }
+
+  /** Owner entitlement is SERVER-side; the client only reports it honestly. */
+  function creditsLabel() {
+    const role = String(state.user?.role ?? 'user');
+    if (role === 'owner' || role === 'super_admin') return 'Unlimited (owner)';
+    return `${state.user?.freeCredits ?? 0} free tasks`;
+  }
+
   function renderTaskOutcome(root, input) {
     if (!root) return;
     const status = input.status;
@@ -186,6 +275,9 @@
 
     // --- completed: render the actual payload content by its real shape ---
     if (typeof payload === 'string' && payload.trim()) {
+      if (isFullHtmlDocument(payload)) { renderWebsitePreview(root, payload, null); return; }
+      const dataPayload = tryParseJsonTable(payload);
+      if (dataPayload) { renderDataTable(root, dataPayload); return; }
       root.innerHTML = `<div class="result-block"><div class="result-body">${esc(payload)}</div></div>`;
       return;
     }
@@ -241,7 +333,9 @@
         payload.mode ? `synthesis: ${String(payload.mode)}` : null,
         completedSections.length ? `${completedSections.length} completed step${completedSections.length === 1 ? '' : 's'}` : null,
       ].filter(Boolean);
-      const sectionHtml = completedSections.map((s) => `
+      const websiteSections = completedSections.filter((s) => isFullHtmlDocument(String(s.content || '')));
+      const textSections = completedSections.filter((s) => !isFullHtmlDocument(String(s.content || '')));
+      const sectionHtml = textSections.map((s) => `
         <div class="result-section">
           <p class="section-label">${esc(String(s.specialization || s.agentSlug || `step ${s.stepOrder}`))}${s.verified === false ? ' · unverified' : ''}</p>
           <div class="result-body">${esc(String(s.content || ''))}</div>
@@ -253,6 +347,9 @@
         ${sectionHtml}
         ${failedSections.length ? `<p class="state-kv">${failedSections.length} step${failedSections.length === 1 ? '' : 's'} did not complete.</p>` : ''}
       </div>`;
+      if (websiteSections.length > 0) {
+        renderWebsitePreview(root, String(websiteSections[0].content || ''), null);
+      }
       return;
     }
 
@@ -1519,7 +1616,7 @@
     const name = state.user?.name || state.user?.email || '—';
     $('#settings-name').textContent = name;
     $('#settings-email').textContent = state.user?.email || '—';
-    $('#settings-credits').textContent = `${state.user?.freeCredits ?? 0} free tasks`;
+    $('#settings-credits').textContent = creditsLabel();
     $('#settings-plan').textContent = state.subscription?.status || 'free/trial';
     $('#settings-trial').textContent = state.trial?.active ? `active · ${trialLabel(state.trial)}` : 'inactive';
     $('#settings-role').textContent = state.user?.role || 'user';
@@ -1820,6 +1917,52 @@
     }
   }
 
+  /**
+   * Website project state bar (PART 1): the real versioned artifact from the
+   * server — current version, full history, undo (revert) and export
+   * (download), wired to the versioned artifact API. Rendered above the
+   * MASTER result whenever the active project has a website artifact.
+   */
+  async function renderProjectArtifactBar(projectId) {
+    const host = $('#master-artifact-bar');
+    if (!host || !projectId) return;
+    const [latest, versions] = await Promise.all([
+      api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`),
+      api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website/versions`),
+    ]);
+    if (!latest?.artifact) {
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+    const artifact = latest.artifact;
+    const list = versions?.versions ?? [];
+    host.hidden = false;
+    host.innerHTML = `
+      <div class="artifact-bar">
+        <span class="badge">website</span>
+        <strong>v${esc(String(artifact.version))}</strong>
+        <span class="sub">${esc(String(artifact.title || ''))}</span>
+        <select id="artifact-version-select" aria-label="Version">
+          ${list.map((v) => `<option value="${esc(String(v.version))}" ${Number(v.version) === Number(artifact.version) ? 'selected' : ''}>v${esc(String(v.version))}</option>`).join('')}
+        </select>
+        <button type="button" class="btn btn-sm" id="artifact-revert">Undo to selected</button>
+        <a class="btn btn-sm" href="/api/projects/${encodeURIComponent(projectId)}/artifacts/website/download" download>Export</a>
+        <a class="btn btn-sm" href="/api/projects/${encodeURIComponent(projectId)}/artifacts/website/v/${esc(String(artifact.version))}" target="_blank" rel="noopener">Open v${esc(String(artifact.version))} ↗</a>
+      </div>`;
+    $('#artifact-revert').addEventListener('click', async () => {
+      const target = Number($('#artifact-version-select').value);
+      if (!target || target === Number(artifact.version)) { toast('That is already the current version', 'err'); return; }
+      try {
+        await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website/revert/${target}`, { method: 'POST' });
+        toast(`Reverted project website to v${target} (saved as a new version)`, 'ok');
+        await renderProjectArtifactBar(projectId);
+        const refreshed = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`);
+        if (refreshed?.artifact) renderMasterResult(true, { sections: [{ status: 'completed', content: refreshed.artifact.content, specialization: `Project website v${refreshed.artifact.version}` }], executiveSummary: `Restored version v${target} — rendered as the current project website.` });
+      } catch (e) { toast(e.message, 'err'); }
+    });
+  }
+
   async function runMaster(event) {
     event.preventDefault();
     const goal = $('#master-goal').value.trim();
@@ -1837,7 +1980,7 @@
       $('#master-output').innerHTML += `\n\nStarting workflow ${esc(workflowId)}…`;
       setCoreState('executing', 'executing');
       await api(`/api/workflows/${workflowId}/run`, { method: 'POST', body: JSON.stringify({}) });
-      await loadWorkflowProgress(workflowId);
+      await loadWorkflowProgress(workflowId, projectId);
     } catch (e) {
       $('#master-output').textContent += `\nError: ${e.message}`;
       setCoreState('error', 'error');
@@ -1852,7 +1995,7 @@
    * statuses) and renders each step transition until the workflow reaches a
    * terminal status, then shows the persisted final result.
    */
-  async function loadWorkflowProgress(workflowId) {
+  async function loadWorkflowProgress(workflowId, projectId) {
     const out = $('#master-output');
     out.textContent += `\n`;
     let lastLines = '';
@@ -1890,6 +2033,10 @@
           setCoreState(ok ? 'success' : 'error', ok ? 'success' : 'error');
           if (ok) {
             renderMasterResult(true, parsedResult?.finalResult ?? parsedResult);
+            // Website-builder flow: if this run belonged to a project, refresh
+            // the versioned artifact bar (the server captured the new version
+            // on completion — this makes the canvas update live).
+            if (projectId) { renderProjectArtifactBar(projectId).catch(() => {}); }
           } else {
             renderMasterResult(false, { code: 'execution_failed', message: workflow.error_message || `workflow ${workflow.status}` });
           }
@@ -2003,7 +2150,7 @@
       : 'none configured';
     root.innerHTML = `
       <div class="info-line"><span>Model providers</span><b>${esc(line)}</b></div>
-      <div class="info-line"><span>Free credits</span><b>${state.user?.freeCredits ?? '—'} tasks</b></div>
+      <div class="info-line"><span>Free credits</span><b>${esc(creditsLabel())}</b></div>
       ${configured.length ? '' : '<p class="info-note">No model provider is configured on this deployment. Tasks will fail honestly and free credits are refunded automatically.</p>'}`;
   }
 
@@ -2440,6 +2587,14 @@
     $('#economy-opportunities').innerHTML = opps.length
       ? `<table class="econ-table"><thead><tr><th>Opportunity</th><th>Status</th><th>Expected net</th><th>ROI</th></tr></thead><tbody>${opps.map((o) => `<tr><td>${esc(o.title.slice(0, 90))}</td><td>${badge(o.status)}</td><td>${money(o.expectedNetCents)}</td><td>${o.roi === null ? '—' : Number(o.roi).toFixed(2)}</td></tr>`).join('')}</tbody></table>`
       : '<p class="sub">No opportunities yet. Discovery runs when enabled and a search provider is configured.</p>';
+    const accounts = await api('/api/economy/accounts').catch(() => ({ accounts: [] }));
+    $('#economy-accounts').innerHTML = (accounts.accounts || []).length
+      ? `<table class="econ-table"><thead><tr><th>Agent</th><th>Revenue</th><th>Costs</th><th>Transferred</th><th>Available</th></tr></thead><tbody>${(accounts.accounts).map((a) => `<tr><td>${esc(a.agentSlug)}</td><td>${money(a.realizedRevenueCents)}</td><td>${money(a.costCents)}</td><td>${money(a.transferredOutCents)}</td><td>${money(a.availableCents)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub">No agent accounts with activity yet — balances are derived from the real ledger only.</p>';
+    const transfers = await api('/api/economy/transfers').catch(() => ({ transfers: [] }));
+    $('#economy-transfers').innerHTML = (transfers.transfers || []).length
+      ? `<table class="econ-table"><thead><tr><th>When</th><th>Agent</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${(transfers.transfers).map((t) => `<tr><td><small>${esc(new Date(t.created_at).toLocaleString())}</small></td><td>${esc(t.source_agent_slug)}</td><td>${money(t.amount_cents)}</td><td>${badge(t.status)}</td><td>${t.status === 'proposed' ? `<button class="btn btn-sm" data-approve-transfer="${esc(t.id)}">Approve</button> <button class="btn btn-sm" data-reject-transfer="${esc(t.id)}">Reject</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub">No treasury transfers proposed yet.</p>';
     const ledger = await api('/api/economy/ledger?limit=15');
     $('#economy-ledger').innerHTML = (ledger.ledger || []).length
       ? `<table class="econ-table"><thead><tr><th>When</th><th>Category</th><th>Amount</th><th>Purpose</th></tr></thead><tbody>${ledger.ledger.map((row) => `<tr><td><small>${esc(new Date(row.ts).toLocaleString())}</small></td><td>${esc(row.category)} ${row.direction === 'credit' ? '↑' : '↓'}</td><td>${money(row.amount_cents)}</td><td>${esc(String(row.purpose || '').slice(0, 80))}</td></tr>`).join('')}</tbody></table>`
@@ -2490,6 +2645,28 @@
     $('#econ-tick').addEventListener('click', async () => {
       try { const r = await api('/api/economy/tick', { method: 'POST', body: JSON.stringify({}) }); toast(`Tick: ${(r.notes || []).join(' · ') || 'nothing to do'}`, 'ok'); await loadEconomy(); }
       catch (e) { toast(e.message, 'err'); }
+    });
+    $('#transfer-propose')?.addEventListener('click', async () => {
+      const agent = ($('#transfer-agent')?.value || '').trim();
+      const amount = Number($('#transfer-amount')?.value || 0);
+      const reason = ($('#transfer-reason')?.value || '').trim();
+      if (!agent || !Number.isFinite(amount) || amount <= 0 || !reason) { toast('Source agent, positive amount and reason are required', 'err'); return; }
+      try {
+        const result = await api('/api/economy/transfers', { method: 'POST', body: JSON.stringify({ source_agent_slug: agent, amount_cents: amount, reason, idempotency_key: `ui-${Date.now()}-${agent}` }) });
+        toast(result.idempotentReplay ? 'Existing proposal returned (idempotent replay)' : 'Transfer proposed — owner approval required', 'ok');
+        await loadEconomy();
+      } catch (e) { toast(e.message, 'err'); }
+    });
+    $('#economy-transfers')?.addEventListener('click', async (event) => {
+      const approve = event.target.closest('[data-approve-transfer]');
+      const reject = event.target.closest('[data-reject-transfer]');
+      const id = (approve ?? reject)?.getAttribute('data-approve-transfer') ?? (approve ?? reject)?.getAttribute('data-reject-transfer');
+      if (!id) return;
+      try {
+        await api(`/api/economy/transfers/${id}/${approve ? 'approve' : 'reject'}`, { method: 'POST', body: JSON.stringify({}) });
+        toast(`Transfer ${approve ? 'approved (executed against real ledger balance)' : 'rejected'}`, 'ok');
+        await loadEconomy();
+      } catch (e) { toast(e.message, 'err'); }
     });
     $('#mission-send')?.addEventListener('click', async () => {
       const agent = ($('#mission-agent')?.value || '').trim();

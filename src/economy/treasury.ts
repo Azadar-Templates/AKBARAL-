@@ -1,5 +1,5 @@
 import { createId, db } from '../db';
-import { findUserByEmail, createUser } from '../db';
+import { findUserByEmail, createUser, appendAuditLog } from '../db';
 import { agentFactory } from '../orchestrator/agent-factory';
 import { getAgentBySlug } from '../agents/registry';
 import {
@@ -33,6 +33,12 @@ import {
   updateUpgrade,
   upsertAgentProfile,
   parseEconomyJson,
+  insertTransfer,
+  getTransfer,
+  getTransferByIdempotencyKey,
+  updateTransfer,
+  executedTransferTotalForAgent,
+  listTransfers,
 } from '../db/economy-repositories';
 import { currentPolicy } from './policy';
 
@@ -456,3 +462,174 @@ export function recordImprovementSandboxResult(id: string, result: Record<string
 }
 
 export { listImprovements, listLedger, getEconomyPolicy, parseEconomyJson };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controlled agent accounts + treasury transfers (PART 8 / PART 10)
+//
+// Accounts are DERIVED from the real ledger — nothing can fabricate a
+// balance. A transfer moves genuinely REALIZED, evidence-backed agent surplus
+// into the main treasury, and only through owner approval.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AgentAccountView {
+  agentSlug: string;
+  realizedRevenueCents: number;   // ledger credits attributed to this agent
+  costCents: number;              // ledger debits attributed to this agent
+  transferredOutCents: number;    // executed transfers to the main treasury
+  availableCents: number;         // revenue − costs − transferred out
+}
+
+export type TransferRowView = ReturnType<typeof getTransfer>;
+
+function breakdownFor(agentSlug: string): { revenue: number; cost: number } {
+  const row = ledgerAgentBreakdown().find((r) => r.agent_slug === agentSlug);
+  return { revenue: Number(row?.revenue_cents ?? 0), cost: Number(row?.cost_cents ?? 0) };
+}
+
+export function agentAccounts(): AgentAccountView[] {
+  return ledgerAgentBreakdown()
+    .filter((row) => row.agent_slug)
+    .map((row) => {
+      const revenue = Number(row.revenue_cents ?? 0);
+      const cost = Number(row.cost_cents ?? 0);
+      const transferred = executedTransferTotalForAgent(row.agent_slug!);
+      return {
+        agentSlug: row.agent_slug!,
+        realizedRevenueCents: revenue,
+        costCents: cost,
+        transferredOutCents: transferred,
+        availableCents: revenue - cost - transferred,
+      };
+    })
+    .filter((account) => account.realizedRevenueCents > 0 || account.costCents > 0 || account.transferredOutCents > 0);
+}
+
+export function agentAccountFor(agentSlug: string): AgentAccountView {
+  const { revenue, cost } = breakdownFor(agentSlug);
+  const transferred = executedTransferTotalForAgent(agentSlug);
+  return {
+    agentSlug,
+    realizedRevenueCents: revenue,
+    costCents: cost,
+    transferredOutCents: transferred,
+    availableCents: revenue - cost - transferred,
+  };
+}
+
+export class TreasuryTransferError extends Error {
+  constructor(readonly statusCode: number, readonly code: string, message: string) {
+    super(message);
+    this.name = 'TreasuryTransferError';
+  }
+}
+
+export function proposeTreasuryTransfer(input: {
+  sourceAgentSlug: string;
+  amountCents: number;
+  reason: string;
+  idempotencyKey: string;
+  proposedBy: string;
+}): { transfer: NonNullable<TransferRowView>; idempotentReplay: boolean } {
+  if (!input.idempotencyKey || input.idempotencyKey.trim().length < 4) {
+    throw new TreasuryTransferError(400, 'invalid_request', 'idempotency key must be at least 4 characters');
+  }
+  // Idempotency: the same key always returns the same proposal, no side effects.
+  const existing = getTransferByIdempotencyKey(input.idempotencyKey);
+  if (existing) {
+    return { transfer: existing, idempotentReplay: true };
+  }
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+    throw new TreasuryTransferError(400, 'invalid_request', 'transfer amount must be a positive integer (cents)');
+  }
+  if (!input.reason || input.reason.trim().length < 4) {
+    throw new TreasuryTransferError(400, 'invalid_request', 'a transfer reason is required');
+  }
+  const agent = getAgentBySlug(input.sourceAgentSlug);
+  if (!agent) {
+    throw new TreasuryTransferError(404, 'agent_not_found', `agent "${input.sourceAgentSlug}" does not exist in the registry`);
+  }
+  const account = agentAccountFor(input.sourceAgentSlug);
+  if (account.availableCents < input.amountCents) {
+    throw new TreasuryTransferError(
+      400,
+      'insufficient_realized_balance',
+      `agent "${input.sourceAgentSlug}" has ${account.availableCents}c of realized surplus available — a transfer can never exceed evidence-backed net revenue (requested ${input.amountCents}c)`,
+    );
+  }
+  const transfer = insertTransfer({
+    sourceAgentSlug: input.sourceAgentSlug,
+    amountCents: input.amountCents,
+    reason: input.reason.trim(),
+    idempotencyKey: input.idempotencyKey,
+    proposedBy: input.proposedBy,
+  });
+  recordEconomyEvent({
+    kind: 'treasury',
+    actor: input.proposedBy,
+    summary: `transfer proposed: ${input.amountCents}c from ${input.sourceAgentSlug} to main treasury (reason: ${input.reason.trim().slice(0, 120)})`,
+    details: { transferId: transfer.id },
+  });
+  return { transfer, idempotentReplay: false };
+}
+
+/** Owner decision on a proposed transfer. Approve executes it for real. */
+export function decideTreasuryTransfer(id: string, decision: 'approve' | 'reject', decidedBy: string): NonNullable<TransferRowView> {
+  const transfer = getTransfer(id);
+  if (!transfer) throw new TreasuryTransferError(404, 'not_found', 'transfer not found');
+  if (transfer.status !== 'proposed') {
+    // Idempotent re-decision: replaying the SAME decision returns the transfer
+    // as-is. The OPPOSITE decision on a final transfer is refused — a
+    // rejected transfer can never be quietly approved afterwards (and vice
+    // versa); a new proposal with a new idempotency key is required.
+    if ((transfer.status === 'executed' && decision === 'approve') || (transfer.status === 'rejected' && decision === 'reject')) {
+      return transfer;
+    }
+    throw new TreasuryTransferError(400, 'decision_final', `transfer ${id} is already ${transfer.status}; decisions are final (propose a new transfer if needed)`);
+  }
+  if (decision === 'reject') {
+    updateTransfer(id, { status: 'rejected', decided_by: decidedBy, decided_at: new Date().toISOString() });
+    recordEconomyEvent({ kind: 'treasury', actor: decidedBy, summary: `transfer ${id} REJECTED` });
+    return getTransfer(id)!;
+  }
+  // Approval re-validates the balance — the proposal may have aged.
+  const account = agentAccountFor(transfer.source_agent_slug);
+  if (account.availableCents < transfer.amount_cents) {
+    updateTransfer(id, { status: 'rejected', decided_by: decidedBy, decided_at: new Date().toISOString() });
+    recordEconomyEvent({
+      kind: 'treasury',
+      actor: decidedBy,
+      summary: `transfer ${id} REJECTED at approval: realized balance (${account.availableCents}c) no longer covers ${transfer.amount_cents}c`,
+    });
+    throw new TreasuryTransferError(400, 'insufficient_realized_balance', `realized balance is now ${account.availableCents}c — the transfer was rejected instead of executed`);
+  }
+  // Execute: post the movement to the real ledger. agent_slug is NULL so the
+  // credit is treasury bookkeeping, never counted as the agent's revenue
+  // again; postLedger's ref_id idempotency makes a double execution
+  // impossible even if the decision were raced.
+  postLedger({
+    agentSlug: null,
+    direction: 'credit',
+    category: 'treasury_transfer',
+    amountCents: transfer.amount_cents,
+    purpose: `surplus transfer to main treasury from ${transfer.source_agent_slug} (reason: ${transfer.reason.slice(0, 160)})`,
+    refType: 'treasury_transfer',
+    refId: transfer.id,
+    policyDecision: 'owner-approved',
+  });
+  updateTransfer(id, { status: 'executed', decided_by: decidedBy, decided_at: new Date().toISOString() });
+  appendAuditLog({
+    actorId: decidedBy,
+    action: 'economy.treasury.transfer.approved',
+    resourceType: 'economy_transfer',
+    resourceId: transfer.id,
+    description: `${transfer.amount_cents}c from ${transfer.source_agent_slug} to main treasury`,
+  });
+  recordEconomyEvent({
+    kind: 'treasury',
+    actor: decidedBy,
+    summary: `transfer ${id} EXECUTED: ${transfer.amount_cents}c from ${transfer.source_agent_slug} to main treasury`,
+  });
+  return getTransfer(id)!;
+}
+
+export { listTransfers };

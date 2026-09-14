@@ -745,3 +745,66 @@ export function updateSettlement(id: string, patch: Partial<Record<keyof Settlem
 }
 
 export { parseJson as parseEconomyJson };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Treasury transfers (controlled movement of realized agent surplus)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TransferRow {
+  id: string;
+  source_agent_slug: string;
+  destination: string;
+  amount_cents: number;
+  currency: string;
+  reason: string;
+  status: string; // proposed|executed|rejected
+  idempotency_key: string;
+  proposed_by: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+}
+
+export function insertTransfer(input: {
+  sourceAgentSlug: string;
+  amountCents: number;
+  reason: string;
+  idempotencyKey: string;
+  proposedBy: string;
+}): TransferRow {
+  const id = createId('eco_tr');
+  db.run(
+    "INSERT INTO economy_transfers (id, source_agent_slug, destination, amount_cents, currency, reason, status, idempotency_key, proposed_by, created_at) VALUES (?, ?, 'treasury', ?, 'USD', ?, 'proposed', ?, ?, ?)",
+    [id, input.sourceAgentSlug, input.amountCents, input.reason, input.idempotencyKey, input.proposedBy, NOW()],
+  );
+  return getTransfer(id)!;
+}
+
+export function getTransfer(id: string): TransferRow | undefined {
+  return db.get<TransferRow>('SELECT * FROM economy_transfers WHERE id = ?', [id]);
+}
+
+export function getTransferByIdempotencyKey(key: string): TransferRow | undefined {
+  return db.get<TransferRow>('SELECT * FROM economy_transfers WHERE idempotency_key = ?', [key]);
+}
+
+export function updateTransfer(id: string, patch: Partial<Record<keyof TransferRow, SqlValue>>): void {
+  const fields = Object.keys(patch);
+  if (fields.length === 0) return;
+  const assignments = fields.map((field) => `${field} = ?`).join(', ');
+  db.run(`UPDATE economy_transfers SET ${assignments} WHERE id = ?`, [
+    ...fields.map((f) => patch[f as keyof TransferRow] as SqlValue), id,
+  ]);
+}
+
+export function listTransfers(limit = 100): TransferRow[] {
+  return db.all<TransferRow>('SELECT * FROM economy_transfers ORDER BY created_at DESC LIMIT ?', [limit]);
+}
+
+export function executedTransferTotalForAgent(agentSlug: string): number {
+  const row = db.get<{ total: number | null }>(
+    "SELECT SUM(amount_cents) AS total FROM economy_transfers WHERE source_agent_slug = ? AND status = 'executed'",
+    [agentSlug],
+  );
+  return Number(row?.total ?? 0);
+}

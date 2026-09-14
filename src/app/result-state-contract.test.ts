@@ -59,17 +59,51 @@ function extractFunction(name: string): string {
   throw new Error(`could not extract function ${name}`);
 }
 
+class FakeElement {
+  listeners: Array<() => void> = [];
+  style: Record<string, string> = {};
+  srcdoc = '';
+  innerHTML = '';
+  classList = {
+    remove: (): void => undefined,
+    add: (): void => undefined,
+  };
+  addEventListener(_kind: string, fn: () => void): void { this.listeners.push(fn); }
+  getAttribute(_name: string): string { return '100'; }
+  querySelector(): FakeElement { return new FakeElement(); }
+  querySelectorAll(): FakeElement[] { return [new FakeElement()]; }
+  appendChild(): void { undefined; }
+  click(): void { undefined; }
+}
+
+/** A DOM-stub context shared by every renderer VM (preview renderers need
+ *  document/URL/Blob/window; plain renderers ignore them). */
+const VM_DOM_STUBS = {
+  document: {
+    getElementById: (): FakeElement => new FakeElement(),
+    createElement: (): FakeElement => new FakeElement(),
+  },
+  window: { open: (): void => undefined },
+  URL: { createObjectURL: (): string => 'blob:stub', revokeObjectURL: (): void => undefined },
+  Blob: class Blob { constructor() { undefined; } },
+  setTimeout: (): void => undefined,
+};
+
 /** Build a DOM-stub context exposing the real renderer functions. */
 function loadRenderers(): { renderTaskOutcome: (root: FakeRoot, input: unknown) => void; friendlyTaskError: (code?: string, message?: string) => { title: string } } {
   const source = [
     extractFunction('esc'),
     extractFunction('badge'),
     extractFunction('friendlyTaskError'),
+    extractFunction('isFullHtmlDocument'),
+    extractFunction('tryParseJsonTable'),
+    extractFunction('renderWebsitePreview'),
+    extractFunction('renderDataTable'),
     extractFunction('renderTaskOutcome'),
     'module.exports = { renderTaskOutcome, friendlyTaskError };',
   ].join('\n\n');
   const module = { exports: {} as Record<string, unknown> };
-  vm.runInNewContext(source, { module, console });
+  vm.runInNewContext(source, { module, console, ...VM_DOM_STUBS });
   return module.exports as unknown as {
     renderTaskOutcome: (root: FakeRoot, input: unknown) => void;
     friendlyTaskError: (code?: string, message?: string) => { title: string };
@@ -249,5 +283,97 @@ describe('task-result state separation (incident regression)', () => {
       appJs.indexOf('async function showWorkflow'),
     );
     assert.ok(me.includes('renderMasterResult(true, parsedOutput)'), 'execution path forwards parsed output');
+  });
+});
+
+/* ============================================================================
+   PART 2 renderer contract: the website preview is a SANDBOXED iframe over
+   the real artifact content; data results render a real bounded table. These
+   run the extracted app.js functions in a VM against a DOM stub.
+   ============================================================ */
+
+function loadPreviewRenderers(): {
+  isFullHtmlDocument: (value: unknown) => boolean;
+  tryParseJsonTable: (value: unknown) => unknown[] | null;
+  renderWebsitePreview: (root: { innerHTML: string }, html: string, meta: unknown) => void;
+  renderDataTable: (root: { innerHTML: string }, rows: Array<Record<string, unknown>>) => void;
+} {
+  const source = [
+    extractFunction('esc'),
+    extractFunction('isFullHtmlDocument'),
+    extractFunction('tryParseJsonTable'),
+    extractFunction('renderWebsitePreview'),
+    extractFunction('renderDataTable'),
+    'module.exports = { isFullHtmlDocument, tryParseJsonTable, renderWebsitePreview, renderDataTable };',
+  ].join('\n\n');
+  const module = { exports: {} as Record<string, unknown> };
+  vm.runInNewContext(source, { module, console, ...VM_DOM_STUBS });
+  return module.exports as unknown as {
+    isFullHtmlDocument: (value: unknown) => boolean;
+    tryParseJsonTable: (value: unknown) => unknown[] | null;
+    renderWebsitePreview: (root: { innerHTML: string }, html: string, meta: unknown) => void;
+    renderDataTable: (root: { innerHTML: string }, rows: Array<Record<string, unknown>>) => void;
+  };
+}
+
+describe('PART 2 preview renderers (website + data)', () => {
+  it('the website preview is a SANDBOXED iframe (allow-scripts only, never same-origin), with responsive toggles and export actions', () => {
+    const { renderWebsitePreview } = loadPreviewRenderers();
+    const root = { innerHTML: '' };
+    renderWebsitePreview(root, '<!doctype html><html><body><h1>Aurora</h1></body></html>', { version: 2, title: 'Aurora Coffee' });
+    assert.ok(root.innerHTML.includes('sandbox="allow-scripts"'), 'iframe is sandboxed to scripts only');
+    assert.ok(!root.innerHTML.includes('allow-same-origin'), 'the artifact can never become same-origin with the app');
+    assert.ok(!root.innerHTML.includes('allow-top-navigation'), 'the artifact cannot navigate the app');
+    assert.ok(root.innerHTML.includes('iframe'), 'an iframe is used');
+    assert.ok(root.innerHTML.includes('data-w="390"') && root.innerHTML.includes('data-w="820"'), 'responsive viewport toggles (mobile/tablet) present');
+    assert.ok(root.innerHTML.includes('wp-download') && root.innerHTML.includes('wp-open'), 'export/open actions present');
+    assert.ok(root.innerHTML.includes('v2') && root.innerHTML.includes('Aurora Coffee'), 'version line reflects the artifact version');
+  });
+
+  it('a full HTML document is detected; fragments are not mistaken for websites', () => {
+    const { isFullHtmlDocument } = loadPreviewRenderers();
+    assert.equal(isFullHtmlDocument('<!doctype html><html><body></body></html>'), true);
+    assert.equal(isFullHtmlDocument('<html lang="en"><body></body></html>'), true);
+    assert.equal(isFullHtmlDocument('  <!DOCTYPE HTML><html></html>'), true);
+    assert.equal(isFullHtmlDocument('<div>just a fragment</div>'), false);
+    assert.equal(isFullHtmlDocument('## A markdown report'), false);
+    assert.equal(isFullHtmlDocument(null), false);
+  });
+
+  it('JSON-array results render a real table, bounded to 8 columns and 50 rows', () => {
+    const { tryParseJsonTable, renderDataTable } = loadPreviewRenderers();
+    const parsed = tryParseJsonTable(JSON.stringify([{ city: 'Karachi', price: 120 }, { city: 'Lahore', price: 99 }]));
+    assert.ok(Array.isArray(parsed) && parsed.length === 2);
+    assert.equal(tryParseJsonTable('not json at all'), null);
+    assert.equal(tryParseJsonTable('{"object": true}'), null);
+
+    const wide: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 80; i += 1) {
+      const row: Record<string, unknown> = {};
+      for (let c = 0; c < 12; c += 1) row[`col_${c}`] = `v${i}-${c}`;
+      wide.push(row);
+    }
+    const root = { innerHTML: '' };
+    renderDataTable(root, wide);
+    assert.ok(root.innerHTML.includes('<table'), 'a real table is rendered');
+    assert.ok(root.innerHTML.includes('Showing 50 of 80 rows'), 'row cap is honest and visible');
+    assert.ok(!root.innerHTML.includes('col_9'), 'column cap is 8');
+  });
+
+  it('the artifact bar, unlimited-credits label and preview styles exist in the client + stylesheet (source contract)', () => {
+    // Artifact bar host on the MASTER canvas.
+    assert.ok(page.includes('master-artifact-bar'), 'page.tsx hosts the artifact version bar');
+    // The version bar is driven by the real API (versions/revert/download).
+    assert.ok(appJs.includes('renderProjectArtifactBar'), 'artifact bar renderer exists');
+    assert.ok(appJs.includes('/artifacts/website/versions'), 'versions endpoint wired');
+    assert.ok(appJs.includes('/revert/'), 'undo (revert) wired');
+    assert.ok(appJs.includes('/download'), 'export (download) wired');
+    // Owner unlimited is a SERVER-side entitlement; the client only labels it.
+    assert.ok(appJs.includes('Unlimited (owner)'), 'owner sees the honest unlimited label');
+    const styles = readFileSync(join(process.cwd(), 'public', 'styles.css'), 'utf8');
+    assert.ok(styles.includes('.website-preview'), 'preview styles exist');
+    assert.ok(styles.includes('.artifact-bar'), 'artifact bar styles exist');
+    // The preview iframe is srcdoc-driven — never a src to an external page.
+    assert.ok(appJs.includes('.srcdoc'), 'content flows through srcdoc (no external embedding)');
   });
 });

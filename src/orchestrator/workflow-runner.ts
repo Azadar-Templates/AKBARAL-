@@ -12,6 +12,7 @@ import { getAgentBySlug } from '../agents/registry';
 import { createAgentTask, dispatchAgentExecution } from './executor';
 import { routerComplete } from './goal-analyzer';
 import { synthesizeFinalResult, type SynthesisStepInput } from './synthesizer';
+import { insertProjectArtifact } from '../db';
 import { reconcileTaskFailed } from './task-reconciler';
 import type { ExecutionStream } from '../realtime/execution-stream';
 
@@ -299,6 +300,28 @@ export async function runWorkflow(
   }
 
   const status = failed > 0 ? 'failed' : 'completed';
+
+  // Website-builder artifact capture (PART 1/PART 2): when a completed
+  // workflow belongs to a project and a specialist step produced a complete
+  // HTML document, that document IS the project deliverable — store it as the
+  // next versioned website artifact. Honest by construction: nothing is
+  // captured unless a step genuinely returned a full HTML document.
+  if (status === 'completed' && workflow.project_id) {
+    const sections = (finalResult?.sections ?? []) as Array<{ status?: string; content?: string; specialization?: string }>;
+    const websiteSection = sections.find(
+      (section) => String(section?.status) === 'completed' && typeof section?.content === 'string' && /^\s*(<!doctype html|<html[\s>])/i.test(section.content.trim()),
+    );
+    if (websiteSection?.content) {
+      insertProjectArtifact({
+        projectId: String(workflow.project_id),
+        userId: String(workflow.user_id),
+        kind: 'website',
+        title: String(workflow.goal ?? 'Project website').slice(0, 120),
+        content: websiteSection.content,
+        sourceWorkflowId: workflowId,
+      });
+    }
+  }
   // Guarded: an overall timeout or cancellation may have terminalized the
   // workflow while the last step was in flight; never overwrite that.
   updateWorkflowStatus({

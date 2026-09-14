@@ -2193,3 +2193,22 @@ strong, b { font-weight: 600; }
 .econ-list { display: grid; gap: 8px; max-height: 420px; overflow-y: auto; }
 .econ-events { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .econ-events small { display: block; opacity: 0.7; }
+
+/* ── Website preview canvas + artifact bar (dynamic preview surfaces) ────── */
+.website-preview { border: 1px solid var(--border, #2a2a35); border-radius: 12px; overflow: hidden; margin-top: 14px; background: var(--bg-2, #14141c); }
+.wp-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border, #2a2a35); }
+.wp-viewports { display: flex; gap: 4px; }
+.wp-vp { border: 1px solid var(--border, #2a2a35); background: transparent; color: inherit; border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.wp-vp.active { background: var(--accent, #6c5ce7); border-color: var(--accent, #6c5ce7); color: #fff; }
+.wp-actions { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.wp-actions button { border: 1px solid var(--border, #2a2a35); background: transparent; color: inherit; border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+.wp-version { opacity: 0.75; }
+.wp-frame-wrap { background: #fff; min-height: 420px; display: flex; justify-content: center; overflow: auto; }
+.wp-frame { border: 0; height: 480px; max-width: 100%; background: #fff; transition: width 0.2s ease; }
+.table-scroll { overflow-x: auto; }
+.data-table td, .data-table th { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border, #2a2a35); border-radius: 12px; margin-bottom: 12px; background: var(--bg-2, #14141c); }
+.artifact-bar select { background: var(--bg, #0f0f16); color: inherit; border: 1px solid var(--border, #2a2a35); border-radius: 7px; padding: 4px 8px; }
+@media (max-width: 640px) { .wp-frame-wrap { min-height: 320px; } .wp-frame { height: 360px; } }
+
+/* ── Private owner console additions (treasury transfers + accounts) ─────── */

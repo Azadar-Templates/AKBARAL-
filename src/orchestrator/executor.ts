@@ -2,7 +2,7 @@ import {
   appendAgentExecutionLog,
   appendAuditLog,
   appendTaskEvent,
-  consumeTaskCredit,
+  consumeTaskCredit, findUserById,
 
   createAgent,
   createAgentExecution,
@@ -47,6 +47,34 @@ import type { ExecutionStream } from '../realtime/execution-stream';
  *   - On a Pro-required agent, the credit is refunded and the task is marked
  *     `requires_pro`.
  */
+
+/**
+ * Server-side task-credit entitlement (PART 4).
+ *
+ * The designated owner (and staff super_admin) have UNLIMITED legitimate
+ * platform usage: their executions consume no task credits. This is enforced
+ * HERE — at the single server-side reservation point both execution paths go
+ * through — never in the client. Every unlimited execution is audited so
+ * owner usage stays observable. Normal users keep the exact free-trial /
+ * paid-credit accounting (consume on success, refund on failure).
+ */
+function reserveTaskCreditForUser(userId: string, taskId: string, reason: string): boolean {
+  const user = findUserById(userId);
+  const role = String((user as { role?: string } | undefined)?.role ?? 'user');
+  if (role === 'owner' || role === 'super_admin') {
+    appendAuditLog({
+      actorId: userId,
+      action: 'owner.unlimited_execution',
+      resourceType: 'task',
+      resourceId: taskId,
+      description: 'owner entitlement: task executed without credit consumption',
+    });
+    return true;
+  }
+  // consumeTaskCredit returns the credit transaction row on success and
+  // undefined when the account cannot cover the task — map to a boolean.
+  return Boolean(consumeTaskCredit({ userId, taskId, reason }));
+}
 
 export const WEB_RESEARCH_AGENT_SLUG = 'web-research-001';
 
@@ -144,11 +172,7 @@ export function createResearchTask(input: {
     inputData: { goal: input.goal },
   });
 
-  const consumed = consumeTaskCredit({
-    userId: input.userId,
-    taskId: task.id,
-    reason: `reserve task credit for research task ${task.id}`,
-  });
+  const consumed = reserveTaskCreditForUser(input.userId, task.id, `reserve task credit for research task ${task.id}`);
 
   if (!consumed) {
     // Race/over-consumption guard: creation failed, roll back the task.
@@ -226,11 +250,7 @@ export function createAgentTask(input: {
     inputData: { goal: input.goal, agentSlug: input.agentSlug },
   });
 
-  const consumed = consumeTaskCredit({
-    userId: input.userId,
-    taskId: task.id,
-    reason: `reserve task credit for ${input.agentSlug}`,
-  });
+  const consumed = reserveTaskCreditForUser(input.userId, task.id, `reserve task credit for ${input.agentSlug}`);
   if (!consumed) {
     updateTaskStatus({ id: task.id, status: 'cancelled', errorMessage: 'task credit could not be reserved' });
     const error = new Error('Task credits exhausted. This capability requires AKBARAL Pro.') as Error & { code?: string };

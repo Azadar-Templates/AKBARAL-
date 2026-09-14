@@ -70,6 +70,16 @@ function significantTerms(text: string): string[] {
 }
 
 function isStructured(content: string): boolean {
+  // A complete HTML document (the website-builder deliverable shape) is
+  // structured by definition when it carries real document structure —
+  // headings, sections, paragraphs, lists or tables. Fix (2026-09-14,
+  // caught by the website-builder QA): HTML deliverables were previously
+  // misclassified as "unstructured" and failed substance verification.
+  const trimmed = content.trim();
+  if (/^(<!doctype html|<html[\s>])/i.test(trimmed)) {
+    const htmlStructure = (trimmed.match(/<(?:h[1-6]|section|p|ul|ol|table|header|main|footer)[\s>]/gi) ?? []).length;
+    return htmlStructure >= 2;
+  }
   const blocks = content.split(/\n{2,}/).filter((block) => block.trim().length > 0);
   const headings = (content.match(/^#{1,6}\s|\*\*[^*]+\*\*|^\s*[-*\d]/gm) ?? []).length;
   return blocks.length >= 2 || headings >= 2;

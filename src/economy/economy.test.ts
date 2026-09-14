@@ -704,3 +704,190 @@ describe('ZA141251SA agent economy', () => {
   });
 });
 
+
+describe('treasury transfers + agent accounts (PART 8/10)', () => {
+  let api: ApiServer;
+  let baseUrl = '';
+  const ownerEmail = `treasury-owner-${Date.now()}@akbaral.test`;
+  const userEmail = `treasury-user-${Date.now()}@akbaral.test`;
+
+  before(async () => {
+    api = createApiServer();
+    await new Promise<void>((resolve) => api.server.listen(0, '127.0.0.1', () => resolve()));
+    baseUrl = `http://127.0.0.1:${(api.server.address() as { port: number }).port}`;
+    for (const accountEmail of [ownerEmail, userEmail]) {
+      await fetch(`${baseUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: accountEmail, password: 'correct-horse-battery-staple', name: 'Treasury' }),
+      });
+    }
+    const ownerRow = findUserByEmail(ownerEmail)!;
+    db.run('UPDATE users SET role = ? WHERE id = ?', ['owner', String(ownerRow.id)]);
+  });
+
+  // A registry agent with ZERO prior ledger activity so exact-value assertions
+  // are immune to revenue recorded by other suites sharing this database.
+  // Resolved inside before() (after migrations + registry sync have run).
+  let quietAgent = 'web-research-001';
+
+  before(async () => {
+    const row = db.get<{ slug: string }>(
+      `SELECT a.slug FROM agents a
+       WHERE a.owner_id IS NULL AND a.status = 'active'
+         AND NOT EXISTS (SELECT 1 FROM economy_ledger l WHERE l.agent_slug = a.slug)
+       LIMIT 1`,
+    );
+    if (row) quietAgent = row.slug;
+    // Real revenue so the account math is grounded.
+    recordLedgerRevenue({ amountCents: 100_00, evidence: 'treasury-test payout PP-T1', agentSlug: quietAgent });
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => api.server.close(() => resolve()));
+  });
+
+  async function loginAs(accountEmail: string): Promise<string> {
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: accountEmail, password: 'correct-horse-battery-staple' }),
+    });
+    assert.equal(response.status, 200);
+    return ((await response.json()) as { accessToken: string }).accessToken;
+  }
+
+  async function post(path: string, token: string, body: unknown): Promise<{ status: number; body: any }> {
+    const response = await fetch(`${baseUrl}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : {} };
+  }
+  async function get(path: string, token: string): Promise<{ status: number; body: any }> {
+    const response = await fetch(`${baseUrl}${path}`, { headers: { authorization: `Bearer ${token}` } });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : {} };
+  }
+
+  it('agent accounts are DERIVED from the real ledger (nothing fabricated)', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    const accounts = await get('/api/economy/accounts', ownerToken);
+    assert.equal(accounts.status, 200);
+    const research = accounts.body.accounts.find((a: { agentSlug: string }) => a.agentSlug === quietAgent);
+    assert.ok(research, 'web-research-001 has an account view');
+    assert.equal(research.realizedRevenueCents, 100_00);
+    assert.equal(research.availableCents, 100_00, 'no costs, no transfers → available == revenue');
+  });
+
+  it('rejects transfers above the realized surplus (no fabricated money)', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    const over = await post('/api/economy/transfers', ownerToken, { source_agent_slug: quietAgent, amount_cents: 150_00, reason: 'test exceed balance', idempotency_key: 'treasury-over-balance' });
+    assert.equal(over.status, 400);
+    assert.match(String(over.body.error?.message ?? over.body.error), /available/i);
+  });
+
+  it('validates transfer fields (positive amount, reason, known agent)', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    for (const [label, payload] of [
+      ['zero amount', { source_agent_slug: quietAgent, amount_cents: 0, reason: 'valid reason here', idempotency_key: 't-zero' }],
+      ['short reason', { source_agent_slug: quietAgent, amount_cents: 100, reason: 'no', idempotency_key: 't-reason' }],
+      ['unknown agent', { source_agent_slug: 'no-such-agent-999', amount_cents: 100, reason: 'valid reason here', idempotency_key: 't-agent' }],
+      ['missing idempotency key', { source_agent_slug: quietAgent, amount_cents: 100, reason: 'valid reason here' }],
+    ] as Array<[string, Record<string, unknown>]>) {
+      const response = await post('/api/economy/transfers', ownerToken, payload);
+      const expected = label === 'unknown agent' ? 404 : 400;
+      assert.equal(response.status, expected, `${label} → ${expected}`);
+    }
+  });
+
+  it('propose → approve executes against the real ledger exactly once, and re-decision is idempotent', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    const key = `treasury-exec-${Date.now()}`;
+    const propose = await post('/api/economy/transfers', ownerToken, { source_agent_slug: quietAgent, amount_cents: 30_00, reason: 'approved API budget for Q4', idempotency_key: key });
+    assert.equal(propose.status, 201);
+    assert.equal(propose.body.transfer.status, 'proposed');
+    const transferId = propose.body.transfer.id;
+
+    // Idempotent replay: the same key returns the SAME proposal.
+    const replay = await post('/api/economy/transfers', ownerToken, { source_agent_slug: quietAgent, amount_cents: 30_00, reason: 'approved API budget for Q4', idempotency_key: key });
+    assert.equal(replay.status, 201);
+    assert.equal(replay.body.idempotentReplay, true);
+    assert.equal(replay.body.transfer.id, transferId);
+
+    const approve = await post(`/api/economy/transfers/${transferId}/approve`, ownerToken, {});
+    assert.equal(approve.status, 200);
+    assert.equal(approve.body.transfer.status, 'executed');
+
+    // The execution posted EXACTLY ONE treasury_transfer ledger movement.
+    const movements = db.all("SELECT * FROM economy_ledger WHERE category = 'treasury_transfer' AND ref_id = ?", [transferId]);
+    assert.equal(movements.length, 1, 'one and only one ledger movement');
+    // The movement is a treasury CREDIT with agent_slug NULL — treasury
+    // bookkeeping that can never be recounted as the agent's own revenue.
+    assert.equal(Number((movements[0] as { amount_cents: number }).amount_cents), 30_00);
+    assert.equal((movements[0] as { agent_slug: string | null }).agent_slug, null);
+
+    // Re-approve (double click / retry): idempotent, no double posting.
+    const reApprove = await post(`/api/economy/transfers/${transferId}/approve`, ownerToken, {});
+    assert.equal(reApprove.status, 200);
+    assert.equal(reApprove.body.transfer.status, 'executed');
+    assert.equal(db.all("SELECT * FROM economy_ledger WHERE category = 'treasury_transfer' AND ref_id = ?", [transferId]).length, 1, 'still exactly one movement');
+
+    // Available balance dropped by the transferred amount.
+    const accounts = await get('/api/economy/accounts', ownerToken);
+    const research = accounts.body.accounts.find((a: { agentSlug: string }) => a.agentSlug === quietAgent);
+    assert.equal(research.transferredOutCents, 30_00);
+    assert.equal(research.availableCents, 70_00, 'revenue − transferred');
+  });
+
+  it('reject path: a rejected transfer never touches the ledger, and re-decision stays rejected', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    const key = `treasury-reject-${Date.now()}`;
+    const propose = await post('/api/economy/transfers', ownerToken, { source_agent_slug: quietAgent, amount_cents: 10_00, reason: 'unnecessary expense proposal', idempotency_key: key });
+    const transferId = propose.body.transfer.id;
+    const reject = await post(`/api/economy/transfers/${transferId}/reject`, ownerToken, {});
+    assert.equal(reject.status, 200);
+    assert.equal(reject.body.transfer.status, 'rejected');
+    assert.equal(db.all("SELECT * FROM economy_ledger WHERE category = 'treasury_transfer' AND ref_id = ?", [transferId]).length, 0, 'no ledger movement for a rejected transfer');
+    const reReject = await post(`/api/economy/transfers/${transferId}/reject`, ownerToken, {});
+    assert.equal(reReject.status, 200);
+    assert.equal(reReject.body.transfer.status, 'rejected');
+    // A rejected transfer cannot be approved afterwards.
+    const lateApprove = await post(`/api/economy/transfers/${transferId}/approve`, ownerToken, {});
+    assert.equal(lateApprove.status, 400, 'executed/rejected decisions are final');
+  });
+
+  it('approve re-validates the balance — cannot execute a transfer that outran the surplus', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    const key = `treasury-race-${Date.now()}`;
+    const propose = await post('/api/economy/transfers', ownerToken, { source_agent_slug: quietAgent, amount_cents: 65_00, reason: 'large but within balance at proposal time', idempotency_key: key });
+    const transferId = propose.body.transfer.id;
+    // Another transfer consumes most of the surplus before approval.
+    const drain = await post('/api/economy/transfers', ownerToken, { source_agent_slug: quietAgent, amount_cents: 60_00, reason: 'higher priority budget approved first', idempotency_key: `${key}-drain` });
+    const approveDrain = await post(`/api/economy/transfers/${drain.body.transfer.id}/approve`, ownerToken, {});
+    assert.equal(approveDrain.status, 200);
+    const approve = await post(`/api/economy/transfers/${transferId}/approve`, ownerToken, {});
+    assert.equal(approve.status, 400, 'approval re-checks the live balance');
+    assert.match(String(approve.body.error?.message ?? approve.body.error), /balance/i);
+  });
+
+  it('transfers and accounts are OWNER-ONLY (users get 403, anonymous 401)', async () => {
+    const userToken = await loginAs(userEmail);
+    for (const path of ['/api/economy/accounts', '/api/economy/transfers']) {
+      assert.equal((await get(path, userToken)).status, 403, `${path} hidden from users`);
+      const anon = await fetch(`${baseUrl}${path}`);
+      assert.equal(anon.status, 401, `${path} requires auth`);
+    }
+    const propose = await post('/api/economy/transfers', userToken, { source_agent_slug: quietAgent, amount_cents: 100, reason: 'user attempting treasury access', idempotency_key: 't-forbidden' });
+    assert.equal(propose.status, 403);
+  });
+
+  it('the dashboard embeds system health (uptime + readiness checks)', async () => {
+    const ownerToken = await loginAs(ownerEmail);
+    const dashboard = await get('/api/economy/dashboard', ownerToken);
+    assert.equal(dashboard.status, 200);
+    assert.ok(dashboard.body.systemHealth, 'systemHealth present');
+    assert.ok(dashboard.body.systemHealth.uptimeSeconds >= 0);
+    assert.ok(Array.isArray(dashboard.body.systemHealth.checks));
+    const db = dashboard.body.systemHealth.checks.find((c: { name: string }) => c.name === 'database');
+    assert.ok(db, 'database check present');
+  });
+});

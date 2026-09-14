@@ -152,3 +152,37 @@ export function missionChatHistory(ownerUserId: string, agentSlug: string): { ag
     messages: listMissionMessages(ownerUserId, agent.slug),
   };
 }
+
+/**
+ * Group mission chat (PART 6): the owner addresses an approved group of
+ * registry agents with one instruction. Each agent replies through its own
+ * real thread (same rules as the 1:1 chat: public identity only, redaction,
+ * honest failure, full audit). The group is bounded (max 5 agents) and every
+ * member must exist in the registry.
+ */
+export async function missionChatWithGroup(input: {
+  ownerUserId: string;
+  agentSlugs: string[];
+  content: string;
+}): Promise<{ replies: Array<{ agentSlug: string; ownerMessage: MissionChatMessageRow; agentMessage: MissionChatMessageRow }> }> {
+  const slugs = [...new Set(input.agentSlugs.map((slug) => slug.trim()).filter(Boolean))];
+  if (slugs.length === 0) {
+    throw new MissionChatError(400, 'invalid_request', 'agents must be a non-empty array of registry slugs');
+  }
+  if (slugs.length > 5) {
+    throw new MissionChatError(400, 'invalid_request', 'a mission chat group is limited to 5 agents');
+  }
+  for (const slug of slugs) {
+    if (!getAgentBySlug(slug)) {
+      throw new MissionChatError(404, 'agent_not_found', `agent "${slug}" does not exist in the registry`);
+    }
+  }
+  const replies: Array<{ agentSlug: string; ownerMessage: MissionChatMessageRow; agentMessage: MissionChatMessageRow }> = [];
+  for (const slug of slugs) {
+    // Sequential on purpose: each reply is a separate real provider call,
+    // audited and persisted in its own thread.
+    const result = await missionChatWithAgent({ ownerUserId: input.ownerUserId, agentSlug: slug, content: input.content });
+    replies.push({ agentSlug: slug, ownerMessage: result.ownerMessage, agentMessage: result.agentMessage });
+  }
+  return { replies };
+}

@@ -15,7 +15,9 @@
  */
 import { strict as assert } from 'node:assert';
 import { describe, it, before, after } from 'node:test';
-import { db, Database, createUser, findUserByEmail, setUserPasswordHash, createTask, updateTaskStatus, consumeTaskCredit, refundTaskCredit, getCreditAccount, indexKnowledgeItem, searchKnowledge, listOrphanNonTerminalExecutions } from './index';
+import { db, Database, createUser, findUserByEmail, setUserPasswordHash, createTask, updateTaskStatus, consumeTaskCredit, refundTaskCredit, getCreditAccount, indexKnowledgeItem, searchKnowledge, listOrphanNonTerminalExecutions, createProject } from './index';
+import { insertProjectArtifact, latestProjectArtifact, getProjectArtifactByVersion, listProjectArtifactVersions } from './platform-repositories';
+import { insertTransfer, getTransferByIdempotencyKey, updateTransfer, executedTransferTotalForAgent } from './economy-repositories';
 import {
   insertMissionMessage,
   listMissionMessages,
@@ -349,5 +351,37 @@ describe('economy + mission chat parity (PG)', { skip: !RUN ? 'requires PG_TEST_
     assert.equal(agentHierarchyDepth(parent), 0, 'top-level agent depth 0');
     assert.equal(agentHierarchyDepth(child), 1, 'child depth 1');
     assert.equal(countAgentChildren(parent), 1, 'children counted on PG');
+  });
+
+  it('migration 0016 parity: versioned project artifacts + treasury transfers round-trip on PG', () => {
+    const stamp = Date.now();
+    const email = `pg-artifact-${stamp}@akbaral.test`;
+    const user = createUser({ email, name: 'PG Artifact', passwordHash: 'x', freeCredits: 1 });
+    cleanup.push(() => db.run('DELETE FROM users WHERE id = ?', [user.id]));
+    const project = createProject({ ownerId: user.id, name: `PG Artifact ${stamp}`, slug: `pg-artifact-${stamp}` });
+    cleanup.push(() => db.run('DELETE FROM projects WHERE id = ?', [project.id]));
+
+    // Versioned artifacts: auto-incrementing versions, append-only history.
+    const v1 = insertProjectArtifact({ projectId: project.id, userId: user.id, kind: 'website', title: 'PG site', content: '<!doctype html><html><body><h1>v1</h1></body></html>' });
+    const v2 = insertProjectArtifact({ projectId: project.id, userId: user.id, kind: 'website', title: 'PG site', content: '<!doctype html><html><body><h1>v2</h1></body></html>' });
+    assert.equal(v1.version, 1);
+    assert.equal(v2.version, 2, 'version auto-increments per (project, kind)');
+    assert.equal(latestProjectArtifact(project.id, 'website')!.version, 2);
+    assert.equal(getProjectArtifactByVersion(project.id, 'website', 1)!.content.includes('v1'), true);
+    const versions = listProjectArtifactVersions(project.id, 'website');
+    assert.equal(versions.length, 2);
+    assert.deepEqual(versions.map((v) => v.version), [2, 1], 'newest first, history intact');
+    assert.ok(!('content' in versions[0]) || versions[0].content === undefined, 'version list omits content bodies');
+
+    // Treasury transfers: idempotency key lookup + executed totals aggregation.
+    const key = `pg-transfer-${stamp}`;
+    const transfer = insertTransfer({ sourceAgentSlug: 'web-research-001', amountCents: 25_00, reason: 'pg parity API budget', idempotencyKey: key, proposedBy: user.id });
+    assert.equal(transfer.status, 'proposed');
+    assert.equal(getTransferByIdempotencyKey(key)!.id, transfer.id, 'idempotency key indexed lookup works on PG');
+    assert.equal(executedTransferTotalForAgent('web-research-001'), 0, 'proposed transfers do not count as executed');
+    updateTransfer(transfer.id, { status: 'executed' });
+    assert.equal(getTransferByIdempotencyKey(key)!.status, 'executed');
+    assert.equal(executedTransferTotalForAgent('web-research-001'), 25_00, 'executed total aggregates on PG');
+    cleanup.push(() => db.run('DELETE FROM economy_transfers WHERE id = ?', [transfer.id]));
   });
 });

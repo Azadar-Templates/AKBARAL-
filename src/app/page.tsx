@@ -550,7 +550,7 @@ export default function Home() {
               Project <select id="master-project"><option value="">— none —</option></select></label><button className="btn btn-primary" id="master-plan-btn" type="submit">
               Plan &amp; run</button></div></form></div><div className="panel master-info" id="master-info"><h3>
             Environment</h3><div id="master-info-body" className="master-info-body"><div className="info-line"><span>Model providers</span><b>Loading…</b></div></div></div></div><div className="panel master-console-panel"><div className="master-console-head"><b>
-            Execution console</b><span id="master-console-state" className="console-state">idle</span></div><div id="master-output" className="output master-console" aria-live="polite"><div className="console-hint">Describe a goal and run MASTER. Plans, specialist execution, live logs and verified results stream here.</div></div><div id="master-result" hidden></div></div></div></div></section>
+            Execution console</b><span id="master-console-state" className="console-state">idle</span></div><div id="master-output" className="output master-console" aria-live="polite"><div className="console-hint">Describe a goal and run MASTER. Plans, specialist execution, live logs and verified results stream here.</div></div><div className="artifact-bar-host" id="master-artifact-bar" hidden></div><div id="master-result" hidden></div></div></div></div></section>
 
       {/* ================= Task Center (detail) ================= */}
       <section className="screen screen-default" id="screen-task" hidden><div className="aw-container"><div id="task-detail-root"></div></div></section>
@@ -685,6 +685,9 @@ export default function Home() {
         Opportunities</h3><div id="economy-opportunities" className="econ-list"></div></div><div className="panel"><h3>
 
         Treasury ledger</h3><div id="economy-ledger" className="econ-list"></div></div><div className="panel"><h3>
+        Agent accounts &amp; transfers</h3><div id="economy-accounts" className="econ-list"></div><div className="econ-controls"><input id="transfer-agent" placeholder="source agent slug" aria-label="Source agent slug" /><input id="transfer-amount" type="number" min="1" placeholder="amount (cents)" aria-label="Transfer amount cents" /><input id="transfer-reason" placeholder="reason (required)" aria-label="Transfer reason" /><button className="btn" id="transfer-propose" type="button">
+
+        Propose transfer</button></div><div id="economy-transfers" className="econ-list"></div></div><div className="panel"><h3>
 
         Activity &amp; security events</h3><div id="economy-events" className="econ-list"></div></div></div></section>
 

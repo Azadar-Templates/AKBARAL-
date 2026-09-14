@@ -1,5 +1,5 @@
 import { discoverAgents, getAgentBySlug, type AgentView } from '../agents/registry';
-import { createWorkflow, createWorkflowStep, db, findProjectById } from '../db';
+import { createWorkflow, createWorkflowStep, db, findProjectById, latestProjectArtifact } from '../db';
 import { HttpError } from '../server/http';
 import { analyzeGoalHeuristic, type GoalAnalysis } from './goal-analyzer';
 
@@ -128,6 +128,16 @@ export function createExecutionPlan(input: {
     }
   }
 
+  // Iterative project editing (PART 1): when the goal targets a project that
+  // already has a website artifact, the CURRENT version is injected as real
+  // context so modification goals ("delete this section", "change the
+  // design") operate on actual project state, not a blank slate.
+  const MAX_ARTIFACT_CONTEXT_CHARS = 60_000;
+  const websiteArtifact = input.projectId ? latestProjectArtifact(input.projectId, 'website') : undefined;
+  const artifactContext = websiteArtifact
+    ? `\n\n[CURRENT PROJECT ARTIFACT v${websiteArtifact.version} — the existing website HTML. Modify THIS document per the request and return the complete updated HTML document.]\n${websiteArtifact.content.slice(0, MAX_ARTIFACT_CONTEXT_CHARS)}`
+    : '';
+
   const analysis = input.analysis ?? analyzeGoalHeuristic(input.goal);
   const intents: PlanIntent[] = analysis.intents.map((intent) => ({
     key: intent.key,
@@ -177,7 +187,7 @@ export function createExecutionPlan(input: {
         agentSlug: agent?.slug ?? '',
         modelRequirements: agent?.modelRequirements ?? ['reasoning'],
         toolKeys: agent?.toolPermissions ?? [],
-        goal: `${intent.label}: ${input.goal}`,
+        goal: `${intent.label}: ${input.goal}${artifactContext}`,
         dependsOn,
         categorySlug: intent.categorySlug,
       });
@@ -197,6 +207,11 @@ export function createExecutionPlan(input: {
       toolKey: step.toolKeys[0] ?? null,
       stepOrder: step.stepOrder,
       dependsOn: step.dependsOn.map(String),
+      // Fix (2026-09-14, caught by website-builder QA): persist the per-step
+      // goal. Without it the runner fell back to the raw workflow goal and
+      // specialist step goals — including the current-artifact context for
+      // iterative website editing — never reached the executing agents.
+      goal: step.goal,
     });
   }
   persistPlan(workflow.id, { analysis, steps, notes });

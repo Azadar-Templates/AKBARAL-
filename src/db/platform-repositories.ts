@@ -1826,3 +1826,71 @@ export function isFeatureFlagEnabled(key: string): boolean {
   const row = db.get<{ enabled: number }>('SELECT enabled FROM feature_flags WHERE key = ?', [key]);
   return Boolean(row && Number(row.enabled) === 1);
 }
+
+// ---------------------------------------------------------------------------
+// Versioned project artifacts (MASTER workspace deliverables: website HTML,
+// documents, data, images). Versions are append-only; "undo" creates a new
+// version with older content — history is never rewritten.
+// ---------------------------------------------------------------------------
+
+export const ARTIFACT_KINDS = new Set(['website', 'document', 'data', 'image']);
+
+export interface ProjectArtifactRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  version: number;
+  content: string;
+  source_workflow_id: string | null;
+  created_at: string;
+}
+
+export function insertProjectArtifact(input: {
+  projectId: string;
+  userId: string;
+  kind: string;
+  title: string;
+  content: string;
+  sourceWorkflowId?: string | null;
+}): ProjectArtifactRow {
+  const id = createId('art');
+  const versionRow = db.get<{ max: number | null }>(
+    'SELECT MAX(version) AS max FROM project_artifacts WHERE project_id = ? AND kind = ?',
+    [input.projectId, input.kind],
+  );
+  const version = Number(versionRow?.max ?? 0) + 1;
+  db.run(
+    'INSERT INTO project_artifacts (id, project_id, user_id, kind, title, version, content, source_workflow_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, input.projectId, input.userId, input.kind, input.title, version, input.content, input.sourceWorkflowId ?? null, NOW()],
+  );
+  return getProjectArtifactById(id)!;
+}
+
+export function getProjectArtifactById(id: string): ProjectArtifactRow | undefined {
+  return db.get<ProjectArtifactRow>('SELECT * FROM project_artifacts WHERE id = ?', [id]);
+}
+
+export function latestProjectArtifact(projectId: string, kind: string): ProjectArtifactRow | undefined {
+  return db.get<ProjectArtifactRow>(
+    'SELECT * FROM project_artifacts WHERE project_id = ? AND kind = ? ORDER BY version DESC LIMIT 1',
+    [projectId, kind],
+  );
+}
+
+export function getProjectArtifactByVersion(projectId: string, kind: string, version: number): ProjectArtifactRow | undefined {
+  return db.get<ProjectArtifactRow>(
+    'SELECT * FROM project_artifacts WHERE project_id = ? AND kind = ? AND version = ?',
+    [projectId, kind, version],
+  );
+}
+
+export function listProjectArtifactVersions(projectId: string, kind: string): Array<Omit<ProjectArtifactRow, 'content'>> {
+  return db.all(
+    `SELECT id, project_id, user_id, kind, title, version, source_workflow_id, created_at,
+            LENGTH(content) AS content_bytes
+     FROM project_artifacts WHERE project_id = ? AND kind = ? ORDER BY version DESC`,
+    [projectId, kind],
+  ) as Array<Omit<ProjectArtifactRow, 'content'> & { content_bytes?: number }>;
+}
