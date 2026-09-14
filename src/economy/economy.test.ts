@@ -891,3 +891,67 @@ describe('treasury transfers + agent accounts (PART 8/10)', () => {
     assert.ok(db, 'database check present');
   });
 });
+
+describe('Build #4 §5: dashboard platform stats (registry · tasks · cost mix)', () => {
+  let api: ApiServer;
+  let baseUrl = '';
+  const ownerEmail = `platform-owner-${Date.now()}@akbaral.test`;
+
+  before(async () => {
+    api = createApiServer();
+    await new Promise<void>((resolve) => api.server.listen(0, '127.0.0.1', () => resolve()));
+    baseUrl = `http://127.0.0.1:${(api.server.address() as { port: number }).port}`;
+    await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: ownerEmail, password: 'correct-horse-battery-staple', name: 'Platform Owner' }),
+    });
+    const ownerRow = findUserByEmail(ownerEmail)!;
+    db.run('UPDATE users SET role = ? WHERE id = ?', ['owner', String(ownerRow.id)]);
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => api.server.close(() => resolve()));
+  });
+
+  it('exposes real registry/task/cost counts — derived, never fabricated', async () => {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: ownerEmail, password: 'correct-horse-battery-staple' }),
+    });
+    const token = ((await login.json()) as { accessToken: string }).accessToken;
+    const response = await fetch(`${baseUrl}/api/economy/dashboard`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const dashboard = (await response.json()) as { platform?: Record<string, number | Record<string, number>> };
+    assert.ok(dashboard.platform, 'platform section present');
+    // Registry counts reconcile with the live database.
+    const registry = db.get<{ total: number; active: number }>("SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM agents")!;
+    assert.equal(dashboard.platform!.registryTotal, Number(registry.total));
+    assert.equal(dashboard.platform!.registryActive, Number(registry.active));
+    assert.equal(Number(dashboard.platform!.registryInactive) + Number(dashboard.platform!.registryActive), Number(registry.total));
+    assert.ok(Number(dashboard.platform!.registryTotal) >= 4000, 'the 4,001+ registry is intact');
+    // Task counts reconcile.
+    const tasks = db.get<{ total: number }>('SELECT COUNT(*) AS total FROM tasks')!;
+    assert.equal(dashboard.platform!.tasksTotal, Number(tasks.total));
+    // Cost mix keys are real ledger categories (may be empty — $0 honestly).
+    assert.ok(typeof dashboard.platform!.costsByCategoryCents === 'object');
+  });
+
+  it('stays owner-only (403 for users)', async () => {
+    const userEmail = `platform-user-${Date.now()}@akbaral.test`;
+    await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: userEmail, password: 'correct-horse-battery-staple', name: 'Platform User' }),
+    });
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: userEmail, password: 'correct-horse-battery-staple' }),
+    });
+    const token = ((await login.json()) as { accessToken: string }).accessToken;
+    const response = await fetch(`${baseUrl}/api/economy/dashboard`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 403);
+  });
+});

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, createProject, findProjectById, listProjectsByUser, findUserByEmail, getWorkflow } from '../db';
+import { db, createProject, findProjectById, listProjectsByUser, findUserByEmail, getWorkflow, appendAuditLog } from '../db';
 import {
   hasProjectRole,
   projectRole,
@@ -14,6 +14,9 @@ import {
   latestProjectArtifact,
   getProjectArtifactByVersion,
   listProjectArtifactVersions,
+  renameProjectArtifactLatest,
+  deleteProjectArtifactVersion,
+  deleteProjectArtifacts,
   type ProjectRole,
 } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
@@ -315,6 +318,61 @@ export function createProjectsRouter(): Router {
       sourceWorkflowId: workflowId,
     });
     res.status(201).json({ artifact });
+  });
+
+  // ── Artifact management: rename + delete (Build #4 §3) ────────────────────
+  router.patch('/:id/artifacts/:kind', (req: AuthenticatedRequest, res) => {
+    requireProjectAccess(req, 'member');
+    const body = getBody(req);
+    const title = String(body?.title ?? '').trim();
+    if (!title) throw new HttpError(400, 'title is required', 'invalid_request');
+    if (!ARTIFACT_KINDS.has(req.params.kind)) throw new HttpError(404, 'unknown artifact kind', 'not_found');
+    const artifact = renameProjectArtifactLatest(String(req.params.id), req.params.kind, title);
+    if (!artifact) throw new HttpError(404, 'no artifact of this kind in the project', 'not_found');
+    appendAuditLog({
+      actorId: req.auth!.userId,
+      action: 'project.artifact.renamed',
+      resourceType: 'project_artifact',
+      resourceId: artifact.id,
+      metadata: { projectId: String(req.params.id), kind: req.params.kind, version: artifact.version },
+    });
+    res.status(200).json({ artifact: { ...artifact, content: undefined } });
+  });
+
+  router.delete('/:id/artifacts/:kind/v/:version', (req: AuthenticatedRequest, res) => {
+    requireProjectAccess(req, 'member');
+    if (!ARTIFACT_KINDS.has(req.params.kind)) throw new HttpError(404, 'unknown artifact kind', 'not_found');
+    const version = Number(req.params.version);
+    if (!Number.isInteger(version) || version < 1) throw new HttpError(400, 'invalid version', 'invalid_request');
+    const existing = getProjectArtifactByVersion(String(req.params.id), req.params.kind, version);
+    if (!existing) throw new HttpError(404, 'version not found', 'not_found');
+    if (!deleteProjectArtifactVersion(String(req.params.id), req.params.kind, version)) {
+      throw new HttpError(404, 'version not found', 'not_found');
+    }
+    appendAuditLog({
+      actorId: req.auth!.userId,
+      action: 'project.artifact.version_deleted',
+      resourceType: 'project_artifact',
+      resourceId: existing.id,
+      metadata: { projectId: String(req.params.id), kind: req.params.kind, version },
+    });
+    const latest = latestProjectArtifact(String(req.params.id), req.params.kind);
+    res.status(200).json({ deleted: true, version, latestVersion: latest?.version ?? null });
+  });
+
+  router.delete('/:id/artifacts/:kind', (req: AuthenticatedRequest, res) => {
+    requireProjectAccess(req, 'member');
+    if (!ARTIFACT_KINDS.has(req.params.kind)) throw new HttpError(404, 'unknown artifact kind', 'not_found');
+    const deleted = deleteProjectArtifacts(String(req.params.id), req.params.kind);
+    if (deleted === 0) throw new HttpError(404, 'no artifact of this kind in the project', 'not_found');
+    appendAuditLog({
+      actorId: req.auth!.userId,
+      action: 'project.artifact.all_deleted',
+      resourceType: 'project',
+      resourceId: String(req.params.id),
+      metadata: { kind: req.params.kind, deletedVersions: deleted },
+    });
+    res.status(200).json({ deleted: true, versions: deleted });
   });
 
   // ------------------------------------------------------------ artifacts ---

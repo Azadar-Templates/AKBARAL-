@@ -2212,3 +2212,63 @@ strong, b { font-weight: 600; }
 @media (max-width: 640px) { .wp-frame-wrap { min-height: 320px; } .wp-frame { height: 360px; } }
 
 /* ── Private owner console additions (treasury transfers + accounts) ─────── */
+
+/* ============================================================
+   Build #4 — MASTER three-pane workspace (left: conversation,
+   center: execution, right: preview canvas) + preview components
+   ============================================================ */
+.master-layout {
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(300px, 380px);
+}
+.master-canvas { display: grid; gap: 0; min-width: 0; align-self: start; }
+.master-canvas .panel { margin: 0; }
+.canvas-label { margin: 18px 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #8a8f98); }
+.project-controls { display: grid; gap: 6px; padding: 10px 0 4px; }
+.pc-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pc-row span { color: var(--muted, #8a8f98); }
+.master-history .list-item-btn { width: 100%; text-align: left; background: none; border: 0; cursor: pointer; }
+.master-files .file-item { align-items: center; gap: 8px; }
+.file-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Attachments tray */
+.attach-block { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+.attach-list { display: grid; gap: 6px; }
+.attach-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.voice-row { justify-content: flex-start; align-items: center; gap: 10px; margin: 8px 0 0; }
+#master-voice.active { color: var(--danger, #ff6b6b); border-color: currentColor; }
+
+/* Image / document / business form / comparison renderers */
+.image-frame { display: grid; place-items: center; min-height: 160px; border: 1px solid var(--line, rgba(255,255,255,.08)); border-radius: 10px; overflow: hidden; background: rgba(127,127,127,.06); }
+.image-frame img { max-width: 100%; max-height: 420px; display: block; }
+.result-actions { display: flex; gap: 8px; margin-top: 10px; }
+.doc-body { max-height: 380px; overflow: auto; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.bf-form { display: grid; gap: 10px; }
+.bf-field { display: grid; gap: 4px; font-size: 13px; }
+.bf-field span { color: var(--muted, #8a8f98); }
+.bf-output { margin-top: 12px; display: grid; gap: 8px; }
+
+/* Comparison cards (travel / shopping) — official links, no fake embeds */
+.cmp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 10px; margin-top: 8px; }
+.cmp-card { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line, rgba(255,255,255,.08)); border-radius: 10px; background: rgba(127,127,127,.04); }
+.cmp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cmp-price { font-weight: 700; }
+.cmp-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.cmp-row span { color: var(--muted, #8a8f98); }
+.cmp-link { font-size: 12.5px; }
+.cmp-nolink { color: var(--muted, #8a8f98); }
+
+/* Honest CSS bar chart (real values from result data) */
+.bar-chart { display: grid; gap: 6px; margin: 10px 0; }
+.bar-row { display: grid; grid-template-columns: 90px 1fr 70px; align-items: center; gap: 8px; font-size: 12.5px; }
+.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #8a8f98); }
+.bar-track { height: 10px; border-radius: 6px; background: rgba(127,127,127,.15); overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent, #6b8afd), var(--accent-2, #9b6bfd)); }
+.bar-value { text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1280px) {
+  .master-layout { grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); }
+  .master-canvas { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  .master-layout { grid-template-columns: 1fr; }
+}

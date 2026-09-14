@@ -2,6 +2,10 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { db } from '../db';
+// Direct module import: files under src/app are ESM (src/app/package.json
+// "type": "module") and CJS-interop cannot see `export *` re-export names
+// through the '../db' barrel.
+import { insertProjectArtifact } from '../db/platform-repositories';
 import { applyMigrations } from '../db/migrate';
 import { syncAgentRegistry } from '../agents/registry';
 import { startResearchFixture, type ResearchFixtureServer } from '../test-support/research-fixture';
@@ -323,5 +327,141 @@ describe('PART 4: owner unlimited entitlement (server-side)', () => {
     }
     const plainMe = await call('/api/me', { headers: { authorization: `Bearer ${plain.token}` } });
     assert.equal(plainMe.body.user.freeCredits, 4, 'normal user accounting is unchanged (5 → 4)');
+  });
+});
+
+describe('Build #4 §1/§3: artifact management + real attachments', () => {
+  let api: ApiServer;
+  let baseUrl = '';
+  let model: Awaited<ReturnType<typeof startModelFixture>>;
+  let researchFixture: ResearchFixtureServer;
+  const SAVED_ENV: Record<string, string | undefined> = {};
+  const ENV_KEYS = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
+
+  const user = { email: `ops-${Date.now()}@akbaral.test`, password: 'correct-horse-battery-staple', token: '', projectId: '' };
+
+  async function call(path: string, init?: RequestInit): Promise<{ status: number; body: Record<string, any> }> {
+    const response = await fetch(`${baseUrl}${path}`, init);
+    const text = await response.text();
+    let body: Record<string, any> = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+    return { status: response.status, body };
+  }
+  const authJson = (token: string): RequestInit['headers'] => ({ 'content-type': 'application/json', authorization: `Bearer ${token}` });
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  before(async () => {
+    for (const key of ENV_KEYS) SAVED_ENV[key] = process.env[key];
+    applyMigrations(db);
+    syncAgentRegistry();
+    researchFixture = await startResearchFixture();
+    model = await startModelFixture();
+    process.env.OPENAI_API_KEY = 'ops-fixture-key';
+    process.env.OPENAI_BASE_URL = `${model.url}/v1`;
+    api = createApiServer();
+    await new Promise<void>((resolve) => api.server.listen(0, '127.0.0.1', () => resolve()));
+    baseUrl = `http://127.0.0.1:${(api.server.address() as { port: number }).port}`;
+
+    await call('/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, password: user.password, name: 'Ops' }) });
+    const login = await call('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, password: user.password }) });
+    user.token = login.body.accessToken;
+    const project = await call('/api/projects', { method: 'POST', headers: authJson(user.token), body: JSON.stringify({ name: 'Ops Project' }) });
+    user.projectId = project.body.project.id;
+    db.run('UPDATE credit_accounts SET free_credits = 50 WHERE user_id = (SELECT id FROM users WHERE email = ?)', [user.email]);
+    // Two versions to manage.
+    insertProjectArtifact({ projectId: user.projectId, userId: 'usr_ops', kind: 'website', title: 'First title', content: WEBSITE_V1 });
+    insertProjectArtifact({ projectId: user.projectId, userId: 'usr_ops', kind: 'website', title: 'Second title', content: WEBSITE_V2 });
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => api.server.close(() => resolve()));
+    await researchFixture.close();
+    await model.close();
+    for (const key of ENV_KEYS) {
+      if (SAVED_ENV[key] === undefined) delete process.env[key];
+      else process.env[key] = SAVED_ENV[key]!;
+    }
+  });
+
+  it('rename: PATCH changes the current version title, history versions keep theirs', async () => {
+    const rename = await call(`/api/projects/${user.projectId}/artifacts/website`, { method: 'PATCH', headers: authJson(user.token), body: JSON.stringify({ title: 'Aurora refreshed' }) });
+    assert.equal(rename.status, 200);
+    const latest = await call(`/api/projects/${user.projectId}/artifacts/website`, { headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(latest.body.artifact.title, 'Aurora refreshed');
+    assert.equal(latest.body.artifact.version, 2, 'rename targets the current version');
+    const v1 = await call(`/api/projects/${user.projectId}/artifacts/website/v/1`, { headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(v1.body.artifact.title, 'First title', 'historical titles are preserved');
+    const empty = await call(`/api/projects/${user.projectId}/artifacts/website`, { method: 'PATCH', headers: authJson(user.token), body: JSON.stringify({ title: '   ' }) });
+    assert.equal(empty.status, 400, 'blank title rejected');
+    const audit = db.all("SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'project.artifact.renamed'").map((r) => Number((r as { n: number }).n))[0];
+    assert.ok(audit >= 1, 'rename is audited');
+  });
+
+  it('delete version: removes exactly that version; latest shifts to the next highest', async () => {
+    const del = await call(`/api/projects/${user.projectId}/artifacts/website/v/2`, { method: 'DELETE', headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(del.status, 200);
+    assert.equal(del.body.deleted, true);
+    const latest = await call(`/api/projects/${user.projectId}/artifacts/website`, { headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(latest.body.artifact.version, 1, 'v1 is current after deleting v2');
+    const missing = await call(`/api/projects/${user.projectId}/artifacts/website/v/2`, { method: 'DELETE', headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(missing.status, 404);
+    const audit = db.all("SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'project.artifact.version_deleted'").map((r) => Number((r as { n: number }).n))[0];
+    assert.ok(audit >= 1, 'deletion is audited');
+  });
+
+  it('delete all versions of a kind', async () => {
+    const del = await call(`/api/projects/${user.projectId}/artifacts/website`, { method: 'DELETE', headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(del.status, 200);
+    assert.equal(del.body.versions, 1);
+    const latest = await call(`/api/projects/${user.projectId}/artifacts/website`, { headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(latest.body.artifact, null, 'no artifact left');
+    const again = await call(`/api/projects/${user.projectId}/artifacts/website`, { method: 'DELETE', headers: { authorization: `Bearer ${user.token}` } });
+    assert.equal(again.status, 404, 'deleting nothing is a 404, not a fake success');
+  });
+
+  it('attachments: uploaded files travel into the specialist request (real content, ownership-verified)', async () => {
+    // 1. Upload a real text file into the project.
+    const form = new FormData();
+    form.append('file', new Blob(['AKBARAL attachment probe: the secret launch code is BLUE HERON 77.'], { type: 'text/plain' }), 'launch-notes.txt');
+    const upload = await call(`/api/projects/${user.projectId}/files`, { method: 'POST', headers: { authorization: `Bearer ${user.token}` }, body: form as unknown as FormData });
+    assert.equal(upload.status, 201, `upload ok (${JSON.stringify(upload.body).slice(0, 120)})`);
+    const fileId = upload.body.file.fileId;
+    assert.ok(fileId, 'fileId returned');
+
+    // 2. Another user's file id must be rejected (tenant isolation).
+    const emailB = `ops-b-${Date.now()}@akbaral.test`;
+    await call('/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: emailB, password: 'another-horse-9', name: 'B' }) });
+    const loginB = await call('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: emailB, password: 'another-horse-9' }) });
+    const tokenB = loginB.body.accessToken;
+    const foreign = await call('/api/workflows/master', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenB}` }, body: JSON.stringify({ goal: 'Summarize the attached notes', attachment_file_ids: [fileId] }) });
+    assert.equal(foreign.status, 400, 'another user cannot attach my file');
+
+    // 3. Run MASTER with the attachment; the specialist request must carry
+    //    the file's real content via the attachment context.
+    const plan = await call('/api/workflows/master', { method: 'POST', headers: authJson(user.token), body: JSON.stringify({ goal: 'Summarize the attached notes', project_id: user.projectId, attachment_file_ids: [fileId] }) });
+    assert.equal(plan.status, 202);
+    const workflowId = plan.body.workflow.id;
+    await call(`/api/workflows/${workflowId}/run`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${user.token}` }, body: JSON.stringify({ attachment_file_ids: [fileId] }) });
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      await sleep(1500);
+      const state = await call(`/api/workflows/${workflowId}`, { headers: { authorization: `Bearer ${user.token}` } });
+      if (['completed', 'failed', 'cancelled'].includes(String(state.body.workflow?.status ?? ''))) break;
+      if (Date.now() > deadline) break;
+    }
+    const withAttachment = model.seenBodies().find((body) => body.includes('launch-notes.txt'));
+    assert.ok(withAttachment, 'the attachment content reached the specialist request');
+    assert.ok(withAttachment!.includes('BLUE HERON 77.'), 'the real file content (not just the name) traveled');
+    // The file is now claimed by the first task (task_id set, once).
+    const linked = db.get<{ task_id: string | null }>('SELECT task_id FROM files WHERE id = ?', [fileId]);
+    assert.ok(linked?.task_id, 'file is linked to the executing task');
+  });
+
+  it('attachment ids that are already claimed are refused (single-claim)', async () => {
+    const claimed = db.all("SELECT id, task_id FROM files WHERE original_name = 'launch-notes.txt' LIMIT 1");
+    const fileId = (claimed[0] as { id: string } | undefined)?.id;
+    assert.ok(fileId);
+    const response = await call('/api/workflows/master', { method: 'POST', headers: authJson(user.token), body: JSON.stringify({ goal: 'Summarize the attached notes again', attachment_file_ids: [fileId] }) });
+    assert.equal(response.status, 400, 'already-attached file cannot be re-attached');
   });
 });

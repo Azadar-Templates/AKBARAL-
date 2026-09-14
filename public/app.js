@@ -71,6 +71,7 @@
     plan: null,
     executionStream: null,
     view: 'landing',
+    masterAttachments: [],
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -232,15 +233,165 @@
     });
   }
 
-  /** Data preview (PART 2): a real table for JSON-array results. */
+  /** Data preview (PART 2): a real table for JSON-array results, plus an
+   *  honest CSS bar chart when a numeric column exists (real values only). */
   function renderDataTable(root, rows) {
     const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))].slice(0, 8);
+    // Chart: pick the first numeric column; label by the first string column.
+    const numericCol = columns.find((c) => rows.some((row) => typeof row[c] === 'number'));
+    const labelCol = columns.find((c) => typeof rows[0]?.[c] === 'string') ?? columns[0];
+    const chartRows = numericCol ? rows.slice(0, 12) : [];
+    const max = chartRows.length ? Math.max(...chartRows.map((row) => Math.abs(Number(row[numericCol])) || 0)) : 0;
     root.innerHTML += `
       <div class="result-block">
         <div class="result-meta"><span>${rows.length} rows · ${columns.length} columns</span></div>
+        ${chartRows.length >= 2 && max > 0 ? `<div class="bar-chart" role="img" aria-label="Bar chart of ${esc(numericCol)} by ${esc(String(labelCol))}">${chartRows.map((row) => `
+          <div class="bar-row" title="${esc(String(row[labelCol] ?? ''))}: ${esc(String(row[numericCol]))}">
+            <span class="bar-label">${esc(String(row[labelCol] ?? '').slice(0, 14))}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${Math.max(2, Math.round((Math.abs(Number(row[numericCol])) / max) * 100))}%"></span></span>
+            <span class="bar-value">${esc(String(row[numericCol]))}</span>
+          </div>`).join('')}</div>` : ''}
         <div class="table-scroll"><table class="econ-table data-table"><thead><tr>${columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
         <tbody>${rows.slice(0, 50).map((row) => `<tr>${columns.map((c) => `<td>${esc(String(row[c] ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
         ${rows.length > 50 ? `<p class="state-kv">Showing 50 of ${rows.length} rows.</p>` : ''}
+      </div>`;
+  }
+
+  /**
+   * Image preview (PART 2): renders a real image (auth-fetched file or data
+   * URL) with save/export. Never fabricates an image — only renders what the
+   * task/file actually produced.
+   */
+  function renderImagePreview(root, image) {
+    const url = String((image && (image.url || image.src)) || '');
+    const filename = String((image && (image.filename || image.alt)) || 'akbaral-image');
+    const id = `img-${Math.random().toString(36).slice(2, 9)}`;
+    root.innerHTML += `
+      <div class="result-block image-result" id="${id}">
+        <div class="result-meta"><span>image</span></div>
+        <div class="image-frame"><img alt="${esc(filename)}" title="${esc(filename)}" /></div>
+        <div class="result-actions"><button type="button" class="btn btn-sm wp-download">Download</button></div>
+      </div>`;
+    const container = document.getElementById(id);
+    const img = container.querySelector('img');
+    const isRelative = url.startsWith('/');
+    if (isRelative) {
+      // Auth-fetched (bearer) file: object URL of the REAL stored bytes.
+      fetch(url, { headers: state.accessToken ? { authorization: `Bearer ${state.accessToken}` } : {} })
+        .then((r) => { if (!r.ok) throw new Error(`file fetch failed (${r.status})`); return r.blob(); })
+        .then((blob) => { img.src = URL.createObjectURL(blob); container.dataset.blobUrl = URL.createObjectURL(blob); })
+        .catch(() => { container.querySelector('.image-frame').innerHTML = `<p class="state-kv">Image could not be loaded (${esc(url)}).</p>`; });
+    } else {
+      img.src = url;
+    }
+    container.querySelector('.wp-download').addEventListener('click', () => {
+      const src = container.dataset.blobUrl || img.src;
+      const anchor = document.createElement('a');
+      anchor.href = src;
+      anchor.download = filename;
+      anchor.click();
+    });
+  }
+
+  /**
+   * Document preview (PART 2): renders the real document text with an honest
+   * export (Blob download of the exact content — .md/.txt/.html by shape).
+   */
+  function renderDocumentPreview(root, doc) {
+    const content = String((doc && (doc.content || doc.text)) || '');
+    const title = String((doc && (doc.title || doc.filename)) || 'document');
+    const ext = /^\s*(<!doctype html|<html[\s>])/i.test(content) ? 'html' : 'md';
+    const id = `doc-${Math.random().toString(36).slice(2, 9)}`;
+    root.innerHTML += `
+      <div class="result-block document-result" id="${id}">
+        <div class="result-meta"><span>document</span><span>${content.length.toLocaleString()} chars</span></div>
+        <div class="result-body doc-body">${esc(content)}</div>
+        <div class="result-actions"><button type="button" class="btn btn-sm wp-download">Download .${ext}</button></div>
+      </div>`;
+    document.getElementById(id).querySelector('.wp-download').addEventListener('click', () => {
+      const blobUrl = URL.createObjectURL(new Blob([content], { type: ext === 'html' ? 'text/html' : 'text/markdown' }));
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = `${title.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'document'}.${ext}`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    });
+  }
+
+  /**
+   * Business form (PART 2): an interactive form the user can actually fill —
+   * rendered from a form schema in the result. Submitting produces a filled
+   * summary the user can download; nothing is sent anywhere else.
+   */
+  function renderBusinessForm(root, form) {
+    const title = String((form && form.title) || 'Business form');
+    const fields = Array.isArray(form && form.fields) ? form.fields.slice(0, 12) : [];
+    const id = `bf-${Math.random().toString(36).slice(2, 9)}`;
+    root.innerHTML += `
+      <div class="result-block business-form" id="${id}">
+        <div class="result-meta"><span>interactive form</span></div>
+        <h4>${esc(title)}</h4>
+        <form class="bf-form">
+          ${fields.map((f, i) => {
+            const label = esc(String((f && f.label) || `Field ${i + 1}`));
+            const ftype = ['text', 'number', 'email', 'date'].includes(String(f && f.type)) ? String(f.type) : 'text';
+            const options = Array.isArray(f && f.options) ? f.options.slice(0, 8) : null;
+            return `<label class="bf-field"><span>${label}</span>${
+              options
+                ? `<select data-bf="${label}">${options.map((o) => `<option value="${esc(String(o))}">${esc(String(o))}</option>`).join('')}</select>`
+                : `<input type="${ftype}" data-bf="${label}" placeholder="${label}" />`
+            }</label>`;
+          }).join('')}
+          <div class="result-actions"><button type="submit" class="btn btn-sm btn-primary">Complete form</button></div>
+        </form>
+        <div class="bf-output" hidden></div>
+      </div>`;
+    const container = document.getElementById(id);
+    container.querySelector('.bf-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const filled = Array.from(container.querySelectorAll('[data-bf]')).map((input) => ({ field: input.getAttribute('data-bf'), value: String(input.value || '').slice(0, 500) }));
+      const output = container.querySelector('.bf-output');
+      output.hidden = false;
+      output.innerHTML = `
+        <p class="section-label">Your completed form</p>
+        <div class="table-scroll"><table class="econ-table data-table"><tbody>${filled.map((row) => `<tr><th>${esc(row.field)}</th><td>${esc(row.value)}</td></tr>`).join('')}</tbody></table></div>
+        <div class="result-actions"><button type="button" class="btn btn-sm bf-download">Download filled form</button></div>`;
+      output.querySelector('.bf-download').addEventListener('click', () => {
+        const blobUrl = URL.createObjectURL(new Blob([JSON.stringify({ title, filled }, null, 2)], { type: 'application/json' }));
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = `${title.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'form'}.json`;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      });
+    });
+  }
+
+  /**
+   * Comparison cards (PART 2: travel / shopping): structured results that
+   * carry official source links render as secure cards + official links —
+   * external pages are never fake-embedded.
+   */
+  function renderComparisonCards(root, rows, label) {
+    const cards = rows.slice(0, 12).map((row) => {
+      const entries = Object.entries(row).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '');
+      const linkEntry = entries.find(([k]) => ['url', 'link', 'source_url', 'booking_url', 'official_url'].includes(k));
+      const nameKey = ['name', 'title', 'option', 'airline', 'product', 'store', 'hotel'].find((k) => row[k] !== undefined && row[k] !== null) ?? entries[0]?.[0];
+      const priceKey = ['price', 'price_cents', 'cost', 'fare', 'total', 'amount'].find((k) => row[k] !== undefined && row[k] !== null);
+      const name = nameKey ? String(row[nameKey]) : 'Option';
+      const price = priceKey !== undefined ? String(row[priceKey]) : null;
+      const rest = entries.filter(([k]) => k !== nameKey && k !== priceKey && k !== linkEntry?.[0]).slice(0, 4);
+      const link = linkEntry ? String(row[linkEntry[0]]) : null;
+      return `<div class="cmp-card">
+        <div class="cmp-head"><b>${esc(name)}</b>${price ? `<span class="cmp-price">${esc(price)}</span>` : ''}</div>
+        ${rest.map(([k, v]) => `<div class="cmp-row"><span>${esc(String(k).replace(/_/g, ' '))}</span><b>${esc(String(v).slice(0, 80))}</b></div>`).join('')}
+        ${link && /^https:?:\/\//i.test(link) ? `<a class="cmp-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Official source ↗</a>` : '<span class="cmp-link cmp-nolink">No official link provided</span>'}
+      </div>`;
+    }).join('');
+    root.innerHTML += `
+      <div class="result-block">
+        <div class="result-meta"><span>${esc(String(label || 'comparison'))}</span><span>${rows.length} options · links open the official source (nothing is embedded)</span></div>
+        <div class="cmp-grid">${cards}</div>
       </div>`;
   }
 
@@ -277,7 +428,14 @@
     if (typeof payload === 'string' && payload.trim()) {
       if (isFullHtmlDocument(payload)) { renderWebsitePreview(root, payload, null); return; }
       const dataPayload = tryParseJsonTable(payload);
-      if (dataPayload) { renderDataTable(root, dataPayload); return; }
+      if (dataPayload) {
+        // Travel / shopping comparisons: rows carrying official links render
+        // as secure cards + source links (never a fake embedded page).
+        const hasLink = dataPayload.some((row) => ['url', 'link', 'source_url', 'booking_url', 'official_url'].some((k) => typeof row[k] === 'string' && /^https?:\/\//i.test(String(row[k]))));
+        if (hasLink) { renderComparisonCards(root, dataPayload, 'comparison'); return; }
+        renderDataTable(root, dataPayload);
+        return;
+      }
       root.innerHTML = `<div class="result-block"><div class="result-body">${esc(payload)}</div></div>`;
       return;
     }
@@ -286,6 +444,24 @@
       // payload is stated exactly as that — never replaced by a knowledge
       // or tool state, never fabricated.
       root.innerHTML = `<div class="state-card state-ok"><h4>Completed</h4><p>The execution finished successfully, but no result content was attached to it.</p></div>`;
+      return;
+    }
+
+    // Image result: a real produced/attached image (display + export).
+    if (payload.type === 'image_result' && (payload.url || payload.src)) {
+      renderImagePreview(root, payload);
+      return;
+    }
+
+    // Document result: the real document text (preview + download).
+    if ((payload.type === 'document_result' || payload.type === 'document') && typeof (payload.content || payload.text) === 'string') {
+      renderDocumentPreview(root, payload);
+      return;
+    }
+
+    // Business interactive form: a real fillable form from the result.
+    if (payload.type === 'business_form' && Array.isArray(payload.fields)) {
+      renderBusinessForm(root, payload);
       return;
     }
 
@@ -1289,6 +1465,9 @@
     });
 
     $('#master-form').addEventListener('submit', runMaster);
+    $('#master-attachment-input')?.addEventListener('change', (event) => void handleMasterAttachments(event.target));
+    $('#master-project')?.addEventListener('change', () => void loadMasterWorkspace());
+    bindVoiceInput();
     $('#project-form').addEventListener('submit', createProject);
     $('#knowledge-form').addEventListener('submit', searchKnowledge);
     $('#refresh-dashboard').addEventListener('click', () => navigate());
@@ -1364,7 +1543,7 @@
     if (taskMatch) { showScreen('task'); await loadTaskDetail(taskMatch[1]); return; }
     if (view.split('?')[0] === 'oauth/callback') { await handleOAuthCallback(view); return; }
     if (view === 'dashboard') { showScreen('dashboard'); await loadDashboard(); return; }
-    if (view === 'master') { showScreen('master'); await loadProjects(); void loadMasterInfo(); return; }
+    if (view === 'master') { showScreen('master'); await loadProjects(); void loadMasterInfo(); void loadMasterWorkspace(); return; }
     if (view === 'agents') { showScreen('agents'); await loadAgentWorld(); return; }
     if (view === 'factory') { showScreen('factory'); await loadFactory(); return; }
     if (view === 'marketplace') { showScreen('marketplace'); await loadMarketplace(); return; }
@@ -1949,7 +2128,30 @@
         <button type="button" class="btn btn-sm" id="artifact-revert">Undo to selected</button>
         <a class="btn btn-sm" href="/api/projects/${encodeURIComponent(projectId)}/artifacts/website/download" download>Export</a>
         <a class="btn btn-sm" href="/api/projects/${encodeURIComponent(projectId)}/artifacts/website/v/${esc(String(artifact.version))}" target="_blank" rel="noopener">Open v${esc(String(artifact.version))} ↗</a>
+        <button type="button" class="btn btn-ghost btn-sm" id="artifact-rename" title="Rename the current version">Rename</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="artifact-delete" title="Delete the selected version (history stays append-only otherwise; deletion is audited)">Delete v</button>
       </div>`;
+    $('#artifact-rename')?.addEventListener('click', async () => {
+      const title = window.prompt('New title for the current website version', String(artifact.title || ''));
+      if (!title || !title.trim()) return;
+      try {
+        await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`, { method: 'PATCH', body: JSON.stringify({ title: title.trim() }) });
+        toast(`Renamed the current website version`, 'ok');
+        await renderProjectArtifactBar(projectId);
+      } catch (e) { toast(e.message, 'err'); }
+    });
+    $('#artifact-delete')?.addEventListener('click', async () => {
+      const target = Number($('#artifact-version-select').value);
+      if (!window.confirm(`Delete version v${target}? This removes that version from history (audited). This cannot be undone.`)) return;
+      try {
+        await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website/v/${target}`, { method: 'DELETE' });
+        toast(`Deleted v${target}`, 'ok');
+        await renderProjectArtifactBar(projectId);
+        const refreshed = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`);
+        if (refreshed?.artifact) renderMasterResult(true, { sections: [{ status: 'completed', content: refreshed.artifact.content, specialization: `Project website v${refreshed.artifact.version}` }], executiveSummary: `Current website after deleting v${target}.` });
+        else clearMasterResult();
+      } catch (e) { toast(e.message, 'err'); }
+    });
     $('#artifact-revert').addEventListener('click', async () => {
       const target = Number($('#artifact-version-select').value);
       if (!target || target === Number(artifact.version)) { toast('That is already the current version', 'err'); return; }
@@ -1968,18 +2170,23 @@
     const goal = $('#master-goal').value.trim();
     if (!goal) return;
     const projectId = $('#master-project').value || null;
+    const attachmentIds = state.masterAttachments.map((a) => a.id);
+    if (attachmentIds.length > 0 && !projectId) { toast('Attachments need a selected project', 'err'); return; }
     $('#master-output').textContent = 'Planning…';
     clearMasterResult();
     setCoreState('thinking', 'planning');
     try {
       // Response shape: { workflow: { id, status }, plan: { intents, steps, notes } }.
-      const plan = await api('/api/workflows/master', { method: 'POST', body: JSON.stringify({ goal, project_id: projectId }) });
+      const plan = await api('/api/workflows/master', { method: 'POST', body: JSON.stringify({ goal, project_id: projectId, ...(attachmentIds.length ? { attachment_file_ids: attachmentIds } : {}) }) });
       renderPlan(plan);
       const workflowId = plan?.workflow?.id;
       if (!workflowId) throw new Error('Planning succeeded but no workflow id was returned');
       $('#master-output').innerHTML += `\n\nStarting workflow ${esc(workflowId)}…`;
       setCoreState('executing', 'executing');
-      await api(`/api/workflows/${workflowId}/run`, { method: 'POST', body: JSON.stringify({}) });
+      await api(`/api/workflows/${workflowId}/run`, { method: 'POST', body: JSON.stringify(attachmentIds.length ? { attachment_file_ids: attachmentIds } : {}) });
+      // The files are claimed by the first specialist task — clear the tray.
+      state.masterAttachments = [];
+      renderMasterAttachments();
       await loadWorkflowProgress(workflowId, projectId);
     } catch (e) {
       $('#master-output').textContent += `\nError: ${e.message}`;
@@ -2152,6 +2359,209 @@
       <div class="info-line"><span>Model providers</span><b>${esc(line)}</b></div>
       <div class="info-line"><span>Free credits</span><b>${esc(creditsLabel())}</b></div>
       ${configured.length ? '' : '<p class="info-note">No model provider is configured on this deployment. Tasks will fail honestly and free credits are refunded automatically.</p>'}`;
+  }
+
+  /* ----- MASTER workspace panes (Build #4): history, files, controls,
+     attachments and voice — all driven by the real APIs. ----- */
+
+  /** Refresh every right/left pane that depends on the selected project. */
+  async function loadMasterWorkspace() {
+    await loadMasterTaskHistory();
+    const projectId = $('#master-project')?.value || null;
+    await renderMasterProjectControls(projectId);
+    await loadMasterFiles(projectId);
+    await renderProjectArtifactBar(projectId);
+    updateAttachmentHint();
+  }
+
+  /** LEFT pane — the user's real recent tasks (click to re-open a result). */
+  async function loadMasterTaskHistory() {
+    const root = $('#master-task-history');
+    if (!root) return;
+    const body = await api('/api/tasks').catch(() => ({ tasks: [] }));
+    const tasks = (body.tasks || []).slice(0, 8);
+    if (!tasks.length) {
+      root.innerHTML = '<div class="list-item"><small>No tasks yet — run your first goal.</small></div>';
+      return;
+    }
+    root.innerHTML = tasks.map((t) => `
+      <button type="button" class="list-item list-item-btn" data-task="${esc(t.id)}">
+        <div><b>${esc(String(t.title || t.goal || t.id).slice(0, 60))}</b><small>${esc(String(t.status || ''))}</small></div>
+        ${badge(t.status)}
+      </button>`).join('');
+    $$('[data-task]', root).forEach((btn) => btn.addEventListener('click', () => loadMasterTaskResult(btn.dataset.task)));
+  }
+
+  /** Re-open a past task's real result on the MASTER canvas. */
+  async function loadMasterTaskResult(taskId) {
+    try {
+      const body = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
+      const task = body.task || {};
+      let parsed = null;
+      if (task.output_data) { try { parsed = JSON.parse(task.output_data); } catch { parsed = null; } }
+      $('#master-output').textContent = `Task ${taskId} — ${task.status || ''}`;
+      if (task.status === 'completed') {
+        const payload = parsed && typeof parsed === 'object' ? parsed : (parsed ?? String(task.output_data || ''));
+        renderMasterResult(true, payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : { content: String(task.output_data || '') });
+      } else {
+        renderMasterResult(false, { message: task.error_message || `Task ${task.status}` });
+      }
+      const projectId = task.project_id || $('#master-project')?.value || null;
+      if (projectId) await renderProjectArtifactBar(projectId);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  /** RIGHT pane — project controls (real project state + actions). */
+  async function renderMasterProjectControls(projectId) {
+    const root = $('#master-project-controls');
+    if (!root) return;
+    if (!projectId) {
+      root.innerHTML = '<p class="sub">No project selected — results still run, but websites, files and versions need a project.</p>';
+      return;
+    }
+    const body = await api(`/api/projects/${encodeURIComponent(projectId)}`).catch(() => null);
+    const project = body?.project;
+    if (!project) {
+      root.innerHTML = '<p class="sub">Project unavailable.</p>';
+      return;
+    }
+    root.innerHTML = `
+      <div class="pc-row"><span>Project</span><b>${esc(project.name)}</b></div>
+      <div class="pc-row"><span>Status</span><b>${esc(String(project.status || 'active'))}</b></div>
+      <a class="btn btn-outline btn-sm" href="#/workspace">Open workspace ↗</a>`;
+  }
+
+  /** RIGHT pane — real project files (auth-fetched preview/download). */
+  async function loadMasterFiles(projectId) {
+    const root = $('#master-files');
+    if (!root) return;
+    if (!projectId) {
+      root.innerHTML = '<div class="list-item"><small>Select a project to see its files.</small></div>';
+      return;
+    }
+    const body = await api(`/api/projects/${encodeURIComponent(projectId)}`).catch(() => null);
+    const files = (body?.files || []).slice(0, 10);
+    if (!files.length) {
+      root.innerHTML = '<div class="list-item"><small>No files yet — attach files to a MASTER goal.</small></div>';
+      return;
+    }
+    root.innerHTML = files.map((f) => `
+      <div class="list-item file-item" data-file="${esc(f.id)}" data-mime="${esc(String(f.mime_type || ''))}">
+        <div><b>${esc(String(f.original_name || f.id))}</b><small>${esc(String(f.mime_type || 'file'))}</small></div>
+        <div class="file-actions"><button type="button" class="btn btn-ghost btn-sm" data-preview="${esc(f.id)}">Preview</button><button type="button" class="btn btn-ghost btn-sm" data-download="${esc(f.id)}" data-name="${esc(String(f.original_name || 'file'))}">Download</button></div>
+      </div>`).join('');
+    $$('[data-download]', root).forEach((btn) => btn.addEventListener('click', () => authedDownload(`/api/files/${btn.dataset.download}`, btn.dataset.name)));
+    $$('[data-preview]', root).forEach((btn) => btn.addEventListener('click', () => {
+      const item = btn.closest('.file-item');
+      const mime = item?.dataset.mime || '';
+      if (mime.startsWith('image/')) {
+        renderMasterResult(true, { type: 'image_result', url: `/api/files/${btn.dataset.preview}`, filename: 'project-file' });
+      } else {
+        authedDownload(`/api/files/${btn.dataset.preview}`, 'preview');
+      }
+    }));
+  }
+
+  /** Download an auth-protected file with the real bearer token. */
+  async function authedDownload(path, filename) {
+    try {
+      const response = await fetch(path, { headers: state.accessToken ? { authorization: `Bearer ${state.accessToken}` } : {} });
+      if (!response.ok) throw new Error(`download failed (${response.status})`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename || 'akbaral-file';
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  /** Attachments tray: real uploads into the selected project. */
+  function updateAttachmentHint() {
+    const hint = $('#master-attachment-hint');
+    if (!hint) return;
+    const projectId = $('#master-project')?.value || null;
+    hint.textContent = projectId
+      ? `Files upload into the selected project and travel with your next goal (${state.masterAttachments.length} attached).`
+      : 'Select a project to attach files.';
+  }
+
+  function renderMasterAttachments() {
+    const root = $('#master-attachments');
+    if (!root) return;
+    root.innerHTML = state.masterAttachments.map((a) => `
+      <div class="list-item attach-item">
+        <div><b>${esc(a.name)}</b><small>attached</small></div>
+        <button type="button" class="btn btn-ghost btn-sm" data-detach="${esc(a.id)}">Remove</button>
+      </div>`).join('');
+    $$('[data-detach]', root).forEach((btn) => btn.addEventListener('click', () => {
+      state.masterAttachments = state.masterAttachments.filter((a) => a.id !== btn.dataset.detach);
+      renderMasterAttachments();
+      updateAttachmentHint();
+    }));
+    updateAttachmentHint();
+  }
+
+  async function handleMasterAttachments(input) {
+    const files = Array.from(input.files || []);
+    const projectId = $('#master-project')?.value || null;
+    if (!files.length) return;
+    if (!projectId) { toast('Select a project first — attachments upload into the project', 'err'); input.value = ''; return; }
+    for (const file of files.slice(0, 5)) {
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const response = await fetch(`/api/files/projects/${encodeURIComponent(projectId)}/files`, {
+          method: 'POST',
+          headers: state.accessToken ? { authorization: `Bearer ${state.accessToken}` } : {},
+          body: form,
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body?.error?.message || `upload failed (${response.status})`);
+        const fileId = body?.file?.fileId || body?.file?.id;
+        if (!fileId) throw new Error('upload succeeded but no file id returned');
+        state.masterAttachments.push({ id: fileId, name: file.name });
+      } catch (e) { toast(`${file.name}: ${e.message}`, 'err'); }
+    }
+    input.value = '';
+    renderMasterAttachments();
+  }
+
+  /** Voice input (Build #4 §1): the browser's real SpeechRecognition when
+   *  available; hidden entirely when the browser does not support it. */
+  function bindVoiceInput() {
+    const button = $('#master-voice');
+    const note = $('#master-voice-note');
+    if (!button) return;
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) return; // stays hidden — no fake control
+    button.hidden = false;
+    let listening = false;
+    button.addEventListener('click', () => {
+      if (listening) return;
+      const recognition = new Ctor();
+      recognition.lang = document.documentElement?.lang || 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      listening = true;
+      button.classList.add('active');
+      if (note) { note.hidden = false; note.textContent = 'Listening… speak now'; }
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results || []).map((r) => String(r[0]?.transcript || '')).join(' ').trim();
+        if (transcript) {
+          const area = $('#master-goal');
+          area.value = `${area.value ? `${area.value.trim()} ` : ''}${transcript}`;
+        }
+      };
+      recognition.onerror = () => { if (note) note.textContent = 'Voice input unavailable right now'; };
+      recognition.onend = () => {
+        listening = false;
+        button.classList.remove('active');
+        if (note) { note.hidden = true; }
+      };
+      try { recognition.start(); } catch { listening = false; button.classList.remove('active'); }
+    });
   }
 
   async function loadProjects() {
@@ -2579,6 +2989,15 @@
       ['Pending (not income)', money((dashboard.revenueStates || {}).pendingCents), 'awaiting evidence'],
       ['Expected (estimate)', money((dashboard.revenueStates || {}).expectedCents), 'never counted as income'],
     ].map(([label, value, note]) => `<div class="stat"><span class="stat-label">${label}</span><strong class="stat-value">${value}</strong><small>${esc(note)}</small></div>`).join('');
+    const p = dashboard.platform || {};
+    const costMix = Object.entries(p.costsByCategoryCents || {});
+    $('#economy-platform').innerHTML = `
+      <div class="stat-grid">
+        <div class="stat"><span class="stat-label">Registry agents</span><strong class="stat-value">${Number(p.registryTotal ?? 0).toLocaleString()}</strong><small>${Number(p.registryActive ?? 0).toLocaleString()} active · ${Number(p.registryInactive ?? 0).toLocaleString()} inactive</small></div>
+        <div class="stat"><span class="stat-label">Tasks (lifetime)</span><strong class="stat-value">${Number(p.tasksTotal ?? 0).toLocaleString()}</strong><small>${Number(p.tasksCompleted ?? 0).toLocaleString()} completed · ${Number(p.tasksFailed ?? 0).toLocaleString()} failed · ${Number(p.tasksActive ?? 0).toLocaleString()} active</small></div>
+        <div class="stat"><span class="stat-label">Settlements</span><strong class="stat-value">${money(p.settlementsTotalCents)}</strong><small>ledger total</small></div>
+      </div>
+      ${costMix.length ? `<table class="econ-table"><thead><tr><th>Cost category</th><th>Total</th></tr></thead><tbody>${costMix.map(([category, cents]) => `<tr><td>${esc(String(category).replace(/_/g, ' '))}</td><td>${money(cents)}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No costs recorded yet — $0 honestly.</p>'}`;
     loadMissionChat().catch(() => {});
     $('#economy-today').innerHTML = today.chronology.length
       ? `<ol class="econ-chronology">${today.chronology.map((e) => `<li><small>${esc(new Date(e.ts).toLocaleTimeString())} · ${esc(e.kind)} · ${esc(e.actor)}</small><div>${esc(e.summary)}</div></li>`).join('')}</ol>`
@@ -2687,7 +3106,16 @@
       const thread = event.target.closest('[data-thread]');
       if (!thread) return;
       $('#mission-agent').value = thread.getAttribute('data-thread');
-      loadMissionChat().catch(() => {});
+      const p = dashboard.platform || {};
+    const costMix = Object.entries(p.costsByCategoryCents || {});
+    $('#economy-platform').innerHTML = `
+      <div class="stat-grid">
+        <div class="stat"><span class="stat-label">Registry agents</span><strong class="stat-value">${Number(p.registryTotal ?? 0).toLocaleString()}</strong><small>${Number(p.registryActive ?? 0).toLocaleString()} active · ${Number(p.registryInactive ?? 0).toLocaleString()} inactive</small></div>
+        <div class="stat"><span class="stat-label">Tasks (lifetime)</span><strong class="stat-value">${Number(p.tasksTotal ?? 0).toLocaleString()}</strong><small>${Number(p.tasksCompleted ?? 0).toLocaleString()} completed · ${Number(p.tasksFailed ?? 0).toLocaleString()} failed · ${Number(p.tasksActive ?? 0).toLocaleString()} active</small></div>
+        <div class="stat"><span class="stat-label">Settlements</span><strong class="stat-value">${money(p.settlementsTotalCents)}</strong><small>ledger total</small></div>
+      </div>
+      ${costMix.length ? `<table class="econ-table"><thead><tr><th>Cost category</th><th>Total</th></tr></thead><tbody>${costMix.map(([category, cents]) => `<tr><td>${esc(String(category).replace(/_/g, ' '))}</td><td>${money(cents)}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No costs recorded yet — $0 honestly.</p>'}`;
+    loadMissionChat().catch(() => {});
     });
   }
 

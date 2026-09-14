@@ -7,6 +7,7 @@ import {
   createAgent,
   createAgentExecution,
   createTask,
+  db,
   findAgentBySlug,
   findProjectById,
   findTaskById,
@@ -215,6 +216,8 @@ export function createAgentTask(input: {
   agentSlug: string;
   goal: string;
   projectId?: string | null;
+  /** Owner-verified file ids to attach to the created task (Build #4 §1). */
+  attachmentFileIds?: string[];
 }): DispatchedTask {
   assertEmergencyStopDisabled();
   const account = getCreditAccount(input.userId);
@@ -249,6 +252,18 @@ export function createAgentTask(input: {
     agentId: agent.id,
     inputData: { goal: input.goal, agentSlug: input.agentSlug },
   });
+
+  // Attach the caller's files to this task (idempotent, ownership-scoped):
+  // only files that belong to the user and are not yet linked to a task are
+  // claimed, so a file can never leak across tasks or tenants.
+  if (input.attachmentFileIds && input.attachmentFileIds.length > 0) {
+    const uniqueIds = [...new Set(input.attachmentFileIds)].slice(0, 5);
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    db.run(
+      `UPDATE files SET task_id = ? WHERE task_id IS NULL AND user_id = ? AND id IN (${placeholders})`,
+      [task.id, input.userId, ...uniqueIds],
+    );
+  }
 
   const consumed = reserveTaskCreditForUser(input.userId, task.id, `reserve task credit for ${input.agentSlug}`);
   if (!consumed) {

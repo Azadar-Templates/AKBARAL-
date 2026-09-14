@@ -41,6 +41,18 @@ export interface EconomyDashboard {
   improvements: number;
   upgrades: number;
   resources: number;
+  /** Build #4 §5: platform-wide real counts (registry, tasks, cost mix). */
+  platform: {
+    registryTotal: number;
+    registryActive: number;
+    registryInactive: number;
+    tasksTotal: number;
+    tasksCompleted: number;
+    tasksFailed: number;
+    tasksActive: number;
+    costsByCategoryCents: Record<string, number>;
+    settlementsTotalCents: number;
+  };
   settlements: ReturnType<typeof listSettlements>;
   securityEvents: Array<{ ts: string; summary: string }>;
   blockedOpportunities: Array<{ id: string; title: string; reason: string }>;
@@ -82,6 +94,25 @@ export function buildDashboard(): EconomyDashboard {
     return { id: row.id, title: row.title, reason };
   });
 
+  // Build #4 §5: platform-wide real counts — every number derived from the
+  // live database, nothing estimated or fabricated.
+  const registry = db.get<{ total: number; active: number }>(
+    "SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM agents",
+  );
+  const tasksStats = db.get<{ total: number; completed: number; failed: number; active: number }>(
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+            SUM(CASE WHEN status IN ('created','queued','running') THEN 1 ELSE 0 END) AS active
+     FROM tasks`,
+  );
+  const costRows = db.all<{ category: string; total: number }>(
+    "SELECT category, SUM(amount_cents) AS total FROM economy_ledger WHERE direction = 'debit' GROUP BY category ORDER BY total DESC",
+  );
+  const settlementRow = db.get<{ total: number }>(
+    "SELECT SUM(amount_cents) AS total FROM economy_ledger WHERE category = 'settlement'",
+  );
+
   return {
     treasury: summary,
     revenueStates: { realizedCents: revenue.realizedCents, pendingCents: revenue.pendingCents, expectedCents: revenue.expectedCents },
@@ -102,6 +133,18 @@ export function buildDashboard(): EconomyDashboard {
         expectedNetCents: o.expected_net_cents, roi: o.roi,
       })),
     },
+    platform: {
+      registryTotal: Number(registry?.total ?? 0),
+      registryActive: Number(registry?.active ?? 0),
+      registryInactive: Number(registry?.total ?? 0) - Number(registry?.active ?? 0),
+      tasksTotal: Number(tasksStats?.total ?? 0),
+      tasksCompleted: Number(tasksStats?.completed ?? 0),
+      tasksFailed: Number(tasksStats?.failed ?? 0),
+      tasksActive: Number(tasksStats?.active ?? 0),
+      costsByCategoryCents: Object.fromEntries(costRows.map((row) => [row.category, Number(row.total)])),
+      settlementsTotalCents: Number(settlementRow?.total ?? 0),
+     },
+
     improvements: listImprovements().length,
     upgrades: listUpgrades().length,
     resources: listResources().length,

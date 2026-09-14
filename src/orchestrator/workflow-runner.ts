@@ -42,6 +42,9 @@ export interface RunWorkflowOptions {
   isCancelled?: () => boolean;
   /** Per-step execution timeout in milliseconds. */
   stepTimeoutMs?: number;
+  /** Owner-verified attachment file ids, claimed by the FIRST specialist
+   *  task (the user's goal attachments; Build #4 §1). */
+  attachmentFileIds?: string[];
 }
 
 export async function runWorkflow(
@@ -162,6 +165,9 @@ export async function runWorkflow(
         agentSlug,
         goal,
         projectId: workflow.project_id ? String(workflow.project_id) : null,
+        ...(stepOrder === 0 && options?.attachmentFileIds?.length
+          ? { attachmentFileIds: options.attachmentFileIds }
+          : {}),
       });
       taskIds.push(dispatch.taskId);
       updateWorkflowStepStatus({ id: String(step.id), status: 'running', taskId: dispatch.taskId });

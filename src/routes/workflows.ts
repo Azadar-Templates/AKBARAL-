@@ -26,6 +26,22 @@ export function createWorkflowsRouter(_stream: ExecutionStream): Router {
       const body = getBody(req);
       const goal = requireString(body, 'goal', 'goal');
       const projectId = optionalString(body, 'project_id');
+      // Attachments (Build #4 §1): every id must belong to the caller and be
+      // unclaimed — validated here so the plan is never created for a request
+      // that could not run with its attachments.
+      const rawAttachmentIds = Array.isArray(body.attachment_file_ids)
+        ? (body.attachment_file_ids as unknown[]).filter((id): id is string => typeof id === 'string')
+        : [];
+      const attachmentFileIds = [...new Set(rawAttachmentIds)].slice(0, 5);
+      if (attachmentFileIds.length > 0) {
+        const owned = db.all<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM files WHERE user_id = ? AND task_id IS NULL AND id IN (${attachmentFileIds.map(() => '?').join(', ')})`,
+          [req.auth!.userId, ...attachmentFileIds],
+        );
+        if (Number((owned[0] as { n: number } | undefined)?.n ?? 0) !== attachmentFileIds.length) {
+          throw new HttpError(400, 'attachment files not found or already attached', 'invalid_request');
+        }
+      }
       try {
         assertEmergencyStopDisabled();
       } catch (error) {
@@ -59,9 +75,25 @@ export function createWorkflowsRouter(_stream: ExecutionStream): Router {
       } catch (error) {
         throw businessErrorToHttp(error);
       }
+      // Attachments (Build #4 §1): owner-verified file ids for the first task.
+      const runBody = getBody(req);
+      const rawIds = Array.isArray(runBody?.attachment_file_ids)
+        ? (runBody.attachment_file_ids as unknown[]).filter((id): id is string => typeof id === 'string')
+        : [];
+      const attachmentFileIds = [...new Set(rawIds)].slice(0, 5);
+      if (attachmentFileIds.length > 0) {
+        const owned = db.all<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM files WHERE user_id = ? AND task_id IS NULL AND id IN (${attachmentFileIds.map(() => '?').join(', ')})`,
+          [req.auth!.userId, ...attachmentFileIds],
+        );
+        if (Number((owned[0] as { n: number } | undefined)?.n ?? 0) !== attachmentFileIds.length) {
+          throw new HttpError(400, 'attachment files not found or already attached', 'invalid_request');
+        }
+      }
       const { job } = executionQueue.enqueueWorkflow({
         workflowId: req.params.id,
         userId: req.auth!.userId,
+        ...(attachmentFileIds.length > 0 ? { attachmentFileIds } : {}),
       });
       res.status(202).json({
         workflow: { id: req.params.id, status: job.status === 'queued' ? 'running' : job.status },

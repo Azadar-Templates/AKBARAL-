@@ -541,16 +541,25 @@ export default function Home() {
           MASTER AI</h1><p className="sub">Describe a goal. MASTER plans, picks specialists and runs the workflow.</p></div><div className="master-core" id="master-core" data-state="idle" role="status" aria-label="MASTER core status"><div className="core-ring r1"></div><div className="core-ring r2"></div><div className="core-spark"></div><span className="master-core-label" id="master-core-label">
 
 
-            idle</span></div></div><div className="master-layout"><div className="master-side"><div className="panel master-panel"><form id="master-form"><label>
+            idle</span></div></div><div className="master-layout">
+          {/* LEFT — conversation: goal input, attachments, voice, project, history */}
+          <div className="master-side"><div className="panel master-panel"><form id="master-form"><label>
+            Goal<textarea id="master-goal" rows={ 4 } placeholder="e.g. Build me a website · Research this · Find cheap flights · Plan my business" required defaultValue="" /></label><div className="form-row voice-row"><button type="button" className="btn btn-ghost btn-sm" id="master-voice" hidden title="Dictate your goal">
 
-
-            Goal<textarea id="master-goal" rows={ 4 } placeholder="e.g. Research the Pakistani AI market and build a go-to-market plan." required defaultValue="" /></label><div className="form-row"><label>
-
-
+            Voice input</button><span className="sub" id="master-voice-note" hidden></span></div><div className="form-row"><label>
               Project <select id="master-project"><option value="">— none —</option></select></label><button className="btn btn-primary" id="master-plan-btn" type="submit">
-              Plan &amp; run</button></div></form></div><div className="panel master-info" id="master-info"><h3>
-            Environment</h3><div id="master-info-body" className="master-info-body"><div className="info-line"><span>Model providers</span><b>Loading…</b></div></div></div></div><div className="panel master-console-panel"><div className="master-console-head"><b>
-            Execution console</b><span id="master-console-state" className="console-state">idle</span></div><div id="master-output" className="output master-console" aria-live="polite"><div className="console-hint">Describe a goal and run MASTER. Plans, specialist execution, live logs and verified results stream here.</div></div><div className="artifact-bar-host" id="master-artifact-bar" hidden></div><div id="master-result" hidden></div></div></div></div></section>
+            Plan &amp; run</button></div><div className="attach-block"><label className="btn btn-outline btn-sm" htmlFor="master-attachment-input">
+
+            Attach files</label><input type="file" id="master-attachment-input" multiple hidden /><span className="sub" id="master-attachment-hint">Select a project to attach files.</span><div id="master-attachments" className="attach-list"></div></div></form></div><div className="panel"><h3>
+            Task history</h3><div id="master-task-history" className="list master-history"><div className="list-item"><small>No tasks yet.</small></div></div></div><div className="panel master-info" id="master-info"><h3>
+            Environment</h3><div id="master-info-body" className="master-info-body"><div className="info-line"><span>Model providers</span><b>Loading…</b></div></div></div></div>
+          {/* CENTER — live execution, agent activity, verification, result */}
+          <div className="panel master-console-panel"><div className="master-console-head"><b>
+            Execution console</b><span id="master-console-state" className="console-state">idle</span></div><div id="master-output" className="output master-console" aria-live="polite"><div className="console-hint">Describe a goal and run MASTER. Plans, specialist execution, live logs and verified results stream here.</div></div><div id="master-result" hidden></div></div>
+          {/* RIGHT — dynamic preview canvas, versions, assets, project controls */}
+          <div className="master-canvas"><div className="panel"><div className="master-console-head"><b>
+            Preview &amp; assets</b><span className="console-state" id="master-canvas-state">idle</span></div><div id="master-project-controls" className="project-controls"></div><div className="artifact-bar-host" id="master-artifact-bar" hidden></div><h4 className="canvas-label">
+            Project files</h4><div id="master-files" className="list master-files"><div className="list-item"><small>Select a project to see its files.</small></div></div></div></div></div></div></section>
 
       {/* ================= Task Center (detail) ================= */}
       <section className="screen screen-default" id="screen-task" hidden><div className="aw-container"><div id="task-detail-root"></div></div></section>
@@ -674,6 +683,8 @@ export default function Home() {
       <section className="screen screen-default" id="screen-economy" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Private"></p><h1>
 
         Private Owner Console</h1><p className="sub">Private operations — owner account only. Realized revenue, treasury, opportunities and autonomous operation controls.</p></div></div><div className="stat-grid" id="economy-stats" aria-live="polite"></div><div className="stat-grid" id="economy-windows" aria-live="polite"></div><div className="panel"><h3>
+
+        Platform (registry · tasks · cost mix)</h3><div id="economy-platform" className="econ-list"></div></div><div className="panel"><h3>
 
         Private economy activity today</h3><div id="economy-today" className="econ-today"></div></div><div className="panel"><h3>
         Mission chat (owner ↔ agent)</h3><div className="econ-controls"><input id="mission-agent" placeholder="agent slug, e.g. web-research-001" aria-label="Agent slug" /><input id="mission-input" placeholder="Message the agent — ask about status, earnings, costs, capabilities" aria-label="Mission message" /><button className="btn btn-primary" id="mission-send" type="button">

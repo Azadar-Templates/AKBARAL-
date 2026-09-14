@@ -297,6 +297,10 @@ function loadPreviewRenderers(): {
   tryParseJsonTable: (value: unknown) => unknown[] | null;
   renderWebsitePreview: (root: { innerHTML: string }, html: string, meta: unknown) => void;
   renderDataTable: (root: { innerHTML: string }, rows: Array<Record<string, unknown>>) => void;
+  renderImagePreview: (root: { innerHTML: string }, image: { url?: string; src?: string; filename?: string; alt?: string }) => void;
+  renderDocumentPreview: (root: { innerHTML: string }, doc: { title?: string; filename?: string; content?: string; text?: string }) => void;
+  renderBusinessForm: (root: { innerHTML: string }, form: { title?: string; fields?: Array<Record<string, unknown>> }) => void;
+  renderComparisonCards: (root: { innerHTML: string }, rows: Array<Record<string, unknown>>, label?: string) => void;
 } {
   const source = [
     extractFunction('esc'),
@@ -304,15 +308,29 @@ function loadPreviewRenderers(): {
     extractFunction('tryParseJsonTable'),
     extractFunction('renderWebsitePreview'),
     extractFunction('renderDataTable'),
-    'module.exports = { isFullHtmlDocument, tryParseJsonTable, renderWebsitePreview, renderDataTable };',
+    extractFunction('renderImagePreview'),
+    extractFunction('renderDocumentPreview'),
+    extractFunction('renderBusinessForm'),
+    extractFunction('renderComparisonCards'),
+    'module.exports = { isFullHtmlDocument, tryParseJsonTable, renderWebsitePreview, renderDataTable, renderImagePreview, renderDocumentPreview, renderBusinessForm, renderComparisonCards };',
   ].join('\n\n');
   const module = { exports: {} as Record<string, unknown> };
-  vm.runInNewContext(source, { module, console, ...VM_DOM_STUBS });
+  vm.runInNewContext(source, {
+    module,
+    console,
+    ...VM_DOM_STUBS,
+    state: { accessToken: 'test-token' },
+    fetch: () => Promise.resolve({ ok: true, blob: () => Promise.resolve(new VM_DOM_STUBS.Blob()) }),
+  });
   return module.exports as unknown as {
     isFullHtmlDocument: (value: unknown) => boolean;
     tryParseJsonTable: (value: unknown) => unknown[] | null;
     renderWebsitePreview: (root: { innerHTML: string }, html: string, meta: unknown) => void;
     renderDataTable: (root: { innerHTML: string }, rows: Array<Record<string, unknown>>) => void;
+    renderImagePreview: (root: { innerHTML: string }, image: { url?: string; src?: string; filename?: string; alt?: string }) => void;
+    renderDocumentPreview: (root: { innerHTML: string }, doc: { title?: string; filename?: string; content?: string; text?: string }) => void;
+    renderBusinessForm: (root: { innerHTML: string }, form: { title?: string; fields?: Array<Record<string, unknown>> }) => void;
+    renderComparisonCards: (root: { innerHTML: string }, rows: Array<Record<string, unknown>>, label?: string) => void;
   };
 }
 
@@ -375,5 +393,76 @@ describe('PART 2 preview renderers (website + data)', () => {
     assert.ok(styles.includes('.artifact-bar'), 'artifact bar styles exist');
     // The preview iframe is srcdoc-driven — never a src to an external page.
     assert.ok(appJs.includes('.srcdoc'), 'content flows through srcdoc (no external embedding)');
+  });
+});
+
+/* ============================================================================
+   Build #4 §2 renderer contracts: image, document, business form,
+   comparison cards (official links, never fake embeds) and the data chart.
+   ============================================================ */
+
+describe('Build #4 preview renderers (image / document / form / comparison / chart)', () => {
+  it('image results render a real <img> with download; nothing is fabricated', () => {
+    const { renderImagePreview } = loadPreviewRenderers();
+    const root = { innerHTML: '' };
+    renderImagePreview(root, { url: '/api/files/file_123', filename: 'poster.png' });
+    assert.ok(root.innerHTML.includes('<img'), 'an actual image element renders');
+    assert.ok(root.innerHTML.includes('Download'), 'export action present');
+    assert.ok(!root.innerHTML.includes('<iframe'), 'no fake embedding of images');
+  });
+
+  it('document results render the real text with an honest content-typed download', () => {
+    const { renderDocumentPreview } = loadPreviewRenderers();
+    const root = { innerHTML: '' };
+    renderDocumentPreview(root, { title: 'Q4 plan', content: '# Q4 Plan\n\nShip the workspace.' });
+    assert.ok(root.innerHTML.includes('Q4 Plan'), 'document title visible');
+    assert.ok(root.innerHTML.includes('Download .md'), 'markdown download offered');
+    const htmlRoot = { innerHTML: '' };
+    renderDocumentPreview(htmlRoot, { title: 'site', content: '<!doctype html><html><body>x</body></html>' });
+    assert.ok(htmlRoot.innerHTML.includes('Download .html'), 'HTML documents export as .html');
+  });
+
+  it('business forms are genuinely fillable and produce a downloadable result', () => {
+    const { renderBusinessForm } = loadPreviewRenderers();
+    const root = { innerHTML: '' };
+    renderBusinessForm(root, { title: 'Onboarding', fields: [
+      { label: 'Company', type: 'text' },
+      { label: 'Seats', type: 'number' },
+      { label: 'Plan', type: 'select', options: ['Starter', 'Pro'] },
+    ] });
+    assert.ok(root.innerHTML.includes('bf-form'), 'a real form renders');
+    assert.ok(root.innerHTML.includes('<select'), 'select options render');
+    assert.ok(root.innerHTML.includes('<input'), 'text/number inputs render');
+    assert.ok(root.innerHTML.includes('Complete form'), 'submit action present');
+  });
+
+  it('comparison cards link the OFFICIAL source and never fake an embed', () => {
+    const { renderComparisonCards } = loadPreviewRenderers();
+    const root = { innerHTML: '' };
+    renderComparisonCards(root, [
+      { airline: 'PIA', price: 'PKR 42,000', booking_url: 'https://piac.example.com/book' },
+      { airline: 'Emirates', price: 'PKR 95,000', booking_url: 'https://emirates.example.com' },
+    ], 'flights');
+    assert.ok(root.innerHTML.includes('cmp-card'), 'cards render');
+    assert.ok(root.innerHTML.includes('Official source'), 'official links labelled');
+    assert.ok(root.innerHTML.includes('rel="noopener noreferrer"'), 'links are sandboxed outbound');
+    assert.ok(!root.innerHTML.includes('<iframe'), 'external pages are NEVER embedded');
+    // A row without a link says so honestly.
+    const noLink = { innerHTML: '' };
+    renderComparisonCards(noLink, [{ name: 'Option A' }], 'compare');
+    assert.ok(noLink.innerHTML.includes('No official link provided'), 'missing links disclosed, not invented');
+  });
+
+  it('data tables with a numeric column include an honest bar chart of the real values', () => {
+    const { renderDataTable } = loadPreviewRenderers();
+    const root = { innerHTML: '' };
+    renderDataTable(root, [
+      { city: 'Karachi', sales: 900 },
+      { city: 'Lahore', sales: 300 },
+      { city: 'Islamabad', sales: 600 },
+    ]);
+    assert.ok(root.innerHTML.includes('bar-chart'), 'chart renders');
+    assert.ok(root.innerHTML.includes('width:100%'), 'the largest real value gets the full bar');
+    assert.ok(root.innerHTML.includes('Karachi'), 'real labels used');
   });
 });

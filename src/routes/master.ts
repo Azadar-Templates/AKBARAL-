@@ -31,6 +31,21 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
       const goal = requireString(body, 'goal', 'goal');
       const projectId = optionalString(body, 'project_id');
       const autoRun = body.auto_run === undefined ? true : Boolean(body.auto_run);
+      // Attachments (Build #4 §1): owner-verified file ids — every id must
+      // belong to the caller and not be claimed by another task yet.
+      const rawAttachmentIds = Array.isArray(body.attachment_file_ids)
+        ? (body.attachment_file_ids as unknown[]).filter((id): id is string => typeof id === 'string')
+        : [];
+      const attachmentFileIds = [...new Set(rawAttachmentIds)].slice(0, 5);
+      if (attachmentFileIds.length > 0) {
+        const owned = db.all<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM files WHERE user_id = ? AND task_id IS NULL AND id IN (${attachmentFileIds.map(() => '?').join(', ')})`,
+          [req.auth!.userId, ...attachmentFileIds],
+        );
+        if (Number((owned[0] as { n: number } | undefined)?.n ?? 0) !== attachmentFileIds.length) {
+          throw new HttpError(400, 'attachment files not found or already attached', 'invalid_request');
+        }
+      }
 
       try {
         assertEmergencyStopDisabled();
@@ -58,6 +73,7 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
         const { job } = executionQueue.enqueueWorkflow({
           workflowId: planned.workflowId,
           userId: req.auth!.userId,
+          ...(attachmentFileIds.length > 0 ? { attachmentFileIds } : {}),
         });
         jobInfo = { id: job.id, status: job.status, attempts: job.attempts, maxAttempts: job.max_attempts };
       }

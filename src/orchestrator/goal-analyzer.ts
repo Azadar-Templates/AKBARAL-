@@ -65,6 +65,19 @@ export const INTENT_RULES: Array<{
   keywords: string[];
 }> = [
   { keys: 'website', label: 'Build a website', categorySlug: 'web-development', roleKeys: ['strategist', 'builder', 'validator'], keywords: ['website', 'web', 'landing page', 'site'] },
+  // Build #4 (2026-09-14): the nine headline goals of the MASTER workspace
+  // must route to their real specialist categories even in the deterministic
+  // (no-provider) fallback — image, document, travel/flight, shopping,
+  // business planning, maps and data analysis previously fell through to the
+  // generic research intent.
+  { keys: 'image', label: 'Create an image', categorySlug: 'image-generation', roleKeys: ['designer', 'builder'], keywords: ['create an image', 'generate an image', 'image of', 'illustration', 'picture of', 'draw', 'render an image'] },
+  { keys: 'image-edit', label: 'Edit an image', categorySlug: 'image-editing', roleKeys: ['editor', 'designer'], keywords: ['edit the image', 'photo editing', 'retouch', 'remove the background'] },
+  { keys: 'document', label: 'Create a document', categorySlug: 'documents', roleKeys: ['author', 'editor'], keywords: ['document', 'write a doc', 'draft a memo', 'pdf', 'whitepaper', 'ebook'] },
+  { keys: 'travel', label: 'Plan travel & flights', categorySlug: 'travel', roleKeys: ['planner', 'researcher'], keywords: ['flight', 'flights', 'airline', 'hotel', 'travel', 'trip to', 'itinerary', 'visa'] },
+  { keys: 'shopping', label: 'Compare products & shopping', categorySlug: 'e-commerce', roleKeys: ['analyst', 'researcher'], keywords: ['shopping', 'compare products', 'these products', 'compare product', 'product comparison', 'best price', 'cheapest', 'where to buy', 'shop for'] },
+  { keys: 'business-plan', label: 'Plan my business', categorySlug: 'business-strategy', roleKeys: ['strategist', 'planner'], keywords: ['business plan', 'my business', 'business model', 'business strategy', 'start a business', 'startup plan'] },
+  { keys: 'maps', label: 'Maps & local search', categorySlug: 'maps-local-business', roleKeys: ['researcher', 'analyst'], keywords: ['map', 'nearby', 'near me', 'local business', 'directions to'] },
+  { keys: 'data', label: 'Analyze data', categorySlug: 'data-analysis', roleKeys: ['analyst', 'researcher'], keywords: ['analyze data', 'analysis of the data', 'dataset', 'data table', 'spreadsheet', 'csv'] },
   { keys: 'software', label: 'Build software', categorySlug: 'software-engineering', roleKeys: ['architect', 'builder', 'validator'], keywords: ['software', 'app', 'code', 'develop'] },
   { keys: 'mobile', label: 'Build mobile app', categorySlug: 'mobile-development', roleKeys: ['strategist', 'architect', 'validator'], keywords: ['mobile', 'ios', 'android', 'flutter', 'react native'] },
   { keys: 'brand', label: 'Create branding', categorySlug: 'branding', roleKeys: ['strategist', 'designer', 'author'], keywords: ['brand', 'branding', 'identity'] },

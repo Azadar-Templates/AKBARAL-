@@ -1886,6 +1886,38 @@ export function getProjectArtifactByVersion(projectId: string, kind: string, ver
   );
 }
 
+/**
+ * Rename the CURRENT version's title (Build #4 §3). Older versions keep their
+ * historical titles — history stays append-only.
+ */
+export function renameProjectArtifactLatest(projectId: string, kind: string, title: string): ProjectArtifactRow | undefined {
+  const latest = latestProjectArtifact(projectId, kind);
+  if (!latest) return undefined;
+  db.run(
+    'UPDATE project_artifacts SET title = ? WHERE id = ?',
+    [title.slice(0, 200), latest.id],
+  );
+  return getProjectArtifactById(latest.id);
+}
+
+/**
+ * Delete ONE version (Build #4 §3). If the latest version is deleted, the
+ * current version becomes the next-highest remaining version.
+ */
+export function deleteProjectArtifactVersion(projectId: string, kind: string, version: number): boolean {
+  const result = db.run(
+    'DELETE FROM project_artifacts WHERE project_id = ? AND kind = ? AND version = ?',
+    [projectId, kind, version],
+  );
+  return (result.changes ?? 0) > 0;
+}
+
+/** Delete every version of a (project, kind) artifact. */
+export function deleteProjectArtifacts(projectId: string, kind: string): number {
+  const result = db.run('DELETE FROM project_artifacts WHERE project_id = ? AND kind = ?', [projectId, kind]);
+  return result.changes ?? 0;
+}
+
 export function listProjectArtifactVersions(projectId: string, kind: string): Array<Omit<ProjectArtifactRow, 'content'>> {
   return db.all(
     `SELECT id, project_id, user_id, kind, title, version, source_workflow_id, created_at,

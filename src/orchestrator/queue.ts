@@ -69,6 +69,8 @@ interface WorkflowJobPayload {
   workflowId: string;
   /** Per-run timeout override (automations); falls back to the queue default. */
   timeoutMs?: number;
+  /** Owner-verified attachment file ids passed to the first specialist task. */
+  attachmentFileIds?: string[];
 }
 
 const TERMINAL_JOB_STATUSES: ReadonlySet<QueueJobStatus> = new Set([
@@ -167,6 +169,8 @@ export class ExecutionQueue {
     priority?: number;
     maxAttempts?: number;
     timeoutMs?: number;
+    /** Owner-verified attachment file ids passed through to the first task. */
+    attachmentFileIds?: string[];
   }): { job: ExecutionJobRow; created: boolean } {
     const idempotencyKey = `workflow:${input.workflowId}`;
     const duplicate = findJobByIdempotencyKey(idempotencyKey);
@@ -179,6 +183,7 @@ export class ExecutionQueue {
       payload: {
         workflowId: input.workflowId,
         ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+        ...(input.attachmentFileIds?.length ? { attachmentFileIds: input.attachmentFileIds } : {}),
       },
       workflowId: input.workflowId,
       userId: input.userId ?? null,
@@ -396,6 +401,7 @@ export class ExecutionQueue {
       runWorkflow(payload.workflowId, this.stream ?? undefined, {
         isCancelled,
         stepTimeoutMs: this.stepTimeoutMs,
+        attachmentFileIds: payload.attachmentFileIds,
       }),
       timeoutMs,
     );
