@@ -2,9 +2,14 @@
  * Agent #001 — Web Research Agent.
  *
  * Real implementation, not a mock:
- *   - searchWeb(query)         HTTP request to a search endpoint (defaults to
- *                              DuckDuckGo HTML; can be overridden for a proxy
- *                              or a JSON search API via AKBARAL_SEARCH_ENDPOINT).
+ *   - searchWeb(query)         Real search through the configured production
+ *                              provider: a commercial search API key
+ *                              (TAVILY_API_KEY / BRAVE_SEARCH_API_KEY /
+ *                              SERPER_API_KEY / GOOGLE_CSE_API_KEY) selected
+ *                              automatically, an explicit
+ *                              AKBARAL_SEARCH_ENDPOINT (proxy or JSON API), or
+ *                              the keyless DuckDuckGo HTML default. Resolution
+ *                              and transports live in ./search-providers.
  *   - fetchPage(url)           HTTP GET the source URL (or a configured proxy).
  *   - extractText(html)        Transforms HTML into readable text.
  *   - createResearchReport()   Builds a structured research result with the
@@ -39,6 +44,7 @@ export interface ResearchReport {
 }
 
 import { assertProviderHttpUrl, assertAllowedSourceUrl } from '../security/ssrf';
+import { resolveSearchProvider, runProviderSearch } from './search-providers';
 
 export interface WebSearchResult {
   title: string;
@@ -203,6 +209,22 @@ export function extractText(html: string): string {
 }
 
 /**
+ * The provider label that will serve searches for this process — the honest
+ * value reported in research reports and operator status payloads.
+ */
+export function activeSearchProviderLabel(): string {
+  try {
+    const provider = resolveSearchProvider();
+    if (provider.kind === 'endpoint') {
+      return searchEndpoint();
+    }
+    return provider.label;
+  } catch (error) {
+    return `misconfigured search provider (${error instanceof Error ? error.message : String(error)})`;
+  }
+}
+
+/**
  * Search DuckDuckGo HTML (or a JSON-returning search endpoint) for results.
  * The endpoint is configurable so production can use a private search API or a
  * compliant proxy without changing the agent code.
@@ -216,6 +238,15 @@ export async function searchWeb(query: string, limit = 5): Promise<WebSearchResu
     throw new Error('search query must not be empty');
   }
   applySearchRateLimit();
+
+  // Commercial search APIs are used through their own documented transports.
+  const provider = resolveSearchProvider();
+  if (provider.kind !== 'endpoint' && provider.kind !== 'duckduckgo') {
+    return runProviderSearch(provider, sanitized, limit, {
+      attempts: SEARCH_ATTEMPTS,
+      backoffMs: SEARCH_RETRY_BACKOFF_MS,
+    });
+  }
 
   const endpoint = assertProviderHttpUrl(searchEndpoint());
   const url = new URL(endpoint);
@@ -241,14 +272,24 @@ export async function searchWeb(query: string, limit = 5): Promise<WebSearchResu
     // Name the search endpoint host (never a credential) so the failure is
     // actionable: unreachable endpoints are an operator configuration issue.
     const reason = lastError instanceof Error ? lastError.message : String(lastError);
-    throw new Error(`search endpoint ${url.host} unreachable (${reason}); set AKBARAL_SEARCH_ENDPOINT to a reachable search provider`);
+    throw new Error(
+      `search endpoint ${url.host} unreachable (${reason}); configure a production search provider ` +
+        '(TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or SERPER_API_KEY) or set AKBARAL_SEARCH_ENDPOINT to a reachable search API',
+    );
   }
   const contentType = body.trimStart().startsWith('{') ? 'json' : 'html';
-
-  if (contentType === 'json') {
-    return parseJsonResults(body, limit);
+  const results = contentType === 'json' ? parseJsonResults(body, limit) : parseHtmlResults(body, limit);
+  if (results.length === 0) {
+    // Never report an empty-but-successful search: an empty result set here
+    // almost always means the provider answered with a block/consent page
+    // (common for keyless scraping from datacenter IPs). Name the fix.
+    throw new Error(
+      `search provider ${url.host} returned no usable results; configure a production search provider ` +
+        '(TAVILY_API_KEY, BRAVE_SEARCH_API_KEY, SERPER_API_KEY or GOOGLE_CSE_API_KEY/GOOGLE_CSE_ID) ' +
+        'or set AKBARAL_SEARCH_ENDPOINT to a reachable search API',
+    );
   }
-  return parseHtmlResults(body, limit);
+  return results;
 }
 
 function parseHtmlResults(html: string, limit: number): WebSearchResult[] {
@@ -414,7 +455,7 @@ export async function createResearchReport(
     verifiedSources,
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
-    provider: searchEndpoint(),
+    provider: activeSearchProviderLabel(),
   };
 }
 

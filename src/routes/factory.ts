@@ -7,6 +7,19 @@ import { requireRole } from '../server/middleware/rbac';
 import { HttpError, asyncRoute, businessErrorToHttp } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 
+/**
+ * Run a factory operation and map its typed failures to honest HTTP statuses:
+ * 400 invalid input, 403 not the owner, 404 unknown agent/version. Without this
+ * a validation failure reached the client as a generic 500 internal error.
+ */
+function factoryCall<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    throw businessErrorToHttp(error);
+  }
+}
+
 export function createFactoryRouter(): Router {
   const router = Router();
   router.use(requireAuth);
@@ -84,7 +97,7 @@ export function createFactoryRouter(): Router {
     const specialization = requireString(body, 'specialization', 'specialization');
     const description = requireString(body, 'description', 'description');
     const systemInstructions = requireString(body, 'system_instructions', 'system_instructions');
-    const created = agentFactory.create({
+    const created = factoryCall(() => agentFactory.create({
       userId: req.auth!.userId,
       name,
       specialization,
@@ -102,7 +115,7 @@ export function createFactoryRouter(): Router {
       priceCents: Number(body.price_cents ?? 0) || 0,
       categoryId: optionalString(body, 'category_id') ?? null,
       projectId: optionalString(body, 'project_id') ?? null,
-    });
+    }));
     res.status(201).json({ agent: created });
   });
 
@@ -123,27 +136,27 @@ export function createFactoryRouter(): Router {
 
   router.get('/agents/:slug/security', (req: AuthenticatedRequest, res) => {
     const agent = assertManageable(req, req.params.slug);
-    res.status(200).json({ findings: agentFactory.securityReview(agent.slug), slug: agent.slug });
+    res.status(200).json({ findings: factoryCall(() => agentFactory.securityReview(agent.slug)), slug: agent.slug });
   });
 
   router.get('/agents/:slug/benchmark', (req: AuthenticatedRequest, res) => {
     const agent = assertManageable(req, req.params.slug);
-    res.status(200).json({ benchmark: agentFactory.benchmark(agent.slug), slug: agent.slug });
+    res.status(200).json({ benchmark: factoryCall(() => agentFactory.benchmark(agent.slug)), slug: agent.slug });
   });
 
   router.get('/agents/:slug/versions', (req: AuthenticatedRequest, res) => {
     const agent = assertManageable(req, req.params.slug);
-    res.status(200).json({ versions: agentFactory.listVersions(agent.slug) });
+    res.status(200).json({ versions: factoryCall(() => agentFactory.listVersions(agent.slug)) });
   });
 
   router.post('/agents/:slug/version', (req: AuthenticatedRequest, res) => {
     const agent = assertManageable(req, req.params.slug);
     const body = getBody(req);
-    const version = agentFactory.version({
+    const version = factoryCall(() => agentFactory.version({
       userId: req.auth!.userId,
       slug: agent.slug,
       changelog: optionalString(body, 'changelog') ?? undefined,
-    });
+    }));
     res.status(200).json({ version });
   });
 
@@ -164,7 +177,7 @@ export function createFactoryRouter(): Router {
       verificationRules: asStringArray(body.verification_rules),
       securityPermissions: asStringArray(body.security_permissions),
     };
-    const updated = agentFactory.update({ userId: req.auth!.userId, slug: agent.slug, config });
+    const updated = factoryCall(() => agentFactory.update({ userId: req.auth!.userId, slug: agent.slug, config }));
     res.status(200).json({ agent: updated });
   });
 
@@ -172,7 +185,7 @@ export function createFactoryRouter(): Router {
     const agent = assertManageable(req, req.params.slug);
     const body = getBody(req);
     const status = requireString(body, 'status', 'status');
-    const updated = agentFactory.setStatus({ userId: req.auth!.userId, slug: agent.slug, status });
+    const updated = factoryCall(() => agentFactory.setStatus({ userId: req.auth!.userId, slug: agent.slug, status }));
     res.status(200).json({ agent: updated });
   });
 
@@ -180,7 +193,7 @@ export function createFactoryRouter(): Router {
     const agent = assertManageable(req, req.params.slug);
     const body = getBody(req);
     const version = requireString(body, 'version', 'version');
-    const updated = agentFactory.rollback({ userId: req.auth!.userId, slug: agent.slug, version });
+    const updated = factoryCall(() => agentFactory.rollback({ userId: req.auth!.userId, slug: agent.slug, version }));
     res.status(200).json({ agent: updated });
   });
 

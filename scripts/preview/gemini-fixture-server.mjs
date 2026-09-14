@@ -6,6 +6,14 @@
 // scripts/preview/start-preview.mjs — nothing here pretends to be
 // production). It answers the real protocol; production uses GOOGLE_API_KEY.
 //
+// It ALSO speaks a production search-provider protocol (Tavily's documented
+// contract: POST /search with `Authorization: Bearer <key>` and
+// {results:[{title,url,content}]}) plus a page-fetch endpoint, so the preview
+// can exercise the REAL keyed-provider transport end-to-end offline:
+// search → source fetch → verified research result. The bearer credential is
+// REQUIRED: without it the fixture answers 401, which proves the platform's
+// credential plumbing and its leak-free failure path.
+//
 // Two honest shapes, chosen from the actual prompt:
 //   · website goals  → a COMPLETE HTML document (the website-builder
 //                      deliverable shape the workflow captures as a versioned
@@ -87,11 +95,59 @@ function goalFrom(raw) {
   }
 }
 
+const SEARCH_WORD = /search|research|find|news|compare|what is|how to/i;
+
+/** The extractable page body a fetched source returns (real HTML). */
+function sourcePage(query, index) {
+  return `<!doctype html><html><head><title>Source ${index} for ${query}</title></head><body>
+<p>This source documents the topic "${query}" with complete sentences written to be extracted by the research agent. It states the verified position clearly and cites the platform pipeline that produced it.</p>
+<p>The orchestrator only reports facts that were actually retrieved from a reachable page, and each fetched source is counted as a verified source before the task may complete.</p>
+</body></html>`;
+}
+
 const server = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (c) => { raw += c; });
   req.on('end', () => {
     const url = req.url ?? '';
+    const absolute = new URL(url, `http://127.0.0.1:${FIXTURE_PORT}`);
+
+    // ── Production search-provider protocol (Tavily-shaped) ─────────────────
+    if (absolute.pathname === '/search') {
+      const auth = req.headers.authorization ?? '';
+      if (!/^Bearer\s+\S+/.test(auth)) {
+        console.log('[search-fixture] POST /search rejected: missing bearer credential');
+        res.statusCode = 401;
+        res.setHeader('content-type', 'application/json');
+        // Deliberately echoes what it received: the platform must never leak it.
+        res.end(JSON.stringify({ error: 'missing bearer credential', received: auth || null }));
+        return;
+      }
+      let query = '';
+      try { query = String(JSON.parse(raw || '{}').query ?? ''); } catch { /* keep empty */ }
+      console.log(`[search-fixture] POST /search query="${query}" bearer=present`);
+      const results = [1, 2, 3].map((index) => ({
+        title: `Source ${index}: ${query}`,
+        url: `http://127.0.0.1:${FIXTURE_PORT}/source/${index}?q=${encodeURIComponent(query)}`,
+        content: `Verified snippet ${index} about ${query} retrieved through the configured production search provider.`,
+      }));
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ results, query }));
+      return;
+    }
+
+    // ── Page-fetch endpoint (AKBARAL_PAGE_FETCH_ENDPOINT) ───────────────────
+    if (absolute.pathname.startsWith('/source/') || absolute.pathname === '/pages') {
+      const query = absolute.searchParams.get('q') ?? absolute.searchParams.get('url') ?? 'the topic';
+      const index = (absolute.pathname.match(/\/source\/(\d+)/) ?? [])[1] ?? '1';
+      console.log(`[search-fixture] GET ${absolute.pathname} → source page`);
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/html');
+      res.end(sourcePage(query, index));
+      return;
+    }
+
     console.log(`[gemini-fixture] ${req.method} ${url} x-goog-api-key=${req.headers['x-goog-api-key'] ? 'present' : 'ABSENT'}`);
     if (url.includes('key=')) {
       res.statusCode = 400;

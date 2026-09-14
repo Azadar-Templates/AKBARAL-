@@ -1,4 +1,5 @@
 import { env, requiredEnvKeys } from './env';
+import { searchProviderStatus } from '../agents/search-providers';
 
 /**
  * Integration/credential registry.
@@ -50,10 +51,19 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
     key: 'search',
     name: 'Web search',
     kind: 'search',
-    description: 'Agent #001 / web_search. Defaults to the public DuckDuckGo HTML endpoint.',
-    requiredEnv: ['AKBARAL_SEARCH_ENDPOINT'],
+    description:
+      'Agent #001 / web_search. Uses a production search API when its key is present (Tavily, Brave, Serper, ' +
+      'Google Programmable Search), an explicit AKBARAL_SEARCH_ENDPOINT proxy, or the keyless DuckDuckGo default.',
+    requiredEnv: [
+      'TAVILY_API_KEY',
+      'BRAVE_SEARCH_API_KEY',
+      'SERPER_API_KEY',
+      'GOOGLE_CSE_API_KEY',
+      'GOOGLE_CSE_ID',
+      'AKBARAL_SEARCH_ENDPOINT',
+    ],
     optionalWhenUnset: true,
-    defaultMode: 'public DuckDuckGo HTML endpoint',
+    defaultMode: 'keyless DuckDuckGo HTML endpoint',
   },
   {
     key: 'page_fetch',
@@ -203,6 +213,8 @@ export interface IntegrationStatus {
   missingEnvVars: string[];
   optionalWhenUnset: boolean;
   defaultMode?: string;
+  /** For multi-provider integrations (search): the provider that will actually serve requests. */
+  activeProvider?: string;
 }
 
 export interface ConfigStatus {
@@ -230,7 +242,7 @@ function isConfigured(def: IntegrationDefinition): boolean {
 
 export function integrationStatus(def: IntegrationDefinition): IntegrationStatus {
   const missing = requiredEnvKeys(def.requiredEnv);
-  return {
+  const base: IntegrationStatus = {
     key: def.key,
     name: def.name,
     kind: def.kind,
@@ -241,6 +253,26 @@ export function integrationStatus(def: IntegrationDefinition): IntegrationStatus
     optionalWhenUnset: def.optionalWhenUnset,
     defaultMode: def.defaultMode,
   };
+
+  if (def.key === 'search') {
+    // Report the provider that will actually serve searches. An explicitly
+    // selected but unusable provider is reported as NOT configured (with the
+    // exact env var names it needs) instead of silently degrading.
+    const provider = searchProviderStatus().active;
+    const explicitlySelected = Boolean((process.env.AKBARAL_SEARCH_PROVIDER ?? '').trim());
+    const misconfigured = explicitlySelected && !provider.credentialsConfigured && !provider.keyless;
+    return {
+      ...base,
+      configured: misconfigured ? false : true,
+      missingEnvVars: misconfigured ? provider.requiredEnvVars : [],
+      defaultMode: misconfigured
+        ? `misconfigured: ${provider.label} needs ${provider.requiredEnvVars.join(', ')}`
+        : `${provider.label} (${provider.keyless ? 'keyless, no credential required' : provider.credentialsConfigured ? 'credentialed' : 'not configured'})`,
+      activeProvider: provider.label,
+    };
+  }
+
+  return base;
 }
 
 export function getConfigStatus(): ConfigStatus {

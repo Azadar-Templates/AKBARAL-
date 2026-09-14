@@ -88,8 +88,12 @@ authRouter.post(
   (req, res) => {
     const body = getBody(req);
     const refreshToken = requireString(body, 'refresh_token', 'refresh_token');
-    logout(refreshToken);
+    // Resolve the session owner BEFORE revoking: revoking first made
+    // validateRefreshToken() return null, so the logout audit entry was
+    // silently never written (the session must still be revoked first for
+    // safety, hence the id is captured up front).
     const userId = validateRefreshToken(refreshToken);
+    logout(refreshToken);
     if (userId) {
       appendAuditLog({
         actorId: userId,

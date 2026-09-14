@@ -117,6 +117,16 @@ describe('HTTP API integration', () => {
     });
     assert.equal(logoutResponse.status, 204);
 
+    // Logout is audited for the session owner. Regression lock: the audit row
+    // was previously never written because the user id was resolved after the
+    // session had already been revoked.
+    const loggedOutUser = db.get<{ id: string }>('SELECT id FROM users WHERE email = ?', [email]);
+    const logoutAudit = db.get<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'auth.logout' AND actor_id = ?",
+      [loggedOutUser?.id ?? ''],
+    );
+    assert.ok((logoutAudit?.count ?? 0) >= 1, 'logout must write an audit entry');
+
     const meAfterLogout = await fetch(`${baseUrl}/api/auth/me`, {
       headers: { authorization: `Bearer ${refreshed.refreshToken}` },
     });

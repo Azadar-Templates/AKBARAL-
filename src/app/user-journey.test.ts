@@ -336,6 +336,94 @@ describe('PHASE 3: complete user journey (real HTTP, end to end)', () => {
     assert.ok(created.body.agent?.slug, 'created agent has a slug');
   });
 
+  it('18b. Agent Factory: business failures answer honestly (never a 500)', async () => {
+    const authorized = { headers: authJson(journey.accessToken) };
+    const token = journey.accessToken;
+    // Unique per run: the agent is a durable row, so a fixed slug would make
+    // this test non-repeatable against a persistent database.
+    const slug = `journey-launch-check-${Date.now().toString(36)}`;
+    const created = await call('/api/factory/agents', {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({
+        name: 'Journey Launch Check Agent',
+        specialization: 'launch-verification',
+        description: 'Verifies factory lifecycle behaviour over real HTTP.',
+        system_instructions: 'Report only verified findings.',
+        slug,
+      }),
+    });
+    assert.equal(created.status, 201, `factory agent created (got ${created.status})`);
+
+    // Invalid input is a validation error, not an internal server error.
+    const badStatus = await call(`/api/factory/agents/${slug}/status`, {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({ status: 'published' }),
+    });
+    assert.equal(badStatus.status, 400, `invalid status rejected as 400 (got ${badStatus.status})`);
+    assert.equal(badStatus.body?.error?.code, 'validation_error');
+
+    // Unknown version → 404, unknown agent → 404 (both used to be 500s).
+    const badRollback = await call(`/api/factory/agents/${slug}/rollback`, {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({ version: '9.9.9' }),
+    });
+    assert.equal(badRollback.status, 404, `unknown version is a 404 (got ${badRollback.status})`);
+
+    const missing = await call('/api/factory/agents/does-not-exist-xyz/status', {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({ status: 'active' }),
+    });
+    assert.ok([403, 404].includes(missing.status), `unknown agent refused with 403/404 (got ${missing.status})`);
+
+    // A valid lifecycle transition still works: version then rollback.
+    const versioned = await call(`/api/factory/agents/${slug}/version`, {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({ changelog: 'journey verification' }),
+    });
+    assert.equal(versioned.status, 200, `version bumped (got ${versioned.status})`);
+    const rollback = await call(`/api/factory/agents/${slug}/rollback`, {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({ version: '1.0.0' }),
+    });
+    assert.equal(rollback.status, 200, `rollback succeeded (got ${rollback.status})`);
+
+    const status = await call(`/api/factory/agents/${slug}/status`, {
+      method: 'POST',
+      headers: authJson(token),
+      body: JSON.stringify({ status: 'active' }),
+    });
+    assert.equal(status.status, 200, `valid status change accepted (got ${status.status})`);
+
+    // Ownership: another account may not manage this agent.
+    const outsiderEmail = `journey-outsider-${Date.now()}@akbaral.test`;
+    const registered = await call('/api/auth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: outsiderEmail, password: 'correct-horse-battery-staple-1', name: 'Outsider' }),
+    });
+    assert.equal(registered.status, 201, `outsider registered (got ${registered.status})`);
+    const outsiderLogin = await call('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: outsiderEmail, password: 'correct-horse-battery-staple-1' }),
+    });
+    assert.equal(outsiderLogin.status, 200, `outsider logged in (got ${outsiderLogin.status})`);
+    const outsiderToken = outsiderLogin.body.accessToken as string;
+    const foreign = await call(`/api/factory/agents/${slug}/status`, {
+      method: 'POST',
+      headers: authJson(outsiderToken),
+      body: JSON.stringify({ status: 'disabled' }),
+    });
+    assert.equal(foreign.status, 403, `non-owner refused with 403 (got ${foreign.status})`);
+    void authorized;
+  });
+
   it('19. settings/profile: /api/me reflects account state', async () => {
     const me = await call('/api/me', { headers: { authorization: `Bearer ${journey.accessToken}` } });
     assert.equal(me.status, 200);

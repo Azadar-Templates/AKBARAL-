@@ -2,7 +2,7 @@ import {
   appendAgentExecutionLog,
   appendAuditLog,
   appendTaskEvent,
-  consumeTaskCredit, findUserById,
+  consumeTaskCredit,
 
   createAgent,
   createAgentExecution,
@@ -27,6 +27,7 @@ import {
 import { createResearchReport } from '../agents';
 import { storeTaskArtifact, extractTextFromFile, resolveStoredFilePath } from '../services/files';
 import { getAgentBySlug, isAgentVisibleToUser } from '../agents/registry';
+import { hasUnlimitedTaskCredits } from '../auth/entitlements';
 import { modelRouter } from '../models';
 import { runTool, type ToolResult } from '../tools';
 import { verifyAgentOutput } from './verifier';
@@ -60,9 +61,7 @@ import type { ExecutionStream } from '../realtime/execution-stream';
  * paid-credit accounting (consume on success, refund on failure).
  */
 function reserveTaskCreditForUser(userId: string, taskId: string, reason: string): boolean {
-  const user = findUserById(userId);
-  const role = String((user as { role?: string } | undefined)?.role ?? 'user');
-  if (role === 'owner' || role === 'super_admin') {
+  if (hasUnlimitedTaskCredits(userId)) {
     appendAuditLog({
       actorId: userId,
       action: 'owner.unlimited_execution',
@@ -150,7 +149,10 @@ export function createResearchTask(input: {
   if (account.status !== 'active') {
     throw new Error('credit account is not active');
   }
-  if (getAvailableCredits(account) <= 0) {
+  // Owner/super_admin execute without consuming credits, so an exhausted
+  // balance must not refuse them here — the entitlement is applied at the
+  // reservation point below. Normal users are still gated exactly as before.
+  if (!hasUnlimitedTaskCredits(input.userId) && getAvailableCredits(account) <= 0) {
     // No task credit to reserve. The task is not created, so no refund is
     // needed; the API surfaces a Pro-required response.
     const error = new Error('Task credits exhausted. This capability requires AKBARAL Pro.') as Error & { code?: string };
@@ -227,7 +229,7 @@ export function createAgentTask(input: {
   if (account.status !== 'active') {
     throw new Error('credit account is not active');
   }
-  if (getAvailableCredits(account) <= 0) {
+  if (!hasUnlimitedTaskCredits(input.userId) && getAvailableCredits(account) <= 0) {
     const error = new Error('Task credits exhausted. This capability requires AKBARAL Pro.') as Error & { code?: string };
     error.code = 'requires_pro';
     throw error;

@@ -16,6 +16,7 @@ import {
 } from '../db/automation-repositories';
 import { db, getJob, getTrialStatus } from '../db';
 import { appendAuditLog } from '../db';
+import { hasUnlimitedTaskCredits } from '../auth/entitlements';
 import { executionQueue } from '../orchestrator/queue';
 import { createWorkflow, createWorkflowStep } from '../db';
 import { cronNextAfter } from './cron';
@@ -140,8 +141,10 @@ export class AutomationScheduler {
     }
 
     // Credit pre-flight: auto-pause instead of firing no-op work in a loop.
+    // Owner/super_admin run unlimited, so an exhausted balance must not pause
+    // their automations.
     const trial = getTrialStatus(automation.user_id);
-    if (trial.requiresPro) {
+    if (trial.requiresPro && !hasUnlimitedTaskCredits(automation.user_id)) {
       settleAutomationRun({ runId: run.id, status: 'skipped', errorMessage: 'no task credits remaining' });
       setAutomationStatus(automation.id, 'paused', null);
       appendAuditLog({
@@ -175,7 +178,7 @@ export class AutomationScheduler {
     this.manualRuns.set(automation.id, Date.now());
 
     const trial = getTrialStatus(automation.user_id);
-    if (trial.requiresPro) {
+    if (trial.requiresPro && !hasUnlimitedTaskCredits(automation.user_id)) {
       throw Object.assign(new Error('Task credits exhausted. This capability requires AKBARAL Pro.'), { code: 'requires_pro' });
     }
 

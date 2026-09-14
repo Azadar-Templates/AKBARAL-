@@ -56,6 +56,25 @@ function computeChecksum(input: {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex');
 }
 
+/**
+ * Typed factory failures.
+ *
+ * These are ordinary business outcomes — invalid input, a missing agent, a
+ * non-owner mutation — not server faults. They carry an explicit `code` so the
+ * HTTP layer can answer 400/403/404 through `businessErrorToHttp` instead of
+ * reporting a misleading 500 internal error (which is both unhelpful and hides
+ * an authorization refusal behind a generic failure).
+ */
+export class FactoryError extends Error {
+  readonly code: 'validation_error' | 'forbidden' | 'not_found';
+
+  constructor(code: 'validation_error' | 'forbidden' | 'not_found', message: string) {
+    super(message);
+    this.name = 'FactoryError';
+    this.code = code;
+  }
+}
+
 export interface FactoryResult {
   agentId: string;
   slug: string;
@@ -198,7 +217,7 @@ function hasOwner(agent: { owner_id?: string | null }, userId: string): boolean 
 export class AgentFactory {
   create(input: CustomAgentInput): FactoryResult {
     if (!input.name.trim() || !input.specialization.trim() || !input.systemInstructions.trim()) {
-      throw new Error('name, specialization and system_instructions are required');
+      throw new FactoryError('validation_error', 'name, specialization and system_instructions are required');
     }
     if (input.projectId) {
       const project = findProjectById(input.projectId);
@@ -215,7 +234,7 @@ export class AgentFactory {
       ? slugify(input.slug)
       : slugify(`${slugify(input.specialization)}-${createId('agt').slice(-6)}`);
     if (findAgentBySlug(slug)) {
-      throw new Error(`agent slug "${slug}" already exists`);
+      throw new FactoryError('validation_error', `agent slug "${slug}" already exists`);
     }
     const agent = createAgent({
       name: input.name,
@@ -284,7 +303,7 @@ export class AgentFactory {
   async test(input: { userId: string; slug: string; goal: string }): Promise<{ taskId: string; executionId: string; result: { status: string; output: Record<string, unknown> | null; error?: string } }> {
     const agent = findAgentBySlug(input.slug);
     if (!agent) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     const task = createTask({
       userId: input.userId,
@@ -316,7 +335,7 @@ export class AgentFactory {
   securityReview(slug: string): SecurityFinding[] {
     const agent = getAgentBySlug(slug);
     if (!agent) {
-      throw new Error(`agent ${slug} not found`);
+      throw new FactoryError('not_found', `agent ${slug} not found`);
     }
     return securityReviewOf({ systemInstructions: agent.systemInstructions, securityPermissions: agent.securityPermissions, toolPermissions: agent.toolPermissions });
   }
@@ -324,7 +343,7 @@ export class AgentFactory {
   benchmark(slug: string): ReturnType<typeof benchmarkAgent> {
     const agent = getAgentBySlug(slug);
     if (!agent) {
-      throw new Error(`agent ${slug} not found`);
+      throw new FactoryError('not_found', `agent ${slug} not found`);
     }
     return benchmarkAgent({ systemInstructions: agent.systemInstructions, capabilities: agent.capabilities, workflow: agent.workflow, verificationRules: agent.verificationRules });
   }
@@ -332,14 +351,14 @@ export class AgentFactory {
   version(input: { userId: string; slug: string; changelog?: string }): FactoryResult {
     const agent = findAgentBySlug(input.slug);
     if (!agent) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     if (!hasOwner(agent, input.userId)) {
-      throw new Error('only the owner can version this agent');
+      throw new FactoryError('forbidden', 'only the owner can version this agent');
     }
     const current = getAgentBySlug(input.slug);
     if (!current) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     const nextVersion = bumpVersion(String(agent.version ?? '1.0.0'));
     insertAgentVersion({
@@ -365,14 +384,14 @@ export class AgentFactory {
   update(input: { userId: string; slug: string; config: Partial<CustomAgentInput> }): FactoryResult {
     const agent = findAgentBySlug(input.slug);
     if (!agent) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     if (!hasOwner(agent, input.userId)) {
-      throw new Error('only the owner can update this agent');
+      throw new FactoryError('forbidden', 'only the owner can update this agent');
     }
     const current = getAgentBySlug(input.slug);
     if (!current) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     const merged: CustomAgentInput = {
       userId: input.userId,
@@ -398,13 +417,13 @@ export class AgentFactory {
   setStatus(input: { userId: string; slug: string; status: string }): FactoryResult {
     const agent = findAgentBySlug(input.slug);
     if (!agent) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     if (!['active', 'disabled', 'deprecated'].includes(input.status)) {
-      throw new Error('invalid status');
+      throw new FactoryError('validation_error', 'invalid status');
     }
     if (!hasOwner(agent, input.userId)) {
-      throw new Error('only the owner can change status');
+      throw new FactoryError('forbidden', 'only the owner can change status');
     }
     updateAgentStatus(String(agent.id), input.status);
     return { agentId: String(agent.id), slug: input.slug, version: String(agent.version ?? ''), status: input.status, marketplaceStatus: 'published' };
@@ -413,11 +432,11 @@ export class AgentFactory {
   rollback(input: { userId: string; slug: string; version: string }): FactoryResult {
     const agent = findAgentBySlug(input.slug);
     if (!agent) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     const target = listAgentVersions(String(agent.id)).find((row) => String(row.version) === input.version);
     if (!target) {
-      throw new Error(`version ${input.version} not found`);
+      throw new FactoryError('not_found', `version ${input.version} not found`);
     }
     const definition = JSON.parse(String(target.definition ?? '{}')) as Record<string, unknown>;
     db.run('UPDATE agents SET version = ?, config = ?, status = ?, updated_at = strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\') WHERE id = ?', [
@@ -462,11 +481,11 @@ export class AgentFactory {
   deriveTemplate(slug: string): Record<string, unknown> {
     const agent = getAgentBySlug(slug);
     if (!agent) {
-      throw new Error(`template source agent ${slug} not found`);
+      throw new FactoryError('not_found', `template source agent ${slug} not found`);
     }
     const owned = findAgentBySlug(slug);
     if (owned?.owner_id) {
-      throw new Error('templates can only be derived from platform registry agents');
+      throw new FactoryError('validation_error', 'templates can only be derived from platform registry agents');
     }
     return {
       templateOf: slug,
@@ -529,14 +548,14 @@ export class AgentFactory {
   async runBenchmark(input: { userId: string; slug: string; goals?: string[] }): Promise<Record<string, unknown>> {
     const agent = findAgentBySlug(input.slug);
     if (!agent) {
-      throw new Error(`agent ${input.slug} not found`);
+      throw new FactoryError('not_found', `agent ${input.slug} not found`);
     }
     if (!hasOwner(agent, input.userId)) {
-      throw new Error('only the owner can benchmark this agent');
+      throw new FactoryError('forbidden', 'only the owner can benchmark this agent');
     }
     const goals = (input.goals ?? []).filter((goal) => typeof goal === 'string' && goal.trim().length > 0).slice(0, 5);
     if (goals.length === 0) {
-      throw new Error('at least one benchmark goal is required (max 5)');
+      throw new FactoryError('validation_error', 'at least one benchmark goal is required (max 5)');
     }
     const runs: Array<Record<string, unknown>> = [];
     let providerNotConfigured = false;
@@ -594,7 +613,7 @@ export class AgentFactory {
   listVersions(slug: string): Array<Record<string, unknown>> {
     const agent = findAgentBySlug(slug);
     if (!agent) {
-      throw new Error(`agent ${slug} not found`);
+      throw new FactoryError('not_found', `agent ${slug} not found`);
     }
     return listAgentVersions(String(agent.id));
   }

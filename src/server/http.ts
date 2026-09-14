@@ -49,6 +49,15 @@ export function businessErrorToHttp(error: unknown, fallbackStatus = 400, fallba
   if (code === 'not_found') {
     return new HttpError(404, message, 'not_found');
   }
+  // Typed business outcomes that must keep their specific status instead of a
+  // generic fallback: invalid input is a client error (400), and a conflicting
+  // state change is a 409 — neither is an internal server error.
+  if (code === 'validation_error') {
+    return new HttpError(400, message, 'validation_error');
+  }
+  if (code === 'conflict') {
+    return new HttpError(409, message, 'conflict');
+  }
   return new HttpError(fallbackStatus, message, fallbackCode);
 }
 

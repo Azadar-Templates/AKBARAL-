@@ -16,6 +16,16 @@ function uniqueCount<T>(values: T[]): number {
 }
 
 function main(): void {
+  // Operator-facing guard: an unmigrated database must produce an actionable
+  // message, not a raw SQLite "no such table" traceback.
+  if (!db.tableExists('agents')) {
+    console.error(
+      '[audit:registry] database is not initialized — run `npm run db:migrate` (and `npm run db:seed` ' +
+        'for the registry) against DATABASE_URL before auditing.',
+    );
+    process.exit(1);
+  }
+
   const definitions = generateAgentDefinitions();
   const dbCount = db.get<{ count: number }>('SELECT COUNT(*) AS count FROM agents')?.count ?? 0;
 
