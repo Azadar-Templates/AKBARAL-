@@ -86,7 +86,11 @@
     if (labelEl) labelEl.textContent = label || next;
     const consoleState = $('#master-console-state');
     if (consoleState) {
-      consoleState.dataset.state = next === 'thinking' || next === 'executing' ? 'running' : next;
+      // The stylesheet keys success on [data-state="ok"] — map the lifecycle
+      // name so a completed run is actually shown in the success colour.
+      consoleState.dataset.state = next === 'thinking' || next === 'executing'
+        ? 'running'
+        : next === 'success' ? 'ok' : next;
       consoleState.textContent = label || next;
     }
   }
@@ -538,7 +542,12 @@
     root.innerHTML = `<div class="state-card state-ok"><h4>Completed</h4><p>The execution finished successfully, but no result content was attached to it.</p></div>`;
   }
 
-  /** Render the terminal result card under the execution console. */
+  /**
+   * Render the terminal result into the workspace CANVAS (left pane, directly
+   * under the export controls) and post the matching MASTER chat turn into the
+   * right rail. One run, one real payload, two views of it — the canvas shows
+   * the deliverable, the chat shows the answer.
+   */
   function renderMasterResult(ok, payload) {
     const root = $('#master-result');
     if (!root) return;
@@ -549,11 +558,21 @@
       code: ok ? undefined : payload?.code,
       message: ok ? undefined : payload?.message,
     });
+    const empty = $('#master-preview-empty');
+    if (empty) empty.hidden = true;
+    canvasSetState(ok ? 'ok' : 'error', ok ? canvasKindLabel(payload) : 'failed');
+    chatAppend(outcomeChatTurn(ok, payload));
+    // On narrow viewports the panes switch rather than shrink: a finished run
+    // reveals its deliverable; a failure keeps the conversation in view.
+    if (masterPaneIsNarrow()) masterPaneSet(ok ? 'workspace' : 'chat');
   }
 
   function clearMasterResult() {
     const root = $('#master-result');
     if (root) { root.hidden = true; root.innerHTML = ''; }
+    const empty = $('#master-preview-empty');
+    if (empty) empty.hidden = false;
+    canvasSetState('idle', 'idle');
   }
 
   function skeleton(rootSelector, count = 3) {
@@ -1378,6 +1397,7 @@
     bindMenu();
     bindAuth();
     bindGeneral();
+    bindMasterWorkspaceShell();
     bindMotion();
     bindLandingNav();
     bindLegalModal();
@@ -2126,11 +2146,18 @@
           ${list.map((v) => `<option value="${esc(String(v.version))}" ${Number(v.version) === Number(artifact.version) ? 'selected' : ''}>v${esc(String(v.version))}</option>`).join('')}
         </select>
         <button type="button" class="btn btn-sm" id="artifact-revert">Undo to selected</button>
-        <a class="btn btn-sm" href="/api/projects/${encodeURIComponent(projectId)}/artifacts/website/download" download>Export</a>
-        <a class="btn btn-sm" href="/api/projects/${encodeURIComponent(projectId)}/artifacts/website/v/${esc(String(artifact.version))}" target="_blank" rel="noopener">Open v${esc(String(artifact.version))} ↗</a>
+        <button type="button" class="btn btn-sm" id="artifact-export">Export</button>
+        <button type="button" class="btn btn-sm" id="artifact-open">Open v${esc(String(artifact.version))} ↗</button>
         <button type="button" class="btn btn-ghost btn-sm" id="artifact-rename" title="Rename the current version">Rename</button>
         <button type="button" class="btn btn-ghost btn-sm" id="artifact-delete" title="Delete the selected version (history stays append-only otherwise; deletion is audited)">Delete v</button>
       </div>`;
+    // Real export/open: the API accepts no token in a query string, so both
+    // actions are auth-fetched with the bearer token (a plain href would 401).
+    $('#artifact-export')?.addEventListener('click', () => authedDownload(
+      `/api/projects/${encodeURIComponent(projectId)}/artifacts/website/download`,
+      `akbaral-website-v${artifact.version}.html`,
+    ));
+    $('#artifact-open')?.addEventListener('click', () => void openArtifactBlob(projectId, artifact.version));
     $('#artifact-rename')?.addEventListener('click', async () => {
       const title = window.prompt('New title for the current website version', String(artifact.title || ''));
       if (!title || !title.trim()) return;
@@ -2138,6 +2165,7 @@
         await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`, { method: 'PATCH', body: JSON.stringify({ title: title.trim() }) });
         toast(`Renamed the current website version`, 'ok');
         await renderProjectArtifactBar(projectId);
+        await renderMasterExportBar(projectId);
       } catch (e) { toast(e.message, 'err'); }
     });
     $('#artifact-delete')?.addEventListener('click', async () => {
@@ -2147,6 +2175,7 @@
         await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website/v/${target}`, { method: 'DELETE' });
         toast(`Deleted v${target}`, 'ok');
         await renderProjectArtifactBar(projectId);
+        await renderMasterExportBar(projectId);
         const refreshed = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`);
         if (refreshed?.artifact) renderMasterResult(true, { sections: [{ status: 'completed', content: refreshed.artifact.content, specialization: `Project website v${refreshed.artifact.version}` }], executiveSummary: `Current website after deleting v${target}.` });
         else clearMasterResult();
@@ -2159,6 +2188,7 @@
         await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website/revert/${target}`, { method: 'POST' });
         toast(`Reverted project website to v${target} (saved as a new version)`, 'ok');
         await renderProjectArtifactBar(projectId);
+        await renderMasterExportBar(projectId);
         const refreshed = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`);
         if (refreshed?.artifact) renderMasterResult(true, { sections: [{ status: 'completed', content: refreshed.artifact.content, specialization: `Project website v${refreshed.artifact.version}` }], executiveSummary: `Restored version v${target} — rendered as the current project website.` });
       } catch (e) { toast(e.message, 'err'); }
@@ -2172,6 +2202,14 @@
     const projectId = $('#master-project').value || null;
     const attachmentIds = state.masterAttachments.map((a) => a.id);
     if (attachmentIds.length > 0 && !projectId) { toast('Attachments need a selected project', 'err'); return; }
+    // The goal opens the conversation as a real user turn.
+    chatAppend({
+      kind: 'user',
+      who: 'You',
+      meta: projectId ? [{ label: 'project', tone: 'blue' }] : [],
+      html: `<p>${esc(goal)}</p>`,
+    });
+    if (masterPaneIsNarrow()) masterPaneSet('chat');
     $('#master-output').textContent = 'Planning…';
     clearMasterResult();
     setCoreState('thinking', 'planning');
@@ -2371,7 +2409,291 @@
     await renderMasterProjectControls(projectId);
     await loadMasterFiles(projectId);
     await renderProjectArtifactBar(projectId);
+    await renderMasterExportBar(projectId);
     updateAttachmentHint();
+  }
+
+  /* ============================================================
+     Build #5 — ARENA-STYLE WORKSPACE SHELL (web)
+
+     LEFT pane  · the full project / book / file area, the live preview
+                  canvas, and the download / export control ABOVE it.
+     RIGHT pane · the AKBARAL! brand header at the top, then the main
+                  MASTER chat (live activity, results, composer, drawers).
+
+     Android mirrors this exact spatial model and design system
+     (mobile/src/screens/MasterScreen.tsx). Every control here is bound to a
+     real API — nothing decorative, nothing simulated.
+     ============================================================ */
+
+  /** Select the visible pane on narrow viewports (both panes stay visible
+   *  on desktop, where the switch is hidden by CSS). */
+  function masterPaneSet(name) {
+    const layout = $('#master-layout');
+    if (!layout) return;
+    const pane = name === 'chat' ? 'chat' : 'workspace';
+    layout.dataset.pane = pane;
+    $$('[data-pane-tab]').forEach((tab) => {
+      const active = tab.dataset.paneTab === pane;
+      tab.setAttribute('aria-selected', String(active));
+      tab.classList.toggle('active', active);
+    });
+  }
+
+  /** True when CSS has collapsed the two panes into one (pane switch active). */
+  function masterPaneIsNarrow() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1080px)').matches;
+  }
+
+  /** Preview-canvas state chip (idle | running | ok | error + a real label). */
+  function canvasSetState(kind, label) {
+    const chip = $('#master-canvas-state');
+    if (!chip) return;
+    chip.dataset.state = kind || 'idle';
+    chip.textContent = label || kind || 'idle';
+  }
+
+  function chatScrollToEnd() {
+    const log = $('#master-chat-log');
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+
+  /**
+   * Append one MASTER chat turn. The live activity stream (#master-output)
+   * always stays the last element of the rail, so turns read chronologically
+   * above it. Actions are real handlers supplied by the caller.
+   */
+  function chatAppend(turn) {
+    const log = $('#master-chat-log');
+    if (!log) return null;
+    const activity = $('#master-output');
+    const el = document.createElement('div');
+    el.className = `chat-msg ${turn.kind || 'master'}`;
+    const meta = Array.isArray(turn.meta) ? turn.meta : [];
+    const actions = Array.isArray(turn.actions) ? turn.actions : [];
+    el.innerHTML = `
+      <div class="cm-head">
+        <span class="cm-who">${esc(turn.who || 'MASTER')}</span>
+        ${meta.map((m) => `<span class="badge ${esc(m.tone || 'accent')}">${esc(m.label)}</span>`).join('')}
+      </div>
+      <div class="cm-body">${turn.html || ''}</div>
+      ${actions.length ? `<div class="cm-actions">${actions.map((a, i) => `<button type="button" class="btn btn-sm ${esc(a.className || 'btn-ghost')}" data-chat-action="${i}">${esc(a.label)}</button>`).join('')}</div>` : ''}`;
+    if (activity && activity.parentNode === log) log.insertBefore(el, activity);
+    else log.appendChild(el);
+    actions.forEach((a, i) => {
+      const button = el.querySelector(`[data-chat-action="${i}"]`);
+      if (button && typeof a.onClick === 'function') button.addEventListener('click', a.onClick);
+    });
+    chatScrollToEnd();
+    return el;
+  }
+
+  /** The real HTML deliverable inside a completed payload, if there is one. */
+  function extractHtmlDeliverable(payload) {
+    if (typeof payload === 'string') return isFullHtmlDocument(payload) ? payload : null;
+    if (!payload || typeof payload !== 'object') return null;
+    if (isFullHtmlDocument(String(payload.content || ''))) return String(payload.content);
+    const sections = Array.isArray(payload.sections) ? payload.sections : [];
+    const website = sections.find((s) => isFullHtmlDocument(String((s && s.content) || '')));
+    return website ? String(website.content) : null;
+  }
+
+  /** Short, honest canvas label for a completed payload shape. */
+  function canvasKindLabel(payload) {
+    if (typeof payload === 'string') return isFullHtmlDocument(payload) ? 'website' : 'result';
+    if (!payload || typeof payload !== 'object') return 'result';
+    if (payload.type === 'image_result') return 'image';
+    if (payload.type === 'document_result' || payload.type === 'document') return 'document';
+    if (payload.type === 'business_form') return 'form';
+    if (Array.isArray(payload.sections)) return extractHtmlDeliverable(payload) ? 'website' : 'report';
+    if (payload.type === 'web_research_report') return 'research';
+    return 'result';
+  }
+
+  /** Download an exact HTML deliverable (used by the canvas + the chat turn). */
+  function downloadHtmlDeliverable(html, filename) {
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename || 'akbaral-deliverable.html';
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  /** The chat turn for a finished run (summary + real export/open actions). */
+  function outcomeChatTurn(ok, payload) {
+    if (!ok) {
+      const friendly = friendlyTaskError(payload?.code, payload?.message);
+      return {
+        kind: 'master err',
+        who: 'MASTER · failed',
+        meta: [{ label: 'failed', tone: 'red' }],
+        html: `<p>${esc(friendly.title)}</p><p class="state-kv">${esc(friendly.detail)}</p>`,
+      };
+    }
+    const html = extractHtmlDeliverable(payload);
+    const actions = [];
+    if (html) {
+      actions.push({ label: 'Export .html', className: 'btn-outline', onClick: () => downloadHtmlDeliverable(html, 'akbaral-website.html') });
+      actions.push({ label: 'Open in canvas', onClick: () => masterPaneSet('workspace') });
+    }
+    const text = typeof payload === 'string'
+      ? payload
+      : (payload && typeof payload === 'object'
+        ? (payload.executiveSummary || payload.report?.summary || payload.content || payload.summary || '')
+        : '');
+    const body = typeof text === 'string' && text.trim()
+      ? `<p>${esc(text.trim().slice(0, 700))}${text.trim().length > 700 ? '…' : ''}</p>`
+      : '<p>Completed. The execution finished successfully, but no result content was attached to it — the canvas reflects exactly that.</p>';
+    return {
+      kind: 'master ok',
+      who: 'MASTER · result',
+      meta: [{ label: canvasKindLabel(payload), tone: 'green' }],
+      html: body,
+      actions,
+    };
+  }
+
+  /** Open a real artifact version in a new tab (auth-fetched → blob). */
+  async function openArtifactBlob(projectId, version) {
+    try {
+      const body = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website/v/${encodeURIComponent(String(version))}`);
+      const content = String(body?.artifact?.content || '');
+      if (!content) throw new Error('That version has no content to open');
+      const url = URL.createObjectURL(new Blob([content], { type: 'text/html' }));
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  /** Render the project's current website artifact into the preview canvas. */
+  async function previewWebsiteArtifact(projectId) {
+    const root = $('#master-result');
+    if (!root) return;
+    try {
+      const body = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`);
+      const artifact = body?.artifact;
+      if (!artifact) { toast('No website version in this project yet', 'err'); return; }
+      root.hidden = false;
+      root.innerHTML = '';
+      renderWebsitePreview(root, String(artifact.content || ''), { version: artifact.version, title: artifact.title });
+      const empty = $('#master-preview-empty');
+      if (empty) empty.hidden = true;
+      canvasSetState('ok', `website v${artifact.version}`);
+      await renderMasterExportBar(projectId);
+      masterPaneSet('workspace');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  /**
+   * The download / export control that sits ABOVE the live preview: real
+   * export of the current website artifact, opening a version, and pushing it
+   * back into the canvas. Downloads are auth-fetched with the bearer token
+   * (the API deliberately accepts no token in a query string).
+   */
+  async function renderMasterExportBar(projectId) {
+    const host = $('#master-export-actions');
+    if (!host) return;
+    if (!projectId) {
+      host.innerHTML = '<span class="sub">Select a project to export its website.</span>';
+      return;
+    }
+    const body = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/website`).catch(() => null);
+    const artifact = body?.artifact;
+    if (!artifact) {
+      host.innerHTML = '<span class="sub">No website version yet — run a goal with this project selected.</span>';
+      return;
+    }
+    host.innerHTML = `
+      <span class="badge accent">website v${esc(String(artifact.version))}</span>
+      <button type="button" class="btn btn-outline btn-sm" id="master-export-download">Export .html</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="master-export-open">Open ↗</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="master-export-canvas">Show in canvas</button>`;
+    $('#master-export-download')?.addEventListener('click', () => authedDownload(
+      `/api/projects/${encodeURIComponent(projectId)}/artifacts/website/download`,
+      `akbaral-website-v${artifact.version}.html`,
+    ));
+    $('#master-export-open')?.addEventListener('click', () => void openArtifactBlob(projectId, artifact.version));
+    $('#master-export-canvas')?.addEventListener('click', () => void previewWebsiteArtifact(projectId));
+  }
+
+  /**
+   * File-context export bar: while a project file is on the canvas, the
+   * controls above it export THAT file (or return to the website version) —
+   * the bar never describes a different deliverable than the one shown.
+   */
+  function renderFileExportBar(fileId, name, projectId) {
+    const host = $('#master-export-actions');
+    if (!host) return;
+    host.innerHTML = `
+      <span class="badge blue">file</span>
+      <span class="sub">${esc(name)}</span>
+      <button type="button" class="btn btn-outline btn-sm" id="master-export-file">Export file</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="master-export-back">Website version</button>`;
+    $('#master-export-file')?.addEventListener('click', () => authedDownload(`/api/files/${encodeURIComponent(fileId)}`, name || 'akbaral-file'));
+    $('#master-export-back')?.addEventListener('click', () => {
+      if (!projectId) { renderMasterExportBar(null); return; }
+      void previewWebsiteArtifact(projectId);
+    });
+  }
+
+  /**
+   * Preview a real project file inside the workspace canvas (auth-fetched):
+   * HTML renders in the sandboxed website frame, images render directly, text
+   * renders as a document. Binary/unknown types are downloaded instead of
+   * being pretended into a preview.
+   */
+  async function previewProjectFile(fileId, mime, name) {
+    const root = $('#master-result');
+    if (!root) return;
+    const type = String(mime || '');
+    try {
+      if (type.startsWith('image/')) {
+        root.hidden = false;
+        root.innerHTML = '';
+        renderImagePreview(root, { url: `/api/files/${encodeURIComponent(fileId)}`, filename: name });
+        canvasSetState('ok', 'image');
+      } else if (type.startsWith('text/') || type === 'application/json' || type === 'application/xml') {
+        const response = await fetch(`/api/files/${encodeURIComponent(fileId)}`, {
+          headers: state.accessToken ? { authorization: `Bearer ${state.accessToken}` } : {},
+        });
+        if (!response.ok) throw new Error(`preview failed (${response.status})`);
+        const text = await response.text();
+        root.hidden = false;
+        root.innerHTML = '';
+        if (isFullHtmlDocument(text)) {
+          renderWebsitePreview(root, text, { version: 1, title: name });
+          canvasSetState('ok', 'html file');
+        } else {
+          renderDocumentPreview(root, { title: name, content: text });
+          canvasSetState('ok', 'document');
+        }
+      } else {
+        toast(`No in-canvas preview for ${type || 'this file type'} — use Download`, 'info');
+        await authedDownload(`/api/files/${encodeURIComponent(fileId)}`, name || 'akbaral-file');
+        return;
+      }
+      const empty = $('#master-preview-empty');
+      if (empty) empty.hidden = true;
+      renderFileExportBar(fileId, name || 'file', $('#master-project')?.value || null);
+      masterPaneSet('workspace');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  /** Wire the workspace shell: pane switch, chat drawers, file refresh. */
+  function bindMasterWorkspaceShell() {
+    if (!$('#master-layout')) return;
+    $$('[data-pane-tab]').forEach((tab) => tab.addEventListener('click', () => masterPaneSet(tab.dataset.paneTab)));
+    $$('[data-chat-drawer]').forEach((button) => button.addEventListener('click', () => {
+      const drawer = $(`#master-drawer-${button.dataset.chatDrawer}`);
+      if (!drawer) return;
+      const open = drawer.hidden;
+      drawer.hidden = !open;
+      button.setAttribute('aria-expanded', String(open));
+      chatScrollToEnd();
+    }));
+    $('#master-files-refresh')?.addEventListener('click', () => void loadMasterWorkspace());
+    window.addEventListener('resize', () => { if (!masterPaneIsNarrow()) masterPaneSet('workspace'); });
   }
 
   /** LEFT pane — the user's real recent tasks (click to re-open a result). */
@@ -2431,7 +2753,11 @@
       <a class="btn btn-outline btn-sm" href="#/workspace">Open workspace ↗</a>`;
   }
 
-  /** RIGHT pane — real project files (auth-fetched preview/download). */
+  /**
+   * LEFT pane (file area) — the real project files with their real actions:
+   * render in the canvas, download the stored bytes, and (for images /
+   * documents / HTML) preview without leaving the workspace.
+   */
   async function loadMasterFiles(projectId) {
     const root = $('#master-files');
     if (!root) return;
@@ -2440,25 +2766,23 @@
       return;
     }
     const body = await api(`/api/projects/${encodeURIComponent(projectId)}`).catch(() => null);
-    const files = (body?.files || []).slice(0, 10);
+    const files = (body?.files || []).slice(0, 20);
     if (!files.length) {
       root.innerHTML = '<div class="list-item"><small>No files yet — attach files to a MASTER goal.</small></div>';
       return;
     }
     root.innerHTML = files.map((f) => `
-      <div class="list-item file-item" data-file="${esc(f.id)}" data-mime="${esc(String(f.mime_type || ''))}">
+      <div class="list-item file-item" data-file="${esc(f.id)}" data-mime="${esc(String(f.mime_type || ''))}" data-name="${esc(String(f.original_name || f.id))}">
         <div><b>${esc(String(f.original_name || f.id))}</b><small>${esc(String(f.mime_type || 'file'))}</small></div>
-        <div class="file-actions"><button type="button" class="btn btn-ghost btn-sm" data-preview="${esc(f.id)}">Preview</button><button type="button" class="btn btn-ghost btn-sm" data-download="${esc(f.id)}" data-name="${esc(String(f.original_name || 'file'))}">Download</button></div>
+        <div class="file-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-preview="${esc(f.id)}" title="Render this file in the canvas">Canvas</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-download="${esc(f.id)}" data-name="${esc(String(f.original_name || 'file'))}">Download</button>
+        </div>
       </div>`).join('');
     $$('[data-download]', root).forEach((btn) => btn.addEventListener('click', () => authedDownload(`/api/files/${btn.dataset.download}`, btn.dataset.name)));
     $$('[data-preview]', root).forEach((btn) => btn.addEventListener('click', () => {
       const item = btn.closest('.file-item');
-      const mime = item?.dataset.mime || '';
-      if (mime.startsWith('image/')) {
-        renderMasterResult(true, { type: 'image_result', url: `/api/files/${btn.dataset.preview}`, filename: 'project-file' });
-      } else {
-        authedDownload(`/api/files/${btn.dataset.preview}`, 'preview');
-      }
+      void previewProjectFile(btn.dataset.preview, item?.dataset.mime || '', item?.dataset.name || 'file');
     }));
   }
 

@@ -67,7 +67,7 @@ export function StatusDot({ status, size = 10 }: { status: string; size?: number
 }
 
 /** Screen scaffold: obsidian canvas + the shared indigo atmosphere at the top. */
-export function ScreenShell({ children, style, scroll }: { children: React.ReactNode; style?: ViewStyle; scroll?: boolean }) {
+export function ScreenShell({ children, style, scroll, bare }: { children: React.ReactNode; style?: ViewStyle; scroll?: boolean; bare?: boolean }) {
   // Layered atmosphere: base obsidian -> indigo field -> ambient light shapes.
   // Depth lives behind the content; glass cards float above it.
   const atmosphere = (
@@ -87,6 +87,17 @@ export function ScreenShell({ children, style, scroll }: { children: React.React
       <View style={styles.atmoFieldCharcoal} />
     </View>
   );
+  // `bare` keeps the atmosphere + obsidian canvas but hands the whole
+  // surface to the caller — used by the MASTER workspace, whose panes manage
+  // their own padding (the web workspace is full-bleed the same way).
+  if (bare) {
+    return (
+      <View style={[styles.screen, style]}>
+        {atmosphere}
+        <View style={styles.screenFull}>{children}</View>
+      </View>
+    );
+  }
   if (scroll) {
     return (
       <View style={[styles.screen, style]}>
@@ -356,6 +367,7 @@ const styles = StyleSheet.create({
   atmoFieldViolet: { position: 'absolute', top: 90, right: -150, width: 340, height: 340, borderRadius: 170, backgroundColor: atmosphere.fieldViolet },
   atmoFieldCharcoal: { position: 'absolute', bottom: -140, left: -80, width: 460, height: 380, borderRadius: 190, backgroundColor: atmosphere.fieldCharcoal },
   screenContent: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  screenFull: { flex: 1, minHeight: 0 },
   header: { marginBottom: spacing.lg },
   kicker: { color: palette.telemetry, fontSize: typeScale.micro.fontSize, fontWeight: '700', letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 6 },
   title: { color: palette.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 },

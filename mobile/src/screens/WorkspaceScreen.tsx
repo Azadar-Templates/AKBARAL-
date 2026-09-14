@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api/client';
 import { palette, spacing } from '../theme';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
+import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 export function WorkspaceScreen() {
+  const navigation = useNavigation<{ navigate: (screen: string, params?: unknown) => void }>();
   const [projects, setProjects] = useState<any[]>([]);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,13 +53,22 @@ export function WorkspaceScreen() {
         ListEmptyComponent={<EmptyState text="No projects yet. Create one to host your work." />}
         renderItem={({ item }) => (
           <Card accent="cyan" style={styles.card}>
-            <View style={styles.cardRow}>
+            {/* Opening a project takes the user to the MASTER workspace with
+                that project selected — files, live preview, export and the
+                chat, the same Arena-style model as the web workspace. */}
+            <Pressable
+              onPress={() => navigation.navigate('MASTER', { projectId: item.id })}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${item.name} in the MASTER workspace`}
+              style={styles.cardRow}
+            >
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <Text style={styles.muted}>{item.slug || item.id}</Text>
               </View>
+              <Text style={styles.openLabel}>Open ↗</Text>
               <View style={styles.orb} />
-            </View>
+            </Pressable>
           </Card>
         )}
       />
@@ -80,6 +91,7 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   cardBody: { flex: 1 },
   cardTitle: { color: palette.text, fontWeight: '800', fontSize: 16 },
+  openLabel: { color: palette.accent2, fontSize: 12, fontWeight: '700', marginRight: 10 },
   muted: { color: palette.textDim, marginTop: 2 },
   orb: {
     width: 12,

@@ -535,31 +535,139 @@ export default function Home() {
           Recent tasks</h3><div id="dashboard-tasks" className="list"></div></div><div className="panel"><h3>
           My agents</h3><div id="dashboard-agents" className="list"></div></div></div></div></section>
 
-      {/* ================= MASTER AI ================= */}
-      <section className="screen screen-default" id="screen-master" hidden><div className="aw-container"><div className="page-head master-head"><div><p className="eyebrow" data-kicker="MASTER AI"></p><h1>
+      {/* ============ MASTER AI — Arena-style workspace ============
+          The platform workspace model, in AKBARAL!'s own identity:
+            LEFT  — the full project / book / file area with the live preview
+                    canvas; the download-export control sits ABOVE the preview.
+            RIGHT — the AKBARAL! brand header at the top, then the main
+                    MASTER chat (live activity, results, composer, drawers).
+          Web (this file + public/styles.css) and Android
+          (mobile/src/screens/MasterScreen.tsx) share one design system and
+          one spatial model; narrow viewports switch panes instead of
+          shrinking the desktop grid. */}
+      <section className="screen screen-default" id="screen-master" hidden>
+        <div className="aw-container aw-wide">
+          <div className="master-topbar">
+            <div className="mt-id">
+              <span className="mt-mark" aria-hidden="true">A!</span>
+              <div className="mt-id-text">
+                <b>MASTER Workspace</b>
+                <small>Projects, files and the live preview — MASTER orchestrates on the right.</small>
+              </div>
+            </div>
+            <div className="master-pane-switch" role="tablist" aria-label="Workspace panes">
+              <button type="button" role="tab" id="master-pane-workspace" data-pane-tab="workspace" aria-selected="true">Workspace</button>
+              <button type="button" role="tab" id="master-pane-chat" data-pane-tab="chat" aria-selected="false">MASTER chat</button>
+            </div>
+            <div className="mt-controls">
+              <label className="mt-project"><span>Project</span>
+                <select id="master-project"><option value="">— none —</option></select>
+              </label>
+              <div className="master-core" id="master-core" data-state="idle" role="status" aria-label="MASTER core status">
+                <div className="core-ring r1"></div><div className="core-ring r2"></div><div className="core-spark"></div>
+                <span className="master-core-label" id="master-core-label">idle</span>
+              </div>
+            </div>
+          </div>
 
-          MASTER AI</h1><p className="sub">Describe a goal. MASTER plans, picks specialists and runs the workflow.</p></div><div className="master-core" id="master-core" data-state="idle" role="status" aria-label="MASTER core status"><div className="core-ring r1"></div><div className="core-ring r2"></div><div className="core-spark"></div><span className="master-core-label" id="master-core-label">
+          <div className="master-layout" id="master-layout" data-pane="workspace">
+            {/* ---- LEFT: project / book / files + live preview canvas ---- */}
+            <section className="master-workspace" id="master-workspace" aria-label="Project workspace">
+              <div className="ws-split">
+                <aside className="panel ws-files-panel" aria-label="Project files and uploads">
+                  <div className="ws-panel-head">
+                    <b>Files</b>
+                    <div className="ws-panel-actions">
+                      <label className="btn btn-outline btn-sm" htmlFor="master-attachment-input">Upload</label>
+                      <input type="file" id="master-attachment-input" multiple hidden />
+                      <button type="button" className="btn btn-ghost btn-sm" id="master-files-refresh">Refresh</button>
+                    </div>
+                  </div>
+                  <span className="sub" id="master-attachment-hint">Select a project to attach files.</span>
+                  <div id="master-attachments" className="attach-list"></div>
+                  <div id="master-files" className="list master-files">
+                    <div className="list-item"><small>Select a project to see its files.</small></div>
+                  </div>
+                  <div className="ws-project-box" id="master-project-box">
+                    <div id="master-project-controls" className="project-controls"></div>
+                  </div>
+                </aside>
 
+                <div className="ws-canvas">
+                  {/* Download / export control — ABOVE the live preview. */}
+                  <div className="ws-exportbar">
+                    <div className="ws-export-id">
+                      <span className="ws-export-label">Live preview</span>
+                      <span className="console-state" id="master-canvas-state">idle</span>
+                    </div>
+                    <div className="ws-export-actions" id="master-export-actions">
+                      <span className="sub">Select a project to export its website.</span>
+                    </div>
+                  </div>
+                  <div className="ws-preview" id="master-preview">
+                    <div className="ws-preview-empty" id="master-preview-empty">
+                      <span className="wpe-mark" aria-hidden="true">A!</span>
+                      <b>Live canvas</b>
+                      <small>Websites, images, documents, datasets and forms render here as they are produced. Export controls stay above the preview.</small>
+                    </div>
+                    <div id="master-result" className="ws-result" hidden></div>
+                  </div>
+                  <div className="artifact-bar-host" id="master-artifact-bar" hidden></div>
+                </div>
+              </div>
+            </section>
 
-            idle</span></div></div><div className="master-layout">
-          {/* LEFT — conversation: goal input, attachments, voice, project, history */}
-          <div className="master-side"><div className="panel master-panel"><form id="master-form"><label>
-            Goal<textarea id="master-goal" rows={ 4 } placeholder="e.g. Build me a website · Research this · Find cheap flights · Plan my business" required defaultValue="" /></label><div className="form-row voice-row"><button type="button" className="btn btn-ghost btn-sm" id="master-voice" hidden title="Dictate your goal">
+            {/* ---- RIGHT: AKBARAL! header + the main MASTER chat ---- */}
+            <section className="master-chat" id="master-chat" aria-label="MASTER chat">
+              <header className="chat-head">
+                <span className="brand-mark chat-brand" aria-hidden="true">A!</span>
+                <div className="chat-head-text">
+                  <b>AKBARAL!</b>
+                  <small>MASTER · orchestration</small>
+                </div>
+                <span id="master-console-state" className="console-state">idle</span>
+                <button type="button" className="chat-drawer-btn" data-chat-drawer="history" aria-expanded="false" aria-controls="master-drawer-history">History</button>
+                <button type="button" className="chat-drawer-btn" data-chat-drawer="env" aria-expanded="false" aria-controls="master-drawer-env">Env</button>
+              </header>
 
-            Voice input</button><span className="sub" id="master-voice-note" hidden></span></div><div className="form-row"><label>
-              Project <select id="master-project"><option value="">— none —</option></select></label><button className="btn btn-primary" id="master-plan-btn" type="submit">
-            Plan &amp; run</button></div><div className="attach-block"><label className="btn btn-outline btn-sm" htmlFor="master-attachment-input">
+              <div className="chat-log" id="master-chat-log">
+                <div className="chat-drawer" id="master-drawer-history" hidden>
+                  <div className="panel">
+                    <h3>Task history</h3>
+                    <div id="master-task-history" className="list master-history">
+                      <div className="list-item"><small>No tasks yet.</small></div>
+                    </div>
+                  </div>
+                </div>
+                <div className="chat-drawer" id="master-drawer-env" hidden>
+                  <div className="panel master-info" id="master-info">
+                    <h3>Environment</h3>
+                    <div id="master-info-body" className="master-info-body">
+                      <div className="info-line"><span>Model providers</span><b>Loading…</b></div>
+                    </div>
+                  </div>
+                </div>
+                <div id="master-output" className="output master-console chat-activity" aria-live="polite">
+                  <div className="console-hint">Describe a goal. MASTER plans, picks specialists and streams the run here.</div>
+                </div>
+              </div>
 
-            Attach files</label><input type="file" id="master-attachment-input" multiple hidden /><span className="sub" id="master-attachment-hint">Select a project to attach files.</span><div id="master-attachments" className="attach-list"></div></div></form></div><div className="panel"><h3>
-            Task history</h3><div id="master-task-history" className="list master-history"><div className="list-item"><small>No tasks yet.</small></div></div></div><div className="panel master-info" id="master-info"><h3>
-            Environment</h3><div id="master-info-body" className="master-info-body"><div className="info-line"><span>Model providers</span><b>Loading…</b></div></div></div></div>
-          {/* CENTER — live execution, agent activity, verification, result */}
-          <div className="panel master-console-panel"><div className="master-console-head"><b>
-            Execution console</b><span id="master-console-state" className="console-state">idle</span></div><div id="master-output" className="output master-console" aria-live="polite"><div className="console-hint">Describe a goal and run MASTER. Plans, specialist execution, live logs and verified results stream here.</div></div><div id="master-result" hidden></div></div>
-          {/* RIGHT — dynamic preview canvas, versions, assets, project controls */}
-          <div className="master-canvas"><div className="panel"><div className="master-console-head"><b>
-            Preview &amp; assets</b><span className="console-state" id="master-canvas-state">idle</span></div><div id="master-project-controls" className="project-controls"></div><div className="artifact-bar-host" id="master-artifact-bar" hidden></div><h4 className="canvas-label">
-            Project files</h4><div id="master-files" className="list master-files"><div className="list-item"><small>Select a project to see its files.</small></div></div></div></div></div></div></section>
+              <form id="master-form" className="chat-composer">
+                <div className="composer-head">
+                  <label htmlFor="master-goal">Goal</label>
+                  <button type="button" className="btn btn-ghost btn-sm" id="master-voice" hidden title="Dictate your goal">Voice input</button>
+                  <span className="sub" id="master-voice-note" hidden></span>
+                </div>
+                <textarea id="master-goal" rows={ 3 } placeholder="e.g. Build me a website · Research this market · Plan my business for the next year" required defaultValue="" />
+                <div className="composer-row">
+                  <span className="sub composer-note">Credits are consumed only on success — failures refund automatically.</span>
+                  <button className="btn btn-primary" id="master-plan-btn" type="submit">Plan &amp; run</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </section>
 
       {/* ================= Task Center (detail) ================= */}
       <section className="screen screen-default" id="screen-task" hidden><div className="aw-container"><div id="task-detail-root"></div></div></section>

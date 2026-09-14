@@ -43,6 +43,7 @@ const linking = {
   config: {
     screens: {
       Tasks: 'tasks/:taskId?',
+      MASTER: 'master/:projectId?',
     },
   },
 };
@@ -287,7 +288,15 @@ function AppShell() {
             />
           )}
         </Tab.Screen>
-        <Tab.Screen name="MASTER" options={makeScreenOptions('MASTER', insets.bottom)} component={MasterScreen} />
+        {/* The MASTER tab owns its whole surface: the workspace renders its own
+            AKBARAL! brand header at the top (the Arena-style layout), so the
+            navigator header is disabled here — the safe-area inset is applied
+            by the screen itself. */}
+        <Tab.Screen
+          name="MASTER"
+          options={{ ...makeScreenOptions('MASTER', insets.bottom), headerShown: false }}
+          component={MasterScreen}
+        />
         <Tab.Screen name="Tasks" options={makeScreenOptions('Tasks', insets.bottom)} component={TasksScreen} />
         <Tab.Screen name="Agents" options={makeScreenOptions('Agents', insets.bottom)} component={AgentsScreen} />
         <Tab.Screen name="Workspace" options={makeScreenOptions('Workspace', insets.bottom)} component={WorkspaceScreen} />

@@ -1,0 +1,408 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import vm from 'node:vm';
+
+/**
+ * Arena-style workspace contract (Build #5 — web + Android parity).
+ *
+ * The product requirement this suite locks: the workspace follows the same
+ * spatial UX pattern as the platform workspace, on every platform.
+ *
+ *   LEFT  · the full project / book / file area + the live preview canvas,
+ *           with the download / export control ABOVE the preview.
+ *   RIGHT · the AKBARAL! logo header at the top, then the main MASTER chat
+ *           (live activity, results, composer, drawers, history).
+ *
+ * Narrow viewports SWITCH panes (Workspace | MASTER chat) — they never shrink
+ * the desktop grid. The Android app implements the identical model
+ * (mobile/src/screens/MasterScreen.tsx) from the same design tokens.
+ *
+ * Part 1 asserts the source contract (markup + styles + mobile screen).
+ * Part 2 EXECUTES the real app.js workspace functions in a VM against a DOM
+ * stub to prove the behaviour: chat turns are real, the canvas is driven by
+ * the same payload, the pane switch works, and nothing is fabricated.
+ */
+
+const root = process.cwd();
+const appJs = readFileSync(join(root, 'public', 'app.js'), 'utf8');
+const css = readFileSync(join(root, 'public', 'styles.css'), 'utf8');
+const page = readFileSync(join(root, 'src', 'app', 'page.tsx'), 'utf8');
+const shell = readFileSync(join(root, 'src', 'app', 'layout.tsx'), 'utf8');
+const mobile = readFileSync(join(root, 'mobile', 'src', 'screens', 'MasterScreen.tsx'), 'utf8');
+
+/** Extract a top-level `function name(…) {…}` from app.js by brace matching. */
+function extractFunction(name: string): string {
+  const marker = `function ${name}(`;
+  const start = appJs.indexOf(marker);
+  assert.ok(start >= 0, `function ${name} must exist in app.js`);
+  let depth = 0;
+  let bodyStart = -1;
+  for (let i = start; i < appJs.length; i += 1) {
+    const ch = appJs[i];
+    if (ch === '{') {
+      depth += 1;
+      if (bodyStart < 0) bodyStart = i;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0 && bodyStart > 0) return appJs.slice(start, i + 1);
+    }
+  }
+  throw new Error(`could not extract function ${name}`);
+}
+
+/* ---------------------------------------------------------------- DOM stub */
+
+class FakeNode {
+  id = '';
+  innerHTML = '';
+  textContent = '';
+  hidden = false;
+  className = '';
+  dataset: Record<string, string> = {};
+  attrs: Record<string, string> = {};
+  children: FakeNode[] = [];
+  parentNode: FakeNode | null = null;
+  listeners: Record<string, Array<() => void>> = {};
+  queryResults: FakeNode[] = [];
+  scrollTop = 0;
+  scrollHeight = 100;
+  classList = {
+    add: (): void => undefined,
+    remove: (): void => undefined,
+    toggle: (): void => undefined,
+  };
+
+  setAttribute(key: string, value: string): void { this.attrs[key] = value; }
+  getAttribute(key: string): string { return this.attrs[key] ?? ''; }
+  addEventListener(kind: string, fn: () => void): void { (this.listeners[kind] ||= []).push(fn); }
+  click(): void { (this.listeners.click ?? []).forEach((fn) => fn()); }
+  appendChild(node: FakeNode): FakeNode { node.parentNode = this; this.children.push(node); return node; }
+  insertBefore(node: FakeNode, reference: FakeNode | null): FakeNode {
+    node.parentNode = this;
+    const index = reference ? this.children.indexOf(reference) : -1;
+    if (index >= 0) this.children.splice(index, 0, node);
+    else this.children.push(node);
+    return node;
+  }
+  querySelector(_selector: string): FakeNode { return new FakeNode(); }
+  querySelectorAll(_selector: string): FakeNode[] { return []; }
+}
+
+interface WorkspaceDom {
+  nodes: Record<string, FakeNode>;
+  created: FakeNode[];
+}
+
+/** Build the exact mounts the workspace shell writes to. */
+function buildDom(): WorkspaceDom {
+  const nodes: Record<string, FakeNode> = {};
+  const add = (id: string): FakeNode => (nodes[id] = Object.assign(new FakeNode(), { id }));
+  const chatLog = add('master-chat-log');
+  const activity = add('master-output');
+  add('master-result');
+  add('master-preview-empty');
+  add('master-canvas-state');
+  add('master-layout');
+  const tabs = ['workspace', 'chat'].map((pane) => Object.assign(new FakeNode(), { dataset: { paneTab: pane } }));
+  chatLog.appendChild(activity); // activity stream is the last element of the rail
+  const created: FakeNode[] = [];
+  (nodes as unknown as Record<string, unknown>).__tabs = tabs;
+  (nodes as unknown as Record<string, unknown>).__created = created;
+  return { nodes, created };
+}
+
+/** Load the real workspace functions from app.js into a VM with the stub. */
+function loadWorkspace(dom: WorkspaceDom): Record<string, any> {
+  const tabs = (dom.nodes as unknown as Record<string, unknown>).__tabs as FakeNode[];
+  const documentStub = {
+    getElementById: (id: string) => dom.nodes[id] ?? null,
+    createElement: () => {
+      const node = new FakeNode();
+      const children = new Map<string, FakeNode>();
+      // Stable child per selector: a re-queried action button is the SAME node,
+      // so a bound handler is the handler the test clicks.
+      node.querySelector = (selector: string) => {
+        if (!children.has(selector)) children.set(selector, new FakeNode());
+        return children.get(selector) as FakeNode;
+      };
+      dom.created.push(node);
+      return node;
+    },
+    querySelector: (selector: string) => (selector.startsWith('#') ? dom.nodes[selector.slice(1)] ?? null : null),
+    querySelectorAll: (selector: string) => (selector === '[data-pane-tab]' ? tabs : []),
+  };
+  const windowStub = {
+    matchMedia: () => ({ matches: false }),
+    open: () => undefined,
+    addEventListener: () => undefined,
+  };
+  const source = [
+    'const state = { accessToken: "test-token" };',
+    'const $ = (sel, root) => (root ? root.querySelector(sel) : document.querySelector(sel));',
+    'const $$ = (sel, root) => (root ? root.querySelectorAll(sel) : document.querySelectorAll(sel));',
+    extractFunction('esc'),
+    extractFunction('friendlyTaskError'),
+    extractFunction('isFullHtmlDocument'),
+    extractFunction('tryParseJsonTable'),
+    extractFunction('renderWebsitePreview'),
+    extractFunction('renderDataTable'),
+    extractFunction('renderImagePreview'),
+    extractFunction('renderDocumentPreview'),
+    extractFunction('renderBusinessForm'),
+    extractFunction('renderComparisonCards'),
+    extractFunction('renderTaskOutcome'),
+    extractFunction('chatAppend'),
+    extractFunction('chatScrollToEnd'),
+    extractFunction('masterPaneSet'),
+    extractFunction('masterPaneIsNarrow'),
+    extractFunction('canvasSetState'),
+    extractFunction('canvasKindLabel'),
+    extractFunction('extractHtmlDeliverable'),
+    extractFunction('outcomeChatTurn'),
+    extractFunction('renderMasterResult'),
+    extractFunction('clearMasterResult'),
+    'module.exports = { chatAppend, masterPaneSet, canvasSetState, canvasKindLabel, extractHtmlDeliverable, outcomeChatTurn, renderMasterResult, clearMasterResult, renderTaskOutcome, esc };',
+  ].join('\n\n');
+  const module = { exports: {} as Record<string, unknown> };
+  vm.runInNewContext(source, {
+    module,
+    console,
+    document: documentStub,
+    window: windowStub,
+    URL: { createObjectURL: () => 'blob:stub', revokeObjectURL: () => undefined },
+    Blob: class Blob { constructor() { undefined; } },
+    fetch: () => Promise.resolve({ ok: true, blob: () => Promise.resolve({}), text: () => Promise.resolve('') }),
+    setTimeout: () => undefined,
+  });
+  return module.exports as Record<string, any>;
+}
+
+/* ------------------------------------------------------- 1. SOURCE CONTRACT */
+
+describe('Arena-style workspace — source contract (web)', () => {
+  it('the workspace pane (files + canvas) is the LEFT pane and the chat is the RIGHT rail', () => {
+    const workspace = page.indexOf('id="master-workspace"');
+    const chat = page.indexOf('id="master-chat"');
+    assert.ok(workspace > 0 && chat > 0, 'both panes are mounted');
+    assert.ok(workspace < chat, 'the workspace precedes the chat rail in document order (left → right)');
+    assert.match(css, /\.master-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(360px,\s*420px\)/, 'grid: fluid workspace + bounded chat rail');
+    assert.match(css, /\.master-workspace\s*\{\s*min-width:\s*0/, 'workspace pane is the flow column');
+    assert.match(css, /\.master-chat\s*\{[^}]*position:\s*sticky[^}]*top:\s*84px/, 'chat rail stays anchored while the canvas scrolls');
+  });
+
+  it('the project/book/file area sits inside the workspace pane, not in the chat', () => {
+    const workspace = page.slice(page.indexOf('id="master-workspace"'), page.indexOf('id="master-chat"'));
+    for (const mount of ['ws-files-panel', 'id="master-files"', 'id="master-project-controls"', 'id="master-attachment-input"']) {
+      assert.ok(workspace.includes(mount), `${mount} lives in the workspace pane`);
+    }
+    assert.ok(!workspace.includes('id="master-chat-log"'), 'the chat log is not part of the workspace pane');
+  });
+
+  it('the download/export control is ABOVE the preview, and the preview is the canvas right under it', () => {
+    const exportBar = page.indexOf('id="master-export-actions"');
+    const preview = page.indexOf('id="master-preview"');
+    const result = page.indexOf('id="master-result"');
+    assert.ok(exportBar < preview && preview < result, 'export control → preview surface → deliverable canvas');
+    assert.match(css, /\.ws-exportbar\s*\{[^}]*align-items:\s*center/, 'export bar is a real toolbar');
+    assert.match(css, /\.ws-preview\s*\{[^}]*overflow:\s*hidden/, 'preview clips the rendered deliverable');
+  });
+
+  it('the AKBARAL! header is at the top of the chat rail, above the log and the composer', () => {
+    const rail = page.slice(page.indexOf('id="master-chat"'), page.indexOf('id="screen-task"'));
+    const brand = rail.indexOf('brand-mark chat-brand');
+    const log = rail.indexOf('id="master-chat-log"');
+    const composer = rail.indexOf('id="master-form"');
+    assert.ok(brand > 0 && log > 0 && composer > 0, 'rail mounts brand, log and composer');
+    assert.ok(brand < log && log < composer, 'header → log → composer order');
+    assert.match(css, /\.master-chat\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/, 'the rail is a header/log/composer grid');
+  });
+
+  it('panes switch on narrow viewports (a real switch, not a squashed desktop)', () => {
+    assert.match(page, /id="master-pane-workspace"[\s\S]{0,220}?id="master-pane-chat"/, 'pane tabs mounted on the workspace top bar');
+    assert.match(page, /data-pane="workspace"/, 'the layout ships a default pane');
+    assert.match(appJs, /function masterPaneSet\(name\)/, 'the pane switch is wired in the client');
+    assert.match(appJs, /data-pane-tab/, 'tab clicks drive the pane');
+  });
+
+  it('every workspace control is bound to a real API — no fake export, no tokenless auth links', () => {
+    // Auth'd endpoints reject plain hrefs (no token in a query string), so a
+    // static link would be a fake control: exports must be auth-fetched.
+    assert.ok(!/href="\/api\/(projects|files)/.test(appJs), 'no plain href to an auth-protected API path');
+    assert.match(appJs, /async function authedDownload\(/, 'auth-fetched downloads exist');
+    assert.match(appJs, /#artifact-export'\)\?\.addEventListener\('click', \(\) => authedDownload\(/, 'artifact export downloads the real bytes');
+    assert.match(appJs, /#artifact-open'\)\?\.addEventListener\('click', \(\) => void openArtifactBlob\(/, 'artifact open fetches the real version');
+    assert.match(appJs, /async function openArtifactBlob\(projectId, version\)/, 'open helper exists');
+    assert.match(appJs, /artifacts\/website\/v\/\$\{encodeURIComponent\(String\(version\)\)\}/, 'open uses the versioned artifact endpoint');
+  });
+
+  it('the live preview keeps the artifact isolated from the app on both platforms', () => {
+    assert.match(appJs, /sandbox="allow-scripts"/, 'web preview iframe is sandboxed to scripts');
+    assert.ok(!appJs.includes('allow-same-origin'), 'the artifact can never become same-origin with the app');
+    assert.match(appJs, /\.srcdoc/, 'web preview renders through srcdoc (no external embedding)');
+    assert.match(mobile, /originWhitelist=\{\['about:blank', 'data:\*'\]\}/, 'Android preview only allows about:blank/data origins');
+    assert.match(mobile, /onShouldStartLoadWithRequest/, 'Android preview gates navigation');
+  });
+
+  it('the workspace surfaces share one asset version so a redesign is never stale', () => {
+    const versions = [...shell.matchAll(/\/?(?:tokens\.css|styles\.css|app\.js)\?v=([\w.-]+)/g)].map((m) => m[1]);
+    assert.ok(versions.length >= 3, 'the shell versions the workspace assets');
+    assert.equal(new Set(versions).size, 1, `all assets share one cache-busting version (${versions.join(', ')})`);
+  });
+});
+
+/* ------------------------------------------------ 2. BEHAVIOUR (real app.js) */
+
+describe('Arena-style workspace — client behaviour (real app.js functions)', () => {
+  it('chatAppend posts a real turn above the live activity stream and binds actions', () => {
+    const dom = buildDom();
+    const api = loadWorkspace(dom);
+    let pressed = 0;
+    const el = api.chatAppend({
+      kind: 'user',
+      who: 'You',
+      html: '<p>Build me a website</p>',
+      meta: [{ label: 'project', tone: 'blue' }],
+      actions: [{ label: 'Open in canvas', onClick: () => { pressed += 1; } }],
+    });
+    assert.ok(el, 'the turn element is created');
+    assert.match(el.className, /chat-msg user/, 'the turn carries its role class');
+    assert.match(el.innerHTML, /Build me a website/, 'the real content is rendered');
+    assert.match(el.innerHTML, /project/, 'meta chips render');
+    const order = dom.nodes['master-chat-log'].children;
+    assert.equal(order[order.length - 1].id, 'master-output', 'the activity stream stays the last element of the rail');
+    const button = el.querySelector('[data-chat-action="0"]');
+    button.click();
+    assert.equal(pressed, 1, 'the action handler is bound to the real control');
+  });
+
+  it('renderMasterResult drives the canvas AND the chat from the same real payload', () => {
+    const dom = buildDom();
+    const api = loadWorkspace(dom);
+    api.renderMasterResult(true, {
+      executiveSummary: 'Aurora Coffee landing page is ready.',
+      sections: [{ stepOrder: 1, specialization: 'Web Development / Strategic Architect', status: 'completed', content: '## Hero\n\nFull-bleed hero with subscription CTA.' }],
+    });
+    const canvas = dom.nodes['master-result'];
+    assert.equal(canvas.hidden, false, 'the canvas is revealed');
+    assert.match(canvas.innerHTML, /Aurora Coffee landing page is ready\./, 'the canvas renders the real executive summary');
+    assert.match(canvas.innerHTML, /Full-bleed hero with subscription CTA\./, 'the canvas renders the real section content');
+    assert.equal(dom.nodes['master-preview-empty'].hidden, true, 'the empty state yields to the deliverable');
+    assert.equal(dom.nodes['master-canvas-state'].textContent, 'report', 'the canvas state chip reflects the payload shape');
+    const turns = dom.nodes['master-chat-log'].children.filter((node) => /chat-msg/.test(node.className));
+    assert.equal(turns.length, 1, 'exactly one chat turn is posted for the run');
+    assert.match(turns[0].innerHTML, /Aurora Coffee landing page is ready\./, 'the chat turn carries the same real answer');
+  });
+
+  it('a finished website run offers a real export action derived from the deliverable', () => {
+    const dom = buildDom();
+    const api = loadWorkspace(dom);
+    const html = '<!doctype html><html><body><h1>Aurora</h1></body></html>';
+    assert.equal(api.extractHtmlDeliverable({ sections: [{ status: 'completed', content: html }] }), html, 'the HTML deliverable is located');
+    const turn = api.outcomeChatTurn(true, { sections: [{ status: 'completed', content: html }] });
+    assert.equal(turn.meta[0].label, 'website', 'the turn is labelled by the real deliverable shape');
+    assert.ok(turn.actions.some((action: { label: string }) => action.label === 'Export .html'), 'export action is offered');
+    assert.ok(!turn.actions.some((action: { label: string }) => /share|publish/i.test(action.label)), 'no invented integrations');
+  });
+
+  it('failures keep honest copy in the chat — completion is never faked', () => {
+    const dom = buildDom();
+    const api = loadWorkspace(dom);
+    const turn = api.outcomeChatTurn(false, { code: 'provider_not_configured', message: 'no provider available' });
+    assert.match(turn.html, /No AI provider configured/, 'the friendly honest title is used');
+    assert.ok(!/Completed/.test(turn.html), 'a failure never claims completion');
+    assert.equal(turn.kind, 'master err', 'the turn is styled as a failure');
+    api.renderMasterResult(false, { code: 'verification_failed', message: 'verification_failed: substance' });
+    assert.match(dom.nodes['master-result'].innerHTML, /rejected by verification/, 'the canvas states the honest reason');
+    assert.equal(dom.nodes['master-canvas-state'].textContent, 'failed', 'the canvas state chip reports the failure');
+  });
+
+  it('clearMasterResult restores the honest empty canvas (no stale deliverable)', () => {
+    const dom = buildDom();
+    const api = loadWorkspace(dom);
+    api.renderMasterResult(true, { content: 'previous run output' });
+    api.clearMasterResult();
+    assert.equal(dom.nodes['master-result'].hidden, true, 'the canvas is cleared');
+    assert.equal(dom.nodes['master-result'].innerHTML, '', 'no stale content remains');
+    assert.equal(dom.nodes['master-preview-empty'].hidden, false, 'the empty state returns');
+    assert.equal(dom.nodes['master-canvas-state'].textContent, 'idle', 'the canvas returns to idle');
+  });
+
+  it('masterPaneSet switches panes and reports selection accessibly', () => {
+    const dom = buildDom();
+    const api = loadWorkspace(dom);
+    const tabs = (dom.nodes as unknown as Record<string, unknown>).__tabs as FakeNode[];
+    api.masterPaneSet('chat');
+    assert.equal(dom.nodes['master-layout'].dataset.pane, 'chat', 'the layout reports the chat pane');
+    assert.equal(tabs.find((tab) => tab.dataset.paneTab === 'chat')?.getAttribute('aria-selected'), 'true', 'the chat tab is selected');
+    assert.equal(tabs.find((tab) => tab.dataset.paneTab === 'workspace')?.getAttribute('aria-selected'), 'false', 'the workspace tab is deselected');
+    api.masterPaneSet('workspace');
+    assert.equal(dom.nodes['master-layout'].dataset.pane, 'workspace', 'switching back works');
+    api.masterPaneSet('nonsense');
+    assert.equal(dom.nodes['master-layout'].dataset.pane, 'workspace', 'unknown panes fall back to the workspace');
+  });
+});
+
+/* ------------------------------------------------------------ 3. ANDROID */
+
+describe('Arena-style workspace — Android parity', () => {
+  it('the mobile MASTER screen implements the same two-pane model', () => {
+    assert.match(mobile, /type Pane = 'workspace' \| 'chat'/, 'the same two panes exist');
+    assert.match(mobile, /PANE_BREAKPOINT = 900/, 'a documented breakpoint decides split vs switch');
+    assert.match(mobile, /const wide = width >= PANE_BREAKPOINT/, 'wide viewports show both panes');
+    assert.match(mobile, /pane === 'workspace' \? workspacePane : chatPane/, 'narrow viewports switch panes');
+    assert.match(mobile, /'MASTER chat'/, 'the chat pane is labelled like the web rail');
+  });
+
+  it('the export control renders ABOVE the preview canvas, which renders ABOVE the file area', () => {
+    const exportBar = mobile.indexOf('styles.exportBar');
+    const canvas = mobile.indexOf('styles.canvas}');
+    const files = mobile.indexOf('styles.filesPanel');
+    assert.ok(exportBar > 0 && canvas > exportBar, 'export bar precedes the canvas');
+    assert.ok(files > canvas, 'the file area follows the canvas in the workspace pane');
+    assert.match(mobile, /EXPORT CONTROL — ABOVE THE PREVIEW/, 'the spatial rule is documented in place');
+    assert.match(mobile, /THE LIVE PREVIEW CANVAS/, 'the canvas is an explicit region');
+    assert.match(mobile, /THE PROJECT \/ BOOK \/ FILE AREA/, 'the file area is an explicit region');
+  });
+
+  it('the brand header tops the screen — AKBARAL! identity, then the chat', () => {
+    assert.match(mobile, /<Text style=\{styles.wordmark\}>AKBARAL!<\/Text>/, 'the wordmark is the mobile rail header');
+    assert.match(mobile, /styles.brandMark/, 'the A! mark leads the header');
+    const header = mobile.indexOf('BRAND HEADER');
+    const panes = mobile.indexOf('PANE SWITCH');
+    assert.ok(header > 0 && panes > header, 'the brand header comes before the pane switch');
+  });
+
+  it('the mobile workspace uses the shared design system (no parallel palette)', () => {
+    assert.match(mobile, /import \{ glass, palette, radius, shadow, spacing, statusColor, type as typeScale \} from '\.\.\/theme'/, 'tokens come from the shared theme');
+    assert.match(mobile, /from '\.\.\/components\/ui'/, 'shared UI primitives are used');
+    assert.ok(!/const palette\s*=/.test(mobile), 'no local palette copy');
+    assert.ok(!/#9790f2|#7378e8|#8fc7de/.test(mobile), 'identity colours are referenced by token, never re-typed as literals');
+  });
+
+  it('the mobile chat drives the real orchestration APIs and reports honestly', () => {
+    assert.match(mobile, /api\.post\('\/api\/workflows\/master'/, 'MASTER planning endpoint');
+    assert.match(mobile, /api\.post\(`\/api\/workflows\/\$\{encodeURIComponent\(workflowId\)\}\/run`/, 'workflow run endpoint');
+    assert.match(mobile, /api\.get\(`\/api\/workflows\/\$\{encodeURIComponent\(workflowId\)\}`\)/, 'live workflow status polling');
+    assert.match(mobile, /api\.get\(`\/api\/projects\/\$\{encodeURIComponent\(id\)\}\/artifacts\/website`\)/, 'real project website artifact');
+    assert.match(mobile, /The workflow completed successfully, but no result content was attached to it\./, 'honest no-content statement');
+    assert.match(mobile, /reason is honest|refunded|failed honestly/i, 'failures state the refund policy');
+  });
+
+  it('the project vault opens a project in the workspace pane (one workspace, reachable everywhere)', () => {
+    const vault = readFileSync(join(root, 'mobile', 'src', 'screens', 'WorkspaceScreen.tsx'), 'utf8');
+    const app = readFileSync(join(root, 'mobile', 'App.tsx'), 'utf8');
+    assert.match(vault, /navigation\.navigate\('MASTER', \{ projectId: item\.id \}\)/, 'the vault opens the MASTER workspace for a project');
+    assert.match(mobile, /\(route\.params as \{ projectId\?: string \} \| undefined\)\?\.projectId/, 'the workspace consumes the requested project');
+    assert.match(mobile, /setPane\('workspace'\)/, 'opening a project lands on the workspace pane');
+    assert.match(app, /MASTER: 'master\/:projectId\?'/, 'deep links can address a project workspace directly');
+  });
+
+  it('the mobile preview renders real content types, never a fabricated preview', () => {
+    assert.match(mobile, /import \{ WebView \} from 'react-native-webview'/, 'HTML renders in a real WebView');
+    assert.match(mobile, /source=\{\{ html: String\(artifact\.content\) \}\}/, 'the deliverable HTML is rendered as-is');
+    assert.match(mobile, /<Image[\s\S]{0,220}?headers: token \? \{ authorization: `Bearer \$\{token\}` \} : \{\}/, 'images are auth-fetched from the real file endpoint');
+    assert.match(mobile, /no result content to render|has no text content to render/i, 'empty documents are stated honestly');
+  });
+});

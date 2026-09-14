@@ -9,10 +9,14 @@ import { join } from 'node:path';
  * Locks the structural guarantees the production UX depends on so a future
  * edit cannot silently regress them:
  *
- *   1. The MASTER workspace is a two-zone responsive grid (goal/input +
- *      execution console) that collapses to one column under 1080px.
- *   2. The execution console is a bounded, scrollable panel — long results
- *      can never push the page into unbounded vertical growth.
+ *   1. The MASTER workspace is the Arena-style two-zone responsive grid —
+ *      LEFT: project/book/files + live preview canvas (export control above
+ *      the preview); RIGHT: the AKBARAL! header + MASTER chat rail. Under
+ *      1080px the panes SWITCH (never shrink): a pane tab control replaces
+ *      the side-by-side grid.
+ *   2. The execution console and the chat rail are bounded, scrollable
+ *      panels — long results can never push the page into unbounded
+ *      vertical growth.
  *   3. Auto-fill grids use min() guards so a fixed minimum track can never
  *      overflow a 320px viewport.
  *   4. The pricing grid steps 3 -> 2 -> 1 columns (2-col tablet step
@@ -31,16 +35,47 @@ const appJs = readFileSync(join(root, 'public', 'app.js'), 'utf8');
 const page = readFileSync(join(root, 'src', 'app', 'page.tsx'), 'utf8');
 
 describe('responsive + honest error-state contract', () => {
-  it('MASTER workspace is a two-zone grid that collapses under 1080px', () => {
-    assert.match(css, /\.master-layout\s*\{\s*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(320px,\s*2fr\)\s*3fr/, 'master-layout grid definition');
-    assert.match(css, /@media \(max-width: 1080px\)\s*\{[\s\S]*?\.master-layout\s*\{\s*grid-template-columns:\s*1fr;/, 'master-layout single-column collapse at 1080px');
+  it('MASTER workspace is the Arena-style two-zone grid that collapses under 1080px', () => {
+    // LEFT = workspace (fluid) · RIGHT = MASTER chat rail (bounded).
+    assert.match(
+      css,
+      /\.master-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(360px,\s*420px\)/,
+      'master-layout: workspace column + bounded chat rail',
+    );
     assert.match(css, /\.master-side\s*\{\s*display:\s*grid;[^}]*min-width:\s*0/, 'side column guards min-width for overflow');
+    assert.match(css, /@media \(max-width: 1080px\)\s*\{[\s\S]*?\.master-layout\s*\{\s*grid-template-columns:\s*1fr;/, 'master-layout single-column collapse at 1080px');
+    // Narrow viewports SWITCH panes instead of squeezing the desktop grid.
+    assert.match(css, /\.master-pane-switch\s*\{\s*display:\s*none;/, 'pane switch hidden on desktop');
+    assert.match(css, /@media \(max-width: 1080px\)\s*\{[\s\S]*?\.master-pane-switch\s*\{\s*display:\s*flex;/, 'pane switch appears at 1080px');
+    assert.match(css, /\[data-pane="workspace"\]\s*\.master-chat\s*\{\s*display:\s*none;/, 'workspace pane hides the chat');
+    assert.match(css, /\[data-pane="chat"\]\s*\.master-workspace\s*\{\s*display:\s*none;/, 'chat pane hides the workspace');
+    assert.match(page, /id="master-pane-workspace"[\s\S]{0,200}?id="master-pane-chat"/, 'page mounts both pane tabs');
+  });
+
+  it('the download/export control sits ABOVE the live preview, in markup and styles', () => {
+    const exportBar = page.indexOf('id="master-export-actions"');
+    const preview = page.indexOf('id="master-preview"');
+    assert.ok(exportBar > 0, 'page mounts the export control');
+    assert.ok(preview > exportBar, 'the export control precedes the preview in the workspace markup');
+    const cssExport = css.indexOf('.ws-exportbar');
+    const cssPreview = css.indexOf('.ws-preview {');
+    assert.ok(cssExport > 0 && cssPreview > cssExport, 'stylesheet defines the export bar before the preview surface');
+    assert.match(css, /\.ws-preview\s*\{[^}]*min-height:\s*min\(56vh,\s*560px\)/, 'preview canvas keeps a real canvas height');
+  });
+
+  it('the MASTER chat rail is header + bounded log + composer (never unbounded growth)', () => {
+    assert.match(css, /\.master-chat\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/, 'rail = header / log / composer');
+    assert.match(css, /\.chat-log\s*\{[^}]*overflow-y:\s*auto[^}]*max-height:\s*min\(58vh,\s*640px\)/, 'chat rail scrolls inside a bounded height');
+    assert.match(css, /\.chat-log\s*\{[\s\S]{0,400}?overflow-wrap:\s*anywhere/, 'chat rail wraps long tokens');
+    assert.match(page, /id="master-chat-log"/, 'chat log mount exists');
+    assert.match(page, /className="brand-mark chat-brand"/, 'the AKBARAL! brand header sits at the top of the rail');
   });
 
   it('execution console is bounded and scrollable, never unbounded', () => {
     assert.match(css, /\.master-console\s*\{[^}]*max-height:\s*min\(58vh,\s*640px\)[^}]*overflow-y:\s*auto/, 'console max-height + scroll');
     assert.match(css, /\.master-console\s*\{[^}]*overflow-wrap:\s*anywhere/, 'console wraps long tokens (URLs, JSON)');
     assert.match(css, /@media \(max-width: 1080px\)\s*\{[\s\S]*?\.master-console\s*\{\s*max-height:\s*none/, 'console height limit lifted when stacked');
+    assert.match(css, /#master-output\.chat-activity\s*\{[^}]*white-space:\s*pre-wrap/, 'the activity stream reads as a chat turn');
   });
 
   it('auto-fill grids use min() guards so fixed tracks cannot overflow 320px viewports', () => {
