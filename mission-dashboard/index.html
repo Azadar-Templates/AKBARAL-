@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <title>ZA141251SA — Mission Control</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">ZA141251SA</span>
+        <span class="sub">Mission Control</span>
+      </div>
+      <div class="topbar-right">
+        <span id="identity" class="identity">not signed in</span>
+        <button id="signout" class="ghost" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <main id="shell" class="shell">
+      <section id="login-panel" class="panel login">
+        <h1>Private mission access</h1>
+        <p class="muted">
+          This dashboard is not public and is not linked from any public surface. Sign in with the
+          mission owner account, or open an access link issued from the dashboard.
+        </p>
+        <form id="login-form" autocomplete="on">
+          <label for="email">Owner email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required />
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+          <button type="submit" id="login-button">Sign in</button>
+          <p id="login-error" class="error" role="alert" hidden></p>
+        </form>
+        <p class="muted small">
+          An access link can be appended as <code>#link=&lt;token&gt;</code>. Link tokens are read-only
+          and expire; they are removed from the address bar as soon as they are read.
+        </p>
+      </section>
+
+      <section id="app" hidden>
+        <nav class="tabs" id="tabs" aria-label="Mission sections">
+          <button data-tab="overview" class="tab active">Overview</button>
+          <button data-tab="agents" class="tab">Agents</button>
+          <button data-tab="treasury" class="tab">Treasury &amp; payouts</button>
+          <button data-tab="approvals" class="tab">Approvals</button>
+          <button data-tab="tools" class="tab">Tools &amp; credentials</button>
+          <button data-tab="policy" class="tab">Policy</button>
+          <button data-tab="audit" class="tab">Audit</button>
+        </nav>
+
+        <div id="banner" class="banner" hidden></div>
+
+        <section data-panel="overview" class="panel">
+          <div class="cards" id="overview-cards"></div>
+          <h2>Revenue — realized only</h2>
+          <p class="muted small" id="revenue-honesty"></p>
+          <div class="grid-2">
+            <div>
+              <h3>Realized (verified receipts)</h3>
+              <div id="revenue-realized" class="table-wrap"></div>
+              <h3>Contracted / expected (not earned)</h3>
+              <div id="revenue-pending" class="table-wrap"></div>
+            </div>
+            <div>
+              <h3>Targets (KPIs — never achievements)</h3>
+              <div id="targets" class="table-wrap"></div>
+              <form id="target-form" class="inline-form">
+                <input name="label" placeholder="Target label" required />
+                <select name="period">
+                  <option value="day">day</option>
+                  <option value="week">week</option>
+                  <option value="month">month</option>
+                  <option value="quarter">quarter</option>
+                </select>
+                <input name="amountCents" type="number" min="1" step="1" placeholder="minor units" required />
+                <button type="submit">Add target</button>
+              </form>
+            </div>
+          </div>
+          <h2>Expenses &amp; costs</h2>
+          <div class="grid-2">
+            <div id="expenses" class="table-wrap"></div>
+            <div id="costs" class="table-wrap"></div>
+          </div>
+          <h2>Integrity &amp; external activation</h2>
+          <div class="grid-2">
+            <div id="integrity" class="table-wrap"></div>
+            <div id="activation" class="table-wrap"></div>
+          </div>
+        </section>
+
+        <section data-panel="agents" class="panel" hidden>
+          <form id="agent-search" class="inline-form">
+            <input name="q" placeholder="Search agents by name or slug" />
+            <button type="submit">Search</button>
+          </form>
+          <div id="agent-list" class="table-wrap"></div>
+          <div id="agent-report"></div>
+        </section>
+
+        <section data-panel="treasury" class="panel" hidden>
+          <h2>Treasury</h2>
+          <div id="treasury-summary" class="cards"></div>
+          <h2>Payout destinations (four configurable slots)</h2>
+          <p class="muted small">
+            Slots can be labelled now and completed later. A slot must be verified before any payout
+            can target it, and every payout needs an owner approval plus a provider settlement
+            reference.
+          </p>
+          <div id="payout-slots" class="table-wrap"></div>
+          <div class="grid-2">
+            <form id="slot-form" class="stack-form">
+              <h3>Configure a slot</h3>
+              <label>Slot <input name="slot" type="number" min="1" max="4" value="1" required /></label>
+              <label>Label <input name="label" placeholder="Primary business account" /></label>
+              <label>Destination type
+                <select name="destinationType">
+                  <option value="bank">bank</option>
+                  <option value="wallet">wallet</option>
+                  <option value="crypto">crypto</option>
+                  <option value="provider">provider</option>
+                  <option value="other">other</option>
+                </select>
+              </label>
+              <label>Holder name <input name="holderName" placeholder="account holder" /></label>
+              <label>Masked account / provider reference
+                <input name="maskedAccount" placeholder="only a masked hint is stored" />
+              </label>
+              <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
+              <button type="submit">Save slot</button>
+            </form>
+            <div>
+              <h3>Payouts</h3>
+              <form id="payout-form" class="inline-form">
+                <input name="slot" type="number" min="1" max="4" placeholder="slot" required />
+                <input name="amountCents" type="number" min="1" placeholder="amount (minor units)" required />
+                <input name="memo" placeholder="memo" />
+                <button type="submit">Request payout</button>
+              </form>
+              <div id="payouts" class="table-wrap"></div>
+            </div>
+          </div>
+          <h2>Wallets &amp; ledger</h2>
+          <div id="wallets" class="table-wrap"></div>
+          <div id="ledger" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="approvals" class="panel" hidden>
+          <h2>Pending approvals</h2>
+          <p class="muted small">
+            Spend above the approval threshold, new resources, upgrades, tool access and every payout
+            wait here. Nothing is approved automatically.
+          </p>
+          <div id="approvals" class="table-wrap"></div>
+          <h2>Expense requests</h2>
+          <div id="expense-requests" class="table-wrap"></div>
+          <h2>Upgrades</h2>
+          <div id="upgrades" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="tools" class="panel" hidden>
+          <h2>Approved tool catalog</h2>
+          <p class="muted small">
+            Default is deny: a tool that is not approved here cannot be used. Unrestricted card or
+            bank APIs are permanently blocked — agents never hold those credentials.
+          </p>
+          <div id="tools" class="table-wrap"></div>
+          <h2>Credentials (values are never displayed)</h2>
+          <div id="credentials" class="table-wrap"></div>
+          <div class="grid-2">
+            <form id="credential-form" class="stack-form">
+              <h3>Store a provider credential</h3>
+              <label>Provider <input name="provider" placeholder="google" required /></label>
+              <label>Label <input name="label" placeholder="gemini key" required /></label>
+              <label>Value <input name="secret" type="password" placeholder="stored encrypted, never shown again" required /></label>
+              <label>Expires at <input name="expiresAt" type="date" /></label>
+              <label>Environment variable <input name="envVar" placeholder="GOOGLE_API_KEY" /></label>
+              <button type="submit">Store encrypted</button>
+            </form>
+            <div>
+              <h3>Resources, services &amp; renewals</h3>
+              <div id="resources" class="table-wrap"></div>
+              <div id="services" class="table-wrap"></div>
+            </div>
+          </div>
+        </section>
+
+        <section data-panel="policy" class="panel" hidden>
+          <h2>Mission policy</h2>
+          <div id="policy" class="table-wrap"></div>
+          <form id="policy-form" class="inline-form">
+            <input name="maxDailySpendCents" type="number" min="1" placeholder="daily spend ceiling" />
+            <input name="requireApprovalAboveCents" type="number" min="1" placeholder="approval threshold" />
+            <input name="maxPayoutCents" type="number" min="1" placeholder="payout ceiling" />
+            <button type="submit">Update policy</button>
+          </form>
+          <h2>Kill switch</h2>
+          <p class="muted small">
+            Engaging the kill switch suspends every mission activity immediately — including work the
+            policy otherwise enables — until it is released.
+          </p>
+          <div class="inline-form">
+            <button id="kill-on" class="danger">Engage kill switch</button>
+            <button id="kill-off">Release kill switch</button>
+          </div>
+          <h2>Prohibited activity (compiled in)</h2>
+          <div id="prohibitions" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="audit" class="panel" hidden>
+          <h2>Immutable audit trail</h2>
+          <div id="audit-verification" class="table-wrap"></div>
+          <div id="audit" class="table-wrap"></div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Private mission system — separate database, authentication and ledger from any customer platform.</span>
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

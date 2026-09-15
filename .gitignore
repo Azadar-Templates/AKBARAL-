@@ -45,3 +45,10 @@ Thumbs.db
 
 # Local deployment secret copies (value lives only in the workspace file — never committed)
 SESSION_SECRET.txt
+
+# ZA141251SA mission runtime: local databases and generated preview access links.
+mission.db
+mission.db-*
+mission-preview-access.txt
+.mission-secrets.env
+.platform-owner.env
