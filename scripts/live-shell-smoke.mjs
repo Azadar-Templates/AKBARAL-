@@ -139,7 +139,29 @@ check('the OAuth area lists the real providers', Boolean(q('#auth-oauth')));
 await tick(800);
 const oauthLabels = [...doc.querySelectorAll('#auth-oauth-buttons .oauth-btn')].map((button) => button.textContent.trim());
 check('Google / GitHub / Facebook buttons are mounted', oauthLabels.length >= 5, oauthLabels.join(' | ').slice(0, 170));
-check('unconfigured providers are disabled, never fake success', [...doc.querySelectorAll('#auth-oauth-buttons button.oauth-btn')].every((button) => button.disabled === true));
+const oauthButtons = [...doc.querySelectorAll('#auth-oauth-buttons .oauth-btn')];
+check('every provider button is pressable — no dead control', oauthButtons.length > 0 && oauthButtons.every((button) => button.disabled === false), `${oauthButtons.length} buttons`);
+const setupButton = oauthButtons.find((button) => button.dataset.oauthConfigured === '0' && /Facebook/.test(button.textContent));
+check('a provider that is not configured says so on its face', Boolean(setupButton) && setupButton.getAttribute('aria-disabled') === 'true' && /setup needed/i.test(setupButton.textContent));
+if (setupButton) {
+  const before = q('#auth-oauth-note').textContent;
+  setupButton.click();
+  await tick(250);
+  const note = q('#auth-oauth-note');
+  check('pressing it names the exact credential an operator must set',
+    note.textContent.includes('FACEBOOK_CLIENT_ID') && note.textContent.includes('/api/auth/oauth/facebook/callback'),
+    note.textContent.slice(0, 150));
+  check('the honest answer is styled as a setup notice, not an error page', note.dataset.kind === 'setup' && window.location.href.startsWith(`${WEB}/workspace`));
+  check('the press never faked a login or navigation', q('#screen-auth')?.hidden === false && before !== note.textContent);
+}
+// The server-side half of every provider button: the authorize endpoint is real
+// and refuses honestly (503 provider_not_configured) instead of pretending.
+const unconfigured = await fetch(`${API}/api/auth/oauth/facebook/authorize`, { redirect: 'manual' });
+const unconfiguredBody = await unconfigured.json().catch(() => ({}));
+const requiredCredential = unconfiguredBody?.error?.details?.requiredCredential ?? [];
+check('the authorize endpoint is real and honest when unconfigured',
+  unconfigured.status === 503 && unconfiguredBody?.error?.code === 'provider_not_configured' && requiredCredential.includes('FACEBOOK_CLIENT_ID'),
+  `status=${unconfigured.status} code=${unconfiguredBody?.error?.code} requires=${requiredCredential.join('+')}`);
 
 // 2 — real sign-in through the real form and the real auth API.
 q('#auth-email').value = email;
@@ -234,6 +256,28 @@ if (canvasKind === 'ok') {
   check('the credit balance is still whole after the failed run', /free/i.test(q('#ak-credit-pill').textContent), q('#ak-credit-pill').textContent);
 }
 
+// 5c — the realtime channel survives compression: the SAME live stream the
+// browser opens (EventSource → /api/executions/:id/events, through the web
+// tier that now gzips documents and assets) must still arrive incrementally.
+// Without `Cache-Control: no-transform` on the SSE response the compressor
+// buffers it and this read() never resolves — that is the regression guard.
+const recentTasks = (await apiJson('/api/tasks?limit=5')).tasks ?? [];
+const latestTaskDetail = recentTasks[0] ? await apiJson(`/api/tasks/${recentTasks[0].id}`) : {};
+const executionId = (latestTaskDetail.executions ?? [])[0]?.id ?? '';
+check('the run produced a real execution to stream from', Boolean(executionId), `execution=${executionId || 'none'}`);
+if (executionId) {
+  const stream = await fetch(`${WEB}/api/executions/${executionId}/events?token=${encodeURIComponent(apiToken)}`, {
+    headers: { accept: 'text/event-stream', 'accept-encoding': 'br, gzip' },
+  });
+  check('the stream is declared text/event-stream', /text\/event-stream/.test(stream.headers.get('content-type') ?? ''), stream.headers.get('content-type') ?? '');
+  check('the compressor leaves the stream untransformed (no-transform honoured)', !(stream.headers.get('content-encoding') ?? ''), `content-encoding=${stream.headers.get('content-encoding') ?? 'none'}`);
+  const timeout = new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 8000));
+  const firstChunk = await Promise.race([stream.body.getReader().read(), timeout]);
+  check('the stream still delivers incrementally through the compressed tier', firstChunk?.timedOut !== true && firstChunk?.done === false && (firstChunk?.value?.length ?? 0) > 0,
+    firstChunk?.timedOut ? 'no bytes within 8s (BUFFERED — compression broke streaming)' : `first chunk ${firstChunk?.value?.length ?? 0} bytes`);
+  try { await stream.body.cancel(); } catch { /* stream already closed */ }
+}
+
 // 6 — New chat resets the conversation for real.
 q('#master-new-chat').click();
 await tick(600);
@@ -278,6 +322,44 @@ check('the account menu opens with real entries', q('#ak-account-menu').hidden =
 q('#ak-logout').click();
 await tick(1400);
 check('sign-out clears the session and returns to the landing screen', q('#screen-landing').hidden === false && !doc.body.classList.contains('is-workspace'));
+
+// 9 — the delivered browser payload: compressed text assets, safe caching.
+const assetVersion = (html.match(/\/assets\/(?:app\.js|styles\.css|tokens\.css)\?v=([\w.-]+)/) || [])[1];
+check('the served shell points at the compressed asset endpoint', Boolean(assetVersion), `v=${assetVersion}`);
+// Node's fetch decompresses transparently, so wire sizes must be measured on
+// the socket: http.request gives the encoded bytes exactly as a browser gets them.
+const { request: httpRequest } = await import('node:http');
+const rawText = (path, encoding = 'identity') => new Promise((resolve, reject) => {
+  const url = new URL(`${WEB}${path}`);
+  const request = httpRequest({
+    protocol: url.protocol, hostname: url.hostname, port: url.port || 80, path: `${url.pathname}${url.search}`,
+    method: 'GET', headers: { 'accept-encoding': encoding },
+  }, (response) => {
+    let bytes = 0;
+    response.on('data', (chunk) => { bytes += chunk.length; });
+    response.on('end', () => resolve({
+      bytes,
+      status: response.statusCode,
+      type: response.headers['content-type'] || '',
+      cache: response.headers['cache-control'] || '',
+      encoding: response.headers['content-encoding'] || '',
+      vary: response.headers.vary || '',
+    }));
+  });
+  request.on('error', reject);
+  request.end();
+});
+for (const asset of ['app.js', 'styles.css', 'tokens.css']) {
+  const identity = await rawText(`/assets/${asset}?v=${assetVersion}`);
+  const compressed = await rawText(`/assets/${asset}?v=${assetVersion}`, 'br, gzip');
+  check(`/assets/${asset} compresses on the wire (brotli or gzip)`, ['br', 'gzip'].includes(compressed.encoding), `encoding=${compressed.encoding}`);
+  check(`/assets/${asset} shrinks the transfer (identity ${identity.bytes}b → ${compressed.bytes}b)`, compressed.bytes < identity.bytes * 0.75, `${Math.round((1 - compressed.bytes / identity.bytes) * 100)}% smaller`);
+  check(`/assets/${asset} is served with a long, versioned cache`, /max-age=86400/.test(compressed.cache) && /accept-encoding/i.test(compressed.vary), compressed.cache);
+  check(`/assets/${asset} still serves identity bytes to a client that cannot decode brotli`, identity.encoding === '' && identity.bytes > compressed.bytes, `identity=${identity.bytes}b enc=${identity.encoding || 'none'}`);
+}
+const documentAsset = await rawText('/workspace');
+check('the app document is cacheable for a minute, then self-healing', /max-age=60/.test(documentAsset.cache) && /stale-while-revalidate/.test(documentAsset.cache), documentAsset.cache);
+check('typography loads off the critical path (media=print, swapped after hydration)', html.includes('id="ak-fonts"') && html.includes('media="print"') && q('#ak-fonts')?.getAttribute('media') === 'all', `media=${q('#ak-fonts')?.getAttribute('media')}`);
 
 /* ----------------------------------------------------------------- report */
 

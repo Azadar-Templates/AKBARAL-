@@ -1394,6 +1394,11 @@
   }
 
   async function boot() {
+    // Typography is requested with media="print" (never on the critical path).
+    // Flipping it on here keeps every DOM write after hydration — the same rule
+    // the rest of this file follows.
+    const fontSheet = document.getElementById('ak-fonts');
+    if (fontSheet) fontSheet.setAttribute('media', 'all');
     bindMenu();
     bindAuth();
     bindGeneral();
@@ -1674,6 +1679,7 @@
   async function renderOAuthButtons() {
     const wrap = $('#auth-oauth');
     const target = $('#auth-oauth-buttons');
+    const note = $('#auth-oauth-note');
     if (!wrap || !target) return;
     try {
       const body = await api('/api/auth/oauth/providers');
@@ -1681,19 +1687,54 @@
       if (!providers.length) { wrap.hidden = true; return; }
       wrap.hidden = false;
       const configured = providers.filter((p) => p.configured);
-      // Configured providers are real sign-in buttons (server-side OAuth).
-      // Unconfigured ones stay visible but disabled and name the exact env
-      // credential they need — an honest operator checklist, never a fake
-      // button that silently does nothing.
-      target.innerHTML = providers.map((p) => (p.configured
-        ? `<a class="btn btn-outline btn-sm oauth-btn" href="/api/auth/oauth/${esc(p.key)}/authorize" data-provider="${esc(p.key)}">Continue with ${esc(p.label)}</a>`
-        : `<button type="button" class="btn btn-outline btn-sm oauth-btn" disabled title="Not configured on this deployment — required: ${esc((p.required || []).join(', ') || 'provider credentials')}">Continue with ${esc(p.label)}</button>`)).join('');
-      const missing = providers
-        .filter((p) => !p.configured && (p.required || []).length)
-        .map((p) => `${p.label}: ${p.required.join(' + ')}`);
-      $('#auth-oauth-note').textContent = configured.length
-        ? `Provider sign-in is handled entirely server-side.${missing.length ? ` Not enabled here — ${missing.join(' · ')}` : ''}`
-        : `No provider sign-in is configured on this deployment yet — set ${missing.join(' · ') || 'provider credentials'} server-side to enable these buttons.`;
+      const requiredFor = (p) => (p.required || []).join(' + ') || 'provider credentials';
+      const missing = providers.filter((p) => !p.configured && (p.required || []).length).map((p) => `${p.label}: ${requiredFor(p)}`);
+      const setNote = (text, kind) => {
+        if (!note) return;
+        note.textContent = text;
+        note.dataset.kind = kind;
+      };
+      setNote(
+        configured.length
+          ? `Provider sign-in is handled entirely server-side.${missing.length ? ` Not enabled here — ${missing.join(' · ')}` : ''}`
+          : `No provider sign-in is configured on this deployment yet — set ${missing.join(' · ') || 'provider credentials'} server-side to enable these buttons.`,
+        configured.length ? 'info' : 'setup',
+      );
+      // Configured providers are real sign-in controls: pressing one navigates
+      // to the server-side authorize endpoint, which 302s to the provider
+      // consent screen. Unconfigured ones stay PRESSABLE and answer with the
+      // exact credentials an operator must set plus the redirect URI to
+      // register — a disabled control that ignores taps (and hides its reason
+      // in a desktop-only tooltip) reads as a broken button, which is exactly
+      // how it was reported live on 2026-09-15.
+      target.innerHTML = providers.map((p) => {
+        const needsSetup = !p.configured;
+        return `<button type="button" class="btn btn-outline btn-sm oauth-btn${needsSetup ? ' oauth-btn-setup' : ''}" data-oauth-provider="${esc(p.key)}" data-oauth-configured="${p.configured ? '1' : '0'}"${needsSetup ? ' aria-disabled="true"' : ''}>Continue with ${esc(p.label)}${needsSetup ? ' <span class="oauth-needs">setup needed</span>' : ''}</button>`;
+      }).join('');
+      target.querySelectorAll('button[data-oauth-provider]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const key = button.dataset.oauthProvider;
+          const provider = providers.find((p) => p.key === key) || { key, label: key };
+          if (button.dataset.oauthConfigured === '1') {
+            window.location.href = `/api/auth/oauth/${encodeURIComponent(key)}/authorize`;
+            return;
+          }
+          const redirectUri = `${location.origin}/api/auth/oauth/${key}/callback`;
+          setNote(
+            `${provider.label} sign-in is not enabled on this deployment yet. An operator sets ${requiredFor(provider)} server-side and registers ${redirectUri} as the OAuth redirect URI in the ${provider.label} app — then this button starts the real ${provider.label} consent flow. Email and password sign-in works right now.`,
+            'setup',
+          );
+          if (note) {
+            note.setAttribute('role', 'status');
+            note.setAttribute('tabindex', '-1');
+            if (typeof note.focus === 'function') note.focus({ preventScroll: true });
+            // Not every DOM implementation has scrollIntoView (jsdom, embedded
+            // webviews): the explanation is the point, the scroll is a nicety.
+            if (typeof note.scrollIntoView === 'function') note.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
+          toast(`${provider.label} sign-in needs server-side credentials: ${requiredFor(provider)}`, 'info');
+        });
+      });
     } catch { wrap.hidden = true; }
   }
 

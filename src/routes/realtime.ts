@@ -39,8 +39,14 @@ export function createRealtimeRouter(): Router {
     }
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    // `no-transform` is LOAD-BEARING, not decoration: the web tier runs with
+    // compression enabled (next.config.mjs) and its compressor skips any
+    // response that carries it. Without it this stream is gzipped and buffered
+    // — the live execution log would arrive in one blob instead of streaming.
+    // X-Accel-Buffering keeps intermediate proxies from buffering it either.
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
     let cursor = '';

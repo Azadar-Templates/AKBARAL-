@@ -77,8 +77,13 @@ describe('preview stack contract', () => {
   });
 
   it('the web tier does not emit frame-blocking headers (preview embeds the app in an iframe)', async () => {
-    const config = (await import('../../next.config.mjs')).default as NextConfigShape;
-    const serialized = JSON.stringify(config.headers ?? config).toLowerCase();
+    const config = (await import('../../next.config.mjs')).default as NextConfigShape & {
+      headers?: unknown | (() => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>>);
+    };
+    // headers() became a function when the payload/caching rules landed; the
+    // rules it returns are what the tier actually emits, so evaluate them.
+    const rules = typeof config.headers === 'function' ? await config.headers() : (config.headers ?? {});
+    const serialized = JSON.stringify(rules ?? {}).toLowerCase();
     assert.ok(!serialized.includes('x-frame-options'), 'web tier must not set X-Frame-Options');
     assert.ok(!serialized.includes('frame-ancestors'), 'web tier must not set frame-ancestors');
   });

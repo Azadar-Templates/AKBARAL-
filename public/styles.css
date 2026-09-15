@@ -945,6 +945,20 @@ form label + label { margin-top: 14px; }
 .auth-oauth-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .auth-oauth-buttons .btn { flex: 1 1 140px; justify-content: center; text-decoration: none; }
 .auth-oauth-note { margin-top: 10px; color: var(--text-faint, #5a6a8f); font-size: 11px; }
+/* Provider buttons that are not configured yet stay PRESSABLE — they answer
+   with the exact credentials an operator must set. A dead `disabled` control
+   that ignores taps reads as a broken button (reported live 2026-09-15). */
+.auth-oauth-buttons .oauth-btn[aria-disabled="true"] { opacity: 0.78; border-style: dashed; }
+.auth-oauth-buttons .oauth-btn .oauth-needs {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--accent-soft); color: var(--text-dim);
+}
+.auth-oauth-note[data-kind="setup"] {
+  padding: 9px 11px; border-radius: var(--radius, 12px); line-height: 1.55;
+  border: 1px solid var(--amber-soft); background: var(--amber-soft); color: var(--text);
+}
+.auth-oauth-note[data-kind="setup"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 #settings-oauth-list .list-item { flex-wrap: wrap; }
 #settings-oauth-list .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 

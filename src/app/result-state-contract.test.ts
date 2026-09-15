@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import vm from 'node:vm';
 
@@ -335,10 +335,27 @@ function loadPreviewRenderers(): {
 }
 
 describe('free-tier realtime transport contract (SSE through the Next proxy)', () => {
-  it('Next gzip compression stays OFF so proxied SSE streams are never buffered', () => {
+  it('compression is ON and every streaming producer opts out — buffering is impossible by construction', () => {
+    // History: this suite used to require `compress: false`, because Next's
+    // gzip middleware buffers proxied `text/event-stream` responses (verified
+    // 2026-09-14) and the live execution log would arrive as one blob. That
+    // protected the stream but shipped the whole 178 KB document uncompressed.
+    // The middleware skips any response whose Cache-Control carries
+    // `no-transform`, so the contract is now: compress everything, and mark
+    // every streaming response. `npm run smoke:shell` reads a real stream
+    // through this tier and fails if the bytes stop arriving incrementally.
     const config = readFileSync(join(process.cwd(), 'next.config.mjs'), 'utf8');
-    assert.ok(/compress:\s*false/.test(config), 'next.config.mjs must keep compress: false (gzip buffers proxied text/event-stream responses — verified 2026-09-14)');
-    assert.ok(config.includes('text/event-stream'), 'the compress flag documents WHY (SSE realtime transport)');
+    assert.ok(/compress:\s*true/.test(config), 'next.config.mjs enables compression (the 178 KB document must not travel raw)');
+    assert.ok(config.includes('text/event-stream'), 'the flag still documents the SSE constraint it must not break');
+    assert.ok(config.includes('no-transform'), 'and documents the opt-out that makes it safe');
+    const routesDir = join(process.cwd(), 'src', 'routes');
+    for (const file of readdirSync(routesDir).filter((name) => name.endsWith('.ts'))) {
+      const source = readFileSync(join(routesDir, file), 'utf8');
+      if (!source.includes("'text/event-stream'")) continue;
+      assert.match(source, /Cache-Control'?\s*[:,]\s*'[^']*no-transform/, `${file} streams and must therefore mark its response no-transform`);
+    }
+    const realtime = readFileSync(join(routesDir, 'realtime.ts'), 'utf8');
+    assert.match(realtime, /Cache-Control',\s*'no-cache, no-transform'/, 'the execution-event stream the browser subscribes to is marked');
   });
 });
 

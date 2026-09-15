@@ -62,16 +62,25 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             swapped with system fallbacks — never a render blocker. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Typography stays OFF the critical path: `media="print"` never blocks
+            first paint (the system stack renders immediately) and public/app.js
+            flips it to `all` inside boot() — the same after-hydration mechanism
+            as the rest of the client, never a pre-hydration inline mutation. */}
         <link
+          id="ak-fonts"
           rel="stylesheet"
+          media="print"
           href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Grotesk+Mono:wght@400;500&display=swap"
         />
-        <link rel="stylesheet" href="/tokens.css?v=akbaral-lux-11" />
-        <link rel="stylesheet" href="/styles.css?v=akbaral-lux-11" />
+        {/* Compressed, long-cached text assets (≈3× smaller on the wire) — see
+            src/app/assets/[file]/route.ts for why compression lives there and
+            not in next.config.mjs (SSE must stay uncompressed). */}
+        <link rel="stylesheet" href="/assets/tokens.css?v=akbaral-lux-13" />
+        <link rel="stylesheet" href="/assets/styles.css?v=akbaral-lux-13" />
       </head>
       <body>
         {children}
-        <Script src="/app.js?v=akbaral-lux-11" strategy="afterInteractive" />
+        <Script src="/assets/app.js?v=akbaral-lux-13" strategy="afterInteractive" />
       </body>
     </html>
   );
