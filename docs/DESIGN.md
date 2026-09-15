@@ -108,3 +108,43 @@ JPEG) is an original AI-generated artwork in the platform palette.
   claims the platform is unhackable.
 - Advertising elements stay inert until a real AdSense publisher id is
   configured AND consent is granted (see `.env.example`).
+
+---
+
+## Build #6 — the application shell (MASTER workspace)
+
+The workspace is **one compact application screen**, not a scrolling
+dashboard. Three zones, each with a single job:
+
+| Zone | Surface | Controls |
+| --- | --- | --- |
+| **Left — sidebar** (`.ak-sidebar`) | brand + tagline, primary navigation | New chat · Search (⌘K) · Library · Images & media · Projects · Files · Agents · Automations · Billing · **recent history** · account block (profile, settings, owner console when the role holds it, sign out) |
+| **Center — conversation** (`.master-chat`) | the MASTER conversation: header, live activity stream, real chat turns | composer with attach / Files & artifacts controls, voice input when the browser supports it, Plan & run |
+| **Right — artifact rail** (`.master-workspace`) | Preview + Files/Library/Images panels, chosen from the rail tabs at the top | download / export control **above** the canvas, artifact version bar, upload + file actions |
+
+Layout mechanics (`public/styles.css`, section *Build #6*):
+
+- `.ak-app` is a two-column frame (sidebar + main) filling `100dvh`; the
+  marketing header/footer step aside with `body.is-workspace`.
+- `.master-layout` is `minmax(0, 1fr) minmax(360px, 460px)` — a fluid
+  conversation column plus a bounded artifact rail that scrolls internally.
+- Below **1080px** the sidebar becomes an overlay drawer (`data-sidebar="drawer"`)
+  and the panes **switch** (`.master-pane-switch`, `[data-pane]`) instead of
+  shrinking; below 360px the top bar, rail tabs and icon buttons tighten so
+  nothing overflows a 320px phone.
+- The rail collapses from the top bar (`#master-rail-toggle`) and remembers the
+  preference; the sidebar collapse likewise (both in browser storage only).
+
+**Re-skinning.** The shell introduces **no literal colours**: every surface,
+border, glass level, radius and type ramp comes from the generated token layer
+(`design-system/tokens.json` → `public/tokens.css` via `node design-system/build.mjs`).
+Changing the background/accent identity is a tokens-only edit — the layout keeps
+working without a rebuild of the geometry. Branding rules enforced in the
+markup: the product name is always **AKBARAL!** (never “AKBARAL AI”) and the
+tagline is always **“One Intelligence. Every Solution.”**.
+
+**Honesty rules in the shell.** Provider sign-in buttons render disabled with
+the exact credential names they need when a provider is unconfigured; the
+Library, Files, Images and Search panels only ever show data returned by the
+authenticated APIs (with explicit empty states otherwise); the owner console
+entry appears only for the owner / super_admin role.

@@ -535,136 +535,305 @@ export default function Home() {
           Recent tasks</h3><div id="dashboard-tasks" className="list"></div></div><div className="panel"><h3>
           My agents</h3><div id="dashboard-agents" className="list"></div></div></div></div></section>
 
-      {/* ============ MASTER AI — Arena-style workspace ============
-          The platform workspace model, in AKBARAL!'s own identity:
-            LEFT  — the full project / book / file area with the live preview
-                    canvas; the download-export control sits ABOVE the preview.
-            RIGHT — the AKBARAL! brand header at the top, then the main
-                    MASTER chat (live activity, results, composer, drawers).
-          Web (this file + public/styles.css) and Android
-          (mobile/src/screens/MasterScreen.tsx) share one design system and
-          one spatial model; narrow viewports switch panes instead of
-          shrinking the desktop grid. */}
-      <section className="screen screen-default" id="screen-master" hidden>
-        <div className="aw-container aw-wide">
-          <div className="master-topbar">
-            <div className="mt-id">
-              <span className="mt-mark" aria-hidden="true">A!</span>
-              <div className="mt-id-text">
-                <b>MASTER Workspace</b>
-                <small>Projects, files and the live preview — MASTER orchestrates on the right.</small>
-              </div>
-            </div>
-            <div className="master-pane-switch" role="tablist" aria-label="Workspace panes">
-              <button type="button" role="tab" id="master-pane-workspace" data-pane-tab="workspace" aria-selected="true">Workspace</button>
-              <button type="button" role="tab" id="master-pane-chat" data-pane-tab="chat" aria-selected="false">MASTER chat</button>
-            </div>
-            <div className="mt-controls">
-              <label className="mt-project"><span>Project</span>
-                <select id="master-project"><option value="">— none —</option></select>
-              </label>
-              <div className="master-core" id="master-core" data-state="idle" role="status" aria-label="MASTER core status">
-                <div className="core-ring r1"></div><div className="core-ring r2"></div><div className="core-spark"></div>
-                <span className="master-core-label" id="master-core-label">idle</span>
-              </div>
-            </div>
-          </div>
+      {/* ============ MASTER — the AKBARAL! application shell (Build #6) ============
+          ONE compact application screen. Three zones, each with a real job:
 
-          <div className="master-layout" id="master-layout" data-pane="workspace">
-            {/* ---- LEFT: project / book / files + live preview canvas ---- */}
-            <section className="master-workspace" id="master-workspace" aria-label="Project workspace">
-              <div className="ws-split">
-                <aside className="panel ws-files-panel" aria-label="Project files and uploads">
-                  <div className="ws-panel-head">
-                    <b>Files</b>
-                    <div className="ws-panel-actions">
-                      <label className="btn btn-outline btn-sm" htmlFor="master-attachment-input">Upload</label>
-                      <input type="file" id="master-attachment-input" multiple hidden />
-                      <button type="button" className="btn btn-ghost btn-sm" id="master-files-refresh">Refresh</button>
-                    </div>
-                  </div>
-                  <span className="sub" id="master-attachment-hint">Select a project to attach files.</span>
-                  <div id="master-attachments" className="attach-list"></div>
-                  <div id="master-files" className="list master-files">
-                    <div className="list-item"><small>Select a project to see its files.</small></div>
-                  </div>
-                  <div className="ws-project-box" id="master-project-box">
-                    <div id="master-project-controls" className="project-controls"></div>
-                  </div>
-                </aside>
+            LEFT   · sidebar — brand, New chat, Search, Library, Images &
+                     media, Projects, Files, recent history, account block.
+            CENTER · the MASTER conversation — header, live log + activity
+                     stream, composer with attachment controls.
+            RIGHT  · artifact rail — Preview (the download/export control sits
+                     ABOVE the canvas) plus the Files / Library / Images
+                     panels, chosen from the rail's tabs at the top.
 
-                <div className="ws-canvas">
-                  {/* Download / export control — ABOVE the live preview. */}
-                  <div className="ws-exportbar">
-                    <div className="ws-export-id">
-                      <span className="ws-export-label">Live preview</span>
-                      <span className="console-state" id="master-canvas-state">idle</span>
-                    </div>
-                    <div className="ws-export-actions" id="master-export-actions">
-                      <span className="sub">Select a project to export its website.</span>
-                    </div>
-                  </div>
-                  <div className="ws-preview" id="master-preview">
-                    <div className="ws-preview-empty" id="master-preview-empty">
-                      <span className="wpe-mark" aria-hidden="true">A!</span>
-                      <b>Live canvas</b>
-                      <small>Websites, images, documents, datasets and forms render here as they are produced. Export controls stay above the preview.</small>
-                    </div>
-                    <div id="master-result" className="ws-result" hidden></div>
-                  </div>
-                  <div className="artifact-bar-host" id="master-artifact-bar" hidden></div>
-                </div>
-              </div>
-            </section>
+          Narrow viewports collapse the sidebar into a drawer and SWITCH the
+          center/rail with the pane tabs instead of shrinking the desktop
+          grid. The Android app mirrors the same design system and data
+          contracts (mobile/src/screens/MasterScreen.tsx). Every control is
+          bound to a real API — nothing decorative, nothing simulated. */}
+      <section className="screen master-screen" id="screen-master" hidden>
+        <div className="ak-app" id="master-shell" data-sidebar="open" data-rail="open">
 
-            {/* ---- RIGHT: AKBARAL! header + the main MASTER chat ---- */}
-            <section className="master-chat" id="master-chat" aria-label="MASTER chat">
-              <header className="chat-head">
-                <span className="brand-mark chat-brand" aria-hidden="true">A!</span>
-                <div className="chat-head-text">
+          {/* ---------------- LEFT · sidebar ---------------- */}
+          <aside className="ak-sidebar" id="master-sidebar" aria-label="AKBARAL! navigation">
+            <div className="ak-side-head">
+              <a className="ak-brand" href="#/" aria-label="AKBARAL! home">
+                <span className="brand-mark ak-brand-mark" aria-hidden="true">A!</span>
+                <span className="ak-brand-text">
                   <b>AKBARAL!</b>
-                  <small>MASTER · orchestration</small>
-                </div>
-                <span id="master-console-state" className="console-state">idle</span>
-                <button type="button" className="chat-drawer-btn" data-chat-drawer="history" aria-expanded="false" aria-controls="master-drawer-history">History</button>
-                <button type="button" className="chat-drawer-btn" data-chat-drawer="env" aria-expanded="false" aria-controls="master-drawer-env">Env</button>
-              </header>
+                  <small>One Intelligence. Every Solution.</small>
+                </span>
+              </a>
+              <button type="button" className="ak-icon-btn ak-side-toggle" id="master-sidebar-toggle" aria-expanded="true" aria-controls="master-sidebar" title="Collapse sidebar">
+                <span aria-hidden="true">⟨</span>
+                <span className="sr-only">Collapse sidebar</span>
+              </button>
+            </div>
 
-              <div className="chat-log" id="master-chat-log">
-                <div className="chat-drawer" id="master-drawer-history" hidden>
-                  <div className="panel">
-                    <h3>Task history</h3>
-                    <div id="master-task-history" className="list master-history">
-                      <div className="list-item"><small>No tasks yet.</small></div>
-                    </div>
-                  </div>
-                </div>
-                <div className="chat-drawer" id="master-drawer-env" hidden>
-                  <div className="panel master-info" id="master-info">
-                    <h3>Environment</h3>
-                    <div id="master-info-body" className="master-info-body">
-                      <div className="info-line"><span>Model providers</span><b>Loading…</b></div>
-                    </div>
-                  </div>
-                </div>
-                <div id="master-output" className="output master-console chat-activity" aria-live="polite">
-                  <div className="console-hint">Describe a goal. MASTER plans, picks specialists and streams the run here.</div>
+            <button type="button" className="ak-newchat" id="master-new-chat">
+              <span aria-hidden="true">＋</span>
+              <span className="ak-nav-label">New chat</span>
+            </button>
+
+            <nav className="ak-nav" aria-label="Workspace">
+              <button type="button" className="ak-nav-item" id="ak-nav-search" data-ak-action="search" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">⌕</span>
+                <span className="ak-nav-label">Search</span>
+                <kbd>⌘K</kbd>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-library" data-ak-action="library" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">▤</span>
+                <span className="ak-nav-label">Library</span>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-media" data-ak-action="media" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">◫</span>
+                <span className="ak-nav-label">Images &amp; media</span>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-projects" data-ak-action="projects" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">◈</span>
+                <span className="ak-nav-label">Projects</span>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-files" data-ak-action="files" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">❐</span>
+                <span className="ak-nav-label">Files</span>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-agents" data-ak-action="agents" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">⬡</span>
+                <span className="ak-nav-label">Agents</span>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-automations" data-ak-action="automations" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">⟳</span>
+                <span className="ak-nav-label">Automations</span>
+              </button>
+              <button type="button" className="ak-nav-item" id="ak-nav-billing" data-ak-action="billing" aria-current="false">
+                <span className="ak-nav-ico" aria-hidden="true">◆</span>
+                <span className="ak-nav-label">Billing &amp; credits</span>
+              </button>
+            </nav>
+
+            {/* Recent chat / task history — real tasks, click to reopen the result. */}
+            <div className="ak-recent">
+              <div className="ak-section-head">
+                <span>Recent</span>
+                <button type="button" className="ak-icon-btn" id="master-history-refresh" title="Refresh history" aria-label="Refresh history">↻</button>
+              </div>
+              <div id="master-task-history" className="list master-history">
+                <div className="list-item"><small>No tasks yet.</small></div>
+              </div>
+            </div>
+
+            {/* Account — profile, settings, owner console (role-gated), sign-out. */}
+            <div className="ak-account" id="master-account">
+              <span className="ak-avatar" id="ak-avatar" aria-hidden="true">A</span>
+              <span className="ak-account-text">
+                <b id="ak-user-name">Guest</b>
+                <small id="ak-user-email">not signed in</small>
+              </span>
+              <button type="button" className="ak-icon-btn" id="ak-account-menu-btn" aria-expanded="false" aria-controls="ak-account-menu" title="Account">⋯</button>
+              <div className="ak-menu" id="ak-account-menu" hidden>
+                <a href="#/settings">Account settings</a>
+                <a href="#/dashboard">Dashboard</a>
+                <a href="#/billing">Billing &amp; credits</a>
+                <a href="#/workspace">Projects &amp; knowledge</a>
+                <a href="#/factory">Agent Factory</a>
+                <a href="/owner" id="ak-owner-link" hidden>Owner console →</a>
+                <a href="#/economy" id="ak-mission-link" hidden>Private console →</a>
+                <hr />
+                <button type="button" id="ak-logout">Log out</button>
+              </div>
+            </div>
+          </aside>
+          <div className="ak-scrim" id="master-sidebar-scrim" hidden></div>
+
+          {/* ---------------- MAIN ---------------- */}
+          <div className="ak-main">
+
+            {/* Compact top bar: identity, pane switch, project, core state,
+                credits, preview toggle. No oversized hero, no card stack. */}
+            <header className="ak-topbar" id="master-topbar">
+              <button type="button" className="ak-icon-btn ak-burger" id="master-menu-btn" aria-label="Open navigation" aria-expanded="false" aria-controls="master-sidebar">☰</button>
+              <div className="ak-top-id">
+                <span className="ak-top-mark ak-mobile-only" aria-hidden="true">A!</span>
+                <div className="ak-top-title">
+                  <b>MASTER</b>
+                  <small id="ak-top-sub">orchestration workspace</small>
                 </div>
               </div>
+              <div className="master-pane-switch" role="tablist" aria-label="Workspace panes">
+                <button type="button" role="tab" id="master-pane-workspace" data-pane-tab="workspace" aria-selected="true">Preview</button>
+                <button type="button" role="tab" id="master-pane-chat" data-pane-tab="chat" aria-selected="false">MASTER chat</button>
+              </div>
+              <div className="ak-top-actions">
+                <button type="button" className="ak-icon-btn" id="master-search-btn" data-ak-action="search" title="Search (⌘K)" aria-label="Search">⌕</button>
+                <label className="mt-project">
+                  <span>Project</span>
+                  <select id="master-project"><option value="">— none —</option></select>
+                </label>
+                <div className="master-core" id="master-core" data-state="idle" role="status" aria-label="MASTER core status">
+                  <div className="core-ring r1"></div><div className="core-ring r2"></div><div className="core-spark"></div>
+                  <span className="master-core-label" id="master-core-label">idle</span>
+                </div>
+                <span className="credit-pill ak-credit" id="ak-credit-pill" title="Free task credits">Credits · …</span>
+                <button type="button" className="ak-icon-btn" id="master-rail-toggle" aria-expanded="true" aria-controls="master-workspace" title="Toggle preview panel">▤</button>
+              </div>
+            </header>
 
-              <form id="master-form" className="chat-composer">
-                <div className="composer-head">
-                  <label htmlFor="master-goal">Goal</label>
-                  <button type="button" className="btn btn-ghost btn-sm" id="master-voice" hidden title="Dictate your goal">Voice input</button>
-                  <span className="sub" id="master-voice-note" hidden></span>
+            <div className="master-layout" id="master-layout" data-pane="workspace">
+
+              {/* ---- CENTER · the MASTER conversation ---- */}
+              <section className="master-chat" id="master-chat" aria-label="MASTER chat">
+                <header className="chat-head">
+                  <span className="brand-mark chat-brand" aria-hidden="true">A!</span>
+                  <div className="chat-head-text">
+                    <b>AKBARAL!</b>
+                    <small>MASTER · orchestration</small>
+                  </div>
+                  <span id="master-console-state" className="console-state">idle</span>
+                  <button type="button" className="chat-drawer-btn" data-chat-drawer="history" aria-expanded="false" aria-controls="master-drawer-history">History</button>
+                  <button type="button" className="chat-drawer-btn" data-chat-drawer="env" aria-expanded="false" aria-controls="master-drawer-env">Env</button>
+                </header>
+
+                <div className="chat-log" id="master-chat-log">
+                  <div className="chat-drawer" id="master-drawer-history" hidden>
+                    <div className="panel">
+                      <h3>Task history</h3>
+                      <div id="master-task-history-drawer" className="list master-history">
+                        <div className="list-item"><small>No tasks yet — the sidebar keeps your recent runs one click away.</small></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="chat-drawer" id="master-drawer-env" hidden>
+                    <div className="panel master-info" id="master-info">
+                      <h3>Environment</h3>
+                      <div id="master-info-body" className="master-info-body">
+                        <div className="info-line"><span>Model providers</span><b>Loading…</b></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="master-output" className="output master-console chat-activity" aria-live="polite">
+                    <div className="console-hint">Describe a goal. MASTER plans, picks specialists and streams the run here — the result renders in the preview rail.</div>
+                  </div>
                 </div>
-                <textarea id="master-goal" rows={ 3 } placeholder="e.g. Build me a website · Research this market · Plan my business for the next year" required defaultValue="" />
-                <div className="composer-row">
-                  <span className="sub composer-note">Credits are consumed only on success — failures refund automatically.</span>
-                  <button className="btn btn-primary" id="master-plan-btn" type="submit">Plan &amp; run</button>
+
+                <form id="master-form" className="chat-composer">
+                  <div className="composer-head">
+                    <label htmlFor="master-goal">Goal</label>
+                    <button type="button" className="btn btn-ghost btn-sm" id="master-voice" hidden title="Dictate your goal">Voice input</button>
+                    <span className="sub" id="master-voice-note" hidden></span>
+                    <div className="composer-tools">
+                      <label className="btn btn-ghost btn-sm" htmlFor="master-attachment-input" title="Attach files to this goal">Attach files</label>
+                      <button type="button" className="btn btn-ghost btn-sm" id="master-open-files" data-ak-action="files">Files &amp; artifacts</button>
+                      <span className="attach-chip" id="master-attach-count" hidden>0 attached</span>
+                    </div>
+                  </div>
+                  <textarea id="master-goal" rows={ 3 } placeholder="Ask MASTER — e.g. build me a calculator · create an image of a mountain lake · research this market" required defaultValue="" />
+                  <div className="composer-row">
+                    <span className="sub composer-note">Credits are consumed only on success — failures refund automatically. Enter sends, Shift+Enter adds a line.</span>
+                    <button className="btn btn-primary" id="master-plan-btn" type="submit">Plan &amp; run</button>
+                  </div>
+                </form>
+              </section>
+
+              {/* ---- RIGHT · artifact rail: Preview + Files/Library/Images ---- */}
+              <section className="master-workspace" id="master-workspace" aria-label="Preview and artifacts">
+                <div className="ak-rail-head">
+                  <div className="ak-rail-tabs" role="tablist" aria-label="Preview and artifact panels">
+                    <button type="button" role="tab" id="ak-tab-preview" data-rail-tab="preview" aria-selected="true">Preview</button>
+                    <button type="button" role="tab" id="ak-tab-files" data-rail-tab="files" aria-selected="false">Files</button>
+                    <button type="button" role="tab" id="ak-tab-library" data-rail-tab="library" aria-selected="false">Library</button>
+                    <button type="button" role="tab" id="ak-tab-media" data-rail-tab="media" aria-selected="false">Images</button>
+                  </div>
+                  <button type="button" className="ak-icon-btn ak-rail-close" id="ak-rail-close" aria-label="Collapse the preview panel" title="Collapse panel">✕</button>
                 </div>
-              </form>
-            </section>
+
+                <div className="ak-rail-body" id="master-rail-body">
+
+                  {/* Preview — export control ABOVE the live canvas. */}
+                  <div className="ak-rail-pane" id="ak-pane-preview" data-rail-pane="preview">
+                    <div className="ws-exportbar">
+                      <div className="ws-export-id">
+                        <span className="ws-export-label">Live preview</span>
+                        <span className="console-state" id="master-canvas-state">idle</span>
+                      </div>
+                      <div className="ws-export-actions" id="master-export-actions">
+                        <span className="sub">Select a project to export its website.</span>
+                      </div>
+                    </div>
+                    <div className="ws-preview" id="master-preview">
+                      <div className="ws-preview-empty" id="master-preview-empty">
+                        <span className="wpe-mark" aria-hidden="true">A!</span>
+                        <b>Live canvas</b>
+                        <small>Websites, images, documents, datasets, calculators and forms render here as they are produced. Export controls stay above the preview.</small>
+                      </div>
+                      <div id="master-result" className="ws-result" hidden></div>
+                    </div>
+                    <div className="artifact-bar-host" id="master-artifact-bar" hidden></div>
+                  </div>
+
+                  {/* Files — uploads and generated files for the selected project. */}
+                  <div className="ak-rail-pane" id="ak-pane-files" data-rail-pane="files" hidden>
+                    <aside className="panel ws-files-panel" aria-label="Project files and uploads">
+                      <div className="ws-panel-head">
+                        <b>Files &amp; artifacts</b>
+                        <div className="ws-panel-actions">
+                          <label className="btn btn-outline btn-sm" htmlFor="master-attachment-input">Upload</label>
+                          <input type="file" id="master-attachment-input" multiple hidden />
+                          <button type="button" className="btn btn-ghost btn-sm" id="master-files-refresh">Refresh</button>
+                        </div>
+                      </div>
+                      <span className="sub" id="master-attachment-hint">Select a project to attach files.</span>
+                      <div id="master-attachments" className="attach-list"></div>
+                      <div id="master-files" className="list master-files">
+                        <div className="list-item"><small>Select a project to see its files.</small></div>
+                      </div>
+                      <div className="ws-project-box" id="master-project-box">
+                        <div id="master-project-controls" className="project-controls"></div>
+                      </div>
+                    </aside>
+                  </div>
+
+                  {/* Library — the real task history, with real results. */}
+                  <div className="ak-rail-pane" id="ak-pane-library" data-rail-pane="library" hidden>
+                    <div className="panel">
+                      <h3>Library</h3>
+                      <p className="ak-pane-note">Every past MASTER run for this account. Opening one restores its real result on the canvas — nothing is regenerated or faked.</p>
+                      <div id="master-library" className="list master-files">
+                        <div className="list-item"><small>No tasks yet.</small></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Images &amp; media — real image files and image artifacts. */}
+                  <div className="ak-rail-pane" id="ak-pane-media" data-rail-pane="media" hidden>
+                    <div className="panel">
+                      <h3>Images &amp; media</h3>
+                      <p className="ak-pane-note">Generated and uploaded images across your projects. Each card opens on the canvas and downloads the stored bytes.</p>
+                      <div id="master-media" className="media-grid">
+                        <div className="list-item"><small>Select a project to see its images.</small></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* Search overlay — real tasks, knowledge and projects. */}
+            <div className="ak-command" id="master-search" hidden role="dialog" aria-modal="true" aria-label="Search">
+              <div className="ak-command-box">
+                <form className="ak-command-input" id="master-search-form">
+                  <span aria-hidden="true">⌕</span>
+                  <input id="master-search-input" placeholder="Search tasks, knowledge and projects…" aria-label="Search query" autoComplete="off" />
+                  <button className="btn btn-primary btn-sm" type="submit">Search</button>
+                  <button className="btn btn-ghost btn-sm" type="button" id="master-search-close">Esc</button>
+                </form>
+                <div className="ak-command-results" id="master-search-results">
+                  <div className="ak-command-group">
+                    <b>Type a query</b>
+                    <div className="list-item"><small>Results come from your own tasks, indexed knowledge and projects.</small></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

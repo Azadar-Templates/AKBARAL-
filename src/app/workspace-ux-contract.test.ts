@@ -5,21 +5,26 @@ import { join } from 'node:path';
 import vm from 'node:vm';
 
 /**
- * Arena-style workspace contract (Build #5 — web + Android parity).
+ * Application-shell contract (Build #6 — the Task 4 workspace, web + Android
+ * parity).
  *
- * The product requirement this suite locks: the workspace follows the same
- * spatial UX pattern as the platform workspace, on every platform.
+ * The product requirement this suite locks: ONE compact application screen —
+ * not a long scrolling dashboard — with the same model on every platform.
  *
- *   LEFT  · the full project / book / file area + the live preview canvas,
- *           with the download / export control ABOVE the preview.
- *   RIGHT · the AKBARAL! logo header at the top, then the main MASTER chat
- *           (live activity, results, composer, drawers, history).
+ *   LEFT   · the sidebar: brand + tagline, New chat, Search, Library,
+ *            Images & media, Projects, Files, recent history, account.
+ *   CENTER · the MASTER conversation: header, live activity, composer with
+ *            real attachment controls.
+ *   RIGHT  · the artifact rail: the download / export control ABOVE the live
+ *            preview canvas, plus the Files / Library / Images panels
+ *            reachable from the rail tabs at the top.
  *
- * Narrow viewports SWITCH panes (Workspace | MASTER chat) — they never shrink
- * the desktop grid. The Android app implements the identical model
- * (mobile/src/screens/MasterScreen.tsx) from the same design tokens.
+ * Narrow viewports collapse the sidebar into a drawer and SWITCH panes
+ * (Preview | MASTER chat) — they never shrink the desktop grid. The Android
+ * app implements the identical spatial model (mobile/src/screens/
+ * MasterScreen.tsx) from the same design tokens.
  *
- * Part 1 asserts the source contract (markup + styles + mobile screen).
+ * Part 1 asserts the source contract (markup + styles + route + mobile screen).
  * Part 2 EXECUTES the real app.js workspace functions in a VM against a DOM
  * stub to prove the behaviour: chat turns are real, the canvas is driven by
  * the same payload, the pane switch works, and nothing is fabricated.
@@ -181,23 +186,78 @@ function loadWorkspace(dom: WorkspaceDom): Record<string, any> {
 
 /* ------------------------------------------------------- 1. SOURCE CONTRACT */
 
-describe('Arena-style workspace — source contract (web)', () => {
-  it('the workspace pane (files + canvas) is the LEFT pane and the chat is the RIGHT rail', () => {
-    const workspace = page.indexOf('id="master-workspace"');
+describe('AKBARAL! application shell — source contract (web)', () => {
+  it('the conversation is the CENTER column and the artifact rail is the bounded RIGHT column', () => {
     const chat = page.indexOf('id="master-chat"');
-    assert.ok(workspace > 0 && chat > 0, 'both panes are mounted');
-    assert.ok(workspace < chat, 'the workspace precedes the chat rail in document order (left → right)');
-    assert.match(css, /\.master-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(360px,\s*420px\)/, 'grid: fluid workspace + bounded chat rail');
-    assert.match(css, /\.master-workspace\s*\{\s*min-width:\s*0/, 'workspace pane is the flow column');
-    assert.match(css, /\.master-chat\s*\{[^}]*position:\s*sticky[^}]*top:\s*84px/, 'chat rail stays anchored while the canvas scrolls');
+    const rail = page.indexOf('id="master-workspace"');
+    assert.ok(chat > 0 && rail > 0, 'both regions are mounted');
+    assert.ok(chat < rail, 'the conversation precedes the artifact rail in document order (left → right)');
+    assert.match(css, /\.master-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(360px,\s*460px\)/, 'grid: fluid conversation + bounded artifact rail');
+    assert.match(css, /\.master-chat\s*\{[^}]*min-width:\s*0/, 'the conversation is the flow column');
+    assert.match(css, /\.master-chat\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/, 'the conversation is a header / log / composer grid');
+    assert.match(css, /\.master-workspace\s*\{\s*display:\s*grid;\s*grid-template-rows:\s*auto minmax\(0,\s*1fr\)/, 'the rail is a tabs / scrollable-body grid');
+    assert.match(css, /\.ak-rail-body\s*\{[^}]*overflow-y:\s*auto/, 'the rail body scrolls inside its own column');
   });
 
-  it('the project/book/file area sits inside the workspace pane, not in the chat', () => {
-    const workspace = page.slice(page.indexOf('id="master-workspace"'), page.indexOf('id="master-chat"'));
-    for (const mount of ['ws-files-panel', 'id="master-files"', 'id="master-project-controls"', 'id="master-attachment-input"']) {
-      assert.ok(workspace.includes(mount), `${mount} lives in the workspace pane`);
+  it('the LEFT sidebar mounts every top-level control — and hides the marketing chrome on the app screen', () => {
+    const sidebar = page.indexOf('id="master-sidebar"');
+    const chat = page.indexOf('id="master-chat"');
+    assert.ok(sidebar > 0 && chat > 0, 'sidebar and conversation are mounted');
+    assert.ok(sidebar < chat, 'the sidebar precedes the conversation (left → right)');
+    const rail = page.slice(sidebar, page.indexOf('id="master-sidebar-scrim"'));
+    for (const mount of [
+      'brand-mark ak-brand-mark',
+      'One Intelligence. Every Solution.',
+      'id="master-new-chat"',
+      'data-ak-action="search"',
+      'data-ak-action="library"',
+      'data-ak-action="media"',
+      'data-ak-action="projects"',
+      'data-ak-action="files"',
+      'id="master-task-history"',
+      'id="master-account"',
+      'id="ak-user-name"',
+      'id="ak-account-menu"',
+      'id="ak-owner-link"',
+      'id="ak-logout"',
+    ]) {
+      assert.ok(rail.includes(mount), `${mount} lives in the sidebar`);
     }
-    assert.ok(!workspace.includes('id="master-chat-log"'), 'the chat log is not part of the workspace pane');
+    assert.ok(!rail.includes('id="master-chat-log"'), 'the chat log is not part of the sidebar');
+    assert.match(css, /body\.is-workspace \.site-header\s*\{\s*display:\s*none/, 'the app screen owns the viewport');
+    assert.match(css, /\.ak-app\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*264px minmax\(0,\s*1fr\)/, 'sidebar + main frame');
+  });
+
+  it('every sidebar entry opens a real surface — no placeholder navigation', () => {
+    assert.match(appJs, /function shellAction\(action\)/, 'the sidebar dispatcher exists');
+    assert.match(appJs, /case 'search': shellSearchOpen\(\);/, 'Search opens the real search overlay');
+    assert.match(appJs, /case 'library': shellRailOpen\('library'\);/, 'Library opens the real task library');
+    assert.match(appJs, /case 'media': shellRailOpen\('media'\);/, 'Images & media opens the real media panel');
+    assert.match(appJs, /case 'files': shellRailOpen\('files'\);/, 'Files opens the real project file panel');
+    assert.match(appJs, /case 'projects': location\.hash = '#\/workspace';/, 'Projects opens the real projects screen');
+    assert.match(appJs, /case 'agents': location\.hash = '#\/agents';/, 'Agents opens the real registry screen');
+    assert.match(appJs, /case 'billing': location\.hash = '#\/billing';/, 'Billing opens the real billing screen');
+    // The real data sources behind the panels.
+    assert.match(appJs, /async function shellLoadLibrary\(\)[\s\S]{0,600}?api\('\/api\/tasks'\)/, 'the library reads real tasks');
+    assert.match(appJs, /async function shellLoadMedia\(\)[\s\S]{0,900}?artifacts\/image/, 'the media panel reads real image artifacts');
+    assert.match(appJs, /async function shellSearchRun\(query\)[\s\S]{0,900}?api\('\/api\/files\/knowledge\/search'/, 'search queries the real knowledge index');
+    assert.match(appJs, /data-library-open/, 'library rows open the stored result');
+    assert.match(appJs, /data-media-download/, 'media cards download the stored bytes');
+  });
+
+  it('the rail tabs reach Preview / Files / Library / Images and the file mounts live in the rail', () => {
+    const rail = page.slice(page.indexOf('id="master-workspace"'), page.indexOf('id="screen-task"'));
+    for (const tab of ['preview', 'files', 'library', 'media']) {
+      assert.ok(rail.includes(`data-rail-tab="${tab}"`), `the ${tab} tab is mounted`);
+      assert.ok(rail.includes(`data-rail-pane="${tab}"`), `the ${tab} panel is mounted`);
+    }
+    for (const mount of ['ws-files-panel', 'id="master-files"', 'id="master-project-controls"', 'id="master-attachment-input"']) {
+      assert.ok(rail.includes(mount), `${mount} lives in the artifact rail`);
+    }
+    assert.ok(!rail.includes('id="master-chat-log"'), 'the chat log is not part of the artifact rail');
+    assert.match(appJs, /function shellRailTabSet\(name\)/, 'the rail tabs are wired in the client');
+    assert.match(appJs, /pane\.hidden = pane\.dataset\.railPane !== tab/, 'the rail really switches panels');
+    assert.match(appJs, /shellRailSet\(shell\?\.dataset\.rail === 'closed'\)/, 'the rail collapses and reopens from the top bar');
   });
 
   it('the download/export control is ABOVE the preview, and the preview is the canvas right under it', () => {
@@ -209,21 +269,45 @@ describe('Arena-style workspace — source contract (web)', () => {
     assert.match(css, /\.ws-preview\s*\{[^}]*overflow:\s*hidden/, 'preview clips the rendered deliverable');
   });
 
-  it('the AKBARAL! header is at the top of the chat rail, above the log and the composer', () => {
-    const rail = page.slice(page.indexOf('id="master-chat"'), page.indexOf('id="screen-task"'));
-    const brand = rail.indexOf('brand-mark chat-brand');
-    const log = rail.indexOf('id="master-chat-log"');
-    const composer = rail.indexOf('id="master-form"');
-    assert.ok(brand > 0 && log > 0 && composer > 0, 'rail mounts brand, log and composer');
-    assert.ok(brand < log && log < composer, 'header → log → composer order');
-    assert.match(css, /\.master-chat\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/, 'the rail is a header/log/composer grid');
+  it('the composer is the bottom command surface of the conversation, with real attachment controls', () => {
+    const log = page.indexOf('id="master-chat-log"');
+    const form = page.indexOf('id="master-form"');
+    const goal = page.indexOf('id="master-goal"');
+    assert.ok(log < form && form < goal, 'log → composer → goal field order');
+    const composer = page.slice(form, page.indexOf('id="screen-task"'));
+    assert.ok(composer.includes('htmlFor="master-attachment-input"'), 'the composer attaches real files');
+    assert.ok(composer.includes('id="master-open-files"'), 'the composer opens the Files/artifacts panel');
+    assert.ok(composer.includes('id="master-plan-btn"'), 'the composer submits the real plan & run action');
+    assert.match(appJs, /#master-goal'\)\?\.addEventListener\('keydown'/, 'Enter sends, Shift+Enter adds a line');
   });
 
-  it('panes switch on narrow viewports (a real switch, not a squashed desktop)', () => {
-    assert.match(page, /id="master-pane-workspace"[\s\S]{0,220}?id="master-pane-chat"/, 'pane tabs mounted on the workspace top bar');
+  it('the AKBARAL! identity heads the sidebar and the conversation rail', () => {
+    const brand = page.indexOf('brand-mark ak-brand-mark');
+    const tagline = page.indexOf('One Intelligence. Every Solution.');
+    const chatBrand = page.indexOf('brand-mark chat-brand');
+    const log = page.indexOf('id="master-chat-log"');
+    const composer = page.indexOf('id="master-form"');
+    assert.ok(brand > 0 && tagline > brand, 'the wordmark + tagline head the sidebar');
+    assert.ok(chatBrand > 0 && chatBrand < log && log < composer, 'the conversation rail keeps brand → log → composer order');
+  });
+
+  it('panes switch on narrow viewports and the sidebar becomes a drawer (never a squashed desktop)', () => {
+    assert.match(page, /id="master-pane-workspace"[\s\S]{0,220}?id="master-pane-chat"/, 'pane tabs mounted on the top bar');
     assert.match(page, /data-pane="workspace"/, 'the layout ships a default pane');
     assert.match(appJs, /function masterPaneSet\(name\)/, 'the pane switch is wired in the client');
     assert.match(appJs, /data-pane-tab/, 'tab clicks drive the pane');
+    assert.match(page, /id="master-menu-btn"/, 'the phone navigation trigger is mounted');
+    assert.match(css, /\.ak-app\[data-sidebar="drawer"\] \.ak-sidebar\s*\{\s*transform:\s*none;/, 'the drawer opens over the app on phones');
+    assert.match(css, /@media \(max-width: 1080px\)\s*\{[\s\S]*?\.master-pane-switch\s*\{\s*display:\s*flex;/, 'the pane switch appears at 1080px');
+    assert.match(appJs, /function shellSidebarSet\(mode\)/, 'the drawer/collapse state is real client state');
+  });
+
+  it('the workspace is a real route (`/workspace`), not only a hash screen', () => {
+    const route = readFileSync(join(root, 'src', 'app', 'workspace', 'page.tsx'), 'utf8');
+    assert.match(route, /export default function WorkspacePage\(\)/, 'the route has a component');
+    assert.match(route, /<Home \/>/, 'it renders the same application as `/` (one shell, one behaviour)');
+    assert.match(route, /robots: \{ index: false, follow: false \}/, 'a signed-in surface is never indexed');
+    assert.match(appJs, /path === '\/workspace' \? 'master' : ''/, 'the client opens MASTER on the workspace path');
   });
 
   it('every workspace control is bound to a real API — no fake export, no tokenless auth links', () => {

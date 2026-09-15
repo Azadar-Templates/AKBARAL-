@@ -35,12 +35,13 @@ const appJs = readFileSync(join(root, 'public', 'app.js'), 'utf8');
 const page = readFileSync(join(root, 'src', 'app', 'page.tsx'), 'utf8');
 
 describe('responsive + honest error-state contract', () => {
-  it('MASTER workspace is the Arena-style two-zone grid that collapses under 1080px', () => {
-    // LEFT = workspace (fluid) · RIGHT = MASTER chat rail (bounded).
+  it('the MASTER workspace is the app shell grid that collapses under 1080px', () => {
+    // CENTER = the MASTER conversation (fluid) · RIGHT = the artifact rail
+    // (bounded); LEFT = the sidebar, a drawer under 1080px.
     assert.match(
       css,
-      /\.master-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(360px,\s*420px\)/,
-      'master-layout: workspace column + bounded chat rail',
+      /\.master-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(360px,\s*460px\)/,
+      'master-layout: fluid conversation column + bounded artifact rail',
     );
     assert.match(css, /\.master-side\s*\{\s*display:\s*grid;[^}]*min-width:\s*0/, 'side column guards min-width for overflow');
     assert.match(css, /@media \(max-width: 1080px\)\s*\{[\s\S]*?\.master-layout\s*\{\s*grid-template-columns:\s*1fr;/, 'master-layout single-column collapse at 1080px');
@@ -50,6 +51,15 @@ describe('responsive + honest error-state contract', () => {
     assert.match(css, /\[data-pane="workspace"\]\s*\.master-chat\s*\{\s*display:\s*none;/, 'workspace pane hides the chat');
     assert.match(css, /\[data-pane="chat"\]\s*\.master-workspace\s*\{\s*display:\s*none;/, 'chat pane hides the workspace');
     assert.match(page, /id="master-pane-workspace"[\s\S]{0,200}?id="master-pane-chat"/, 'page mounts both pane tabs');
+  });
+
+  it('the application shell frames all three zones and never overflows 320px', () => {
+    assert.match(css, /\.ak-app\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*264px minmax\(0,\s*1fr\)/, 'sidebar + main columns');
+    assert.match(css, /\.ak-app\[data-sidebar="collapsed"\]\s*\{\s*grid-template-columns:\s*76px minmax\(0,\s*1fr\)/, 'the sidebar collapses to icons');
+    assert.match(css, /\.ak-sidebar\s*\{[\s\S]{0,320}?transform:\s*translateX\(-102%\)/, 'phones get a drawer, not a squashed column');
+    assert.match(css, /\.ak-rail-body\s*\{[^}]*overflow-y:\s*auto/, 'the rail body scrolls inside its column');
+    assert.match(css, /\.ak-topbar\s*\{[^}]*min-width:\s*0/, 'the top bar can shrink');
+    assert.match(css, /@media \(max-width: 360px\)\s*\{[\s\S]*?\.ak-topbar\s*\{\s*padding:\s*7px 9px;/, 'a 320px floor tightens the top bar');
   });
 
   it('the download/export control sits ABOVE the live preview, in markup and styles', () => {

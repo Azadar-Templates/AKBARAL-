@@ -1398,6 +1398,7 @@
     bindAuth();
     bindGeneral();
     bindMasterWorkspaceShell();
+    bindAppShell();
     bindMotion();
     bindLandingNav();
     bindLegalModal();
@@ -1443,7 +1444,7 @@
         storageSet('ak_refresh', result.refreshToken);
         state.user = result.user;
         toast(`Welcome, ${result.user.name || result.user.email}`, 'ok');
-        location.hash = '#/dashboard';
+        afterSignIn();
       } catch (error) {
         toast(error.message, 'err');
       }
@@ -1512,7 +1513,17 @@
   }
 
   async function navigate() {
-    const view = (location.hash || '#/').replace('#/', '');
+    // The workspace is a REAL route (`/workspace`) as well as the `#/master`
+    // hash screen: one component, one spatial model. A clean path wins when a
+    // visitor lands on it without a hash, so `/workspace` opens the app shell
+    // directly instead of the marketing landing.
+    const path = (location.pathname || '/').replace(/\/+$/, '') || '/';
+    const hash = String(location.hash || '');
+    const hashView = hash.replace('#/', '');
+    // An explicit hash always wins (so `/workspace#/` still reaches the
+    // landing page and `#/login` renders the sign-in screen); the clean path
+    // decides only when the visitor landed without a hash.
+    const view = hash.length > 0 ? hashView : (path === '/workspace' ? 'master' : '');
     state.view = view;
     if (['login', 'register'].includes(view)) {
       showScreen('auth');
@@ -1629,7 +1640,25 @@
     }
     await loadMe().catch(() => {});
     toast(`Welcome, ${state.user?.name || state.user?.email || ''}`, 'ok');
-    location.hash = '#/dashboard';
+    afterSignIn();
+  }
+
+  /**
+   * Where a successful sign-in lands.
+   *
+   * An explicit same-origin `next` path (e.g. `#/login?next=/owner` used by
+   * the owner console) is honoured — it must be a site-relative path, never
+   * an absolute URL, so a crafted link cannot become an open redirect. With
+   * no `next`, the sign-in lands on the MASTER workspace: the product home.
+   */
+  function afterSignIn() {
+    const query = (location.hash || '').split('?')[1] || '';
+    const next = new URLSearchParams(query).get('next') || '';
+    if (/^\/[\w\-./?=&]*$/.test(next) && !next.startsWith('/api') && !next.startsWith('//')) {
+      window.location.href = next;
+      return;
+    }
+    location.hash = '#/master';
   }
 
   async function renderOAuthButtons() {
@@ -1638,11 +1667,23 @@
     if (!wrap || !target) return;
     try {
       const body = await api('/api/auth/oauth/providers');
-      const providers = (body.providers || []).filter((p) => p.configured);
+      const providers = body.providers || [];
       if (!providers.length) { wrap.hidden = true; return; }
       wrap.hidden = false;
-      $('#auth-oauth-note').textContent = 'Provider sign-in is handled entirely server-side.';
-      target.innerHTML = providers.map((p) => `<a class="btn btn-outline btn-sm" href="/api/auth/oauth/${esc(p.key)}/authorize">Continue with ${esc(p.label)}</a>`).join('');
+      const configured = providers.filter((p) => p.configured);
+      // Configured providers are real sign-in buttons (server-side OAuth).
+      // Unconfigured ones stay visible but disabled and name the exact env
+      // credential they need — an honest operator checklist, never a fake
+      // button that silently does nothing.
+      target.innerHTML = providers.map((p) => (p.configured
+        ? `<a class="btn btn-outline btn-sm oauth-btn" href="/api/auth/oauth/${esc(p.key)}/authorize" data-provider="${esc(p.key)}">Continue with ${esc(p.label)}</a>`
+        : `<button type="button" class="btn btn-outline btn-sm oauth-btn" disabled title="Not configured on this deployment — required: ${esc((p.required || []).join(', ') || 'provider credentials')}">Continue with ${esc(p.label)}</button>`)).join('');
+      const missing = providers
+        .filter((p) => !p.configured && (p.required || []).length)
+        .map((p) => `${p.label}: ${p.required.join(' + ')}`);
+      $('#auth-oauth-note').textContent = configured.length
+        ? `Provider sign-in is handled entirely server-side.${missing.length ? ` Not enabled here — ${missing.join(' · ')}` : ''}`
+        : `No provider sign-in is configured on this deployment yet — set ${missing.join(' · ') || 'provider credentials'} server-side to enable these buttons.`;
     } catch { wrap.hidden = true; }
   }
 
@@ -1775,6 +1816,12 @@
     // One navigation system: landing links while signed out, app links
     // while signed in (see .nav-set rules in styles.css).
     document.body.classList.toggle('is-authed', Boolean(state.accessToken));
+    // Build #6: the MASTER screen IS the application — the marketing chrome
+    // steps aside and the shell owns the viewport. Every other screen keeps
+    // the editorial layout it was designed for.
+    const appScreen = name === 'master';
+    document.body.classList.toggle('is-workspace', appScreen);
+    if (appScreen) shellSyncChrome();
   }
 
   async function loadMe() {
@@ -1791,7 +1838,14 @@
     // the trial label silently never showed.
     const onTrial = Boolean(state.trial?.active ?? state.trial?.isActive);
     const label = onTrial ? `Trial · ${credits} free tasks` : `Credits · ${credits}`;
-    $('#credit-pill').textContent = label;
+    const pill = $('#credit-pill');
+    if (pill) pill.textContent = label;
+    // The app shell carries the same real number in its own top bar.
+    const shellPill = $('#ak-credit-pill');
+    if (shellPill) {
+      shellPill.textContent = onTrial ? `Trial · ${credits} free` : `Credits · ${credits}`;
+      shellPill.title = onTrial ? `${credits} free task credits on trial` : `${credits} task credits`;
+    }
   }
 
   /**
@@ -2696,22 +2750,28 @@
     window.addEventListener('resize', () => { if (!masterPaneIsNarrow()) masterPaneSet('workspace'); });
   }
 
-  /** LEFT pane — the user's real recent tasks (click to re-open a result). */
+  /** Sidebar + chat drawer — the user's real recent tasks (click → real result). */
   async function loadMasterTaskHistory() {
-    const root = $('#master-task-history');
-    if (!root) return;
+    const hosts = [$('#master-task-history'), $('#master-task-history-drawer')].filter(Boolean);
+    if (!hosts.length) return;
     const body = await api('/api/tasks').catch(() => ({ tasks: [] }));
-    const tasks = (body.tasks || []).slice(0, 8);
-    if (!tasks.length) {
-      root.innerHTML = '<div class="list-item"><small>No tasks yet — run your first goal.</small></div>';
-      return;
-    }
-    root.innerHTML = tasks.map((t) => `
+    const tasks = (body.tasks || []).slice(0, 12);
+    for (const root of hosts) {
+      if (!tasks.length) {
+        root.innerHTML = '<div class="list-item"><small>No tasks yet — run your first goal.</small></div>';
+        continue;
+      }
+      root.innerHTML = tasks.map((t) => `
       <button type="button" class="list-item list-item-btn" data-task="${esc(t.id)}">
         <div><b>${esc(String(t.title || t.goal || t.id).slice(0, 60))}</b><small>${esc(String(t.status || ''))}</small></div>
         ${badge(t.status)}
       </button>`).join('');
-    $$('[data-task]', root).forEach((btn) => btn.addEventListener('click', () => loadMasterTaskResult(btn.dataset.task)));
+      $$('[data-task]', root).forEach((btn) => btn.addEventListener('click', () => {
+        // Opening a past run restores its REAL stored result (and reveals it).
+        void loadMasterTaskResult(btn.dataset.task);
+        shellRailOpen('preview');
+      }));
+    }
   }
 
   /** Re-open a past task's real result on the MASTER canvas. */
@@ -2758,31 +2818,64 @@
    * render in the canvas, download the stored bytes, and (for images /
    * documents / HTML) preview without leaving the workspace.
    */
+  /**
+   * Files panel — everything a project really holds: the files the user
+   * uploaded AND the deliverables AKBARAL! generated (versioned artifacts).
+   * Every row carries its own real actions; binary/unknown types download
+   * instead of being pretended into a preview.
+   */
   async function loadMasterFiles(projectId) {
     const root = $('#master-files');
     if (!root) return;
     if (!projectId) {
-      root.innerHTML = '<div class="list-item"><small>Select a project to see its files.</small></div>';
+      root.innerHTML = '<div class="list-item"><small>Select a project to see its files and generated artifacts.</small></div>';
       return;
     }
-    const body = await api(`/api/projects/${encodeURIComponent(projectId)}`).catch(() => null);
+    const kinds = ['website', 'image', 'document', 'data'];
+    const [body, ...artifacts] = await Promise.all([
+      api(`/api/projects/${encodeURIComponent(projectId)}`).catch(() => null),
+      ...kinds.map((kind) => api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/${kind}`).catch(() => null)),
+    ]);
     const files = (body?.files || []).slice(0, 20);
-    if (!files.length) {
-      root.innerHTML = '<div class="list-item"><small>No files yet — attach files to a MASTER goal.</small></div>';
-      return;
-    }
-    root.innerHTML = files.map((f) => `
+    const generated = artifacts
+      .map((payload, index) => (payload?.artifact ? { kind: kinds[index], artifact: payload.artifact } : null))
+      .filter(Boolean);
+    const fileRows = files.length
+      ? files.map((f) => `
       <div class="list-item file-item" data-file="${esc(f.id)}" data-mime="${esc(String(f.mime_type || ''))}" data-name="${esc(String(f.original_name || f.id))}">
-        <div><b>${esc(String(f.original_name || f.id))}</b><small>${esc(String(f.mime_type || 'file'))}</small></div>
+        <div><b>${esc(String(f.original_name || f.id))}</b><small>uploaded · ${esc(String(f.mime_type || 'file'))}</small></div>
         <div class="file-actions">
           <button type="button" class="btn btn-ghost btn-sm" data-preview="${esc(f.id)}" title="Render this file in the canvas">Canvas</button>
           <button type="button" class="btn btn-ghost btn-sm" data-download="${esc(f.id)}" data-name="${esc(String(f.original_name || 'file'))}">Download</button>
         </div>
-      </div>`).join('');
+      </div>`).join('')
+      : '<div class="list-item"><small>No uploaded files yet — attach files to a MASTER goal or upload above.</small></div>';
+    const artifactRows = generated.length
+      ? generated.map((entry) => `
+      <div class="list-item file-item" data-artifact-kind="${esc(entry.kind)}" data-artifact-version="${esc(String(entry.artifact.version))}">
+        <div><b>${esc(String(entry.artifact.title || entry.kind))}</b><small>generated · ${esc(entry.kind)} v${esc(String(entry.artifact.version))}</small></div>
+        <div class="file-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-artifact-open="${esc(entry.kind)}" data-version="${esc(String(entry.artifact.version))}" title="Render this version in the canvas">Canvas</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-artifact-download="${esc(entry.kind)}" data-name="${esc(String(entry.artifact.title || entry.kind))}">Download</button>
+        </div>
+      </div>`).join('')
+      : '<div class="list-item"><small>No generated artifacts yet — run a goal with this project selected.</small></div>';
+    root.innerHTML = `
+      <div class="ak-section-head"><span>Uploaded</span><span>${files.length}</span></div>
+      ${fileRows}
+      <div class="ak-section-head" style="margin-top:6px"><span>Generated</span><span>${generated.length}</span></div>
+      ${artifactRows}`;
     $$('[data-download]', root).forEach((btn) => btn.addEventListener('click', () => authedDownload(`/api/files/${btn.dataset.download}`, btn.dataset.name)));
     $$('[data-preview]', root).forEach((btn) => btn.addEventListener('click', () => {
       const item = btn.closest('.file-item');
       void previewProjectFile(btn.dataset.preview, item?.dataset.mime || '', item?.dataset.name || 'file');
+    }));
+    $$('[data-artifact-open]', root).forEach((btn) => btn.addEventListener('click', () => {
+      void previewProjectArtifact(projectId, btn.dataset.artifactOpen, btn.dataset.version);
+    }));
+    $$('[data-artifact-download]', root).forEach((btn) => btn.addEventListener('click', () => {
+      const kind = btn.dataset.artifactDownload;
+      void authedDownload(`/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(kind)}/download`, btn.dataset.name || `akbaral-${kind}`);
     }));
   }
 
@@ -2824,6 +2917,13 @@
       renderMasterAttachments();
       updateAttachmentHint();
     }));
+    // The composer shows the real attachment count (never a decorative chip).
+    const count = $('#master-attach-count');
+    if (count) {
+      const total = state.masterAttachments.length;
+      count.hidden = total === 0;
+      count.textContent = `${total} attached`;
+    }
     updateAttachmentHint();
   }
 
@@ -2836,7 +2936,7 @@
       try {
         const form = new FormData();
         form.append('file', file);
-        const response = await fetch(`/api/files/projects/${encodeURIComponent(projectId)}/files`, {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
           method: 'POST',
           headers: state.accessToken ? { authorization: `Bearer ${state.accessToken}` } : {},
           body: form,
@@ -3509,6 +3609,529 @@
   async function systemResume() {
     try { await api('/api/admin/system/resume', { method: 'POST', body: JSON.stringify({}) }); toast('System resumed', 'ok'); }
     catch (e) { toast(e.message, 'err'); }
+  }
+
+  /* ============================================================
+     Build #6 — THE APPLICATION SHELL (Task 4)
+
+     The MASTER screen is the product surface: LEFT sidebar (search,
+     library, images & media, projects, files, recent history, account),
+     CENTER the MASTER conversation, RIGHT the artifact rail (Preview +
+     Files / Library / Images).
+
+     Every control here is wired to a real screen or a real API call —
+     no placeholder navigation, no invented data. Layout preferences
+     (sidebar collapsed, rail collapsed) are stored locally; nothing
+     else is persisted client-side.
+     ============================================================ */
+
+  const SHELL_SIDEBAR_KEY = 'ak_shell_sidebar'; // 'open' | 'collapsed'
+  const SHELL_RAIL_KEY = 'ak_shell_rail'; // 'open' | 'closed'
+  const SHELL_RAIL_TABS = ['preview', 'files', 'library', 'media'];
+  let shellRailCurrentTab = 'preview';
+
+  function shellIsNarrow() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1080px)').matches;
+  }
+
+  function shellEl() {
+    return $('#master-shell');
+  }
+
+  /** Apply the stored layout preferences + the live account state. */
+  function shellSyncChrome() {
+    const shell = shellEl();
+    if (!shell) return;
+    // Narrow viewports always start with the drawer closed and the
+    // conversation in view — the sidebar never covers the content on load.
+    shell.dataset.sidebar = shellIsNarrow()
+      ? 'open'
+      : (storageGet(SHELL_SIDEBAR_KEY) === 'collapsed' ? 'collapsed' : 'open');
+    const railClosed = storageGet(SHELL_RAIL_KEY) === 'closed';
+    shell.dataset.rail = railClosed ? 'closed' : 'open';
+    const sideToggle = $('#master-sidebar-toggle');
+    if (sideToggle) {
+      sideToggle.setAttribute('aria-expanded', String(shell.dataset.sidebar !== 'collapsed'));
+      sideToggle.title = shell.dataset.sidebar === 'collapsed' ? 'Expand sidebar' : 'Collapse sidebar';
+    }
+    const railToggle = $('#master-rail-toggle');
+    if (railToggle) {
+      railToggle.setAttribute('aria-expanded', String(!railClosed));
+      railToggle.setAttribute('aria-current', railClosed ? 'false' : 'true');
+    }
+    const menuBtn = $('#master-menu-btn');
+    if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+    const scrim = $('#master-sidebar-scrim');
+    if (scrim) scrim.hidden = true;
+    shellSyncAccount();
+    shellMarkNav(null);
+  }
+
+  /** Sidebar preferences: open | collapsed on desktop, drawer on phones. */
+  function shellSidebarSet(mode) {
+    const shell = shellEl();
+    if (!shell) return;
+    const scrim = $('#master-sidebar-scrim');
+    const menuBtn = $('#master-menu-btn');
+    if (mode === 'drawer') {
+      shell.dataset.sidebar = 'drawer';
+      if (scrim) scrim.hidden = false;
+      if (menuBtn) menuBtn.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    if (shellIsNarrow()) {
+      // On a phone the sidebar is either open (as a drawer) or closed.
+      shell.dataset.sidebar = mode === 'drawer' ? 'drawer' : 'open';
+      if (scrim) scrim.hidden = true;
+      if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const next = mode === 'collapsed' ? 'collapsed' : 'open';
+    shell.dataset.sidebar = next;
+    storageSet(SHELL_SIDEBAR_KEY, next);
+    if (scrim) scrim.hidden = true;
+    if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+    const sideToggle = $('#master-sidebar-toggle');
+    if (sideToggle) {
+      sideToggle.setAttribute('aria-expanded', String(next !== 'collapsed'));
+      sideToggle.title = next === 'collapsed' ? 'Expand sidebar' : 'Collapse sidebar';
+    }
+  }
+
+  function shellSidebarToggle() {
+    const shell = shellEl();
+    if (!shell) return;
+    if (shellIsNarrow()) { shellSidebarSet('open'); return; }
+    shellSidebarSet(shell.dataset.sidebar === 'collapsed' ? 'open' : 'collapsed');
+  }
+
+  /** The artifact rail: preview + the files/library/images panels. */
+  function shellRailSet(open) {
+    const shell = shellEl();
+    if (!shell) return;
+    shell.dataset.rail = open ? 'open' : 'closed';
+    storageSet(SHELL_RAIL_KEY, open ? 'open' : 'closed');
+    const toggle = $('#master-rail-toggle');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-current', open ? 'true' : 'false');
+    }
+    if (!open && shellIsNarrow()) masterPaneSet('chat');
+  }
+
+  function shellRailTabSet(name) {
+    const tab = SHELL_RAIL_TABS.includes(name) ? name : 'preview';
+    shellRailCurrentTab = tab;
+    $$('[data-rail-tab]').forEach((button) => {
+      const active = button.dataset.railTab === tab;
+      button.setAttribute('aria-selected', String(active));
+      button.classList.toggle('active', active);
+    });
+    $$('[data-rail-pane]').forEach((pane) => { pane.hidden = pane.dataset.railPane !== tab; });
+    if (tab === 'library') void shellLoadLibrary();
+    else if (tab === 'media') void shellLoadMedia();
+    else if (tab === 'files') void loadMasterFiles($('#master-project')?.value || null);
+    shellMarkNav(tab === 'preview' ? null : tab);
+  }
+
+  /** Open the rail (optionally on a specific panel) and reveal it. */
+  function shellRailOpen(tab) {
+    shellRailSet(true);
+    shellRailTabSet(tab || shellRailCurrentTab);
+    if (shellIsNarrow()) masterPaneSet('workspace');
+    chatScrollToEnd();
+  }
+
+  /** Mark the sidebar entry that matches the visible surface. */
+  function shellMarkNav(tab) {
+    const map = { library: 'library', media: 'media', files: 'files' };
+    const current = map[tab] || null;
+    $$('[data-ak-action]').forEach((item) => {
+      const action = item.dataset.akAction;
+      if (['search', 'library', 'media', 'projects', 'files', 'agents', 'automations', 'billing'].includes(action)) {
+        item.setAttribute('aria-current', String(Boolean(current) && action === current));
+      }
+    });
+  }
+
+  /**
+   * Sidebar navigation — each entry opens a real surface:
+   * search (this screen's real search), library (task results), media
+   * (real image files/artifacts), files (the project file panel),
+   * projects/agents/automations/billing (the existing app screens).
+   */
+  function shellAction(action) {
+    switch (action) {
+      case 'search': shellSearchOpen(); break;
+      case 'library': shellRailOpen('library'); break;
+      case 'media': shellRailOpen('media'); break;
+      case 'files': shellRailOpen('files'); break;
+      case 'projects': location.hash = '#/workspace'; break;
+      case 'agents': location.hash = '#/agents'; break;
+      case 'automations': location.hash = '#/automations'; break;
+      case 'billing': location.hash = '#/billing'; break;
+      default: break;
+    }
+  }
+
+  /** Account block: real identity, role-gated owner entry, sign-out. */
+  function shellSyncAccount() {
+    const user = state.user;
+    const label = user?.name || user?.email || 'Guest';
+    const nameEl = $('#ak-user-name');
+    if (nameEl) nameEl.textContent = label;
+    const emailEl = $('#ak-user-email');
+    if (emailEl) emailEl.textContent = user?.email || (state.accessToken ? 'signed in' : 'not signed in');
+    const avatar = $('#ak-avatar');
+    if (avatar) avatar.textContent = (String(label).trim()[0] || 'A').toUpperCase();
+    const role = String(user?.role || '');
+    const isOwner = role === 'owner' || role === 'super_admin';
+    const ownerLink = $('#ak-owner-link');
+    if (ownerLink) ownerLink.hidden = !isOwner;
+    const privateLink = $('#ak-mission-link');
+    if (privateLink) privateLink.hidden = !isOwner;
+    const sub = $('#ak-top-sub');
+    if (sub) sub.textContent = isOwner ? 'owner workspace · unlimited execution' : 'orchestration workspace';
+  }
+
+  /** Library panel — the account's real tasks; opening one restores its result. */
+  async function shellLoadLibrary() {
+    const root = $('#master-library');
+    if (!root) return;
+    root.innerHTML = '<div class="list-item"><small>Loading your runs…</small></div>';
+    const body = await api('/api/tasks').catch((e) => ({ __error: e.message }));
+    if (body.__error) {
+      root.innerHTML = `<div class="state-card state-error"><h4>Library unavailable</h4><p>${esc(body.__error)}</p></div>`;
+      return;
+    }
+    const tasks = body.tasks || [];
+    if (!tasks.length) {
+      root.innerHTML = '<div class="empty-state">No runs yet. Every MASTER goal you execute is kept here with its real result.</div>';
+      return;
+    }
+    root.innerHTML = tasks.slice(0, 40).map((t) => `
+      <div class="library-row">
+        <div class="library-meta">
+          <b>${esc(String(t.title || t.goal || t.id).slice(0, 96))}</b>
+          <small>${esc(String(t.status || ''))}${t.created_at ? ` · ${esc(String(t.created_at).slice(0, 16).replace('T', ' '))}` : ''}</small>
+        </div>
+        <div class="file-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-library-open="${esc(t.id)}">Open</button>
+          <a class="btn btn-ghost btn-sm" href="#/tasks/${esc(t.id)}">Details</a>
+        </div>
+      </div>`).join('');
+    $$('[data-library-open]', root).forEach((btn) => btn.addEventListener('click', async () => {
+      await loadMasterTaskResult(btn.dataset.libraryOpen);
+      shellRailTabSet('preview');
+      shellRailOpen('preview');
+    }));
+  }
+
+  /**
+   * Images & media panel — real image files and real image artifacts from
+   * the selected project (or the most recent projects when none is chosen).
+   * Nothing is invented: a project with no images states exactly that.
+   */
+  async function shellLoadMedia() {
+    const root = $('#master-media');
+    if (!root) return;
+    const selected = $('#master-project')?.value || null;
+    const ids = selected ? [selected] : (state.projects || []).slice(0, 6).map((p) => p.id);
+    if (!ids.length) {
+      root.innerHTML = '<div class="list-item"><small>No projects yet — create one and generated images are kept there.</small></div>';
+      return;
+    }
+    root.innerHTML = '<div class="list-item"><small>Scanning your projects…</small></div>';
+    const cards = [];
+    await Promise.all(ids.map(async (projectId) => {
+      const [detail, imageArtifact] = await Promise.all([
+        api(`/api/projects/${encodeURIComponent(projectId)}`).catch(() => null),
+        api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/image`).catch(() => null),
+      ]);
+      const projectName = detail?.project?.name || projectId;
+      const files = (detail?.files || []).filter((f) => String(f.mime_type || '').startsWith('image/'));
+      for (const f of files.slice(0, 12)) {
+        cards.push({
+          projectId,
+          kind: 'file',
+          id: f.id,
+          name: f.original_name || f.id,
+          meta: `${projectName} · ${String(f.mime_type || 'image')}`,
+          url: `/api/files/${encodeURIComponent(f.id)}`,
+        });
+      }
+      const artifact = imageArtifact?.artifact;
+      if (artifact) {
+        cards.push({
+          projectId,
+          kind: 'artifact',
+          version: artifact.version,
+          name: artifact.title || `image v${artifact.version}`,
+          meta: `${projectName} · generated image v${artifact.version}`,
+          content: String(artifact.content || ''),
+        });
+      }
+    }));
+    if (!cards.length) {
+      root.innerHTML = '<div class="empty-state">No images yet in these projects. Ask MASTER for an image and it lands here with its real bytes.</div>';
+      return;
+    }
+    root.innerHTML = cards.map((card, index) => `
+      <div class="media-card">
+        <div class="media-thumb" data-media-thumb="${index}">${card.kind === 'artifact' ? 'IMAGE' : 'FILE'}</div>
+        <b title="${esc(card.name)}">${esc(card.name)}</b>
+        <small>${esc(card.meta)}</small>
+        <div class="file-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-media-open="${index}">Canvas</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-media-download="${index}">Download</button>
+        </div>
+      </div>`).join('');
+    // Thumbnails use the real bytes (auth-fetched for files, inline data /
+    // absolute URLs for generated artifacts) — never a placeholder image.
+    cards.forEach((card, index) => {
+      const thumb = root.querySelector(`[data-media-thumb="${index}"]`);
+      if (!thumb) return;
+      const source = card.kind === 'file' ? card.url : card.content;
+      if (!/^(data:|https?:\/\/|\/)/i.test(source || '')) return;
+      if (String(source).startsWith('/')) {
+        fetch(source, { headers: state.accessToken ? { authorization: `Bearer ${state.accessToken}` } : {} })
+          .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob(); })
+          .then((blob) => { thumb.innerHTML = `<img alt="${esc(card.name)}" src="${URL.createObjectURL(blob)}" />`; })
+          .catch(() => { /* the card keeps its honest type label */ });
+      } else {
+        thumb.innerHTML = `<img alt="${esc(card.name)}" src="${esc(source)}" />`;
+      }
+    });
+    $$('[data-media-open]', root).forEach((btn) => btn.addEventListener('click', () => {
+      const card = cards[Number(btn.dataset.mediaOpen)];
+      if (!card) return;
+      if (card.kind === 'file') void previewProjectFile(card.id, 'image/*', card.name);
+      else void previewProjectArtifact(card.projectId, 'image', card.version);
+    }));
+    $$('[data-media-download]', root).forEach((btn) => btn.addEventListener('click', () => {
+      const card = cards[Number(btn.dataset.mediaDownload)];
+      if (!card) return;
+      if (card.kind === 'file') void authedDownload(`/api/files/${encodeURIComponent(card.id)}`, card.name);
+      else void authedDownload(`/api/projects/${encodeURIComponent(card.projectId)}/artifacts/image/download`, card.name);
+    }));
+  }
+
+  /** Render any stored artifact version on the canvas (real content only). */
+  async function previewProjectArtifact(projectId, kind, version) {
+    const root = $('#master-result');
+    if (!root) return;
+    try {
+      const body = await api(`/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(kind)}/v/${encodeURIComponent(String(version))}`);
+      const artifact = body?.artifact;
+      const content = String(artifact?.content || '');
+      if (!content) throw new Error('That version has no content to render');
+      root.hidden = false;
+      root.innerHTML = '';
+      const empty = $('#master-preview-empty');
+      if (empty) empty.hidden = true;
+      if (kind === 'website' || isFullHtmlDocument(content)) {
+        renderWebsitePreview(root, content, { version, title: artifact.title });
+        canvasSetState('ok', 'website');
+      } else if (kind === 'image') {
+        if (/^(data:|https?:\/\/|\/)/i.test(content)) {
+          renderImagePreview(root, { url: content, filename: String(artifact.title || `image-v${version}`) });
+          canvasSetState('ok', 'image');
+        } else {
+          renderDocumentPreview(root, { title: artifact.title, content });
+          canvasSetState('ok', 'image reference');
+        }
+      } else {
+        renderDocumentPreview(root, { title: artifact.title, content });
+        canvasSetState('ok', kind === 'data' ? 'dataset' : 'document');
+      }
+      shellRailOpen('preview');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  /* ----- Search: real tasks, real knowledge, real projects ----- */
+
+  function shellSearchOpen() {
+    const overlay = $('#master-search');
+    if (!overlay) return;
+    overlay.hidden = false;
+    const input = $('#master-search-input');
+    if (input) input.focus();
+  }
+
+  function shellSearchClose() {
+    const overlay = $('#master-search');
+    if (overlay) overlay.hidden = true;
+  }
+
+  async function shellSearchRun(query) {
+    const root = $('#master-search-results');
+    if (!root) return;
+    const q = String(query || '').trim();
+    if (!q) {
+      root.innerHTML = '<div class="ak-command-group"><b>Type a query</b><div class="list-item"><small>Results come from your own tasks, indexed knowledge and projects.</small></div></div>';
+      return;
+    }
+    root.innerHTML = '<div class="ak-command-group"><b>Searching</b><div class="list-item"><small>Querying your tasks, knowledge and projects…</small></div></div>';
+    const [tasksBody, projectsBody, knowledgeBody] = await Promise.all([
+      api('/api/tasks').catch(() => null),
+      api('/api/projects').catch(() => null),
+      api('/api/files/knowledge/search', { method: 'POST', body: JSON.stringify({ query: q }) }).catch((e) => ({ __error: e.message })),
+    ]);
+    const needle = q.toLowerCase();
+    const tasks = ((tasksBody?.tasks) || []).filter((t) => `${t.title || ''} ${t.goal || ''} ${t.status || ''}`.toLowerCase().includes(needle)).slice(0, 8);
+    const projects = ((projectsBody?.projects) || []).filter((p) => String(p.name || '').toLowerCase().includes(needle)).slice(0, 8);
+    const knowledge = knowledgeBody?.results || [];
+    const knowledgeIndexed = Number(knowledgeBody?.knowledgeItems ?? 0);
+    const groups = [];
+    if (tasks.length) {
+      groups.push(`<div class="ak-command-group"><b>Tasks</b>${tasks.map((t) => `
+        <button type="button" class="ak-command-item" data-search-task="${esc(t.id)}">
+          <span>${esc(String(t.title || t.goal || t.id).slice(0, 80))}</span>
+          <small>${esc(String(t.status || ''))}</small>
+        </button>`).join('')}</div>`);
+    }
+    if (projects.length) {
+      groups.push(`<div class="ak-command-group"><b>Projects</b>${projects.map((p) => `
+        <button type="button" class="ak-command-item" data-search-project="${esc(p.id)}">
+          <span>${esc(p.name || p.id)}</span>
+          <small>${esc(String(p.status || 'active'))}</small>
+        </button>`).join('')}</div>`);
+    }
+    if (knowledge.length) {
+      groups.push(`<div class="ak-command-group"><b>Knowledge</b>${knowledge.slice(0, 8).map((r) => `
+        <div class="ak-command-item"><span>${esc(String(r.title || r.source_type || 'result'))}</span><small>${esc(String(r.content || '').slice(0, 60))}</small></div>`).join('')}</div>`);
+    }
+    if (!groups.length) {
+      const note = knowledgeBody?.__error
+        ? `<div class="state-card state-error"><h4>Knowledge search failed</h4><p>${esc(knowledgeBody.__error)}</p></div>`
+        : (knowledgeIndexed === 0
+          ? '<div class="list-item"><small>No tasks or projects match, and no documents are indexed yet. Index a file in a project to make it searchable.</small></div>'
+          : `<div class="list-item"><small>No matches for “${esc(q)}” across your tasks, projects or ${knowledgeIndexed} indexed item${knowledgeIndexed === 1 ? '' : 's'}.</small></div>`);
+      root.innerHTML = `<div class="ak-command-group"><b>No results</b>${note}</div>`;
+      return;
+    }
+    root.innerHTML = groups.join('');
+    $$('[data-search-task]', root).forEach((btn) => btn.addEventListener('click', async () => {
+      shellSearchClose();
+      await loadMasterTaskResult(btn.dataset.searchTask);
+      shellRailOpen('preview');
+    }));
+    $$('[data-search-project]', root).forEach((btn) => btn.addEventListener('click', () => {
+      const select = $('#master-project');
+      if (select) {
+        select.value = btn.dataset.searchProject;
+        void loadMasterWorkspace();
+      }
+      shellSearchClose();
+      toast('Project selected — MASTER will run into it', 'ok');
+    }));
+  }
+
+  /** Start a clean conversation (no state is invented — the log is cleared). */
+  function masterNewChat() {
+    const log = $('#master-chat-log');
+    if (!log) return;
+    $$('.chat-msg', log).forEach((node) => node.remove());
+    const out = $('#master-output');
+    if (out) out.innerHTML = '<div class="console-hint">New conversation. Describe a goal — MASTER plans, picks specialists and streams the run here.</div>';
+    const goal = $('#master-goal');
+    if (goal) { goal.value = ''; goal.focus(); }
+    state.masterAttachments = [];
+    renderMasterAttachments();
+    clearMasterResult();
+    setCoreState('idle', 'idle');
+    if (shellIsNarrow()) masterPaneSet('chat');
+    toast('New chat', 'ok');
+  }
+
+  /** Wire the whole shell: sidebar, rail, search, account, shortcuts. */
+  function bindAppShell() {
+    if (!$('#master-shell')) return;
+    $('#master-sidebar-toggle')?.addEventListener('click', shellSidebarToggle);
+    $('#master-menu-btn')?.addEventListener('click', () => {
+      const shell = shellEl();
+      shellSidebarSet(shell?.dataset.sidebar === 'drawer' ? 'open' : 'drawer');
+    });
+    $('#master-sidebar-scrim')?.addEventListener('click', () => shellSidebarSet('open'));
+    $('#master-new-chat')?.addEventListener('click', masterNewChat);
+    $('#master-history-refresh')?.addEventListener('click', () => void loadMasterTaskHistory());
+    $('#master-rail-toggle')?.addEventListener('click', () => {
+      const shell = shellEl();
+      shellRailSet(shell?.dataset.rail === 'closed');
+    });
+    $('#ak-rail-close')?.addEventListener('click', () => shellRailSet(false));
+    $$('[data-rail-tab]').forEach((tab) => tab.addEventListener('click', () => shellRailTabSet(tab.dataset.railTab)));
+    $$('[data-ak-action]').forEach((item) => item.addEventListener('click', () => shellAction(item.dataset.akAction)));
+
+    // Account menu: real entries, role-gated owner console, real sign-out.
+    const menu = $('#ak-account-menu');
+    const menuBtn = $('#ak-account-menu-btn');
+    menuBtn?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (!menu) return;
+      const open = menu.hidden;
+      menu.hidden = !open;
+      menuBtn.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', (event) => {
+      if (!menu || menu.hidden) return;
+      if (event.target === menuBtn || menu?.contains(event.target)) return;
+      menu.hidden = true;
+      menuBtn?.setAttribute('aria-expanded', 'false');
+    });
+    $('#ak-logout')?.addEventListener('click', async () => {
+      try {
+        if (state.refreshToken) await api('/api/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: state.refreshToken }) });
+      } catch {}
+      storageRemove('ak_access');
+      storageRemove('ak_refresh');
+      state.accessToken = null;
+      state.refreshToken = null;
+      state.user = null;
+      if (menu) menu.hidden = true;
+      shellSyncAccount();
+      location.hash = '#/';
+    });
+
+    // Search overlay.
+    const searchForm = $('#master-search-form');
+    searchForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void shellSearchRun($('#master-search-input')?.value || '');
+    });
+    $('#master-search-close')?.addEventListener('click', shellSearchClose);
+    $('#master-search')?.addEventListener('click', (event) => {
+      if (event.target?.id === 'master-search') shellSearchClose();
+    });
+
+    // Composer ergonomics: Enter sends, Shift+Enter adds a line.
+    $('#master-goal')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        $('#master-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+
+    // Keyboard shortcuts: ⌘/Ctrl+K search, ⌘/Ctrl+B sidebar, Escape closes.
+    document.addEventListener('keydown', (event) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (meta && event.key.toLowerCase() === 'k') { event.preventDefault(); shellSearchOpen(); return; }
+      if (meta && event.key.toLowerCase() === 'b') { event.preventDefault(); shellSidebarToggle(); return; }
+      if (event.key === 'Escape') {
+        if (!$('#master-search')?.hidden) { shellSearchClose(); return; }
+        if (shellEl()?.dataset.sidebar === 'drawer') shellSidebarSet('open');
+      }
+    });
+
+    // Rotating the device or resizing the window keeps the shell coherent.
+    window.addEventListener('resize', () => {
+      const shell = shellEl();
+      if (!shell) return;
+      if (!shellIsNarrow() && shell.dataset.sidebar === 'drawer') shell.dataset.sidebar = storageGet(SHELL_SIDEBAR_KEY) === 'collapsed' ? 'collapsed' : 'open';
+      if (shellIsNarrow() && shell.dataset.sidebar === 'collapsed') shell.dataset.sidebar = 'open';
+      const scrim = $('#master-sidebar-scrim');
+      if (scrim && shell.dataset.sidebar !== 'drawer') scrim.hidden = true;
+    });
   }
 
   function debounce(fn, ms) {
