@@ -203,6 +203,37 @@ Checkout success/cancel return URLs always point at YOUR domain (see `src/billin
 `POST /api/billing/webhook` (HMAC `x-akbaral-signature`, `BILLING_WEBHOOK_SECRET`) remains for
 manual/other-provider settlement.
 
+## Offline previews without AI credentials — `npm run fixture:model` (added 2026-09-15)
+
+A preview environment often has no provider key. `scripts/local-model-fixture.ts`
+is a **development stand-in for a language model**: it speaks the
+OpenAI-compatible `/v1/chat/completions` protocol so the real pipeline
+(goal analysis → specialists → verification → synthesis → versioned website
+artifact capture) can run end to end on a laptop or in a sandbox.
+
+```bash
+npm run fixture:model                 # listens on :4999
+export OPENAI_API_KEY=local-stub-key
+export OPENAI_BASE_URL=http://127.0.0.1:4999/v1
+export AKBARAL_ALLOW_PRIVATE_PROVIDER=1   # the stub is a private/loopback endpoint
+npm start
+```
+
+Honesty rules: every document the stub returns carries a visible footer saying
+a local stub produced it, the stub logs each request it serves, and the rest of
+the stack is untouched production code. **Production never runs this** — set
+`GOOGLE_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` (a real provider or a
+self-hosted OpenAI-compatible gateway) and drop the three variables above;
+`npm run launch:check` reports the provider blockers either way.
+
+Two harnesses exercise the deliverable path (both start their own throwaway
+database, so they are safe to run against any checkout):
+
+| Command | Proves |
+| --- | --- |
+| `npm run smoke:artifacts` | the pipeline completes for a real goal, the specialist's HTML is captured as a **versioned** website artifact, version history / single-version / download endpoints serve exactly that document, the calculator inside it really evaluates, re-capture versions instead of overwriting, impossible captures are refused, an un-captured kind reports empty, and one successful run consumes exactly one credit |
+| `npm run smoke:shell` | the application shell in a real (jsdom) client against a running stack: signed-out gate, sign-in, sidebar navigation, Library/Images/Files panels, search, a real MASTER run — asserting the success **or** the honest-failure contract of the configured provider — New chat, collapse/drawer/pane switch, sign-out |
+
 ## Launch checklist
 
 1. `.env.production` secrets set (SESSION_SECRET, BILLING_WEBHOOK_SECRET, `GOOGLE_API_KEY`,

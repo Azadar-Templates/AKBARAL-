@@ -62,6 +62,33 @@ const credentials = useOwner
 const [email, password] = credentials;
 await signup(email, password, useOwner ? 'AKBARAL Owner' : 'Shell Smoke');
 
+/* ------------------------------------------------ a real project for the run
+ * Website artifacts are only captured into a project, so the smoke needs one:
+ * reuse the account's first project or create it through the real API. */
+async function apiLogin() {
+  const response = await fetch(`${API}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await response.json().catch(() => ({}));
+  return body.accessToken ?? '';
+}
+
+const apiToken = await apiLogin();
+async function apiJson(path, init = {}) {
+  const response = await fetch(`${API}${path}`, {
+    ...init,
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiToken}`, ...(init.headers ?? {}) },
+  });
+  return response.json().catch(() => ({}));
+}
+
+let projectId = ((await apiJson('/api/projects')).projects ?? [])[0]?.id ?? '';
+if (!projectId) {
+  projectId = ((await apiJson('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'Shell smoke project' }) })).project ?? {}).id ?? '';
+}
+
 /* ------------------------------------------------------------ the browser */
 
 const html = await (await fetch(`${WEB}/workspace`)).text();
@@ -155,15 +182,57 @@ doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: 
 await tick(200);
 check('Escape closes the overlay', q('#master-search').hidden === true);
 
+// 4b — the project selector drives the rail with real data.
+const projectSelect = q('#master-project');
+await tick(1500);
+const optionIds = [...projectSelect.options].map((option) => option.value).filter(Boolean);
+check('the project selector lists the account projects', optionIds.includes(projectId), optionIds.join(', ') || 'none');
+projectSelect.value = projectId;
+projectSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+await tick(2500);
+check('selecting a project loads its real export control', /website|No website version yet/.test(q('#master-export-actions').textContent), q('#master-export-actions').textContent.trim().slice(0, 80));
+
 // 5 — a real MASTER run through the real pipeline (honest outcome).
 q('#master-goal').value = 'Build me a calculator';
 q('#master-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 await tick(1200);
 check('the goal opens as a real user turn', turns() >= 1 && q('#master-chat-log').innerHTML.includes('Build me a calculator'));
-await tick(15000);
-const canvasState = q('#master-canvas-state').textContent.trim();
-check('the run reaches a terminal, honest canvas state', /failed|ok|error|idle/i.test(canvasState), `canvas = ${canvasState}`);
+await tick(20000);
+const chip = q('#master-canvas-state');
+const canvasKind = chip?.dataset?.state ?? 'idle';
+const canvasState = chip?.textContent.trim() ?? 'idle';
+check('the run reaches a terminal, honest canvas state', ['ok', 'error'].includes(canvasKind), `canvas = ${canvasKind} (${canvasState})`);
 check('the outcome is never faked as success without a result', canvasState !== 'ok' || /Export|result/i.test(q('#master-result').innerHTML), q('#master-output').textContent.split('\n').filter(Boolean).slice(-1)[0]?.slice(0, 130));
+
+// 5b — the SUCCESS path (a provider or the local model stub is configured).
+// When the pipeline completes, the deliverable it captured must be the thing
+// rendered in the preview and offered for export — real content, sandboxed.
+if (canvasKind === 'ok') {
+  const frame = q('.wp-frame');
+  const srcdoc = frame?.getAttribute('srcdoc') ?? '';
+  check('a completed run renders the real deliverable in the preview frame', /<!doctype html/i.test(srcdoc), `bytes=${srcdoc.length}`);
+  check('the preview frame is sandboxed without same-origin access', (frame?.getAttribute('sandbox') ?? '') === 'allow-scripts', String(frame?.getAttribute('sandbox')));
+  check('the export control above the canvas offers the real artifact', Boolean(q('#master-export-download')), q('#master-export-actions').textContent.trim().slice(0, 90));
+  q('#ak-nav-files').click();
+  await tick(2000);
+  check('the Files panel separates uploaded files from generated artifacts', /Uploaded/.test(q('#master-files').innerHTML) && /Generated/.test(q('#master-files').innerHTML));
+  check('the generated artifact is listed with canvas + download actions', Boolean(q('#master-files [data-artifact-download]')), q('#master-files [data-artifact-kind]')?.dataset?.artifactKind ?? 'none');
+  check('the generated artifact is the website the pipeline captured', /website/i.test(q('#master-files').innerHTML), q('#master-files [data-artifact-kind]')?.dataset?.artifactVersion ?? 'n/a');
+  check('the export control now names the real artifact version', /website v\d+/.test(q('#master-export-actions').textContent), q('#master-export-actions').textContent.trim().slice(0, 80));
+} else {
+  check('a failed run leaves no deliverable on the canvas (nothing faked)', !q('.wp-frame'), `canvas=${canvasState}`);
+  // A failed run must never put an export on the bar that the server does not
+  // actually store: either the honest empty copy, or a version that is real.
+  const storedArtifact = await apiJson(`/api/projects/${projectId}/artifacts/website`).catch(() => ({}));
+  const exportText = q('#master-export-actions').textContent;
+  const namedVersion = /website v(\d+)/.exec(exportText)?.[1] ?? '';
+  check(
+    'the export bar only ever names a version the server really stores',
+    namedVersion === '' ? /No website version yet|Select a project/.test(exportText) : String(storedArtifact?.artifact?.version ?? '') === namedVersion,
+    `${exportText.trim().replace(/\s+/g, ' ').slice(0, 60)} | stored=${storedArtifact?.artifact?.version ?? 'none'}`,
+  );
+  check('the credit balance is still whole after the failed run', /free/i.test(q('#ak-credit-pill').textContent), q('#ak-credit-pill').textContent);
+}
 
 // 6 — New chat resets the conversation for real.
 q('#master-new-chat').click();

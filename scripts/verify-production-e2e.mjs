@@ -90,7 +90,7 @@ ok(ready.res.status === 200 && ready.body?.status === 'ready', `GET /api/ready -
 // ── 2. Web shell through the production proxy ─────────────────────────────
 const page = await j('/');
 ok(page.res.status === 200 && page.text.includes('id="app-root"'), `GET / -> ${page.res.status}, app shell mounts #app-root`);
-const appJs = await j('/app.js?v=akbaral-lux-7');
+const appJs = await j('/app.js?v=akbaral-lux-10');
 ok(appJs.res.status === 200 && appJs.text.includes('renderTaskOutcome'), 'app.js serves the MASTER outcome renderer');
 
 // ── 3. Fresh account via the public API ───────────────────────────────────

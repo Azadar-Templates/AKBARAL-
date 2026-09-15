@@ -1,60 +1,162 @@
-# Task 4 — AKBARAL! application shell (UI/UX transformation)
+# Task 4 — the AKBARAL! application shell (UI/UX transformation)
 
-Branch `arena/01a0a045-akbaral` · HEAD `0ac2b9f` (pushed) · previous HEAD `e4f804d`
+**Branch** `arena/01a0a045-akbaral` · **base** `e4f804d` (Task 3) · every change below is committed on this branch, no pull request was opened.
 
-## What changed
+---
 
-### One compact application screen (was a long scrolling page)
-| Zone | What it is |
+## 1 · What the workspace is now
+
+One compact application screen — the ChatGPT/Arena-shaped command centre, in
+AKBARAL!'s own identity. No hero block, no card stack, no wall of scrolling
+panels, no three-dot menus hiding things that are directly reachable.
+
+| Zone | What it holds |
 | --- | --- |
-| **Left sidebar** | AKBARAL! wordmark + "One Intelligence. Every Solution.", **New chat**, **Search** (⌘K), **Library**, **Images & media**, **Projects**, **Files**, Agents, Automations, Billing, **real recent history**, and the **account block** at the bottom (profile, settings, owner console for the owner role, sign out) |
-| **Center** | the MASTER conversation: header with live core state, real chat turns, live activity/progress stream, and a compact composer (attach, Files & artifacts, voice when supported, Plan & run) |
-| **Right rail** | **Preview** (download/export control ABOVE the canvas, artifact version bar) plus **Files / Library / Images** panels selected from the rail tabs at the top |
+| **Left · sidebar** | AKBARAL! wordmark + “One Intelligence. Every Solution.”, **New chat**, **Search** (⌘K), **Library**, **Images & media**, **Projects**, **Files**, Agents, Automations, Billing, **Recent** (real task history), and the **account block** (profile, settings, owner console for the owner role, sign out) |
+| **Centre · conversation** | the MASTER conversation: identity header, live activity stream, real user/MASTER turns, composer with attach · voice · *Files & artifacts* · **Plan & run** |
+| **Right · artifact rail** | the **download/export control above the live preview canvas**, the versioned-artifact bar, and the **Files / Library / Images** panels selected from the rail tabs at the top |
 | **Top bar** | compact: burger (phone), MASTER identity, pane switch (phone), search, project selector, core status, real credit count, rail toggle |
 
-The marketing header/footer get out of the way on the app screen; layout preferences (sidebar collapsed, rail collapsed) persist locally. No hero blocks, no card stacks, no decorative sections — and no 3-dot menus hiding directly reachable items.
+The marketing header/footer step aside while the shell owns the viewport
+(`body.is-workspace`). Sidebar and rail preferences persist locally. Below
+1080px the sidebar becomes an overlay drawer and the panes **switch** instead of
+squeezing; nothing overflows at 320px.
 
-### Real behaviour, not mockups
-- **"make me an image"** → the run's real result renders in **Preview**; image files/artifacts also appear as cards in **Images & media** with real thumbnails fetched with the bearer token, plus Canvas and Download actions.
-- **"make me a calculator"** / **"build me an application"** → the same real execution pipeline as before (`/api/workflows/master` → run → poll → `renderTaskOutcome`), rendering HTML apps in the sandboxed (`allow-scripts`, never same-origin) preview frame.
-- **"create a file"** → the **Files** tab lists uploaded files *and* AKBARAL!-generated artifacts (website/image/document/data) with real Canvas/Download/Export actions; knowledge indexing and search stay real.
-- **Library** = `/api/tasks` with "Open" restoring the stored result; **Search** = real tasks + projects + knowledge index (with honest "nothing indexed yet" / "no matches" / "search failed" states).
-- **New chat** clears the conversation and resets the canvas; **Enter** sends, **Shift+Enter** adds a line; ⌘/Ctrl+K search, ⌘/Ctrl+B sidebar.
+**`/workspace` is a real route** (`src/app/workspace/page.tsx`, prerendered,
+`noindex`) as well as `#/master`; an explicit hash still wins, so
+`/workspace#/` reaches the landing page and sign-out from the app screen works.
 
-### Fixed along the way
-- **Attachment uploads were broken**: the client posted to `/api/files/projects/:id/files` (404). Now `/api/projects/:id/files` — verified 201, file listed, fetchable, indexed, searchable.
-- **`/workspace` is a real route** (`src/app/workspace/page.tsx`, prerendered, `noindex`); an explicit hash still wins, so `/workspace#/` reaches the landing page and sign-out works from the app screen.
-- **Auth screen**: Google/GitHub/Microsoft/**Facebook**/Apple buttons; configured providers are real server-side OAuth links, unconfigured ones render disabled with the exact credential names they need — never a button that silently does nothing. Sign-in honours an explicit same-origin `next` (used by the owner console).
-- **Facebook provider added** to the existing secure OAuth registry (Graph API v19.0, same state/PKCE/link protections). Its email is treated as unverified (never auto-links to an existing password account) — same rule as Microsoft. Needs `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`.
-- **Owner access**: the owner account (configured `AKBARAL_OWNER_EMAIL`) signs in, gets role `owner`, and sees the **Owner console** entry → `/owner`. Ordinary accounts get 403 from `/api/owner/*` and never see the entry. RBAC untouched.
+## 2 · Every control is real (nothing simulated)
 
-### Colour system stays tokenized
-No literal colours in the shell: every surface/border/glass/radius/type value comes from `public/tokens.css` (generated from `design-system/tokens.json`). The new background/accent palette you will supply later is a tokens-only edit — no layout rebuild.
+| Ask | What actually happens |
+| --- | --- |
+| “make me a calculator” / “build me an application” | the same real pipeline as before (`POST /api/workflows/master` → run → poll → `renderTaskOutcome`); the captured HTML document renders in the **sandboxed** (`allow-scripts`, never same-origin) preview frame, and the export control above it exports that exact version |
+| “create a file” | the **Files** rail lists **Uploaded** *and* **Generated** (website / image / document / data) with real **Canvas**, **Download** and version actions |
+| Attachments | fixed: the client posted to `/api/files/projects/:id/files` (**404**) — now `POST /api/projects/:id/files`, verified 201 → listed → fetchable → indexed → searchable |
+| **Library** | `/api/tasks` rows with “Open” restoring the stored result |
+| **Images & media** | image files and image artifacts across projects, thumbnails fetched through the authenticated API, Canvas/Download |
+| **Search** (⌘K) | real tasks + projects + knowledge index, with honest “nothing indexed yet” / “no matches” / “search failed” states |
+| **Projects / Agents / Automations / Billing** | the existing real screens; **New chat** clears the conversation and resets the canvas |
 
-## Verification (all green)
-- `tsc --noEmit` clean; `npm run scan:secrets` PASS.
-- **`npm test` → 65 files, 605 tests, 0 failures** (Task 3 baseline 598).
-- **`npm run build`** → production build green, `/workspace` prerendered as a static route.
-- **`npm run smoke:shell` → 34/34** against the live stack with **no runtime problems**: signed-out gate, sign-in, identity/credits, Library/Images/Files panels, search, a real MASTER run (honest `provider_not_configured` failure, canvas `failed`, no fake success), New chat, sidebar collapse/expand, rail collapse/expand, phone drawer + scrim, pane switch, account menu, sign-out.
-- Live API smoke: projects, uploads, project detail, all four artifact kinds, knowledge search, tasks, `/api/me`, `/api/owner/dashboard` (owner 200 / ordinary user 403), workflow failure + credit refund intact.
-- `/` 200, `/workspace` 200 (`Workspace — AKBARAL!`), `/owner` 200, styles/app.js served at `?v=akbaral-lux-9`.
+Honesty rules held everywhere: a failed/timed-out/cancelled run shows the
+failure and keeps the credit; an artifact kind with no capture reports *empty*
+rather than inventing content; capturing a kind the pipeline cannot produce is
+refused (`400`).
+
+## 3 · Auth, owner access, security
+
+- Sign-in: email/password **+ Continue with Google / GitHub / Microsoft /
+  Facebook / Apple** through the existing server-side OAuth flow. Configured
+  providers are real links; unconfigured ones render **disabled and name the
+  exact credentials** they need — never a button that silently does nothing.
+- **Facebook added** to the provider registry (Graph API v19.0, same
+  state/PKCE/link protections, `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`).
+  Facebook’s email is treated as unverified and never auto-links to an existing
+  password account — same rule as Microsoft.
+- **Owner access**: the owner signs in with the configured owner account, gets
+  role `owner`, and reaches `/owner` (noindex console). Ordinary accounts see no
+  entry and still receive **403** from `/api/owner/*` — RBAC untouched.
+- No hardcoded credentials, no client-exposed secrets, nothing printed in chat.
+  `npm run scan:secrets` → PASS.
+
+## 4 · Colour system stays tokenized
+
+The shell adds **no literal colours**: surfaces, borders, glass, radii and the
+type ramp all come from the generated token layer
+(`design-system/tokens.json` → `public/tokens.css` via
+`node design-system/build.mjs`). The final background/accent palette is a
+tokens-only edit — no layout work, no rebuild of the geometry.
+
+## 5 · Verification (this build)
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | clean |
+| `npm test` | **65 files · 605 tests · 605 pass · 0 fail** |
+| `npm run build` | green; `/workspace` prerendered as a static route |
+| `npm run smoke:artifacts` (new) | **27/27** — real pipeline → versioned website artifact → versions / single version / download byte-exact → the calculator in the artifact really evaluates → re-capture versions instead of overwriting → impossible capture refused → un-captured kinds empty → one successful run consumes exactly one credit |
+| `npm run smoke:shell` (new) | **43/43** with the local model stub configured (success path: real deliverable in the preview, export bar names `website v3`, Files lists it) and **39/39** with the provider unreachable (honest failure path) — **no runtime problems** in either run |
+| Live HTTP | `/` 200 (177,701 B) · `/workspace` 200 (178,265 B) · `/owner` 200 · assets at `?v=akbaral-lux-10` 200 |
+| Live RBAC | owner login → role `owner`, `/api/me` `owner`, `/api/owner/dashboard` **200**; ordinary account **403** |
+| Live artifact flow | project → upload (201) → MASTER run (`completed`) → website artifact captured (v1→v2→v3 across runs) → listed in the Files rail with the export control naming the real version |
+
+**Responsive verification note.** The sandbox could not download a headless
+browser (Chrome CDN unreachable — `npx puppeteer browsers install chrome` fails
+with ECONNRESET and no system Chromium exists), so no screenshot harness was
+possible here. Responsiveness is therefore verified by: the 13-assertion
+responsive contract suite (drawer, pane switch, 1080px/360px breakpoints,
+320px floor), the jsdom shell smoke driving the narrow path for real (burger →
+drawer → scrim → pane switch → rail reveal), and a static audit of the shell
+section (no fixed width above 320px outside media queries; 40 `min-width: 0`
+declarations; 7 breakpoints). Pixel-level rendering should be eyeballed once in
+a normal browser.
+
+New harnesses are committed so this can be re-run at any time:
+`scripts/live-artifact-smoke.mjs` (`npm run smoke:artifacts`),
+`scripts/live-shell-smoke.mjs` (`npm run smoke:shell`, jsdom against a running
+stack), `scripts/local-model-fixture.ts` (`npm run fixture:model`).
 
 ### Contract tests (transparency)
-`src/app/workspace-ux-contract.test.ts` and `src/app/responsive-contract.test.ts` encoded the *previous* spatial model (workspace left / chat right rail). They are re-specified to the Task-4 model at equal or greater strictness — CENTER conversation + bounded RIGHT rail, sidebar mounts and real bindings, the `/workspace` route, the drawer and pane switch, plus a 320px overflow floor. Every behavioural assertion is retained: real chat turns, the payload driving both canvas and chat, honest failure copy, no-invented-actions export, preview isolation, pane switching and Android parity. New coverage: 2 sidebar/shell tests, 1 responsive shell test, 2 Facebook OAuth tests (+7 tests net).
 
-## Only external configuration still required
-1. **OAuth apps** (any you want live): redirect URI `https://<your-domain>/api/auth/oauth/<provider>/callback`; then set `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `FACEBOOK_CLIENT_ID/SECRET` (Microsoft/Apple optional). Until then the buttons stay disabled and say exactly what they need.
-2. `AKBARAL_OWNER_EMAIL` must be the owner's real sign-in address (already supported; no code change).
-3. AI provider keys / Stripe / TLS / persistent volume / SMTP: unchanged from the Task-3 report (`TASK3_FINAL_REPORT.md`).
+`src/app/workspace-ux-contract.test.ts` (25) and
+`src/app/responsive-contract.test.ts` (13) encoded the **previous** spatial
+model (workspace left / chat right rail). They are re-specified to the Task-4
+model at equal or greater strictness — CENTER conversation + bounded RIGHT rail,
+sidebar mounts and real bindings, the `/workspace` route, the drawer and pane
+switch, a 320px overflow floor, and the export-control-above-canvas order.
+**Every behavioural assertion is retained**: real chat turns, the payload
+driving both canvas and chat, honest failure copy, no-invented-actions export,
+preview isolation (`allow-scripts`), pane switching and Android parity.
 
-## Preview URLs (live now, sandbox `igljjfx6slr2z5yarf5dh`)
-- Workspace: https://3000-igljjfx6slr2z5yarf5dh.e2b.app/workspace
-- Landing: https://3000-igljjfx6slr2z5yarf5dh.e2b.app/
-- Owner console: https://3000-igljjfx6slr2z5yarf5dh.e2b.app/owner
-- API health: https://4000-igljjfx6slr2z5yarf5dh.e2b.app/api/health
+## 6 · One fix found by the new smoke
 
-The owner sign-in credentials live in the gitignored local file
-`.platform-owner-credentials.txt` — never printed in chat or committed.
-Preview URLs only resolve while the stack is running and its ports are
-registered; restart the platform process (see the session notes) after a
-sandbox resume.
+After a successful run the **export control above the canvas** kept showing
+“No website version yet” until the project was re-selected — the artifact bar
+refreshed but the export bar did not. Fixed in `public/app.js` (the run’s
+completion path now refreshes `renderMasterExportBar` and the Files rail too);
+the smoke now asserts the bar names a version that the server **really** stores.
+
+## 7 · Preview stack and the offline model stub (please read)
+
+The sandbox has **no external AI credentials**, and a preview that always ends
+in an honest “AI providers are not configured” failure cannot demonstrate the
+flows above. So the preview stack runs with
+`scripts/local-model-fixture.ts` — a **development stand-in for a language
+model** that speaks the OpenAI-compatible protocol:
+
+- everything else is production code (planner, specialist registry, queue,
+  verification, artifact capture/versioning, credits, refunds);
+- **every document it returns carries a visible footer** saying a local stub
+  produced it, so a deliverable can never be mistaken for real model output;
+- it is wired only through the gitignored local ops file `.platform-owner.env`;
+  **production sets `GOOGLE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`
+  and never starts this** (documented in `docs/DEPLOYMENT.md`).
+
+Image *generation* is not part of the pipeline in this environment (only
+website artifacts are captured server-side), so “make me an image” produces the
+honest outcome rather than a fabricated picture; the Images rail is fully wired
+for image files and image artifacts when they exist.
+
+## 8 · What is still external (and only that)
+
+1. **OAuth apps** — redirect URI `https://<your-domain>/api/auth/oauth/<provider>/callback`,
+   then set `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`,
+   `FACEBOOK_CLIENT_ID/SECRET` (Microsoft/Apple optional).
+2. **AI provider key** — `GOOGLE_API_KEY`, `OPENAI_API_KEY` or
+   `ANTHROPIC_API_KEY`; without one MASTER honestly reports it cannot run.
+3. `AKBARAL_OWNER_EMAIL` = the owner’s real sign-in address (mechanism already in
+   place, no code change).
+4. Unchanged from the Task-3 report: Stripe keys/webhook, TLS, persistent
+   volume, SMTP, and the production database (`TASK3_FINAL_REPORT.md`).
+
+## 9 · Preview URLs (live now, sandbox `igljjfx6slr2z5yarf5dh`)
+
+- **Workspace** — https://3000-igljjfx6slr2z5yarf5dh.e2b.app/workspace
+- Landing — https://3000-igljjfx6slr2z5yarf5dh.e2b.app/
+- Owner console — https://3000-igljjfx6slr2z5yarf5dh.e2b.app/owner
+- API health — https://4000-igljjfx6slr2z5yarf5dh.e2b.app/api/health
+
+Owner sign-in credentials live in the gitignored local file
+`.platform-owner-credentials.txt` — never printed in chat, never committed.
+Preview URLs only resolve while the stack runs (ports :3000 + :4000) and the
+offline stub runs on :4999; after a sandbox resume, restart both processes.

@@ -148,3 +148,40 @@ the exact credential names they need when a provider is unconfigured; the
 Library, Files, Images and Search panels only ever show data returned by the
 authenticated APIs (with explicit empty states otherwise); the owner console
 entry appears only for the owner / super_admin role.
+
+## Application shell — the workspace model (Build #6, 2026-09-15)
+
+The MASTER workspace is **one compact application screen**, not a long
+scrolling page. Three zones, each with a single job:
+
+| Zone | Contents |
+| --- | --- |
+| **Left · sidebar** (`#master-sidebar`) | AKBARAL! wordmark + "One Intelligence. Every Solution.", New chat, Search (⌘K), Library, Images & media, Projects, Files, Agents, Automations, Billing, real recent history, account block (profile, settings, owner console for the owner role, sign out) |
+| **Centre · conversation** (`#master-chat`) | the MASTER conversation: identity header, live activity stream, real user/MASTER turns, composer with attach · voice · Plan & run |
+| **Right · artifact rail** (`#master-workspace`) | the **download/export control above the live preview canvas**, the versioned-artifact bar, and the Files / Library / Images panels selected from the rail tabs at the top |
+
+Layout rules (`public/styles.css`, section *Build #6*):
+
+- `.ak-app { grid-template-columns: 264px minmax(0, 1fr) }` — a collapsible
+  sidebar (72px when collapsed) beside the work area; the marketing header and
+  footer step aside while `body.is-workspace`.
+- `.master-layout { grid-template-columns: minmax(0, 1fr) minmax(360px, 460px) }`
+  — a fluid conversation column and a bounded rail that scrolls internally.
+- ≤1080px: the sidebar becomes an overlay drawer (`.ak-scrim`) and the panes
+  **switch** (`.master-pane-switch`, `[data-pane]`) instead of shrinking; the
+  rail is collapsible from the top bar. ≥320px: no horizontal overflow.
+
+**Tokens only.** The shell introduces no literal colours — every surface,
+border, glass level, radius and type ramp comes from the generated token layer
+(`design-system/tokens.json` → `public/tokens.css` via `node design-system/build.mjs`).
+Changing the background/accent identity later is a tokens-only edit and needs
+no layout work.
+
+**Honest content rules.** Every panel reads a real API: Library → `/api/tasks`
+(opening a row restores the stored result), Files → `/api/projects/:id` plus
+the four artifact kinds (uploaded **and** generated, with real canvas/download
+actions), Images → image files and image artifacts across projects, Search →
+tasks, projects and the knowledge index with explicit "nothing indexed yet" /
+"no matches" / "search failed" states. Provider sign-in buttons render as real
+server-side OAuth links when configured and disabled with the exact credential
+names they need when not — never a control that silently does nothing.

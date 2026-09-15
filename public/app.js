@@ -2333,9 +2333,16 @@
           if (ok) {
             renderMasterResult(true, parsedResult?.finalResult ?? parsedResult);
             // Website-builder flow: if this run belonged to a project, refresh
-            // the versioned artifact bar (the server captured the new version
-            // on completion — this makes the canvas update live).
-            if (projectId) { renderProjectArtifactBar(projectId).catch(() => {}); }
+            // the versioned artifact bar AND the export control above the
+            // canvas — the server captured the new version on completion, so
+            // the export bar must name it and the Files rail must list it
+            // without the user re-selecting the project.
+            if (projectId) {
+              renderProjectArtifactBar(projectId).catch(() => {});
+              renderMasterExportBar(projectId).catch(() => {});
+              const filesRoot = $('#master-files');
+              if (filesRoot && !filesRoot.closest('[hidden]')) loadMasterFiles(projectId).catch(() => {});
+            }
           } else {
             renderMasterResult(false, { code: 'execution_failed', message: workflow.error_message || `workflow ${workflow.status}` });
           }
