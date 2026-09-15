@@ -307,16 +307,16 @@ export default function Home() {
                 <span>Email</span>
                 <input type="email" id="auth-email" autoComplete="email" placeholder="you@company.com" required />
               </label>
-              <label className="auth-field">
+              <label className="auth-field" has-reveal>
                 <span>Password</span>
-                <input type="password" id="auth-password" minLength={8} autoComplete="current-password" placeholder="Your password" required />
+                <input type="password" id="auth-password" minLength={8} autoComplete="current-password" placeholder="Your password" required /><button type="button" className="auth-reveal" id="auth-reveal" data-password-reveal="auth-password" aria-pressed="false" aria-label="Show password" title="Show password"><svg className="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S6 5.6 12 5.6 21.8 12 21.8 12 18 18.4 12 18.4 2.2 12 2.2 12Z" /><circle cx="12" cy="12" r="3.1" /></svg><svg className="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3.5 3.5 17 17" /><path d="M10.6 6.2A9.9 9.9 0 0 1 12 6.1c6 0 9.8 6 9.8 6a17.4 17.4 0 0 1-3.3 3.9" /><path d="M6.4 7.9A16.7 16.7 0 0 0 2.2 12s3.8 6.4 9.8 6.4c1.5 0 2.9-.2 4.1-.7" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg></button>
               </label>
               <label className="auth-field" id="auth-name-wrap" hidden>
                 <span>Name</span>
                 <input type="text" id="auth-name" autoComplete="name" placeholder="Your name" />
               </label>
               <button className="btn btn-primary btn-block btn-lg" id="auth-submit" type="submit">Sign in</button>
-            </form>
+            <p className="auth-feedback" id="auth-feedback" data-state="idle" role="status" aria-live="polite" hidden /></form>
 
             <div className="auth-oauth" id="auth-oauth" hidden>
               <div className="auth-oauth-divider"><span>or continue with</span></div>
@@ -753,7 +753,7 @@ export default function Home() {
 
 
               Credits<input type="number" name="credits" min="1" defaultValue="10" required /></label><label>
-              Amount (USD cents)<input type="number" name="amount_cents" min="100" defaultValue="1000" required /><div className="quick-amounts" aria-label="Quick amounts"><button type="button" data-amount="1000">$10</button><button type="button" data-amount="5000">$50</button><button type="button" data-amount="9000">$90</button><button type="button" data-amount="20000">$200</button><button type="button" data-amount="40000">$400</button></div></label><button className="btn btn-primary" type="submit">
+              Amount (USD cents)<input type="number" name="amount_cents" min="100" defaultValue="1000" required /><div className="quick-amounts" aria-label="Quick amounts"><button type="button" data-amount="1000" aria-pressed="false">$10</button><button type="button" data-amount="5000" aria-pressed="false">$50</button><button type="button" data-amount="9000" aria-pressed="false">$90</button><button type="button" data-amount="20000" aria-pressed="false">$200</button><button type="button" data-amount="40000" aria-pressed="false">$400</button></div></label><button className="btn btn-primary" type="submit">
 
               Request purchase</button></form><div id="credit-order"></div></div></div><div className="panel"><h3>
 

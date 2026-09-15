@@ -1428,6 +1428,44 @@
     document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
   }
 
+  /**
+   * Inline auth feedback. The toast stays for app-wide messages, but a sign-in
+   * failure must be readable where the user is looking — next to the fields —
+   * with the offending input marked and screen readers told politely.
+   */
+  function authFeedback(state, message) {
+    const box = $('#auth-feedback');
+    if (!box) return;
+    if (!message) {
+      box.hidden = true;
+      box.dataset.state = 'idle';
+      box.textContent = '';
+      return;
+    }
+    box.hidden = false;
+    box.dataset.state = state;
+    box.textContent = message;
+  }
+
+  function authMarkInvalid(field, invalid) {
+    const input = field === 'email' ? $('#auth-email') : field === 'password' ? $('#auth-password') : null;
+    if (!input) return;
+    if (invalid) {
+      input.setAttribute('aria-invalid', 'true');
+      input.setAttribute('aria-describedby', 'auth-feedback');
+    } else {
+      input.removeAttribute('aria-invalid');
+      input.removeAttribute('aria-describedby');
+    }
+  }
+
+  function authSetBusy(busy) {
+    const button = $('#auth-submit');
+    if (!button) return;
+    button.setAttribute('aria-busy', String(busy));
+    button.disabled = busy;
+  }
+
   function bindAuth() {
     $('#auth-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1435,9 +1473,28 @@
       const password = $('#auth-password').value;
       const name = $('#auth-name').value.trim();
       const mode = state.view === 'register' ? 'register' : 'login';
+      const emailLooksValid = /.+@.+\..+/.test(email);
+      authMarkInvalid('email', false);
+      authMarkInvalid('password', false);
+      authFeedback(null, null);
+      if (!emailLooksValid) {
+        authMarkInvalid('email', true);
+        authFeedback('error', 'Enter a valid email address, for example you@company.com.');
+        $('#auth-email').focus();
+        return;
+      }
+      if (password.length < 8) {
+        authMarkInvalid('password', true);
+        authFeedback('error', 'Passwords need at least 8 characters.');
+        $('#auth-password').focus();
+        return;
+      }
+      authSetBusy(true);
+      authFeedback('pending', mode === 'register' ? 'Creating your account…' : 'Signing you in…');
       try {
         if (mode === 'register') {
           await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name: name || undefined }) });
+          authFeedback('success', 'Account created. Sign in with the same email and password.');
           toast('Account created', 'ok');
           location.hash = '#/login';
           return;
@@ -1448,11 +1505,40 @@
         storageSet('ak_access', result.accessToken);
         storageSet('ak_refresh', result.refreshToken);
         state.user = result.user;
+        authFeedback('success', `Signed in as ${result.user.name || result.user.email}.`);
         toast(`Welcome, ${result.user.name || result.user.email}`, 'ok');
         afterSignIn();
       } catch (error) {
-        toast(error.message, 'err');
+        const message = error && error.message ? error.message : 'Sign-in failed. Please try again.';
+        authMarkInvalid('password', /password/i.test(message));
+        authMarkInvalid('email', /email|account|user/i.test(message) && !/password/i.test(message));
+        authFeedback('error', message);
+      } finally {
+        authSetBusy(false);
       }
+    });
+
+    // Password visibility — a real control, reflected in the input type.
+    $$('[data-password-reveal]').forEach((button) => {
+      const input = $(`#${button.dataset.passwordReveal}`);
+      if (!input) return;
+      button.addEventListener('click', () => {
+        const shown = button.getAttribute('aria-pressed') === 'true';
+        const next = !shown;
+        button.setAttribute('aria-pressed', String(next));
+        button.setAttribute('aria-label', next ? 'Hide password' : 'Show password');
+        button.setAttribute('title', next ? 'Hide password' : 'Show password');
+        input.type = next ? 'text' : 'password';
+      });
+    });
+
+    // A fresh attempt should not keep stale error styling.
+    ['#auth-email', '#auth-password'].forEach((selector) => {
+      $(selector)?.addEventListener('input', () => {
+        authMarkInvalid(selector === '#auth-email' ? 'email' : 'password', false);
+        const box = $('#auth-feedback');
+        if (box && box.dataset.state === 'error') authFeedback(null, null);
+      });
     });
   }
 
@@ -1509,12 +1595,29 @@
       $$('#credit-form [data-amount]').forEach((chip) => chip.addEventListener('click', () => {
     const input = $('#credit-form').elements.namedItem('amount_cents');
     if (input) { input.value = chip.dataset.amount; input.focus(); }
+    $$('#credit-form [data-amount]').forEach((other) => other.setAttribute('aria-pressed', String(other === chip)));
   }));
   $('#credit-form').addEventListener('submit', purchaseCredits);
     $('#flag-form').addEventListener('submit', setFlag);
     $('#emergency-stop').addEventListener('click', emergencyStop);
     $('#system-resume').addEventListener('click', systemResume);
     $('#feedback-form').addEventListener('submit', submitFeedback);
+  }
+
+  /**
+   * Dense tables come from several renderers; any table that is not already
+   * inside a horizontal scroller gets one, so a wide ledger can never push a
+   * phone layout sideways.
+   */
+  function ensureTableScroll(root = document) {
+    root.querySelectorAll('table').forEach((table) => {
+      const parent = table.parentElement;
+      if (!parent || parent.classList.contains('table-scroll') || parent.closest('.table-scroll')) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'table-scroll';
+      parent.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    });
   }
 
   async function navigate() {
@@ -3546,6 +3649,7 @@ async function loadConnectedAccounts() {
     kill.textContent = dashboard.policy.killSwitch ? 'Release kill switch' : 'Engage kill switch';
     kill.classList.toggle('btn-danger', !dashboard.policy.killSwitch);
     $('#econ-policy-note').textContent = `Daily spend cap $${(dashboard.policy.maxDailySpendCents / 100).toFixed(2)} · min expected net ${dashboard.policy.minExpectedNetCents}c · min ROI ${dashboard.policy.minRoi} · concurrency ${dashboard.policy.maxConcurrentExecutions} · agent cap ${dashboard.policy.maxEconomyAgents}. ${dashboard.honesty.note}`;
+    ensureTableScroll();
   }
 
   async function loadMissionChat() {

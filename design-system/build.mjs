@@ -59,6 +59,13 @@ ${colorBlock(DARK, ':root')}
   --font-sans: ${tokens.typography.families.web.sans};
   --font-display: ${tokens.typography.families.web.display};
   --font-mono: ${tokens.typography.families.web.mono};
+  /* Type scale (from typography.scale) — --fs-micro is the legibility floor */
+  --fs-micro: ${tokens.typography.scale.micro.webSize / 16}rem;
+  --fs-micro-phone: ${tokens.typography.scale.micro.phoneSize / 16}rem;
+  --fs-floor: ${tokens.responsive.fontFloorRem}rem;
+  --fs-xs: ${tokens.typography.scale.xs.size / 16}rem;
+  --fs-body: ${tokens.typography.scale.body.size / 16}rem;
+  --fs-heading: ${tokens.typography.scale.heading.size / 16}rem;
 
   /* Radii */
   --radius-sm: ${tokens.radius.sm}px;

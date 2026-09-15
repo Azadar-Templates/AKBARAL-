@@ -49,6 +49,13 @@
   --font-sans: "Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
   --font-display: "Sora", "Inter", "SF Pro Display", system-ui, sans-serif;
   --font-mono: "Space Grotesk Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* Type scale (from typography.scale) — --fs-micro is the legibility floor */
+  --fs-micro: 0.71875rem;
+  --fs-micro-phone: 0.75rem;
+  --fs-floor: 0.72rem;
+  --fs-xs: 0.8125rem;
+  --fs-body: 0.9375rem;
+  --fs-heading: 1.1875rem;
 
   /* Radii */
   --radius-sm: 4px;
