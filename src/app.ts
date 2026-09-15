@@ -143,7 +143,12 @@ export function createApiServer(): ApiServer {
   // are served by the Next.js App Router on :3000; proxies in next.config.mjs
   // route /api and /uploads back to this server.
   app.get('/', (_req, res) => {
-    res.redirect('http://localhost:3000/');
+    // Send visitors to the CONFIGURED public web origin (AKBARAL_PUBLIC_WEB_URL)
+    // instead of a hardcoded localhost: behind a preview/ingress proxy a
+    // browser must never be bounced to its own machine, which would look like
+    // the preview being blocked. Falls back to the local dev web tier.
+    const web = (env.publicWebUrl || 'http://localhost:3000').replace(/\/+$/, '');
+    res.redirect(`${web}/`);
   });
 
   const publicDir = path.resolve(process.cwd(), 'public');
