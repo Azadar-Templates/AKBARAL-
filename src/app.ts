@@ -20,6 +20,7 @@ import { createToolsRouter } from './routes/tools';
 import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createEconomyRouter } from './routes/economy';
+import { createOwnerRouter } from './routes/owner';
 import { syncConfiguredOwnerIdentity } from './auth/owner-identity';
 import { economyScheduler } from './economy/operations';
 import { createMarketplaceRouter } from './routes/marketplace';
@@ -183,6 +184,8 @@ export function createApiServer(): ApiServer {
   app.use('/api/tools', createToolsRouter());
   app.use('/api/models', createModelsRouter());
   app.use('/api/factory', createFactoryRouter());
+  // Owner Console: AKBARAL! business analytics (owner/super_admin only).
+  app.use('/api/owner', createOwnerRouter());
   // ZA141251SA private agent economy — owner/super_admin only, invisible to users.
   app.use('/api/economy', createEconomyRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
