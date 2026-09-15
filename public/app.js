@@ -1525,9 +1525,12 @@
     const path = (location.pathname || '/').replace(/\/+$/, '') || '/';
     const hash = String(location.hash || '');
     const hashView = hash.replace('#/', '');
-    // An explicit hash always wins (so `/workspace#/` still reaches the
-    // landing page and `#/login` renders the sign-in screen); the clean path
-    // decides only when the visitor landed without a hash.
+    // The marketing page is reachable ONLY when it is explicitly asked for:
+    // `#/` (the header brand link and the post-sign-out target) and
+    // `#/landing`. Every other entry is the application.
+    const wantsMarketing = hash === '#/' || hash === '#/landing';
+    // An explicit hash always wins (so `#/login` renders the sign-in screen);
+    // the clean path decides when the visitor landed without a hash.
     // `#/workspace` IS the compact application shell (ChatGPT/Arena model) —
     // the legacy Projects & knowledge screen moved to `#/projects`, so every
     // "Workspace" entry point in the product reaches the new UI.
@@ -1546,27 +1549,45 @@
       return;
     }
 
-    // The premium AKBARAL landing is the authoritative production root. It is
-    // always the first thing a user sees at `#/` regardless of whether a prior
-    // session exists. Authenticated users still get their real account context
-    // in the header, then continue from the landing CTAs into the live app.
-    if (view === '' || view === 'landing') {
+    // The application is the product's primary surface. A clean entry — `/` or
+    // `/workspace`, with no hash — opens the compact shell: the MASTER screen
+    // for a live session, the shell's own sign-in card otherwise. The marketing
+    // page is never the root fallback (it used to be, which meant a browser
+    // holding a session the API no longer accepted — an expired, revoked or
+    // rebuilt-database token — was quietly dropped onto the long marketing page
+    // instead of the sign-in screen). `#/` still reaches it explicitly.
+    if (wantsMarketing) {
+      showScreen('landing');
+      await loadLanding();
+      return;
+    }
+
+    if (view === '') {
       if (state.accessToken) {
         try {
           await loadMe();
-        } catch {
-          // A stale/revoked token should not hide the premium landing. It is
-          // cleared by the normal login/logout flow when the user acts.
+        } catch (error) {
+          // A live session refreshes transparently inside api(), so reaching
+          // here means it is genuinely unusable. Say so and open the sign-in
+          // card — never the marketing page, and never a silent stall.
+          if (!state.accessToken || error?.status === 401 || error?.status === 403) {
+            // A dead refresh token may already have been dropped by the
+            // refresh attempt; clear whatever is left and say it plainly.
+            if (state.accessToken) clearSessionTokens();
+            toast('Your session expired — sign in again to continue.', 'err');
+          } else {
+            toast('Could not reach the server — check your connection and sign in again.', 'err');
+          }
+          location.hash = '#/login';
+          return;
         }
-        // Signed in? The product IS the compact application shell — send them
-        // straight to it instead of the marketing page (ChatGPT-shaped entry).
         if (state.user) {
           location.hash = '#/workspace';
           return;
         }
       }
-      showScreen('landing');
-      await loadLanding();
+      // No session at all: the sign-in card inside the compact shell.
+      location.hash = '#/login';
       return;
     }
 
@@ -1873,6 +1894,16 @@
     const appScreen = name === 'master';
     document.body.classList.toggle('is-workspace', appScreen);
     if (appScreen) shellSyncChrome();
+  }
+
+  /** Drop a session the API no longer accepts (expired, revoked, rotated out
+   *  by another tab, or issued against a database that no longer exists). */
+  function clearSessionTokens() {
+    state.accessToken = null;
+    state.refreshToken = null;
+    state.user = null;
+    storageRemove('ak_access');
+    storageRemove('ak_refresh');
   }
 
   async function loadMe() {

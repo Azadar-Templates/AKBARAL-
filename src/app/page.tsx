@@ -75,7 +75,7 @@ const TRACE_STEPS = [
 export default function Home() {
   return (
     <>
-<div id="boot-veil" aria-hidden="true"><div className="boot-core"><span className="boot-ring"></span><span className="boot-ring r2"></span><span className="boot-mark">A!</span></div><div className="boot-word">AKBARAL!</div><div className="boot-tagline">ONE INTELLIGENCE · EVERY SOLUTION</div><div className="boot-line"><i></i></div></div><div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
+<noscript><style>{`#boot-veil{display:none !important}#screen-landing{display:block !important}`}</style></noscript><div id="boot-veil" aria-hidden="true"><div className="boot-core"><span className="boot-ring"></span><span className="boot-ring r2"></span><span className="boot-mark">A!</span></div><div className="boot-word">AKBARAL!</div><div className="boot-tagline">ONE INTELLIGENCE · EVERY SOLUTION</div><div className="boot-line"><i></i></div></div><div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
   Skip to content</a><header className="site-header" id="site-header"><div className="header-bar"><a className="brand" href="#/" aria-label="AKBARAL home"><span className="brand-mark" aria-hidden="true"><span className="brand-mark-glow"></span>
       A!</span><span className="brand-text">
       AKBARAL!</span></a><nav className="main-nav" id="main-nav" aria-label="Primary navigation"><div className="nav-set nav-public">
@@ -100,7 +100,11 @@ export default function Home() {
       Log In</button><button className="btn btn-primary btn-sm" id="start-free-nav" data-route="register">Start Building</button></div></div></header><main id="app-root">
 
       {/* ================= LANDING — cinematic hero ================= */}
-      <section className="screen landing-screen" id="screen-landing">
+      {/* The marketing page is NOT the default paint: `/` and `/workspace`
+          are application entries, and public/app.js reveals the screen the
+          visitor actually asked for. Without JS the <noscript> rule below
+          restores the full cinematic page (SEO + no-JS visitors). */}
+      <section className="screen landing-screen" id="screen-landing" hidden>
         <div className="hero" id="hero">
           <div className="hero-media" aria-hidden="true">
             <video id="hero-video" muted loop playsInline preload="none" poster="/media/hero-poster.jpg" disablePictureInPicture tabIndex={-1}>

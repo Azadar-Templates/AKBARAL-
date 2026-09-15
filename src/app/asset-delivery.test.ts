@@ -71,10 +71,32 @@ describe('browser payload delivery — compressed, cacheable, off the critical p
     assert.equal(versions.size, 1, `one shared version across the shell (${[...versions].join(', ')})`);
   });
 
-  it('never puts a document payload on the critical path twice: documents + media are cacheable', () => {
-    assert.match(nextConfig, /source:\s*'\/'[\s\S]{0,200}?max-age=60/, 'the landing document is browser-fresh for a minute');
-    assert.match(nextConfig, /source:\s*'\/workspace'[\s\S]{0,200}?max-age=60/, 'the workspace document too');
-    assert.match(nextConfig, /stale-while-revalidate/, 'repeat loads serve stale while revalidating, so a deploy still lands');
+  it('the app documents revalidate instead of being cached: a stale shell is a stale product', () => {
+    // These two documents decide which screen exists at all, so they must not
+    // be held by browsers or shared caches. An earlier revision sent
+    // `s-maxage=31536000` here, which let any intermediary pin the old shell
+    // for a year — the app could be updated and the browser would still show
+    // the previous UI. They now revalidate (ETag -> 304) on every entry.
+    // Slice headers() into one segment per `source:` rule (comments and length
+    // between the rule and its Cache-Control line vary), then read the value.
+    const headerBlock = nextConfig.slice(nextConfig.indexOf('async headers()'), nextConfig.indexOf('export default'));
+    const starts = [...headerBlock.matchAll(/source:\s*'([^']+)'/g)].map((m) => ({ source: m[1], at: m.index }));
+    const ruleFor = (source: string): string => {
+      const index = starts.findIndex((entry) => entry.source === source);
+      if (index === -1) return '';
+      return headerBlock.slice(starts[index].at, starts[index + 1]?.at ?? headerBlock.length);
+    };
+    for (const source of ['/', '/workspace']) {
+      const rule = ruleFor(source);
+      assert.ok(rule, `the ${source} document has an explicit Cache-Control rule`);
+      const match = rule.match(/Cache-Control',\s*value:\s*'([^']+)'/);
+      assert.ok(match, `the ${source} rule sets Cache-Control (${rule.trim().slice(0, 90)})`);
+      const value = match[1];
+      assert.match(value, /no-cache/, `${source} revalidates`);
+      assert.ok(!/s-maxage/.test(value), `${source} must not invite shared caches to pin it (${value})`);
+      assert.ok(!/max-age=[1-9]/.test(value), `${source} must not be served stale from a browser cache (${value})`);
+    }
+    assert.match(nextConfig, /stale-while-revalidate/, 'the heavy, versioned assets still serve stale while revalidating');
     assert.match(nextConfig, /source:\s*'\/media\/:path\*'[\s\S]{0,200}?max-age=604800/, 'static media is cached for a week');
     const headersBlock = nextConfig.slice(nextConfig.indexOf('async headers()'), nextConfig.indexOf('export default'));
     assert.ok(headersBlock.length > 0, 'the headers() block is present');

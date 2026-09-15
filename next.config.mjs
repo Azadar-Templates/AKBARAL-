@@ -51,13 +51,17 @@ const nextConfig = {
       {
         source: '/',
         headers: [
-          { key: 'Cache-Control', value: 'public, max-age=60, s-maxage=31536000, stale-while-revalidate=600' },
+          // The application shell must never be pinned by a shared cache: it
+          // decides which screen exists at all, so a stale copy is a stale
+          // product. `no-cache` still revalidates cheaply against the ETag
+          // (304), and everything heavy is versioned + cached under /assets/*.
+          { key: 'Cache-Control', value: 'private, no-cache, must-revalidate' },
         ],
       },
       {
-        source: '/workspace',
+        source: '/workspace', // the application entry — same rule as `/` above
         headers: [
-          { key: 'Cache-Control', value: 'public, max-age=60, s-maxage=31536000, stale-while-revalidate=600' },
+          { key: 'Cache-Control', value: 'private, no-cache, must-revalidate' },
         ],
       },
       {

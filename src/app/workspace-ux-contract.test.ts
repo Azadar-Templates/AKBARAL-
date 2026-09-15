@@ -309,6 +309,12 @@ describe('AKBARAL! application shell — source contract (web)', () => {
     assert.match(route, /<Home \/>/, 'it renders the same application as `/` (one shell, one behaviour)');
     assert.match(route, /robots: \{ index: false, follow: false \}/, 'a signed-in surface is never indexed');
     assert.match(appJs, /path === '\/workspace' \? 'master' : ''/, 'the client opens MASTER on the workspace path');
+    assert.match(appJs, /const wantsMarketing = hash === '#\/' \|\| hash === '#\/landing'/, 'only an explicit hash asks for the marketing page');
+    const entry = appJs.slice(appJs.indexOf("if (view === '') {"), appJs.indexOf('const taskMatch'));
+    assert.ok(entry.length > 0, 'the clean-entry branch is present');
+    assert.match(entry, /state\.accessToken/, 'a clean entry resolves the stored session first');
+    assert.match(entry, /location\.hash = '#\/login';/, 'a clean entry with no live session opens the sign-in card');
+    assert.ok(!/showScreen\('landing'\)/.test(entry), 'the marketing page is never the fallback for an app entry');
   });
 
   it('every workspace control is bound to a real API — no fake export, no tokenless auth links', () => {

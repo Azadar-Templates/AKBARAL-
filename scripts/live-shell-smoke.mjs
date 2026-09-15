@@ -358,7 +358,11 @@ for (const asset of ['app.js', 'styles.css', 'tokens.css']) {
   check(`/assets/${asset} still serves identity bytes to a client that cannot decode brotli`, identity.encoding === '' && identity.bytes > compressed.bytes, `identity=${identity.bytes}b enc=${identity.encoding || 'none'}`);
 }
 const documentAsset = await rawText('/workspace');
-check('the app document is cacheable for a minute, then self-healing', /max-age=60/.test(documentAsset.cache) && /stale-while-revalidate/.test(documentAsset.cache), documentAsset.cache);
+// The documents decide which screen exists, so they revalidate (ETag) and are
+// explicitly kept out of shared caches — a year-long `s-maxage` here meant a
+// CDN could pin the previous application shell indefinitely.
+check('the app document revalidates and is never pinned by a shared cache',
+  /no-cache/.test(documentAsset.cache) && !/s-maxage/.test(documentAsset.cache), documentAsset.cache);
 check('typography loads off the critical path (media=print, swapped after hydration)', html.includes('id="ak-fonts"') && html.includes('media="print"') && q('#ak-fonts')?.getAttribute('media') === 'all', `media=${q('#ak-fonts')?.getAttribute('media')}`);
 
 /* ----------------------------------------------------------------- report */
