@@ -45,6 +45,7 @@
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
           <button data-tab="treasury" class="tab">Treasury &amp; payouts</button>
+          <button data-tab="publishing" class="tab">Publishing</button>
           <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="tools" class="tab">Tools &amp; credentials</button>
           <button data-tab="policy" class="tab">Policy</button>
@@ -111,6 +112,7 @@
             reference.
           </p>
           <div id="payout-slots" class="table-wrap"></div>
+          <div id="slot-verification"></div>
           <div class="grid-2">
             <form id="slot-form" class="stack-form">
               <h3>Configure a slot</h3>
@@ -120,14 +122,16 @@
                 <select name="destinationType">
                   <option value="bank">bank</option>
                   <option value="wallet">wallet</option>
-                  <option value="crypto">crypto</option>
-                  <option value="provider">provider</option>
+                  <option value="payment_provider">payment_provider</option>
                   <option value="other">other</option>
                 </select>
               </label>
               <label>Holder name <input name="holderName" placeholder="account holder" /></label>
-              <label>Masked account / provider reference
-                <input name="maskedAccount" placeholder="only a masked hint is stored" />
+              <label>Provider reference
+                <input name="providerRef" placeholder="payout-provider account id (preferred)" />
+              </label>
+              <label>Masked account
+                <input name="maskedAccount" placeholder="****1234 — full numbers are refused" />
               </label>
               <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
               <button type="submit">Save slot</button>
@@ -186,6 +190,18 @@
               <div id="services" class="table-wrap"></div>
             </div>
           </div>
+        </section>
+
+        <section data-panel="publishing" class="panel" hidden>
+          <h2>Publishing connections</h2>
+          <p class="muted small">
+            Content publishing (YouTube / Instagram / TikTok) is prepared, not simulated: each platform
+            needs its own OAuth app registered against this deployment, and a connection is reported as
+            connected only after the platform itself issued a token. No engagement figure is ever
+            invented — metrics come from the platform's API or not at all.
+          </p>
+          <div id="social-connections"></div>
+          <div id="social-setup"></div>
         </section>
 
         <section data-panel="policy" class="panel" hidden>

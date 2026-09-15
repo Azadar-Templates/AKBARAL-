@@ -30,6 +30,7 @@ import {
   razorpayConfigured,
   stripeConfigured,
 } from './providers';
+import { resolveCheckoutUrls } from './checkout-urls';
 
 export interface PurchaseOrder {
   invoiceId: string;
@@ -124,12 +125,15 @@ export class BillingService {
     let providerReference: string | null = null;
     let checkoutUrl: string | null = null;
     if (provider === 'stripe' && stripeConfigured()) {
+      // Return URLs always point at THIS deployment's domain (see checkout-urls.ts);
+      // no customer is ever redirected to a local placeholder host.
+      const returnUrls = resolveCheckoutUrls(input);
       const session = await createStripeCheckout({
         amountCents: input.amountCents,
         credits: input.credits,
         invoiceNumber: invoice.number,
-        successUrl: input.successUrl ?? 'https://akbaral.local/billing/success',
-        cancelUrl: input.cancelUrl ?? 'https://akbaral.local/billing/cancel',
+        successUrl: returnUrls.successUrl,
+        cancelUrl: returnUrls.cancelUrl,
       });
       providerReference = session.providerReference;
       checkoutUrl = session.checkoutUrl;

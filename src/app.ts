@@ -125,7 +125,17 @@ export function createApiServer(): ApiServer {
   app.use(securityHeaders);
   app.use(cacheHeaders);
   app.use(corsHeaders);
-  app.use(express.json({ limit: '2mb' }));
+  // Provider webhooks are signed over the RAW bytes: re-serializing JSON would
+  // change the payload and invalidate every signature. The `verify` hook keeps
+  // the exact bytes on the request so the webhook routes can verify them.
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req, _res, buffer) => {
+        (req as { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+      },
+    }),
+  );
   app.use(requestLog());
   app.use(rateLimit({ prefix: 'api', max: 300, windowMs: 60_000 }));
   app.use('/api/auth', rateLimit({ prefix: 'auth', max: 30, windowMs: 60_000 }));

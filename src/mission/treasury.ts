@@ -1,3 +1,4 @@
+import { DESTINATION_SAFETY_RULE, looksLikeInstrumentCredential } from './destination-safety';
 import { missionDb, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
 import { canAgentSpend, currentPolicy, dailySpendCents, requestApproval, type MissionPolicy } from './policy';
 
@@ -169,17 +170,20 @@ function appendLedger(input: {
       );
     }
 
-    const previous = missionDb.get<Row>('SELECT hash FROM mission_ledger ORDER BY rowid DESC LIMIT 1');
+    // Ordering is explicit: `seq` (assigned below) rather than an engine-specific
+    // rowid, so the hash chain behaves identically on SQLite and PostgreSQL.
+    const previous = missionDb.get<Row>('SELECT hash, seq FROM mission_ledger ORDER BY seq DESC LIMIT 1');
+    const nextSeq = Number(previous?.seq ?? 0) + 1;
     const id = missionId('led');
     const createdAt = nowIso();
     const payload = [id, input.walletId, input.direction, amount, input.category, input.reference ?? '', balanceAfter, previous?.hash ?? '', createdAt].join('|');
     const hash = sha256(payload);
     missionDb.run(
-      `INSERT INTO mission_ledger (id, wallet_id, direction, amount_cents, category, reference, memo, actor_type, actor_id, balance_after, prev_hash, hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mission_ledger (id, wallet_id, direction, amount_cents, category, reference, memo, actor_type, actor_id, balance_after, prev_hash, hash, created_at, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, input.walletId, input.direction, amount, input.category, input.reference ?? null, input.memo ?? null,
-        input.actorType ?? 'system', input.actorId ?? null, balanceAfter, previous?.hash ?? null, hash, createdAt,
+        input.actorType ?? 'system', input.actorId ?? null, balanceAfter, previous?.hash ?? null, hash, createdAt, nextSeq,
       ],
     );
     // `spent_cents` tracks real operating expenditure (expenses, upgrades, fees)
@@ -258,8 +262,8 @@ export function debit(input: {
 export function listLedger(input: { walletId?: string; limit?: number } = {}): LedgerEntry[] {
   const limit = Math.min(1000, Math.max(1, input.limit ?? 100));
   const rows = input.walletId
-    ? missionDb.all<Row>('SELECT * FROM mission_ledger WHERE wallet_id = ? ORDER BY rowid DESC LIMIT ?', [input.walletId, limit])
-    : missionDb.all<Row>('SELECT * FROM mission_ledger ORDER BY rowid DESC LIMIT ?', [limit]);
+    ? missionDb.all<Row>('SELECT * FROM mission_ledger WHERE wallet_id = ? ORDER BY seq DESC LIMIT ?', [input.walletId, limit])
+    : missionDb.all<Row>('SELECT * FROM mission_ledger ORDER BY seq DESC LIMIT ?', [limit]);
   return rows.map((row) => ({
     id: String(row.id),
     walletId: String(row.wallet_id),
@@ -279,7 +283,7 @@ export function listLedger(input: { walletId?: string; limit?: number } = {}): L
 
 /** Verify the ledger hash chain (tamper evidence, same technique as audit). */
 export function verifyLedger(): { ok: boolean; rows: number; brokenAtId: string | null; detail: string } {
-  const rows = missionDb.all<Row>('SELECT * FROM mission_ledger ORDER BY rowid ASC');
+  const rows = missionDb.all<Row>('SELECT * FROM mission_ledger ORDER BY seq ASC');
   let previousHash = '';
   for (const row of rows) {
     const payload = [
@@ -659,6 +663,19 @@ export function configurePayoutSlot(input: {
   }
   ensurePayoutSlots();
   const before = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [input.slot])!;
+  // A destination is a REFERENCE to where money may be sent — never an
+  // instrument credential. Full card numbers / IBANs / long digit runs are
+  // refused here, at the only place a destination can be written.
+  for (const [field, value] of [
+    ['maskedAccount', input.maskedAccount],
+    ['providerRef', input.providerRef],
+  ] as const) {
+    if (!value) continue;
+    const verdict = looksLikeInstrumentCredential(value);
+    if (verdict.unsafe) {
+      throw new MissionTreasuryError(400, `${field}: ${verdict.reason} — ${DESTINATION_SAFETY_RULE}`, 'unsafe_destination');
+    }
+  }
   const hasDestination = Boolean(input.providerRef || input.maskedAccount);
   const status = hasDestination ? 'pending_verification' : 'unconfigured';
 

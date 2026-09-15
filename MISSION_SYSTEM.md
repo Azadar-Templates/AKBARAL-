@@ -133,6 +133,64 @@ millions per day) are supported as *targets*. No code path can present a target
 as an achievement, and no code path can create revenue: revenue rows are only
 written from an owner action or a verified provider record.
 
+## 6b. Payout destination verification (added 2026-09-15)
+
+A slot is **not** payable just because it was configured. `POST /api/payout-slots/:slot/verify`
+must be backed by evidence, and the flow enforces that in the library, not only in the route:
+
+1. **Configure** the destination (`POST /api/payout-slots/:slot`) — a *provider reference*
+   (`acct_…`) or a **masked** description (`****4821`). Full card numbers, IBANs (checksum-validated),
+   long digit runs and credential material are **refused** at write time
+   (`src/mission/destination-safety.ts`): the mission never holds instrument credentials and never
+   asks for them. Four slots, exactly as before.
+2. **Start** a verification (`…/verification/start`, or the same route with `startOnly=true`).
+   The response lists the control checks that must be confirmed, including
+   *“I control this destination”*, *“the masked details match my records”*, *“this is not a third
+   party’s account”*, *“the provider completed its identity (KYC) verification”* and
+   *“I have not entered full card/bank credentials”*.
+3. **Confirm** (`…/verification/confirm`) with `checks: {…}` and an `attestation` of 40+ characters
+   (stored verbatim). A partial submission is refused with `verification_incomplete` naming the
+   missing checks; only then does the treasury flip the slot to `active` (one activation primitive).
+4. **Expiry and change detection.** A verification is valid for `ZA141251SA_PAYOUT_VERIFICATION_DAYS`
+   (default 180). Expired verifications — and verifications whose destination was repointed
+   afterwards — are swept to `expired` and the slot is **paused**, so payouts stop instead of running
+   on a stale assumption. `GET /api/payout-slots` sweeps on read and returns, per slot, the checks,
+   expiry, staleness and the exact blockers.
+5. **Revoke** (`…/verification/revoke`, reason required) pauses the slot immediately.
+
+Agents can never perform any of these steps (owner-only, enforced in the library: `actorType: 'agent'`
+is refused). Every step is audited (`payout_slot.verification_started|confirmed|revoked|expired|invalidated`).
+Payouts still additionally require an owner approval and a provider `settlementRef` before money is
+recorded as settled.
+
+## 6c. Publishing connections — OAuth, prepared not faked (added 2026-09-15)
+
+`GET /api/social/connections` reports, per platform (YouTube, Instagram, TikTok): whether an OAuth app
+is registered (variable names only), the **exact redirect URI** to register, the minimum scopes, whether
+a **real** connection exists, the granted scopes, and the token expiry. `POST /api/social/oauth/:platform/start`
+returns the provider authorization URL (single-use, 10-minute, owner-bound, PKCE where the platform
+supports it); `GET /api/social/oauth/:platform/callback` verifies the state, exchanges the code and stores
+the tokens **encrypted** in the vault. Tokens are never returned by any read surface — only a masked hint
+and the expiry are. An unregistered app answers `provider_not_configured` with the variables to set; a
+provider rejection answers 502 with the provider's error code; a network failure answers `provider_unreachable`.
+Nothing is ever marked connected without a real token, and no engagement figure is synthesized anywhere.
+
+## 6d. PostgreSQL as the mission backend (added 2026-09-15)
+
+`ZA141251SA_DATABASE_URL` selects the engine exactly like the platform does:
+
+* `file:./mission.db` (default) → SQLite via `node:sqlite`;
+* `postgres://…` → PostgreSQL through the same synchronous bridge the platform uses.
+
+Isolation is unchanged (separate database, migrations, owner auth, treasury) — only the driver is shared.
+Two engine details are handled explicitly: `rowid` does not exist in PostgreSQL, so the ledger orders
+itself by an explicit `seq` column (migration 0004, backfilled for existing ledgers), and PRAGMA
+statements are filtered out for PostgreSQL. Verify with:
+
+```bash
+npm run mission:pg-check     # real PostgreSQL (pglite wire protocol) end-to-end: 10 checks, 0 failures
+```
+
 ## 7. What still needs an external action
 
 Nothing in this system fabricates accounts, credentials, payments or results.
@@ -143,8 +201,8 @@ The mission dashboard lists the outstanding activations (`requiresExternalActiva
 | Model provider | Set `GOOGLE_API_KEY` (or the platform's configured provider key) in the deployment secret store | Real inference is refused with an honest `provider_not_configured` error until a key exists |
 | Search provider | Set `TAVILY_API_KEY` / `BRAVE_SEARCH_API_KEY` / `SERPER_API_KEY`, or `AKBARAL_SEARCH_ENDPOINT` | Without a key the keyless fallback may be unavailable |
 | Payments | Connect the payment provider and set its webhook secret | Revenue may only be recorded as received against a verified provider/webhook reference |
-| Payouts | Configure **and verify** at least one of the four slots | Payouts are refused until a destination is verified by the owner |
-| Social platforms | Activate platform accounts (YouTube/Instagram/TikTok OAuth) | Publishing is restricted until a platform account exists; engagement metrics are only ever read from those APIs |
+| Payouts | Configure **and verify** at least one of the four slots (dashboard → Treasury & payouts → *Verify / re-verify*: confirm every control check and sign the attestation) | Payouts are refused until an evidence-backed, unexpired verification exists; agents cannot perform this step |
+| Social platforms | Register one OAuth app per platform (dashboard → Publishing shows the exact redirect URI `https://<domain>/api/social/oauth/<platform>/callback` and the variables), then *Connect* | Publishing returns `provider_not_configured` until then; a connection is reported only after a real token exchange, and engagement metrics are only ever read from the platform API |
 
 ## 8. Operations
 

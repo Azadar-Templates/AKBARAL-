@@ -32,7 +32,9 @@
     "test:pg": "node scripts/pg-test-server.mjs --run sh -c \"npx tsx src/db/migrate.ts && npx tsx src/db/seed.ts && npx tsx src/db/postgres.integration.test.ts\"",
     "mission:init": "tsx scripts/mission-init.ts",
     "mission:serve": "tsx scripts/mission-serve.ts",
-    "mission:sync-registry": "tsx scripts/mission-sync-registry.ts"
+    "mission:sync-registry": "tsx scripts/mission-sync-registry.ts",
+    "launch:check": "tsx scripts/launch-check.ts",
+    "mission:pg-check": "cross-env PG_TEST_DATA_DIR=.pglite-mission-test node scripts/pg-test-server.mjs --run sh -c 'ZA141251SA_DATABASE_URL=$PG_TEST_DATABASE_URL npx tsx scripts/mission-pg-check.ts'"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

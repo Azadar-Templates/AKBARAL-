@@ -152,9 +152,62 @@ backup automation is POST-LAUNCH.
 - `scripts/scan-secrets.ts` and `scripts/audit-registry.ts` exist for
   pre-deploy checks; run them in CI.
 
+## Launch verification — `npm run launch:check` (added 2026-09-15)
+
+One command answers "is this deployment ready to serve customers?", and it answers honestly:
+
+```bash
+npm run launch:check                                    # configuration + live provider probes
+npm run launch:check -- --deep                          # also performs a real Gemini generateContent call
+npm run launch:check -- --offline                       # configuration only, no network at all
+npm run launch:check -- --report TASK3_LAUNCH_CHECK.md  # write a markdown report
+npm run launch:check -- --fail-on-blockers              # exit 1 if any required check is not ready
+```
+
+Each check is either a configuration fact or a **live** provider probe, classified as:
+
+| Status | Meaning | Owner action |
+| --- | --- | --- |
+| `ready` | verified — a required credential was accepted by the provider just now | none |
+| `not_configured` | absent, or present but insufficient (e.g. a Stripe key without a webhook secret) | set the named variable |
+| `failed` | present and **rejected** by the provider (HTTP 401/403) or malformed | replace/fix the credential |
+| `unreachable` | the provider could not be reached from this host — the credential was *not* verified | fix egress/DNS, then re-run |
+| `optional / absent` | an optional integration is absent and the product degrades honestly | none (or activate later) |
+
+Readiness is a percentage over the **required** checks only, and it is never reported as higher than the
+evidence supports. Secrets are never printed: results carry variable **names**, lengths and provider
+status codes only. Checks cover: session secret, public site URL, database reachability + pending
+migrations, registry seeding (4,001), Gemini, search, payments (+ webhook signing), checkout return URLs,
+SMTP, upload storage, backups, the private mission system (chains + verified payout slot) and social OAuth.
+
+## Payment webhooks — Stripe-native endpoint (added 2026-09-15)
+
+`POST /api/billing/webhook/stripe` implements Stripe's documented contract:
+
+1. the `Stripe-Signature` header is verified over the **raw** request body (HMAC-SHA256 over
+   `timestamp.payload`), constant-time, with a 5-minute replay tolerance and support for multiple `v1`
+   signatures during secret rotation;
+2. the event id is claimed for idempotency, so a Stripe retry can never settle an invoice or grant credits
+   twice;
+3. the event is normalized onto the internal billing contract (`invoice.paid`, `payment.failed`,
+   `invoice.refunded`, `subscription.cancelled`), and only events attributable to **our** invoice
+   (`client_reference_id`/metadata) are treated as payments — anything else is recorded as `ignored`;
+4. a missing `STRIPE_WEBHOOK_SECRET` answers `503 webhook_not_configured` (never a fabricated success).
+
+Register the endpoint in the Stripe dashboard as
+`https://<your-domain>/api/billing/webhook/stripe`, subscribed to `checkout.session.completed`,
+`payment_intent.succeeded`, `payment_intent.payment_failed`, `invoice.paid`, `invoice.payment_failed`,
+`charge.refunded`, `customer.subscription.deleted`, and put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+Checkout success/cancel return URLs always point at YOUR domain (see `src/billing/checkout-urls.ts`;
+`AKBARAL_SITE_URL` is enough, `AKBARAL_CHECKOUT_SUCCESS_URL`/`_CANCEL_URL` override). The generic
+`POST /api/billing/webhook` (HMAC `x-akbaral-signature`, `BILLING_WEBHOOK_SECRET`) remains for
+manual/other-provider settlement.
+
 ## Launch checklist
 
-1. `.env.production` secrets set (SESSION_SECRET, BILLING_WEBHOOK_SECRET).
+1. `.env.production` secrets set (SESSION_SECRET, BILLING_WEBHOOK_SECRET, `GOOGLE_API_KEY`,
+   a search key, the payment provider key + its webhook secret, `AKBARAL_SITE_URL`).
+   Then run `npm run launch:check -- --fail-on-blockers` and resolve everything it reports.
 2. `docker compose ... up -d --build` + `SEED_DATABASE=true` on first boot.
 3. `curl -f /api/ready` → 200; `curl /api/health` → `status: ok`.
 4. Register a test account; verify trial grant (5 credits / 30 days).

@@ -1,21 +1,24 @@
-import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Database, resolveDbEngine, type DbEngine } from '../db/database';
 
 /**
  * PRIVATE MISSION DATABASE — its own file, its own schema, its own migrations.
  *
- * Deliberately independent of the AKBARAL! platform database layer: this module
- * never imports `src/db`, so a mission query can never read or write a customer
- * table (and vice versa). The only supported connection string is
- * ZA141251SA_DATABASE_URL (default: ./mission.db).
+ * ISOLATION IS BY CONNECTION AND SCHEMA, NOT BY DRIVER: the mission opens its
+ * own connection to ZA141251SA_DATABASE_URL (default ./mission.db) and applies
+ * only db/migrations-mission/, so a mission query can never reach a customer
+ * table (and vice versa). The driver class itself is shared with the platform
+ * (`src/db/database.ts`) purely so that both engines — SQLite for a single-box
+ * deployment, PostgreSQL for a managed/serverless host — behave identically:
+ * one bridge, one dialect translation, one transaction implementation.
  *
- * Isolation rules enforced here:
- *   · the schema lives in db/migrations-mission/ (never db/migrations/);
- *   · migrations are applied by this module only;
- *   · money columns are integer minor units, and balances are checked >= 0 by
- *     the schema itself.
+ * Also note the engine differences that matter for money:
+ *   · `rowid` does not exist in PostgreSQL, so the ledger orders itself by an
+ *     explicit `seq` column (migration 0004);
+ *   · PRAGMA statements are SQLite-only and are filtered out for PostgreSQL;
+ *   · table introspection uses each engine's own catalogue.
  */
 
 const DEFAULT_DATABASE_URL = 'file:./mission.db';
@@ -63,73 +66,102 @@ export function migrationsDir(): string {
 export type SqlValue = string | number | bigint | null | Uint8Array;
 export type Row = Record<string, SqlValue>;
 
+/** Statements that exist only in SQLite; skipped when the engine is PostgreSQL. */
+export function stripSqliteOnlyStatements(sql: string, engine: DbEngine): string {
+  if (engine !== 'postgres') return sql;
+  return sql
+    .split('\n')
+    .filter((line) => !/^\s*PRAGMA\b/i.test(line))
+    .join('\n');
+}
+
 class MissionDatabase {
-  private handle: DatabaseSync | null = null;
-  private filePath = '';
+  private delegate: Database | null = null;
+  private engine: DbEngine = 'sqlite';
+  private target = '';
+  /** Nested transaction depth — outer BEGIN, inner SAVEPOINT (both engines). */
   private depth = 0;
   private savepointSeq = 0;
 
+  /** Connection target. PostgreSQL URLs are returned with credentials stripped. */
   path(): string {
-    return this.filePath;
+    if (this.engine === 'postgres') return this.target.replace(/\/\/[^@]*@/, '//***@');
+    return this.target;
   }
 
-  private open(): DatabaseSync {
-    if (this.handle) return this.handle;
+  /** The engine this mission will use (resolved from the URL even before connecting). */
+  engineName(): DbEngine {
+    if (this.delegate) return this.engine;
+    return resolveDbEngine(missionEnv().databaseUrl);
+  }
+
+  private open(): Database {
+    if (this.delegate) return this.delegate;
     const env = missionEnv();
-    this.filePath = resolveMissionDbPath(env.databaseUrl);
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    this.handle = new DatabaseSync(this.filePath);
-    this.handle.exec('PRAGMA journal_mode = WAL;');
-    this.handle.exec('PRAGMA foreign_keys = ON;');
-    this.handle.exec('PRAGMA busy_timeout = 5000;');
-    return this.handle;
+    this.engine = resolveDbEngine(env.databaseUrl);
+    if (this.engine === 'sqlite') {
+      this.target = resolveMissionDbPath(env.databaseUrl);
+      fs.mkdirSync(path.dirname(this.target), { recursive: true });
+    } else {
+      this.target = env.databaseUrl;
+    }
+    this.delegate = new Database(env.databaseUrl, { timeoutMs: 15_000 });
+    if (this.engine === 'sqlite') {
+      // WAL + a busy timeout: the dashboard, the CLI and the scheduler may touch
+      // the file at the same time. (PostgreSQL needs none of this.)
+      this.delegate.exec('PRAGMA journal_mode = WAL;');
+      this.delegate.exec('PRAGMA busy_timeout = 5000;');
+    }
+    return this.delegate;
   }
 
   close(): void {
-    if (this.handle) {
-      this.handle.close();
-      this.handle = null;
+    if (this.delegate) {
+      this.delegate.close();
+      this.delegate = null;
+      this.depth = 0;
     }
   }
 
+  /** Execute one or more statements with no parameters (migrations, DDL). */
   exec(sql: string): void {
-    this.open().exec(sql);
+    this.open().exec(stripSqliteOnlyStatements(sql, this.engine));
   }
 
   run(sql: string, params: SqlValue[] = []): { changes: number; lastInsertRowid: number | bigint } {
-    const result = this.open().prepare(sql).run(...(params as never[]));
+    const result = this.open().run(sql, params as SqlValue[]);
     return { changes: Number(result.changes ?? 0), lastInsertRowid: Number(result.lastInsertRowid ?? 0) };
   }
 
   get<T = Row>(sql: string, params: SqlValue[] = []): T | undefined {
-    return this.open().prepare(sql).get(...(params as never[])) as T | undefined;
+    return this.open().get<T>(sql, params as SqlValue[]);
   }
 
   all<T = Row>(sql: string, params: SqlValue[] = []): T[] {
-    return this.open().prepare(sql).all(...(params as never[])) as T[];
+    return this.open().all<T>(sql, params as SqlValue[]);
   }
 
   /**
-   * Run `fn` in a transaction. Nested calls are supported through SAVEPOINTs,
-   * so higher-level units of work (creating an agent, recording revenue) can
-   * compose smaller transactional helpers without "transaction within a
-   * transaction" failures — an inner failure rolls back only the inner work and
-   * still surfaces as an error.
+   * Run `fn` in a transaction. Nested calls use SAVEPOINTs, so higher-level units
+   * of work (creating an agent, recording revenue) compose smaller transactional
+   * helpers without "transaction within a transaction" failures — an inner
+   * failure rolls back only the inner work and still surfaces as an error.
+   * Works identically on both engines.
    */
   transaction<T>(fn: () => T): T {
-    const handle = this.open();
+    const db = this.open();
     if (this.depth > 0) {
       const savepoint = `mission_sp_${(this.savepointSeq += 1)}`;
-      handle.exec(`SAVEPOINT ${savepoint}`);
+      db.exec(`SAVEPOINT ${savepoint}`);
       this.depth += 1;
       try {
         const result = fn();
-        handle.exec(`RELEASE ${savepoint}`);
+        db.exec(`RELEASE ${savepoint}`);
         return result;
       } catch (error) {
         try {
-          handle.exec(`ROLLBACK TO ${savepoint}`);
-          handle.exec(`RELEASE ${savepoint}`);
+          db.exec(`ROLLBACK TO ${savepoint}`);
+          db.exec(`RELEASE ${savepoint}`);
         } catch {
           /* rollback best-effort */
         }
@@ -138,36 +170,29 @@ class MissionDatabase {
         this.depth -= 1;
       }
     }
-    handle.exec('BEGIN IMMEDIATE');
     this.depth = 1;
     try {
-      const result = fn();
-      handle.exec('COMMIT');
-      return result;
-    } catch (error) {
-      try {
-        handle.exec('ROLLBACK');
-      } catch {
-        /* rollback best-effort */
-      }
-      throw error;
+      return db.transaction(() => fn());
     } finally {
       this.depth = 0;
     }
   }
 
-  /** Number of tables in the mission database (health/diagnostics). */
+  /** Number of tables in the mission schema (health/diagnostics). */
   tableCount(): number {
-    const row = this.get<{ count: number }>("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table'");
+    const db = this.open();
+    if (this.engine === 'postgres') {
+      const row = db.get<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = 'public'`,
+      );
+      return Number(row?.count ?? 0);
+    }
+    const row = db.get<{ count: number }>(`SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table'`);
     return Number(row?.count ?? 0);
   }
 
   tableExists(name: string): boolean {
-    const row = this.get<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-      [name],
-    );
-    return Boolean(row);
+    return this.open().tableExists(name);
   }
 }
 
@@ -197,7 +222,50 @@ export function applyMissionMigrations(target = missionDb): { applied: string[];
     });
     applied.push(file);
   }
+  backfillLedgerSequence(target);
   return { applied, total: files.length };
+}
+
+/**
+ * One-off backfill for ledgers written before `seq` existed (migration 0004).
+ *
+ * Only SQLite can expose the true insertion order of those rows (rowid), so the
+ * backfill runs there and is skipped — safely, because there is nothing to
+ * backfill — on a fresh PostgreSQL database. Rows are re-hashed after the
+ * sequence is assigned so the chain reflects the real order.
+ */
+export function backfillLedgerSequence(target = missionDb): { backfilled: number } {
+  const engine = target.engineName();
+  const pending = target.get<{ count: number }>('SELECT COUNT(*) AS count FROM mission_ledger WHERE seq IS NULL');
+  if (Number(pending?.count ?? 0) === 0) return { backfilled: 0 };
+  const ordering = engine === 'postgres' ? 'created_at ASC, id ASC' : 'rowid ASC';
+  const rows = target.all<Row>(`SELECT * FROM mission_ledger WHERE seq IS NULL ORDER BY ${ordering}`);
+  let previousHash = '';
+  const previous = target.get<Row>('SELECT hash FROM mission_ledger WHERE seq IS NOT NULL ORDER BY seq DESC LIMIT 1');
+  previousHash = previous?.hash ? String(previous.hash) : '';
+  let nextSeq = Number(target.get<{ max: number | null }>('SELECT MAX(seq) AS max FROM mission_ledger')?.max ?? 0);
+  let backfilled = 0;
+  target.transaction(() => {
+    for (const row of rows) {
+      nextSeq += 1;
+      const payload = [
+        String(row.id),
+        String(row.wallet_id),
+        String(row.direction),
+        Number(row.amount_cents),
+        String(row.category),
+        row.reference ? String(row.reference) : '',
+        Number(row.balance_after),
+        previousHash,
+        String(row.created_at),
+      ].join('|');
+      const hash = sha256(payload);
+      target.run('UPDATE mission_ledger SET seq = ?, prev_hash = ?, hash = ? WHERE id = ?', [nextSeq, previousHash || null, hash, String(row.id)]);
+      previousHash = hash;
+      backfilled += 1;
+    }
+  });
+  return { backfilled };
 }
 
 export function missionId(prefix: string): string {

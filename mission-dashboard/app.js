@@ -22,6 +22,7 @@ const state = {
   owner: null,
   overview: null,
   activeTab: 'overview',
+  verifyingSlot: null,
 };
 
 // ── tiny DOM helpers ────────────────────────────────────────────────────────
@@ -360,6 +361,7 @@ async function loadTab(tab) {
     }
     if (tab === 'agents') await loadAgents();
     if (tab === 'treasury') await loadTreasury();
+    if (tab === 'publishing') await loadPublishing();
     if (tab === 'approvals') await loadApprovals();
     if (tab === 'tools') await loadTools();
     if (tab === 'policy') await loadPolicy();
@@ -398,6 +400,138 @@ async function loadAgents(query = '') {
   replace('#agent-list', node);
 }
 
+/**
+ * The payout verification form: every required control check plus the attestation.
+ * Nothing is activated here — the server refuses a partial confirmation with the
+ * exact missing checks, which is what makes the flow evidence-based.
+ */
+function renderSlotVerification(slotsPayload) {
+  const host = $('#slot-verification');
+  if (!host) return;
+  host.innerHTML = '';
+  const slot = state.verifyingSlot;
+  if (!slot) return;
+  const checks = (slotsPayload.checks || []).filter((check) => check.required || (check.requiresProviderRef && (slotsPayload.slots || []).find((entry) => Number(entry.slot) === Number(slot))?.provider_ref));
+  const form = el('form', { class: 'stack-form' });
+  form.appendChild(el('h3', { text: `Verify payout destination — slot ${slot}` }));
+  form.appendChild(
+    el('p', {
+      class: 'muted small',
+      text: `Stored only as a provider reference or a masked description. A verification is valid for ${slotsPayload.validityDays} days, after which the slot pauses until it is re-verified.`,
+    }),
+  );
+  const checkBoxes = [];
+  for (const check of checks) {
+    const id = `check-${check.key}`;
+    const input = el('input', { type: 'checkbox', id, name: check.key });
+    checkBoxes.push(input);
+    form.appendChild(el('label', { class: 'checkbox' }, [input, el('span', { text: `${check.label}${check.required ? '' : ' (when a provider reference is set)'}` })]));
+  }
+  const evidence = el('input', { name: 'evidenceRef', placeholder: 'evidence reference (provider statement, last statement date…)' });
+  const attestation = el('textarea', { name: 'attestation', rows: '3', placeholder: 'I control this destination, the details match my records, and the provider has verified my identity.' });
+  form.appendChild(el('label', {}, [el('span', { text: 'Evidence reference' }), evidence]));
+  form.appendChild(el('label', {}, [el('span', { text: 'Attestation (40+ characters, stored verbatim)' }), attestation]));
+  const submit = el('button', { type: 'submit', text: 'Confirm verification' });
+  const cancel = el('button', { type: 'button', class: 'ghost', text: 'Cancel' });
+  form.appendChild(el('span', { class: 'actions' }, [submit, cancel]));
+  cancel.addEventListener('click', () => {
+    state.verifyingSlot = null;
+    host.innerHTML = '';
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!guardMutation()) return;
+    const body = { checks: {}, attestation: attestation.value };
+    for (const input of checkBoxes) body.checks[input.name] = input.checked;
+    if (evidence.value) body.evidenceRef = evidence.value;
+    try {
+      await api(`/payout-slots/${slot}/verification/confirm`, { method: 'POST', body });
+      state.verifyingSlot = null;
+      banner(`Slot ${slot} verified: the destination is now payable (payouts still need owner approval).`, 'ok');
+      await loadTreasury();
+    } catch (error) {
+      banner(error.message, 'error');
+    }
+  });
+  host.appendChild(form);
+}
+
+/** Publishing connections: honest per-platform state, with the exact setup steps. */
+async function loadPublishing() {
+  const payload = await api('/social/connections');
+  const currency = 'USD';
+  void currency;
+  const rows = payload.platforms.map((platform) => ({
+    ...platform,
+    appLabel: platform.appConfigured ? pill('app registered', 'ok') : pill('app not registered', 'warn'),
+    connectionLabel: platform.connected ? pill('connected', 'ok') : pill(platform.status.replace('_', ' '), 'warn'),
+    expiry: platform.expiresAt ? `${platform.expiresAt.slice(0, 10)} (${platform.daysUntilExpiry} d)` : '—',
+    actions: el('span', {}, [
+      canMutate() && platform.appConfigured && !platform.connected
+        ? el('button', { class: 'small', text: 'Connect', 'data-platform': platform.id, 'data-action': 'connect' }) : null,
+      canMutate() && platform.connected
+        ? el('button', { class: 'small', text: 'Disconnect', 'data-platform': platform.id, 'data-action': 'disconnect' }) : null,
+    ]),
+  }));
+  replace('#social-connections', table([
+    { label: 'Platform', key: 'label' },
+    { label: 'App', render: (row) => row.appLabel },
+    { label: 'Connection', render: (row) => row.connectionLabel },
+    { label: 'Account', render: (row) => row.accountLabel || '—' },
+    { label: 'Token expires', key: 'expiry' },
+    { label: 'Scopes', render: (row) => (row.scopes || []).join(', ') },
+    { label: 'Actions', render: (row) => row.actions },
+  ], rows, 'Publishing platforms unavailable.'));
+
+  const setupItems = payload.setup || [];
+  const setupHost = $('#social-setup');
+  setupHost.innerHTML = '';
+  setupHost.appendChild(el('h3', { text: 'Setup required (owner action, outside this dashboard)' }));
+  if (setupItems.length === 0) {
+    setupHost.appendChild(el('p', { class: 'muted small', text: 'Every platform app is registered. Connect each account when you are ready.' }));
+  } else {
+    const list = el('ul', { class: 'muted small' });
+    for (const item of setupItems) {
+      list.appendChild(
+        el('li', {
+          text: `${item.label}: register an app, add the redirect URI ${item.redirectUri}, then set ${item.requireEnvKeys.join(' and ')}.`,
+        }),
+      );
+    }
+    setupHost.appendChild(list);
+  }
+  if (payload.guaranteedEngagement === false) {
+    setupHost.appendChild(
+      el('p', {
+        class: 'muted small',
+        text: 'No engagement is synthesized anywhere in this system: metrics are read back from the platform API after publishing, or they are absent.',
+      }),
+    );
+  }
+
+  $$('#social-connections button[data-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!guardMutation()) return;
+      const platform = button.getAttribute('data-platform');
+      try {
+        if (button.getAttribute('data-action') === 'connect') {
+          const started = await api(`/social/oauth/${platform}/start`, { method: 'POST', body: {} });
+          banner(`Approve the ${platform} scopes in the window that opens; the callback stores the connection.`, 'ok');
+          window.open(started.authorizeUrl, '_blank', 'noopener');
+        } else {
+          const reason = window.prompt('Reason for disconnecting (stored in the audit trail)?');
+          if (!reason) return;
+          const result = await api(`/social/connections/${platform}`, { method: 'POST', body: { reason } });
+          banner(result.providerRevoked ? 'Disconnected and the provider revoked the token.' : `Disconnected locally. ${result.providerRevokeResult}`, 'ok');
+        }
+        await loadPublishing();
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+  });
+}
+
 async function loadTreasury() {
   const [treasury, slots, payouts, ledger, wallets] = await Promise.all([
     api('/treasury'), api('/payout-slots'), api('/payouts'), api('/ledger?limit=50'), api('/wallets'),
@@ -417,30 +551,61 @@ async function loadTreasury() {
     card('Spend today', money(treasury.treasury.daily.spentTodayCents, currency), `cap ${money(treasury.treasury.daily.policyDailyCapCents, currency)}`),
   );
 
-  const slotRows = slots.slots.map((slot) => ({
-    ...slot,
-    actions: el('span', {}, [
-      canMutate() ? el('button', { class: 'small', text: 'Verify', 'data-action': 'verify', 'data-slot': String(slot.slot) }) : null,
-      canMutate() ? el('button', { class: 'small', text: 'Pause', 'data-action': 'pause', 'data-slot': String(slot.slot) }) : null,
-    ]),
-  }));
+  // Verification is evidence, not a status flip: the slot row shows what the
+  // server actually verified (checks, expiry, staleness) and the action opens the
+  // confirmation form rather than activating anything by itself.
+  const verificationBySlot = new Map((slots.verification || []).map((entry) => [Number(entry.slot), entry]));
+  const slotRows = slots.slots.map((slot) => {
+    const verification = verificationBySlot.get(Number(slot.slot));
+    return {
+      ...slot,
+      verificationStatus: verification?.verification?.status || 'none',
+      expires: verification?.expiresAt ? new Date(verification.expiresAt).toLocaleDateString() : '—',
+      blockers: verification?.blockers?.length ? verification.blockers.join('; ') : '—',
+      actions: el('span', {}, [
+        canMutate() ? el('button', { class: 'small', text: 'Verify / re-verify', 'data-action': 'verify', 'data-slot': String(slot.slot) }) : null,
+        canMutate() && verification?.verification?.status === 'verified'
+          ? el('button', { class: 'small', text: 'Revoke verification', 'data-action': 'revoke', 'data-slot': String(slot.slot) }) : null,
+        canMutate() ? el('button', { class: 'small', text: 'Pause', 'data-action': 'pause', 'data-slot': String(slot.slot) }) : null,
+      ]),
+    };
+  });
   replace('#payout-slots', table([
     { label: 'Slot', key: 'slot' },
     { label: 'Label', key: 'label' },
     { label: 'Type', render: (row) => row.destination_type || '—' },
+    { label: 'Provider ref', render: (row) => row.provider_ref || '—' },
     { label: 'Masked destination', render: (row) => row.masked_account || '—' },
     { label: 'Status', render: (row) => pill(String(row.status), row.status === 'active' ? 'ok' : 'warn') },
+    { label: 'Verification', render: (row) => pill(String(row.verificationStatus), row.verificationStatus === 'verified' ? 'ok' : 'warn') },
+    { label: 'Expires', key: 'expires' },
+    { label: 'Blockers', key: 'blockers' },
     { label: 'Min payout', render: (row) => money(row.min_payout_cents, currency) },
     { label: 'Actions', render: (row) => row.actions },
   ], slotRows, 'Payout slots unavailable.'));
+
+  renderSlotVerification(slots);
   $$('#payout-slots button[data-action]').forEach((button) => {
     button.addEventListener('click', async () => {
       if (!guardMutation()) return;
       const slot = Number(button.getAttribute('data-slot'));
+      const action = button.getAttribute('data-action');
       try {
-        if (button.getAttribute('data-action') === 'verify') await api(`/payout-slots/${slot}/verify`, { method: 'POST', body: {} });
-        else await api(`/payout-slots/${slot}/status`, { method: 'POST', body: { status: 'paused' } });
-        banner(`Slot ${slot} updated.`, 'ok');
+        if (action === 'verify') {
+          state.verifyingSlot = slot;
+          renderSlotVerification(slots);
+          banner(`Slot ${slot}: confirm every control check and sign the attestation to verify it.`, 'ok');
+          return;
+        }
+        if (action === 'revoke') {
+          const reason = window.prompt('Why is this payout destination being revoked? (the slot is paused immediately)');
+          if (!reason) return;
+          await api(`/payout-slots/${slot}/verification/revoke`, { method: 'POST', body: { reason } });
+          banner(`Slot ${slot}: verification revoked and slot paused.`, 'ok');
+        } else {
+          await api(`/payout-slots/${slot}/status`, { method: 'POST', body: { status: 'paused' } });
+          banner(`Slot ${slot} paused.`, 'ok');
+        }
         await loadTreasury();
       } catch (error) {
         banner(error.message, 'error');
@@ -760,13 +925,13 @@ function wire() {
     if (!guardMutation()) return;
     const data = new FormData(event.target);
     const body = { slot: Number(data.get('slot')) };
-    for (const key of ['label', 'destinationType', 'holderName', 'maskedAccount']) {
+    for (const key of ['label', 'destinationType', 'holderName', 'maskedAccount', 'providerRef']) {
       if (data.get(key)) body[key] = data.get(key);
     }
     if (data.get('minPayoutCents') !== null && data.get('minPayoutCents') !== '') body.minPayoutCents = Number(data.get('minPayoutCents'));
     try {
       await api(`/payout-slots/${body.slot}`, { method: 'POST', body });
-      banner('Slot saved. Verify it before any payout can target it.', 'ok');
+      banner('Slot saved. Confirm the control checks and attestation before any payout can target it.', 'ok');
       event.target.reset();
       await loadTreasury();
     } catch (error) { banner(error.message, 'error'); }

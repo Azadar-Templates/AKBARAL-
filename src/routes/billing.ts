@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { billingService } from '../billing/service';
 import { getTrialStatus } from '../db';
 import { verifyWebhookSignature, verifyRazorpaySignature } from '../security/webhooks';
+import { StripeWebhookError, normalizeStripeEvent, verifyStripeWebhook } from '../billing/stripe';
+import { recordBillingEvent } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError, asyncRoute } from '../server/http';
 import { getBody, optionalNumber, optionalString } from '../server/middleware/validation';
@@ -84,6 +86,81 @@ export function createBillingRouter(): Router {
     res.setHeader('content-disposition', `attachment; filename="invoice-${String(invoice.number)}.pdf"`);
     res.status(200).send(Buffer.from(pdf, 'binary'));
   });
+
+  /**
+   * Stripe-native webhook endpoint.
+   *
+   * Configure it in the Stripe dashboard as
+   *   https://<your-domain>/api/billing/webhook/stripe
+   * subscribed to the events in STRIPE_WEBHOOK_EVENTS, with its signing secret in
+   * STRIPE_WEBHOOK_SECRET.
+   *
+   * Behaviour, in order:
+   *   1. the signature is verified over the RAW body (replay-protected, 5-minute
+   *      tolerance, constant-time comparison);
+   *   2. the event id is claimed for idempotency, so a Stripe retry can never
+   *      settle an invoice twice or grant credits twice;
+   *   3. the Stripe event is normalized onto the internal billing contract;
+   *   4. unknown event types are acknowledged (200) and recorded as `ignored` —
+   *      never interpreted as a payment.
+   *
+   * A missing signing secret answers 503 webhook_not_configured (honest), never
+   * a fabricated success.
+   */
+  router.post(
+    '/webhook/stripe',
+    asyncRoute(async (req, res) => {
+      const rawBody: Buffer | undefined = (req as { rawBody?: Buffer }).rawBody;
+      const payload = rawBody ? rawBody.toString('utf8') : JSON.stringify(getBody(req));
+      const secret = process.env.STRIPE_WEBHOOK_SECRET;
+      let verified: { timestamp: number };
+      try {
+        verified = verifyStripeWebhook({
+          payload,
+          header: req.header('stripe-signature'),
+          secret,
+        });
+      } catch (error) {
+        if (error instanceof StripeWebhookError) {
+          throw new HttpError(error.status, error.message, error.code);
+        }
+        throw error;
+      }
+
+      const event = getBody(req);
+      const normalized = normalizeStripeEvent(event);
+      const result = billingService.handleWebhookEvent({
+        provider: 'stripe',
+        event: normalized.internal,
+        eventId: normalized.eventId,
+        userId: normalized.userId,
+        invoiceId: normalized.invoiceId,
+        failureCode: normalized.failureCode,
+        failureReason: normalized.failureReason,
+        payload: {
+          // Store the identifiers and the normalized view — never the raw object
+          // (it can contain customer PII and payment metadata we do not need).
+          stripeEventId: normalized.eventId,
+          stripeEventType: normalized.type,
+          objectType: normalized.objectType,
+          checkoutSessionId: normalized.checkoutSessionId,
+          paymentIntentId: normalized.paymentIntentId,
+          amountCents: normalized.amountCents,
+          currency: normalized.currency,
+          verifiedAt: new Date(verified.timestamp * 1000).toISOString(),
+        },
+      });
+      if (normalized.internal === 'ignored') {
+        recordBillingEvent({
+          userId: normalized.userId,
+          eventType: `stripe.ignored:${normalized.type}`,
+          provider: 'stripe',
+          payload: { stripeEventId: normalized.eventId, objectType: normalized.objectType },
+        });
+      }
+      res.status(200).json({ ...result, stripeEventType: normalized.type });
+    }),
+  );
 
   router.post('/webhook', (req, res) => {
     const secret = process.env.BILLING_WEBHOOK_SECRET;

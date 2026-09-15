@@ -28,6 +28,23 @@ import {
   type SessionContext,
 } from './auth';
 import {
+  PAYOUT_VERIFICATION_CHECKS,
+  PAYOUT_VERIFICATION_VALIDITY_DAYS,
+  confirmPayoutVerification,
+  listPayoutSlotVerificationStatuses,
+  payoutSlotVerificationStatus,
+  revokePayoutVerification,
+  startPayoutVerification,
+  sweepPayoutVerifications,
+} from './payout-verification';
+import {
+  beginSocialAuthorization,
+  completeSocialAuthorization,
+  disconnectSocial,
+  recordSocialAuthorizationFailure,
+  socialPlatformStatuses,
+} from './social';
+import {
   MissionTreasuryError,
   configurePayoutSlot,
   createWallet,
@@ -219,6 +236,21 @@ function requireAgent(context: RequestContext, agentSlugOrId: string | null): { 
 }
 
 /** Read access: owner, operator session, or a scoped link. */
+/**
+ * The public base URL of this mission deployment: used to build OAuth redirect
+ * URIs, which must match byte-for-byte what is registered with the platform.
+ * Explicit configuration wins; otherwise the request's own host is used so a
+ * tunnel/proxy deployment still produces a correct redirect URI.
+ */
+function missionSiteUrl(req: http.IncomingMessage): string {
+  const configured = (process.env.ZA141251SA_SITE_URL ?? process.env.AKBARAL_SITE_URL ?? '').trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim();
+  const host = String(req.headers.host ?? '127.0.0.1:4200');
+  const proto = forwardedProto || (host.startsWith('127.0.0.1') || host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
 function requireRead(context: RequestContext): void {
   if (context.session || context.link) return;
   throw new HttpProblem(401, 'mission sign-in or a valid access link is required', 'unauthorized');
@@ -755,13 +787,90 @@ async function handleApi(
     case 'payout-slots': {
       requireRead(context);
       if (method === 'GET') {
-        json(res, 200, { slots: ensurePayoutSlots(), count: 4, note: 'Four configurable payout destinations. Slots can be labelled now and completed later; nothing needs to be provided up front.' });
+        // Expiry is evaluated on read so a stale verification can never appear
+        // payable just because a sweep has not run yet.
+        const swept = sweepPayoutVerifications();
+        json(res, 200, {
+          slots: ensurePayoutSlots(),
+          count: 4,
+          note: 'Four configurable payout destinations. Slots can be labelled now and completed later; nothing needs to be provided up front.',
+          verification: listPayoutSlotVerificationStatuses(),
+          checks: PAYOUT_VERIFICATION_CHECKS,
+          validityDays: PAYOUT_VERIFICATION_VALIDITY_DAYS,
+          swept,
+        });
         return true;
       }
       const session = requireOwner(context, true);
       const slotNumber = Number(rest[0] ?? body.slot ?? 0);
       if (rest[1] === 'verify' && method === 'POST') {
-        json(res, 200, { slot: verifyPayoutSlot(slotNumber, session.owner.id) });
+        // Evidence-based verification: the owner confirms every required control
+        // check and signs the attestation. A partial confirmation is refused with
+        // the exact missing checks, so a half-verified destination never becomes
+        // payable. `POST` with `startOnly` opens the verification (step 1) and
+        // returns the checks to confirm.
+        if (param('startOnly') === 'true' || param('startOnly') === '1') {
+          json(res, 200, {
+            verification: startPayoutVerification({
+              slot: slotNumber,
+              ownerId: session.owner.id,
+              method: param('method') ?? undefined,
+              evidenceRef: param('evidenceRef'),
+            }),
+            checks: PAYOUT_VERIFICATION_CHECKS,
+          });
+          return true;
+        }
+        const checksInput = body.checks && typeof body.checks === 'object' && !Array.isArray(body.checks) ? (body.checks as Record<string, boolean>) : null;
+        if (checksInput) {
+          const confirmed = confirmPayoutVerification({
+            slot: slotNumber,
+            ownerId: session.owner.id,
+            checks: checksInput,
+            attestation: param('attestation', '') ?? '',
+            evidenceRef: param('evidenceRef'),
+            method: param('method') ?? undefined,
+          });
+          json(res, 200, { slot: confirmed.slot, verification: confirmed.verification, status: payoutSlotVerificationStatus(slotNumber) });
+          return true;
+        }
+        json(res, 200, { slot: verifyPayoutSlot(slotNumber, session.owner.id), warning: 'this activation path records no evidence — use the verification flow to confirm the control checks and attestation' });
+        return true;
+      }
+      if (rest[1] === 'verification' && rest[2] === 'start' && method === 'POST') {
+        json(res, 200, {
+          verification: startPayoutVerification({
+            slot: slotNumber,
+            ownerId: session.owner.id,
+            method: param('method') ?? undefined,
+            evidenceRef: param('evidenceRef'),
+          }),
+          checks: PAYOUT_VERIFICATION_CHECKS,
+        });
+        return true;
+      }
+      if (rest[1] === 'verification' && rest[2] === 'confirm' && method === 'POST') {
+        const checksInput = body.checks && typeof body.checks === 'object' && !Array.isArray(body.checks) ? (body.checks as Record<string, boolean>) : {};
+        const confirmed = confirmPayoutVerification({
+          slot: slotNumber,
+          ownerId: session.owner.id,
+          checks: checksInput,
+          attestation: param('attestation', '') ?? '',
+          evidenceRef: param('evidenceRef'),
+          method: param('method') ?? undefined,
+        });
+        json(res, 200, { slot: confirmed.slot, verification: confirmed.verification, status: payoutSlotVerificationStatus(slotNumber) });
+        return true;
+      }
+      if (rest[1] === 'verification' && rest[2] === 'revoke' && method === 'POST') {
+        json(res, 200, {
+          verification: revokePayoutVerification({ slot: slotNumber, ownerId: session.owner.id, reason: param('reason', '') ?? '' }),
+          slot: missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [slotNumber]),
+        });
+        return true;
+      }
+      if (rest[1] === 'verification' && method === 'GET') {
+        json(res, 200, payoutSlotVerificationStatus(slotNumber));
         return true;
       }
       if (rest[1] === 'status' && method === 'POST') {
@@ -887,6 +996,109 @@ async function handleApi(
         return true;
       }
       break;
+    }
+
+    // ── Social publishing connections (OAuth) ───────────────────────────────
+    //
+    // Publishing is a private capability: every route here is owner-only EXCEPT
+    // the OAuth callback, which the platform's browser redirect reaches without
+    // our bearer token. That callback is protected by the OAuth state instead —
+    // unguessable, single-use, 10-minute TTL, bound to the owner who started the
+    // flow and to the exact redirect URI — which is the standard contract for
+    // authorization-code callbacks.
+    case 'social': {
+      const action = rest[0] ?? 'connections';
+      const siteUrl = missionSiteUrl(req);
+
+      if (action === 'connections' && method === 'GET') {
+        requireRead(context);
+        const platforms = socialPlatformStatuses(siteUrl);
+        json(res, 200, {
+          siteUrl,
+          platforms,
+          connected: platforms.filter((entry) => entry.connected).map((entry) => entry.id),
+          pending: platforms.filter((entry) => !entry.connected).map((entry) => entry.id),
+          // Honest statement of what is missing, in the exact words an owner
+          // needs: the redirect URI to register plus the variables to set.
+          setup: platforms
+            .filter((entry) => !entry.appConfigured)
+            .map((entry) => ({
+              platform: entry.id,
+              label: entry.label,
+              redirectUri: entry.redirectUri,
+              requireEnvKeys: entry.requiredEnvKeys,
+              consoleUrl: entry.consoleUrl,
+              docsUrl: entry.docsUrl,
+              notes: entry.notes,
+            })),
+          // Publishing is never simulated: without a connection the platform's
+          // tools refuse with provider_not_configured.
+          guaranteedEngagement: false,
+        });
+        return true;
+      }
+
+      if (action === 'oauth' && rest[1] && rest[2] === 'start' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const authorization = beginSocialAuthorization({ platform: rest[1], ownerId: session.owner.id, siteUrl });
+        json(res, 200, {
+          ...authorization,
+          instructions:
+            'Open the authorization URL in a browser where you are signed in to the platform, approve the listed scopes, and the callback will store the connection. No credential ever passes through the dashboard.',
+        });
+        return true;
+      }
+
+      if (action === 'oauth' && rest[1] && rest[2] === 'callback') {
+        const platformId = rest[1];
+        const error = url.searchParams.get('error');
+        const code = url.searchParams.get('code') ?? '';
+        const state = url.searchParams.get('state') ?? '';
+        if (error) {
+          recordSocialAuthorizationFailure({
+            platform: platformId,
+            ownerId: context.session?.owner.id ?? null,
+            reason: `platform returned an error: ${error.slice(0, 80)}`,
+          });
+          json(res, 400, {
+            platform: platformId,
+            connected: false,
+            error: { code: 'authorization_denied', message: `the platform reported: ${error.slice(0, 80)}` },
+          });
+          return true;
+        }
+        if (!code || !state) {
+          json(res, 400, { platform: platformId, connected: false, error: { code: 'invalid_state', message: 'code and state are both required' } });
+          return true;
+        }
+        try {
+          const ownerId = context.session?.owner.id ?? 'owner:oauth-callback';
+          const connection = await completeSocialAuthorization({ platform: platformId, code, state, ownerId, siteUrl });
+          json(res, 200, { connected: true, connection });
+        } catch (caught) {
+          const problem = caught as { status?: number; message?: string; code?: string };
+          recordSocialAuthorizationFailure({
+            platform: platformId,
+            ownerId: context.session?.owner.id ?? null,
+            reason: (problem.message ?? 'authorization failed').slice(0, 200),
+          });
+          json(res, problem.status ?? 500, {
+            platform: platformId,
+            connected: false,
+            error: { code: problem.code ?? 'authorization_failed', message: problem.message ?? 'authorization failed' },
+          });
+        }
+        return true;
+      }
+
+      if (action === 'connections' && rest[1] && method === 'POST') {
+        const session = requireOwner(context, true);
+        const disconnect = await disconnectSocial({ platform: rest[1], ownerId: session.owner.id, reason: param('reason') });
+        json(res, 200, disconnect);
+        return true;
+      }
+
+      throw new HttpProblem(404, `no such social route: ${method} ${url.pathname}`, 'not_found');
     }
 
     // ── Self-management snapshot + reports ─────────────────────────────────
