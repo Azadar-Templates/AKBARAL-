@@ -90,9 +90,9 @@ ok(ready.res.status === 200 && ready.body?.status === 'ready', `GET /api/ready -
 // ── 2. Web shell through the production proxy ─────────────────────────────
 const page = await j('/');
 ok(page.res.status === 200 && page.text.includes('id="app-root"'), `GET / -> ${page.res.status}, app shell mounts #app-root`);
-const appJs = await j('/assets/app.js?v=akbaral-lux-14');
+const appJs = await j('/assets/app.js?v=akbaral-lux-15');
 ok(appJs.res.status === 200 && appJs.text.includes('renderTaskOutcome'), 'app.js serves the MASTER outcome renderer');
-const appJsCompressed = await j('/assets/app.js?v=akbaral-lux-14', { headers: { 'accept-encoding': 'br, gzip' } });
+const appJsCompressed = await j('/assets/app.js?v=akbaral-lux-15', { headers: { 'accept-encoding': 'br, gzip' } });
 ok(['br', 'gzip'].includes(appJsCompressed.res.headers.get('content-encoding') ?? '') && /max-age=86400/.test(appJsCompressed.res.headers.get('cache-control') ?? ''),
   `app.js compresses + caches (${appJsCompressed.res.headers.get('content-encoding') ?? 'identity'}, ${appJsCompressed.res.headers.get('cache-control') ?? 'none'})`);
 

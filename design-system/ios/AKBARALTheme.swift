@@ -1,7 +1,7 @@
 // ============================================================
 // AKBARALTheme.swift — AKBARAL! Design System tokens for iOS.
 //
-// GENERATED from design-system/tokens.json (v4.0.0) —
+// GENERATED from design-system/tokens.json (v5.0.0) —
 // run `node design-system/build.mjs` after token edits.
 //
 // STATUS: prepared design tokens for the FUTURE iOS app. There is
@@ -33,41 +33,41 @@ enum AKBARALTheme {
     }
 
     /// Deepest obsidian layer (footers, wells).
-    static let bgDeep = hex("#050506")
+    static let bgDeep = hex("#040705")
     /// Base obsidian canvas.
-    static let bg = hex("#08080a")
+    static let bg = hex("#070a08")
     /// Raised obsidian (cards, bars).
-    static let bg2 = hex("#0d0d10")
+    static let bg2 = hex("#0b100d")
     /// Highest obsidian (hover, emphasis).
-    static let bg3 = hex("#121217")
+    static let bg3 = hex("#101713")
     /// Card surface.
-    static let surface = hex("#101014")
+    static let surface = hex("#0d1310")
     /// Secondary surface.
-    static let surface2 = hex("#17171d")
+    static let surface2 = hex("#121a16")
     /// Strong surface (dialogs, sheets).
-    static let surfaceStrong = hex("#15151b")
+    static let surfaceStrong = hex("#16201a")
 
     // MARK: - Text ramp
 
     /// Primary text.
-    static let text = hex("#f0f0f2")
+    static let text = hex("#eef4f0")
     /// Secondary text.
-    static let text2 = hex("#b8b8c0")
+    static let text2 = hex("#b6c3bb")
     /// Muted text / labels.
-    static let textDim = hex("#87878f")
+    static let textDim = hex("#86958c")
     /// Faint text / metadata.
-    static let textFaint = hex("#5d5d66")
+    static let textFaint = hex("#5c6a62")
 
     // MARK: - Atmosphere (the only accent family)
 
     /// Violet — the AKBARAL! accent.
-    static let accent = hex("#9790f2")
+    static let accent = hex("#2f8348")
     /// Indigo — accent companion.
-    static let accent2 = hex("#7378e8")
+    static let accent2 = hex("#246a3a")
     /// Text on accent fills.
-    static let onAccent = hex("#0b0b0d")
+    static let onAccent = hex("#f4fbf6")
     /// Cyan — live/running telemetry only.
-    static let telemetry = hex("#8fc7de")
+    static let telemetry = hex("#6fb59a")
 
     // MARK: - Status
 

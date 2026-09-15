@@ -1485,7 +1485,7 @@
 
       $('#login-btn').addEventListener('click', () => { location.hash = '#/login'; });
     $$('[data-route]').forEach((btn) => btn.addEventListener('click', () => { location.hash = `#/${btn.dataset.route}`; }));
-    $('#explore-agents').addEventListener('click', () => {
+    $('#explore-agents')?.addEventListener('click', () => {
       if (!state.accessToken) { location.hash = '#/login'; return; }
       location.hash = '#/agents';
     });

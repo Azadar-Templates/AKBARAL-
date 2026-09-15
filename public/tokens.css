@@ -2,37 +2,38 @@
    AKBARAL! Design System — generated design tokens (web).
    DO NOT EDIT BY HAND — edit design-system/tokens.json and run:
      node design-system/build.mjs
-   Identity: obsidian foundation · indigo/violet atmosphere ·
+   Identity: obsidian foundation · emerald atmosphere ·
    glass surfaces · cinematic lighting · technical elegance.
-   Version 4.0.0
+   Version 5.0.0
    ============================================================ */
 
 :root {
-  --bg-deep: #050506;
-  --bg: #08080a;
-  --bg-2: #0d0d10;
-  --bg-3: #121217;
-  --surface: rgba(226,226,234,0.05);
-  --surface-2: rgba(226,226,234,0.075);
-  --surface-strong: #15151b;
-  --glass: rgba(13,13,18,0.62);
-  --line: rgba(226,226,234,0.08);
-  --line-strong: rgba(226,226,234,0.16);
-  --line-faint: rgba(226,226,234,0.045);
-  --line-accent: rgba(151,144,242,0.3);
-  --text: #f0f0f2;
-  --text-2: #b8b8c0;
-  --text-dim: #87878f;
-  --text-faint: #5d5d66;
-  --accent: #9790f2;
-  --accent-2: #7378e8;
-  --accent-soft: rgba(151,144,242,0.10);
-  --indigo-soft: rgba(115,120,232,0.12);
-  --on-accent: #0b0b0d;
-  --ivory: #ececee;
-  --on-ivory: #0b0b0d;
-  --telemetry: #8fc7de;
-  --telemetry-soft: rgba(143,199,222,0.11);
+  --bg-deep: #040705;
+  --bg: #070a08;
+  --bg-2: #0b100d;
+  --bg-3: #101713;
+  --surface: rgba(226,240,232,0.05);
+  --surface-2: rgba(226,240,232,0.08);
+  --surface-strong: #16201a;
+  --glass: rgba(8,14,11,0.62);
+  --line: rgba(226,240,232,0.08);
+  --line-strong: rgba(226,240,232,0.16);
+  --line-faint: rgba(226,240,232,0.045);
+  --line-accent: rgba(47,131,72,0.42);
+  --text: #eef4f0;
+  --text-2: #b6c3bb;
+  --text-dim: #86958c;
+  --text-faint: #5c6a62;
+  --accent: #2f8348;
+  --accent-2: #246a3a;
+  --accent-bright: #57b378;
+  --accent-soft: rgba(47,131,72,0.14);
+  --indigo-soft: rgba(47,131,72,0.16);
+  --on-accent: #f4fbf6;
+  --ivory: #eef4f0;
+  --on-ivory: #08120c;
+  --telemetry: #6fb59a;
+  --telemetry-soft: rgba(111,181,154,0.12);
   --green: #7fc9a4;
   --green-soft: rgba(127,201,164,0.12);
   --red: #e58a97;
@@ -58,8 +59,8 @@
   /* Shadows & glows */
   --shadow: 0 30px 80px rgba(0,0,0,0.5);
   --shadow-soft: 0 12px 36px rgba(0,0,0,0.32);
-  --glow-accent: 0 0 0 1px rgba(151,144,242,0.22), 0 10px 30px rgba(115,120,232,0.14);
-  --glow-telemetry: 0 0 0 1px rgba(143,199,222,0.2), 0 10px 28px rgba(143,199,222,0.1);
+  --glow-accent: 0 0 0 1px rgba(47,131,72,0.30), 0 10px 30px rgba(36,106,58,0.20);
+  --glow-telemetry: 0 0 0 1px rgba(111,181,154,0.22), 0 10px 28px rgba(111,181,154,0.12);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22,0.61,0.36,1);
@@ -75,23 +76,23 @@
   --nav-gap: 4px;
 
   /* Glass material system (3 levels of depth) */
-  --glass-1-fill: rgba(226,226,234,0.045);
-  --glass-1-fallback: #101015;
-  --glass-1-border: rgba(226,226,234,0.09);
+  --glass-1-fill: rgba(226,240,232,0.045);
+  --glass-1-fallback: #0d1310;
+  --glass-1-border: rgba(226,240,232,0.10);
   --glass-1-blur: 14px;
-  --glass-1-highlight: rgba(255,255,255,0.055);
+  --glass-1-highlight: rgba(255,255,255,0.06);
   --glass-1-shadow: 0 10px 30px rgba(0,0,0,0.22);
-  --glass-2-fill: rgba(16,16,22,0.52);
-  --glass-2-fallback: #121218;
-  --glass-2-border: rgba(226,226,234,0.12);
+  --glass-2-fill: rgba(10,16,13,0.55);
+  --glass-2-fallback: #101812;
+  --glass-2-border: rgba(226,240,232,0.13);
   --glass-2-blur: 22px;
-  --glass-2-highlight: rgba(255,255,255,0.07);
+  --glass-2-highlight: rgba(255,255,255,0.075);
   --glass-2-shadow: 0 18px 48px rgba(0,0,0,0.34);
-  --glass-3-fill: rgba(20,20,28,0.72);
-  --glass-3-fallback: #17171e;
-  --glass-3-border: rgba(226,226,234,0.16);
+  --glass-3-fill: rgba(14,22,18,0.74);
+  --glass-3-fallback: #16201a;
+  --glass-3-border: rgba(226,240,232,0.17);
   --glass-3-blur: 30px;
-  --glass-3-highlight: rgba(255,255,255,0.085);
+  --glass-3-highlight: rgba(255,255,255,0.09);
   --glass-3-shadow: 0 30px 80px rgba(0,0,0,0.5);
 
   /* Component tokens (three-layer architecture: primitive → semantic → component) */
@@ -101,14 +102,14 @@
   --btn-tracking: 0.13em;
   --panel-pad: 26px;
   --panel-pad-m: 20px;
-  --focus-ring: 0 0 0 3px rgba(151,144,242,0.16);
+  --focus-ring: 0 0 0 3px rgba(47,131,72,0.32);
   --chip-h: 40px;
 
   /* Atmosphere (layered background fields) */
-  --atmo-base: #060608;
-  --atmo-base-high: #0b0b10;
-  --atmo-indigo: rgba(115,120,232,0.11);
-  --atmo-violet: rgba(151,144,242,0.08);
-  --atmo-cyan: rgba(143,199,222,0.05);
-  --atmo-charcoal: rgba(60,60,74,0.20);
+  --atmo-base: #050806;
+  --atmo-base-high: #0a100c;
+  --atmo-indigo: rgba(47,131,72,0.13);
+  --atmo-violet: rgba(87,179,120,0.09);
+  --atmo-cyan: rgba(111,181,154,0.05);
+  --atmo-charcoal: rgba(30,42,36,0.30);
 }

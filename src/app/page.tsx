@@ -18,59 +18,41 @@
  * fallbacks. See docs/DESIGN.md.
  * ============================================================ */
 
-const WORLD_CATEGORIES_ROW_A = [
-  ['Research', 51], ['Software engineering', 50], ['Marketing', 50], ['SEO', 50],
-  ['UI / UX', 50], ['Data science', 50], ['Finance', 50], ['Automation', 50],
-  ['Writing', 50], ['Business strategy', 50], ['Sales', 50], ['Education', 50],
-  ['Web development', 50], ['Graphic design', 50], ['Project management', 50], ['Startup', 50],
-];
-
-const WORLD_CATEGORIES_ROW_B = [
-  ['Documents', 50], ['Excel / spreadsheets', 50], ['E-commerce', 50], ['Translation', 50],
-  ['Legal information', 50], ['Travel', 50], ['Recruitment / HR', 50], ['Customer support', 50],
-  ['Video', 50], ['Audio', 50], ['Music', 50], ['Voice', 50],
-  ['Security', 50], ['DevOps', 50], ['Cloud', 50], ['Social media', 50],
-];
-
-const DISCIPLINES = [
-  ['Research', 51, 'Market, competitor and technical research with source tracking'],
-  ['Software engineering', 50, 'Specifications, implementation, review and DevOps'],
-  ['Design & UX', 50, 'Interfaces, design systems and brand language'],
-  ['Data & analytics', 50, 'Analysis, modeling, spreadsheets and insight'],
-  ['Business & strategy', 50, 'Planning, go-to-market, operations and finance'],
-  ['Automation', 50, 'Workflows, integrations and scheduled operations'],
-];
-
-const EMPLOYEE_ROLES = [
-  ['Research Analyst', 'Continuous market and competitor intelligence'],
-  ['Data Scientist', 'Models, forecasts and decision support'],
-  ['Campaign Manager', 'Plans, executes and reports on campaigns'],
-  ['Operations Assistant', 'Scheduled workflows and routine operations'],
-  ['QA Verifier', 'Checks deliverables against verification rules'],
-];
-
+/** The real orchestration stages, in the order MASTER runs them. */
 const PIPELINE_STAGES = [
-  { n: '01', key: 'goal', label: 'User goal', note: 'State any goal in plain language — research, engineering, revenue, operations.' },
-  { n: '02', key: 'understanding', label: 'Goal understanding', note: 'Intent detection decomposes the goal into structured, ordered work.' },
-  { n: '03', key: 'planner', label: 'Planner', note: 'A persisted workflow and step graph is created with dependencies.' },
-  { n: '04', key: 'core', label: 'Master orchestrator', note: 'MASTER sequences steps, streams every state change and owns the run end to end.' },
-  { n: '05', key: 'router', label: 'Agent router', note: 'Each step is matched to the right specialist through the agent registry and routing rules.' },
-  { n: '06', key: 'agents', label: 'Specialist agents', note: 'The selected agents are dispatched from a registry of 4,000+ distinct contracts.' },
-  { n: '07', key: 'tools', label: 'Tools / APIs', note: 'Real tool execution — search, fetch, files, knowledge, data — with honest credential checks.' },
-  { n: '08', key: 'execution', label: 'Execution', note: 'Queued, retried and cancellable runs with live progress in your workspace.' },
-  { n: '09', key: 'verification', label: 'Verification', note: 'Sources, evidence and execution checks run before anything is marked successful.' },
-  { n: '10', key: 'result', label: 'Final result', note: 'Verified result, full execution history — and credits consumed only on success.' },
-];
+  ['01', 'Goal', 'Any goal in plain language — research, engineering, operations, revenue.'],
+  ['02', 'Understanding', 'Intent detection decomposes it into structured, ordered work.'],
+  ['03', 'Planning', 'A persisted workflow with steps, dependencies and execution order.'],
+  ['04', 'Routing', 'Each step is matched to a specialist through the agent registry.'],
+  ['05', 'Execution', 'Tools run for real; every state change streams into the workspace.'],
+  ['06', 'Verification', 'Evidence and execution checks gate completion. Failures are refunded.'],
+] as const;
 
-const TRACE_STEPS = [
-  ['Understanding', 'MASTER reads the goal, detects intent and decomposes it into ordered work.', 'completed'],
-  ['Planning', 'A workflow is created — steps, dependencies and the specialists each step needs.', 'completed'],
-  ['Research', 'Research agents gather real material through live tools with source tracking.', 'active'],
-  ['Agent selection', 'Specialists are matched per step from the 4,000+ agent registry.', 'queued'],
-  ['Execution', 'Steps run in dependency order — queued, retried, cancellable, streamed live.', 'queued'],
-  ['Verification', 'Evidence and execution checks gate every completion. Failures are refunded.', 'queued'],
-  ['Result', 'Verified deliverables land in your workspace with the full execution history.', 'queued'],
-];
+/** Capability families the registry actually covers. */
+const CAPABILITIES = [
+  ['◈', 'Research & intelligence', 'Market, competitor and technical research with source tracking.'],
+  ['⌘', 'Software & web', 'Specifications, implementation, review and release paths.'],
+  ['▤', 'Documents & data', 'Reports, spreadsheets, analysis and structured deliverables.'],
+  ['◫', 'Design & media', 'Interfaces, brand language, image and media direction.'],
+  ['◎', 'Business & operations', 'Planning, go-to-market, forecasting and process design.'],
+  ['⟳', 'Automation', 'Scheduled workflows and repeatable operations on a real queue.'],
+] as const;
+
+/** Disciplines represented in the 4,001-contract registry. */
+const DISCIPLINES = [
+  'Research', 'Software engineering', 'Web development', 'UI / UX', 'Data science',
+  'Documents', 'Spreadsheets', 'Marketing', 'SEO', 'Finance', 'Legal information',
+  'Operations', 'CRM', 'Automation', 'Security', 'DevOps', 'Cloud', 'Content',
+  'Translation', 'Education',
+] as const;
+
+/** Honest, implemented guarantees — each one is covered by the test suite. */
+const TRUST_POINTS = [
+  ['Rotated sessions', 'Short-lived access tokens and refresh tokens that rotate on every use; a reused token is rejected.'],
+  ['Owner RBAC', 'Owner-only surfaces are enforced server-side on every request — never by hiding a button.'],
+  ['No invented integrations', 'An unconfigured provider refuses and names the exact credential an operator must set.'],
+  ['Refunds on failure', 'A task consumes a credit only when the work succeeds; failures are refunded automatically.'],
+] as const;
 
 export default function Home() {
   return (
@@ -79,9 +61,9 @@ export default function Home() {
   Skip to content</a><header className="site-header" id="site-header"><div className="header-bar"><a className="brand" href="#/" aria-label="AKBARAL home"><span className="brand-mark" aria-hidden="true"><span className="brand-mark-glow"></span>
       A!</span><span className="brand-text">
       AKBARAL!</span></a><nav className="main-nav" id="main-nav" aria-label="Primary navigation"><div className="nav-set nav-public">
-        <button type="button" data-scroll-to="intelligence">Platform</button>
-        <button type="button" data-scroll-to="agent-world">Agents</button>
-        <button type="button" data-scroll-to="trust">Security</button>
+        <button type="button" data-scroll-to="platform">Platform</button>
+        <button type="button" data-scroll-to="agents">Agents</button>
+        <button type="button" data-scroll-to="security">Security</button>
         <button type="button" data-scroll-to="pricing">Pricing</button><a className="nav-mobile-only" href="#/login">Log In</a><a className="nav-mobile-only" href="#/register">Sign Up</a></div><div className="nav-set nav-app">
         <a href="#/dashboard">Dashboard</a>
         <a href="#/master">MASTER</a>
@@ -99,416 +81,208 @@ export default function Home() {
       Log out</button><button className="btn btn-ghost btn-sm" id="login-btn" data-route="login">
       Log In</button><button className="btn btn-primary btn-sm" id="start-free-nav" data-route="register">Start Building</button></div></div></header><main id="app-root">
 
-      {/* ================= LANDING — cinematic hero ================= */}
-      {/* The marketing page is NOT the default paint: `/` and `/workspace`
-          are application entries, and public/app.js reveals the screen the
-          visitor actually asked for. Without JS the <noscript> rule below
-          restores the full cinematic page (SEO + no-JS visitors). */}
+      {/* ================= LANDING — compact front door ================= */}
+      {/* The marketing page is NOT the default paint: `/` and `/workspace` are
+          application entries, and public/app.js reveals the screen the visitor
+          actually asked for. Without JS the <noscript> rule below restores the
+          full page (SEO + no-JS visitors). */}
       <section className="screen landing-screen" id="screen-landing" hidden>
-        <div className="hero" id="hero">
-          <div className="hero-media" aria-hidden="true">
+
+        {/* ---------- Hero: the product, immediately ---------- */}
+        <section className="akx-hero" id="hero">
+          <div className="akx-hero-media" aria-hidden="true">
             <video id="hero-video" muted loop playsInline preload="none" poster="/media/hero-poster.jpg" disablePictureInPicture tabIndex={-1}>
               <source src="/media/hero-loop.mp4" type="video/mp4" />
             </video>
             <canvas id="hero-canvas"></canvas>
             <div className="hero-poster" style={{ backgroundImage: 'url(/media/hero-poster.jpg)' }}></div>
-            <div className="hero-veil"></div>
-            <div className="hero-gridlines"></div>
-            <div className="hero-vignette"></div>
-          </div>
-          <div className="hero-brackets" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-
-          <div className="aw-container hero-inner">
-            <div className="hero-copy" data-reveal>
-              <p className="hero-system">
-                <span className="sys-dot" aria-hidden="true"></span>
-                MASTER INTELLIGENCE SYSTEM
-                <i className="sys-sep" aria-hidden="true">/</i>
-                4,000+ SPECIALISTS
-                <i className="sys-sep" aria-hidden="true">/</i>
-                <span id="sys-status" className="sys-ok">READY</span>
-              </p>
-              <h1 className="hero-title">
-                One intelligence.
-                <span className="hero-title-2">Every solution.</span>
-              </h1>
-              <p className="hero-sub">
-                Thousands of specialist agents. <b>One intelligent orchestration system.</b>
-              </p>
-              <div className="hero-actions">
-                <button className="btn btn-primary btn-lg magnetic" data-route="register" data-magnet><span className="btn-label">
-
-                  Start Building</span><span className="btn-ico" aria-hidden="true">→</span></button>
-                <button className="btn btn-outline btn-lg" id="explore-agents" data-magnet>
-                  Explore AI Agents</button>
-              </div>
-            </div>
-
-            <div className="hero-meta" data-reveal data-reveal-delay="120" aria-label="Platform facts">
-              <div><small>Orchestration</small><span>Goal → plan → specialists → <b>verified result</b></span></div>
-              <div><small>Registry</small><span><b>4,001</b> agents across <b>80</b> disciplines</span></div>
-              <div><small>Credits</small><span>5 free tasks · consumed <b>only on success</b></span></div>
-              <div><small>Trial</small><span><b>30 days</b> · no card required</span></div>
-            </div>
+            <div className="akx-hero-veil"></div>
           </div>
 
-          <div className="hero-scroll" aria-hidden="true">Scroll</div>
-        </div>
-
-        {/* Chapter index */}
-        <nav className="section-rail aw-container" aria-label="Landing chapters">
-          <button type="button" data-scroll-to="intelligence"><i>01</i> Intelligence</button>
-          <button type="button" data-scroll-to="master-ai"><i>02</i> Master AI</button>
-          <button type="button" data-scroll-to="agent-world"><i>03</i> Agent World</button>
-          <button type="button" data-scroll-to="specialists"><i>04</i> Specialists</button>
-          <button type="button" data-scroll-to="execution"><i>05</i> Execution</button>
-          <button type="button" data-scroll-to="automation"><i>06</i> Automation</button>
-          <button type="button" data-scroll-to="trust"><i>07</i> Security</button>
-          <button type="button" data-scroll-to="pricing"><i>08</i> Pricing</button>
-        </nav>
-
-        {/* ================= 01 · AKBARAL! Intelligence — manifesto ================= */}
-        <div className="aw-container landing-section section-intelligence" id="intelligence" data-chapter="01">
-          <div className="manifesto" data-reveal>
-            <p className="eyebrow" data-kicker="AKBARAL! Intelligence"></p>
-            <h2 className="manifesto-line">A single intelligence,<br /><span className="grad-text">composed of thousands.</span></h2>
-            <p className="manifesto-sub">
-              AKBARAL! is not a chatbot and not a template library. It is one operating
-              system for autonomous work: a MASTER orchestrator that understands your goal,
-              plans the mission and dispatches real specialist agents — research, engineering,
-              design, data, business and automation — with real tools, verification and
-              honest credits.
-            </p>
-            <div className="manifesto-facts" aria-label="Platform facts">
-              <div><b>1</b><small>Master orchestrator</small></div>
-              <div><b>4,001</b><small>Specialist agents</small></div>
-              <div><b>80</b><small>Disciplines</small></div>
-              <div><b>1</b><small>Verified standard</small></div>
-            </div>
-          </div>
-        </div>
-
-        {/* ================= 02 · MASTER AI pipeline ================= */}
-        <div className="aw-container landing-section" id="master-ai" data-chapter="02">
-          <div className="pipeline-wrap">
-            <div className="pipeline-side" data-reveal>
-              <p className="eyebrow" data-kicker="Master AI"></p>
-              <h2>From one goal to a<br />verified result.</h2>
-              <p className="sub">
-                AKBARAL! is not a chat window. MASTER is a real orchestrator: it understands the
-                goal, plans the work, dispatches specialist agents through real tools, verifies
-                the evidence and returns a result you can trust — with every step streamed live.
-              </p>
-              <p className="trust-note">ARCHITECTURE REPRESENTATION — THE REAL PIPELINE RUNS IN YOUR WORKSPACE.</p>
-            </div>
-            <div className="pipeline" id="pipeline-rail" aria-label="MASTER AI execution architecture"><span className="pipe-head" aria-hidden="true"></span>
-              {PIPELINE_STAGES.map((stage) => (
-                <div className="pipe-stage" data-reveal data-stage={stage.key} key={stage.key}>
-                  <small>{stage.n}</small>
-                  <b>{stage.label}</b>
-                  <p>{stage.note}</p>
+          <div className="aw-container akx-hero-inner">
+            <div className="akx-hero-grid">
+              <div className="akx-hero-copy">
+                <p className="akx-kicker">
+                  MASTER intelligence system
+                  <i className="sys-sep" aria-hidden="true"> / </i>
+                  <span id="sys-status" className="sys-ok">READY</span>
+                </p>
+                <h1 className="akx-title">
+                  One intelligence.<br /><em>Every solution.</em>
+                </h1>
+                <p className="akx-lede">
+                  State a goal and AKBARAL! plans it, routes each step to the right specialist from a
+                  4,001-agent registry, runs the tools for real, verifies the result — and shows you
+                  every state change as it happens.
+                </p>
+                <div className="akx-actions">
+                  <button className="btn btn-primary btn-lg" data-route="register">
+                    Start building <span aria-hidden="true">→</span>
+                  </button>
+                  <button className="btn btn-outline btn-lg" data-scroll-to="platform">
+                    See how it works
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ================= 03 · Agent World ================= */}
-        <div className="aw-container landing-section" id="agent-world" data-chapter="03">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Agent World"></p>
-            <h2>Eighty disciplines.<br />Four thousand specialists.</h2>
-            <p className="sub">
-              Every agent in the registry is a genuinely distinct contract — its own instructions,
-              capabilities, tool permissions, workflow, verification rules and evaluation config.
-              These are the live categories of the real registry.
-            </p>
-          </div>
-          <div className="agent-world-panel" data-reveal>
-            <div className="world-stats" aria-label="Registry facts">
-              <div><span className="stat-count" data-count="4001">0</span><small>Specialist agents</small></div>
-              <div><span className="stat-count" data-count="80">0</span><small>Disciplines</small></div>
-              <div><span className="stat-count" data-count="1">0</span><small>Orchestrator</small></div>
-            </div>
-            <div className="world-marquee" aria-label="Agent registry categories" aria-hidden="true">
-              <div className="marquee-row">
-                {[...WORLD_CATEGORIES_ROW_A, ...WORLD_CATEGORIES_ROW_A].map(([name, count], i) => (
-                  <span className="category-cell" key={`a-${i}`}><b>{name}</b><small>{count}</small></span>
-                ))}
-              </div>
-              <div className="marquee-row reverse">
-                {[...WORLD_CATEGORIES_ROW_B, ...WORLD_CATEGORIES_ROW_B].map(([name, count], i) => (
-                  <span className="category-cell" key={`b-${i}`}><b>{name}</b><small>{count}</small></span>
-                ))}
-              </div>
-            </div>
-            <div className="world-note">
-              <p>Plus 48 more disciplines — from localization to film production to scientific research — all live in the registry today.</p>
-              <div className="actions">
-                <a className="btn btn-outline" href="#/agents">Browse the live registry →</a>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ================= 04 · Thousands of specialized agents ================= */}
-        <div className="aw-container landing-section" id="specialists" data-chapter="04">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Specialist intelligence"></p>
-            <h2>Thousands of specialists.<br /><span className="grad-text">Every discipline.</span></h2>
-            <p className="sub">
-              Each of the 4,001 registry contracts is a distinct specialist — its own
-              instructions, tools, workflow and verification rules. Not clones. Not personas.
-              A living index you can search, run and extend.
-            </p>
-          </div>
-          <div className="discipline-index" data-reveal aria-label="Registry disciplines">
-            {DISCIPLINES.map(([name, count, note], i) => (
-              <div className="discipline-row" key={name}>
-                <small>{String(i + 1).padStart(2, '0')}</small>
-                <b>{name}</b>
-                <span>{note}</span>
-                <em>{count.toLocaleString()} agents</em>
-              </div>
-            ))}
-          </div>
-          <div className="world-note" data-reveal>
-            <p>The live registry grows through the Agent Factory and the marketplace — every entry is a real, deployable contract.</p>
-            <div className="actions"><a className="btn btn-outline" href="#/agents">Open the registry →</a></div>
-          </div>
-        </div>
-
-        {/* ================= 05 · Agent Factory ================= */}
-        <div className="aw-container landing-section" id="factory" data-chapter="05">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Agent Factory"></p>
-            <h2>Manufacture intelligence.</h2>
-            <p className="sub">
-              The Agent Factory is a real laboratory for building your own specialists — specify
-              the contract, map capabilities, assign tools, test, verify and publish with a full
-              audit trail.
-            </p>
-          </div>
-          <div className="factory-lab" data-reveal>
-            <div className="factory-readout" aria-label="Factory specification readout">
-              <h3>Blueprint · readout</h3>
-              <div className="readout-line"><span>Registry</span><b>4,001 contracts</b></div>
-              <div className="readout-line"><span>Contract fields</span><b>instructions · tools · workflow</b></div>
-              <div className="readout-line"><span>Verification</span><b>rules per agent</b></div>
-              <div className="readout-line"><span>Versioning</span><b>deploy · disable · rollback</b></div>
-              <div className="readout-line"><span>Audit</span><b>every action logged</b></div>
-              <div className="readout-line"><span>Ownership</span><b>your tenant, your agents</b></div>
-            </div>
-            <div className="factory-lineage" aria-label="Agent production lineage">
-              <div className="lineage-stage" data-reveal><small>L-01</small><b>Specify</b><p>Define identity, specialization and the system instructions that govern behavior.</p></div>
-              <div className="lineage-stage" data-reveal><small>L-02</small><b>Map capabilities</b><p>Declare exactly what the agent can do — capabilities, inputs, outputs.</p></div>
-              <div className="lineage-stage" data-reveal><small>L-03</small><b>Assign tools</b><p>Grant a minimal set of real tool permissions. Nothing more.</p></div>
-              <div className="lineage-stage" data-reveal><small>L-04</small><b>Test</b><p>Run the agent against real inputs and inspect its execution history.</p></div>
-              <div className="lineage-stage" data-reveal><small>L-05</small><b>Verify</b><p>Attach verification rules so success requires evidence, not assertion.</p></div>
-              <div className="lineage-stage" data-reveal><small>L-06</small><b>Publish</b><p>Version, deploy to your workspace — or list it on the marketplace.</p></div>
-              <div className="factory-cta">
-                <a className="btn btn-primary" href="#/factory">Open Agent Factory</a>
-                <a className="btn btn-ghost" href="#/marketplace">Visit the marketplace</a>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ================= 06 · Real task execution ================= */}
-        <div className="aw-container landing-section" id="execution" data-chapter="06">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Execution"></p>
-            <h2>Watch the system work.</h2>
-            <p className="sub">
-              Every task runs the same disciplined line — understanding to verified result.
-              This is the shape of a real MASTER run; your live workspace shows the actual
-              steps, tools and evidence of every task you start.
-            </p>
-          </div>
-          <div className="trace-panel" data-reveal>
-            <div className="trace-head">
-              <b>Execution trace — representative run</b>
-              <span>MASTER · decomposition</span>
-            </div>
-            <div className="trace-goal">
-              <small>User goal</small>
-              <p>Build me a complete launch strategy for my business.</p>
-            </div>
-            {/* Safe visual execution simulation — presentation-only strings
-                rendered as text (see initDemoConsole in public/app.js).
-                Never executed, never connected to the real pipeline. */}
-            <div className="demo-console" id="demo-console" role="region" aria-label="Visual execution simulation — presentation only, not a real run">
-              <div className="demo-status" aria-hidden="true">
-                <span className="demo-dot"></span>
-                <span className="demo-phase" id="demo-phase">Initializing</span>
-                <span className="demo-badge">SIMULATION · PRESENTATION ONLY</span>
-              </div>
-              <div className="demo-stream" id="demo-stream" aria-hidden="true"></div>
-            </div>
-            <div className="trace-steps">
-              {TRACE_STEPS.map(([label, note, state]) => (
-                <div className="trace-step" key={label}>
-                  <b>{label}</b>
-                  <p>{note}</p>
-                  <span className={`badge ${state === 'completed' ? 'green' : state === 'active' ? 'accent' : 'blue'}`}>{state}</span>
+                <div className="akx-statusline">
+                  <span><b>4,001</b> agent contracts</span>
+                  <span>Real tool execution</span>
+                  <span>Verified completions</span>
+                  <span><b>Credits</b> only on success</span>
                 </div>
-              ))}
-            </div>
-            <div className="trace-foot">
-              <small>Credits are consumed only when a task succeeds. Failures, verification failures and cancellations are refunded automatically.</small>
-              <a className="btn btn-outline btn-sm" href="#/master">Run a real task →</a>
-            </div>
-          </div>
-        </div>
+              </div>
 
-        {/* ================= 07 · Automation ================= */}
-        <div className="aw-container landing-section" id="automation" data-chapter="07">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Automation"></p>
-            <h2>Intelligence on a schedule.</h2>
-            <p className="sub">
-              The same orchestrator that runs your tasks also runs them on real schedules —
-              timezone-aware cron, intervals and one-shot timers — with conditions, retries,
-              crash recovery and notifications. A credit is consumed only when a run succeeds.
-            </p>
-          </div>
-          <div className="auto-panel" data-reveal>
-            <div className="auto-strip" aria-label="Supported schedule forms">
-              <span className="cron-chip"><code>*/15 * * * *</code><small>cron · Asia/Karachi</small></span>
-              <span className="cron-chip"><code>0 9 * * 1-5</code><small>weekdays 09:00 · DST-safe</small></span>
-              <span className="cron-chip"><code>every 30m</code><small>interval</small></span>
-              <span className="cron-chip"><code>once · ISO 8601</code><small>one-shot</small></span>
-            </div>
-            <div className="auto-chain" aria-label="Automation run lifecycle">
-              <div className="auto-node"><i>A-01</i><b>Schedule</b><small>The engine computes the next run for each schedule and timezone.</small></div>
-              <div className="auto-node"><i>A-02</i><b>Conditions</b><small>A run proceeds only when its conditions hold.</small></div>
-              <div className="auto-node"><i>A-03</i><b>Agent steps</b><small>Registered specialists run through the MASTER orchestrator.</small></div>
-              <div className="auto-node"><i>A-04</i><b>Verify &amp; retry</b><small>Verification gates success; failures retry with backoff and timeouts.</small></div>
-              <div className="auto-node"><i>A-05</i><b>Notify</b><small>Push and in-app notifications — and honest credit refunds.</small></div>
-            </div>
-            <div className="world-note">
-              <p>Interrupted runs are recovered after a crash — or refunded. Every run is auditable, cancellable and isolated to your tenant.</p>
-              <div className="actions">
-                <a className="btn btn-outline" href="#/automations">Open Automations →</a>
+              {/* A truthful picture of the pipeline every run goes through. */}
+              <div className="akx-frame" role="img" aria-label="The MASTER pipeline: goal, understanding, planning, routing, execution, verification, result">
+                <div className="akx-frame-bar">
+                  <i></i><i></i><i></i>
+                  <span>MASTER · pipeline</span>
+                </div>
+                <div className="akx-frame-body">
+                  <div className="akx-turn user">
+                    <span className="akx-turn-h">You</span>
+                    <p>“Build a one-page calculator site with a clean modern layout.”</p>
+                  </div>
+                  <div className="akx-turn">
+                    <span className="akx-turn-h"><b>MASTER</b> · orchestrating</span>
+                    <ul className="akx-steps">
+                      <li className="done">Goal understood · intent + deliverables</li>
+                      <li className="done">Workflow planned · 3 ordered steps</li>
+                      <li className="live">Execution · agents run real tools</li>
+                      <li>Verification · evidence checks before success</li>
+                      <li>Result + artifacts land in your workspace</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* ================= 08 · AI Employees ================= */}
-        <div className="aw-container landing-section" id="employees" data-chapter="08">
-          <div className="split-wrap">
-            <div className="split-copy" data-reveal>
-              <p className="eyebrow" data-kicker="AI Employees"></p>
-              <h2>Hire intelligence,<br /><span className="grad-text">not headcount.</span></h2>
-              <p className="sub">
-                Give an AI employee a role and it works inside your workspace on the same
-                verified execution standard as every agent — real tools, a full audit
-                trail and honest credits. Managed from your CRM, alongside contacts,
-                pipelines and campaigns.
-              </p>
-              <div className="actions"><a className="btn btn-primary" href="#/crm">Open AI Employees →</a></div>
-            </div>
-            <div className="employee-roster" data-reveal aria-label="Example AI employee roles">
-              <div className="roster-head">Example roles</div>
-              {EMPLOYEE_ROLES.map(([role, note]) => (
-                <div className="roster-row" key={role}>
-                  <b>{role}</b>
-                  <span>{note}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ================= 09 · Workspace ================= */}
-        <div className="aw-container landing-section" id="workspace" data-chapter="09">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Workspace"></p>
-            <h2>Your intelligence<br /><span className="grad-text">has a home.</span></h2>
-            <p className="sub">
-              Projects, files and a knowledge base scoped to your tenant. Agents read and
-              write inside your workspace — every artifact stays yours, every action is logged.
-            </p>
-          </div>
-          <div className="workspace-shelf" data-reveal aria-label="Workspace capabilities">
-            <div className="shelf-row"><b>Projects</b><span>Group goals, tasks and files per initiative.</span></div>
-            <div className="shelf-row"><b>Files</b><span>Upload, store and let agents work on your documents.</span></div>
-            <div className="shelf-row"><b>Knowledge</b><span>Private search over everything your agents produce.</span></div>
-            <div className="shelf-row"><b>History</b><span>Full execution traces — steps, tools, evidence.</span></div>
-          </div>
-          <div className="world-note" data-reveal>
-            <p>Isolated per tenant. Uploads are validated and storage-keyed; knowledge search is scoped to your account only.</p>
-            <div className="actions"><a className="btn btn-outline" href="#/workspace">Open Workspace →</a></div>
-          </div>
-        </div>
-
-        {/* ================= 10 · Trust + security ================= */}
-        <div className="aw-container landing-section" id="trust" data-chapter="10">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Security &amp; trust"></p>
-            <h2>Security-first architecture.</h2>
-            <p className="sub">
-              These are the protections actually implemented and tested in this platform —
-              not marketing claims. No system is perfect, and we will never tell you ours is
-              unhackable; we will tell you exactly what we do defend.
-            </p>
-          </div>
-          <div className="trust-stamps" data-reveal aria-label="Security posture">
-            <span>Secure</span><span>Verified</span><span>Audited</span><span>Isolated</span><span>Protected</span>
-          </div>
-          <div className="control-ledger" data-reveal aria-label="Implemented security controls">
-            <div className="control"><small>SEC-01</small><div><b>Authentication</b><span>JWT access tokens with strictly rotated, hashed refresh tokens.</span></div></div>
-            <div className="control"><small>SEC-02</small><div><b>Authorization</b><span>Role checks and admin-only control routes throughout the API.</span></div></div>
-            <div className="control"><small>SEC-03</small><div><b>Login protection</b><span>Rate limits and lockout guards on authentication endpoints.</span></div></div>
-            <div className="control"><small>SEC-04</small><div><b>Rate limiting</b><span>API and auth buckets with bypass protection.</span></div></div>
-            <div className="control"><small>SEC-05</small><div><b>Tenant isolation</b><span>Tasks, files, knowledge and streams scoped to their owner.</span></div></div>
-            <div className="control"><small>SEC-06</small><div><b>SSRF protection</b><span>Redirect and host checks on every fetched URL.</span></div></div>
-            <div className="control"><small>SEC-07</small><div><b>Upload validation</b><span>Size, extension and storage-key checks on file handling.</span></div></div>
-            <div className="control"><small>SEC-08</small><div><b>Audit logging</b><span>Admin and system actions recorded for review.</span></div></div>
-            <div className="control"><small>SEC-09</small><div><b>Webhook verification</b><span>Signature-verified webhooks with idempotent handling.</span></div></div>
-            <div className="control"><small>SEC-10</small><div><b>Prompt-injection defense</b><span>Untrusted content is never blindly trusted by agents.</span></div></div>
-            <div className="control"><small>SEC-11</small><div><b>Credit atomicity</b><span>Reservation, consumption and refund are atomic and idempotent.</span></div></div>
-            <div className="control"><small>SEC-12</small><div><b>Crash recovery</b><span>Interrupted runs are recovered or refunded — never double-charged.</span></div></div>
-          </div>
-          <p className="trust-note" data-reveal>EVERY CONTROL ABOVE IS IMPLEMENTED AND COVERED BY THE PLATFORM TEST SUITE.</p>
-        </div>
-
-        {/* ================= 11 · Pricing ================= */}
-        <section className="pricing aw-container landing-section" id="pricing" data-chapter="11">
-          <div className="section-head" data-reveal>
-            <p className="eyebrow" data-kicker="Pricing"></p>
-            <h2>Honest task accounting.</h2>
-            <p className="sub">
-              Six tiers in USD — from a free 30-day trial with 5 tasks to company-grade
-              Enterprise — plus custom manual credit purchase at $10 / $50 / $90 / $200 / $400.
-              A task is consumed only when work succeeds; failures are refunded automatically.
-              If a provider is not configured, the platform says so instead of pretending.
-            </p>
-          </div>
-          <div className="price-grid" id="landing-plans" data-reveal></div>
-          <div className="pricing-rules" data-reveal aria-label="Billing rules">
-            <div><small>01</small><span>30-day trial with 5 free tasks. No card required.</span></div>
-            <div><small>02</small><span>A free task is consumed only when work succeeds.</span></div>
-            <div><small>03</small><span>Failed, unverified or cancelled tasks are refunded automatically.</span></div>
-            <div><small>04</small><span>Paid resources are clearly disclosed; Pro required where applicable.</span></div>
-            <div><small>05</small><span>Every credit movement is visible in your billing ledger.</span></div><div><small>06</small><span>AKBARAL! shows task status, progress, and verification in real time.</span></div>
           </div>
         </section>
 
-        {/* ================= Final CTA ================= */}
-        <div className="aw-container landing-section cta-final" id="cta">
-          <div data-reveal>
-            <h2>State the goal.<br /><span>The system does the rest.</span></h2>
-            <p>One intelligence. Every solution. Start building with AKBARAL! today.</p>
-            <div className="hero-actions">
-              <button className="btn btn-primary btn-lg magnetic" data-route="register" data-magnet><span className="btn-label">
-
-                Start Building</span><span className="btn-ico" aria-hidden="true">→</span></button>
-              <button className="btn btn-ghost btn-lg" id="explore-agents-final" data-route="agents">Explore Agent World</button>
+        {/* ---------- Platform: the pipeline, on one screen ---------- */}
+        <section className="akx-band" id="platform">
+          <div className="aw-container">
+            <div className="akx-band-head">
+              <div>
+                <p className="eyebrow" data-kicker="Platform"></p>
+                <h2>Every request runs through one orchestration core.</h2>
+              </div>
+              <p>
+                No black box: the workflow, the agents chosen for each step, the tools they called and
+                the verification that gated the result are all persisted and visible to you.
+              </p>
+            </div>
+            <div className="akx-pipe" id="pipeline-rail">
+              {PIPELINE_STAGES.map(([n, label, note]) => (
+                <div className="akx-stage" key={n}>
+                  <span className="n">{n}</span>
+                  <b>{label}</b>
+                  <p>{note}</p>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
+        </section>
+
+        {/* ---------- Capabilities ---------- */}
+        <section className="akx-band">
+          <div className="aw-container">
+            <div className="akx-band-head">
+              <div>
+                <p className="eyebrow" data-kicker="Capabilities"></p>
+                <h2>Thousands of specialists, one interface.</h2>
+              </div>
+              <p>Work is routed by discipline — you keep one conversation and one workspace.</p>
+            </div>
+            <div className="akx-cards">
+              {CAPABILITIES.map(([icon, title, note]) => (
+                <article className="akx-card" key={title}>
+                  <span className="akx-ico" aria-hidden="true">{icon}</span>
+                  <h3>{title}</h3>
+                  <p>{note}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ---------- Agent world ---------- */}
+        <section className="akx-band" id="agents">
+          <div className="aw-container">
+            <div className="akx-band-head">
+              <div>
+                <p className="eyebrow" data-kicker="Agent world"></p>
+                <h2>A registry of 4,001 distinct agent contracts.</h2>
+              </div>
+              <p>
+                Each contract declares its discipline, its model requirements and the tools it may use —
+                which is how a step is matched to real capability instead of a guess.
+              </p>
+            </div>
+            <div className="akx-cloud" aria-label="Disciplines in the agent registry">
+              {DISCIPLINES.map((d) => <span key={d}>{d}</span>)}
+            </div>
+            <div className="akx-actions">
+              <button className="btn btn-outline" id="explore-agents">Open the agent world</button>
+            </div>
+          </div>
+        </section>
+
+        {/* ---------- Security & honesty ---------- */}
+        <section className="akx-band" id="security">
+          <div className="aw-container">
+            <div className="akx-band-head">
+              <div>
+                <p className="eyebrow" data-kicker="Security & honesty"></p>
+                <h2>Built so the product can be trusted by default.</h2>
+              </div>
+              <p>Every guarantee below is implemented and covered by the platform test suite.</p>
+            </div>
+            <div className="akx-trust">
+              {TRUST_POINTS.map(([title, note]) => (
+                <div className="akx-trust-item" key={title}>
+                  <i aria-hidden="true">⬡</i>
+                  <div><b>{title}</b><small>{note}</small></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ---------- Pricing: rendered from the live billing API ---------- */}
+        <section className="akx-band" id="pricing">
+          <div className="aw-container">
+            <div className="akx-band-head">
+              <div>
+                <p className="eyebrow" data-kicker="Pricing"></p>
+                <h2>Honest task accounting.</h2>
+              </div>
+              <p>
+                Plans in USD, from a free trial to company-grade capacity, plus manual credit purchase.
+                A task is consumed only when work succeeds; failures are refunded automatically.
+              </p>
+            </div>
+            <div className="akx-plans" id="landing-plans"></div>
+          </div>
+        </section>
+
+        {/* ---------- Final CTA ---------- */}
+        <section className="akx-band">
+          <div className="aw-container">
+            <div className="akx-cta">
+              <p className="akx-kicker">Start now</p>
+              <h2 className="akx-title" style={{ fontSize: 'clamp(1.6rem, 3vw, 2.4rem)' }}>
+                Give MASTER your first goal.
+              </h2>
+              <p className="akx-lede" style={{ margin: '14px auto 0', maxWidth: '52ch' }}>
+                Five free tasks on the trial, real execution, verified results — no card required.
+              </p>
+              <div className="akx-actions" style={{ justifyContent: 'center' }}>
+                <button className="btn btn-primary btn-lg" data-route="register">Start building</button>
+                <button className="btn btn-outline btn-lg" data-route="login">Sign in</button>
+              </div>
+            </div>
+          </div>
+        </section>
       </section>
 
       {/* ================= AUTH ================= */}

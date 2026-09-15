@@ -2,33 +2,34 @@
    Do not edit by hand: run `node design-system/build.mjs`.
    The website (public/tokens.css) and the future iOS app
    (design-system/ios/AKBARALTheme.swift) share this exact source.
-   Identity: obsidian foundation · indigo/violet atmosphere ·
+   Identity: obsidian foundation · emerald atmosphere ·
    glass surfaces · cinematic lighting. Dark is the platform identity. */
 
 export const palette = {
-  bgDeep: '#050506',
-  bg: '#08080a',
-  bg2: '#0d0d10',
-  bg3: '#121217',
-  surfaceStrong: '#15151b',
-  glassFill: 'rgba(13,13,18,0.62)',
-  line: 'rgba(226,226,234,0.08)',
-  lineStrong: 'rgba(226,226,234,0.16)',
-  lineFaint: 'rgba(226,226,234,0.045)',
-  lineAccent: 'rgba(151,144,242,0.3)',
-  text: '#f0f0f2',
-  text2: '#b8b8c0',
-  textDim: '#87878f',
-  textFaint: '#5d5d66',
-  accent: '#9790f2',
-  accent2: '#7378e8',
-  accentSoft: 'rgba(151,144,242,0.10)',
-  indigoSoft: 'rgba(115,120,232,0.12)',
-  onAccent: '#0b0b0d',
-  ivory: '#ececee',
-  onIvory: '#0b0b0d',
-  telemetry: '#8fc7de',
-  telemetrySoft: 'rgba(143,199,222,0.11)',
+  bgDeep: '#040705',
+  bg: '#070a08',
+  bg2: '#0b100d',
+  bg3: '#101713',
+  surfaceStrong: '#16201a',
+  glassFill: 'rgba(8,14,11,0.62)',
+  line: 'rgba(226,240,232,0.08)',
+  lineStrong: 'rgba(226,240,232,0.16)',
+  lineFaint: 'rgba(226,240,232,0.045)',
+  lineAccent: 'rgba(47,131,72,0.42)',
+  text: '#eef4f0',
+  text2: '#b6c3bb',
+  textDim: '#86958c',
+  textFaint: '#5c6a62',
+  accent: '#2f8348',
+  accent2: '#246a3a',
+  accentBright: '#57b378',
+  accentSoft: 'rgba(47,131,72,0.14)',
+  indigoSoft: 'rgba(47,131,72,0.16)',
+  onAccent: '#f4fbf6',
+  ivory: '#eef4f0',
+  onIvory: '#08120c',
+  telemetry: '#6fb59a',
+  telemetrySoft: 'rgba(111,181,154,0.12)',
   green: '#7fc9a4',
   greenSoft: 'rgba(127,201,164,0.12)',
   red: '#e58a97',
@@ -37,8 +38,8 @@ export const palette = {
   amberSoft: 'rgba(220,178,106,0.12)',
   blue: '#9db1e0',
   blueSoft: 'rgba(157,177,224,0.12)',
-  surface: '#101014',
-  surface2: '#17171d',
+  surface: '#0d1310',
+  surface2: '#121a16',
 };
 
 export const radius = {
@@ -78,19 +79,19 @@ export const shadow = {
 
 /** Glass material system — 3 levels of depth (web parity). */
 export const glass = {
-  1: { fill: 'rgba(226,226,234,0.045)', border: 'rgba(226,226,234,0.09)', highlight: 'rgba(255,255,255,0.055)' },
-  2: { fill: 'rgba(16,16,22,0.52)', border: 'rgba(226,226,234,0.12)', highlight: 'rgba(255,255,255,0.07)' },
-  3: { fill: 'rgba(20,20,28,0.72)', border: 'rgba(226,226,234,0.16)', highlight: 'rgba(255,255,255,0.085)' },
+  1: { fill: 'rgba(226,240,232,0.045)', border: 'rgba(226,240,232,0.10)', highlight: 'rgba(255,255,255,0.06)' },
+  2: { fill: 'rgba(10,16,13,0.55)', border: 'rgba(226,240,232,0.13)', highlight: 'rgba(255,255,255,0.075)' },
+  3: { fill: 'rgba(14,22,18,0.74)', border: 'rgba(226,240,232,0.17)', highlight: 'rgba(255,255,255,0.09)' },
 } as const;
 
 /** Atmosphere fields for the layered screen background. */
 export const atmosphere = {
-  base: '#060608',
-  baseHigh: '#0b0b10',
-  fieldIndigo: 'rgba(115,120,232,0.11)',
-  fieldViolet: 'rgba(151,144,242,0.08)',
-  fieldCyan: 'rgba(143,199,222,0.05)',
-  fieldCharcoal: 'rgba(60,60,74,0.20)',
+  base: '#050806',
+  baseHigh: '#0a100c',
+  fieldIndigo: 'rgba(47,131,72,0.13)',
+  fieldViolet: 'rgba(87,179,120,0.09)',
+  fieldCyan: 'rgba(111,181,154,0.05)',
+  fieldCharcoal: 'rgba(30,42,36,0.30)',
 } as const;
 
 /** Shared typographic scale (see tokens.json typography.scale). */

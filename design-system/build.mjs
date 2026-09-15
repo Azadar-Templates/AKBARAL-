@@ -28,7 +28,7 @@ const cssColorMap = [
   ['glassFill', '--glass'],
   ['line', '--line'], ['lineStrong', '--line-strong'], ['lineFaint', '--line-faint'], ['lineAccent', '--line-accent'],
   ['text', '--text'], ['text2', '--text-2'], ['textDim', '--text-dim'], ['textFaint', '--text-faint'],
-  ['accent', '--accent'], ['accent2', '--accent-2'], ['accentSoft', '--accent-soft'], ['indigoSoft', '--indigo-soft'],
+  ['accent', '--accent'], ['accent2', '--accent-2'], ['accentBright', '--accent-bright'], ['accentSoft', '--accent-soft'], ['indigoSoft', '--indigo-soft'],
   ['onAccent', '--on-accent'], ['ivory', '--ivory'], ['onIvory', '--on-ivory'],
   ['telemetry', '--telemetry'], ['telemetrySoft', '--telemetry-soft'],
   ['green', '--green'], ['greenSoft', '--green-soft'],
@@ -47,7 +47,7 @@ const tokensCss = `/* ==========================================================
    AKBARAL! Design System — generated design tokens (web).
    DO NOT EDIT BY HAND — edit design-system/tokens.json and run:
      node design-system/build.mjs
-   Identity: obsidian foundation · indigo/violet atmosphere ·
+   Identity: obsidian foundation · emerald atmosphere ·
    glass surfaces · cinematic lighting · technical elegance.
    Version ${tokens.version}
    ============================================================ */
@@ -145,7 +145,7 @@ const themeTs = `/* AKBARAL! design tokens — GENERATED from design-system/toke
    Do not edit by hand: run \`node design-system/build.mjs\`.
    The website (public/tokens.css) and the future iOS app
    (design-system/ios/AKBARALTheme.swift) share this exact source.
-   Identity: obsidian foundation · indigo/violet atmosphere ·
+   Identity: obsidian foundation · emerald atmosphere ·
    glass surfaces · cinematic lighting. Dark is the platform identity. */
 
 export const palette = {
