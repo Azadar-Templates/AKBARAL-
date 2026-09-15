@@ -634,7 +634,7 @@ export default function Home() {
                 <a href="#/settings">Account settings</a>
                 <a href="#/dashboard">Dashboard</a>
                 <a href="#/billing">Billing &amp; credits</a>
-                <a href="#/workspace">Projects &amp; knowledge</a>
+                <a href="#/projects">Projects &amp; knowledge</a>
                 <a href="#/factory">Agent Factory</a>
                 <a href="/owner" id="ak-owner-link" hidden>Owner console →</a>
                 <a href="#/economy" id="ak-mission-link" hidden>Private console →</a>

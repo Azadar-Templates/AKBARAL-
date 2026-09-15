@@ -66,12 +66,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Grotesk+Mono:wght@400;500&display=swap"
         />
-        <link rel="stylesheet" href="/tokens.css?v=akbaral-lux-10" />
-        <link rel="stylesheet" href="/styles.css?v=akbaral-lux-10" />
+        <link rel="stylesheet" href="/tokens.css?v=akbaral-lux-11" />
+        <link rel="stylesheet" href="/styles.css?v=akbaral-lux-11" />
       </head>
       <body>
         {children}
-        <Script src="/app.js?v=akbaral-lux-10" strategy="afterInteractive" />
+        <Script src="/app.js?v=akbaral-lux-11" strategy="afterInteractive" />
       </body>
     </html>
   );

@@ -1523,7 +1523,11 @@
     // An explicit hash always wins (so `/workspace#/` still reaches the
     // landing page and `#/login` renders the sign-in screen); the clean path
     // decides only when the visitor landed without a hash.
-    const view = hash.length > 0 ? hashView : (path === '/workspace' ? 'master' : '');
+    // `#/workspace` IS the compact application shell (ChatGPT/Arena model) —
+    // the legacy Projects & knowledge screen moved to `#/projects`, so every
+    // "Workspace" entry point in the product reaches the new UI.
+    const rawView = hash.length > 0 ? hashView : (path === '/workspace' ? 'master' : '');
+    const view = rawView === 'workspace' ? 'master' : rawView;
     state.view = view;
     if (['login', 'register'].includes(view)) {
       showScreen('auth');
@@ -1548,6 +1552,12 @@
         } catch {
           // A stale/revoked token should not hide the premium landing. It is
           // cleared by the normal login/logout flow when the user acts.
+        }
+        // Signed in? The product IS the compact application shell — send them
+        // straight to it instead of the marketing page (ChatGPT-shaped entry).
+        if (state.user) {
+          location.hash = '#/workspace';
+          return;
         }
       }
       showScreen('landing');
@@ -1578,7 +1588,7 @@
     if (view === 'agents') { showScreen('agents'); await loadAgentWorld(); return; }
     if (view === 'factory') { showScreen('factory'); await loadFactory(); return; }
     if (view === 'marketplace') { showScreen('marketplace'); await loadMarketplace(); return; }
-    if (view === 'workspace') { showScreen('workspace'); await loadWorkspace(); return; }
+    if (view === 'projects') { showScreen('workspace'); await loadWorkspace(); return; }
     if (view === 'automations') { showScreen('automations'); await loadAutomations(); return; }
     const schedMatch = view.match(/^automations\/([A-Za-z0-9_-]+)$/);
     if (schedMatch) { showScreen('automations'); await loadAutomations(schedMatch[1]); return; }
@@ -2817,7 +2827,7 @@
     root.innerHTML = `
       <div class="pc-row"><span>Project</span><b>${esc(project.name)}</b></div>
       <div class="pc-row"><span>Status</span><b>${esc(String(project.status || 'active'))}</b></div>
-      <a class="btn btn-outline btn-sm" href="#/workspace">Open workspace ↗</a>`;
+      <a class="btn btn-outline btn-sm" href="#/projects">Open projects ↗</a>`;
   }
 
   /**
@@ -3773,7 +3783,7 @@
       case 'library': shellRailOpen('library'); break;
       case 'media': shellRailOpen('media'); break;
       case 'files': shellRailOpen('files'); break;
-      case 'projects': location.hash = '#/workspace'; break;
+      case 'projects': location.hash = '#/projects'; break;
       case 'agents': location.hash = '#/agents'; break;
       case 'automations': location.hash = '#/automations'; break;
       case 'billing': location.hash = '#/billing'; break;

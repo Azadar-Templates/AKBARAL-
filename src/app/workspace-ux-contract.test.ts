@@ -234,7 +234,8 @@ describe('AKBARAL! application shell — source contract (web)', () => {
     assert.match(appJs, /case 'library': shellRailOpen\('library'\);/, 'Library opens the real task library');
     assert.match(appJs, /case 'media': shellRailOpen\('media'\);/, 'Images & media opens the real media panel');
     assert.match(appJs, /case 'files': shellRailOpen\('files'\);/, 'Files opens the real project file panel');
-    assert.match(appJs, /case 'projects': location\.hash = '#\/workspace';/, 'Projects opens the real projects screen');
+    assert.match(appJs, /case 'projects': location\.hash = '#\/projects';/, 'Projects opens the real projects screen');
+    assert.match(appJs, /if \(view === 'projects'\) \{ showScreen\('workspace'\); await loadWorkspace\(\); return; \}/, 'the projects route really mounts the projects surface');
     assert.match(appJs, /case 'agents': location\.hash = '#\/agents';/, 'Agents opens the real registry screen');
     assert.match(appJs, /case 'billing': location\.hash = '#\/billing';/, 'Billing opens the real billing screen');
     // The real data sources behind the panels.
