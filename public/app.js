@@ -1697,69 +1697,70 @@
     location.hash = '#/master';
   }
 
+  /* Official provider marks, inlined: the sign-in surface never waits on a
+     third-party asset host, and a button can never render without its logo.
+     GitHub and Apple use currentColor — their marks are monochrome and read
+     correctly on the dark glass (brand #181717 would not). */
+  const OAUTH_LOGOS = {
+    google: '<svg viewBox="0 0 48 48" focusable="false" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>',
+    github: '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>',
+    microsoft: '<svg viewBox="0 0 23 23" focusable="false" aria-hidden="true"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>',
+    facebook: '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path fill="#1877F2" d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073"/></svg>',
+    apple: '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>',
+  };
+
+  /**
+   * Provider sign-in buttons (2026-09-16).
+   *
+   * The sign-in surface is a production front door, so it shows polished
+   * controls with official marks and never leaks configuration state: no
+   * "setup needed" badges, no environment variable names, no debug notices.
+   *
+   *   · a provider the server reports as configured is a REAL control — the
+   *     press navigates to /api/auth/oauth/<key>/authorize, which 302s to the
+   *     provider's own consent screen;
+   *   · a provider that is not configured renders in a subtle unavailable state
+   *     (aria-disabled + disabled, muted glass, its real logo, and a plain
+   *     "not available" tooltip). Nothing is faked and nothing is explained in
+   *     internal terms to a visitor;
+   *   · the exact credentials an operator must set live in the owner-only
+   *     console (renderProviderSetupDiagnostics), which is where an operator
+   *     looks — never on the public screen.
+   */
   async function renderOAuthButtons() {
     const wrap = $('#auth-oauth');
     const target = $('#auth-oauth-buttons');
     const note = $('#auth-oauth-note');
     if (!wrap || !target) return;
+    if (note) { note.textContent = ''; note.hidden = true; note.removeAttribute('data-kind'); }
     try {
       const body = await api('/api/auth/oauth/providers');
       const providers = body.providers || [];
       if (!providers.length) { wrap.hidden = true; return; }
       wrap.hidden = false;
-      const configured = providers.filter((p) => p.configured);
-      const requiredFor = (p) => (p.required || []).join(' + ') || 'provider credentials';
-      const missing = providers.filter((p) => !p.configured && (p.required || []).length).map((p) => `${p.label}: ${requiredFor(p)}`);
-      const setNote = (text, kind) => {
-        if (!note) return;
-        note.textContent = text;
-        note.dataset.kind = kind;
-      };
-      setNote(
-        configured.length
-          ? `Provider sign-in is handled entirely server-side.${missing.length ? ` Not enabled here — ${missing.join(' · ')}` : ''}`
-          : `No provider sign-in is configured on this deployment yet — set ${missing.join(' · ') || 'provider credentials'} server-side to enable these buttons.`,
-        configured.length ? 'info' : 'setup',
-      );
-      // Configured providers are real sign-in controls: pressing one navigates
-      // to the server-side authorize endpoint, which 302s to the provider
-      // consent screen. Unconfigured ones stay PRESSABLE and answer with the
-      // exact credentials an operator must set plus the redirect URI to
-      // register — a disabled control that ignores taps (and hides its reason
-      // in a desktop-only tooltip) reads as a broken button, which is exactly
-      // how it was reported live on 2026-09-15.
       target.innerHTML = providers.map((p) => {
-        const needsSetup = !p.configured;
-        return `<button type="button" class="btn btn-outline btn-sm oauth-btn${needsSetup ? ' oauth-btn-setup' : ''}" data-oauth-provider="${esc(p.key)}" data-oauth-configured="${p.configured ? '1' : '0'}"${needsSetup ? ' aria-disabled="true"' : ''}>Continue with ${esc(p.label)}${needsSetup ? ' <span class="oauth-needs">setup needed</span>' : ''}</button>`;
+        const available = Boolean(p.configured);
+        const mark = OAUTH_LOGOS[p.key] || '';
+        const button = `<button type="button" class="oauth-btn${available ? '' : ' is-unavailable'}" data-oauth-provider="${esc(p.key)}" data-oauth-configured="${available ? '1' : '0'}"${available ? '' : ' disabled aria-disabled="true"'}>`
+          + `<span class="oauth-mark" aria-hidden="true">${mark}</span>`
+          + `<span class="oauth-label">Continue with ${esc(p.label)}</span></button>`;
+        if (available) return button;
+        // Browsers do not show a tooltip on a disabled control, so the wrapper
+        // carries the plain-language reason.
+        return `<span class="oauth-slot" title="${esc(p.label)} sign-in isn’t available on this deployment yet">${button}</span>`;
       }).join('');
       target.querySelectorAll('button[data-oauth-provider]').forEach((button) => {
         button.addEventListener('click', () => {
-          const key = button.dataset.oauthProvider;
-          const provider = providers.find((p) => p.key === key) || { key, label: key };
-          if (button.dataset.oauthConfigured === '1') {
-            window.location.href = `/api/auth/oauth/${encodeURIComponent(key)}/authorize`;
-            return;
-          }
-          const redirectUri = `${location.origin}/api/auth/oauth/${key}/callback`;
-          setNote(
-            `${provider.label} sign-in is not enabled on this deployment yet. An operator sets ${requiredFor(provider)} server-side and registers ${redirectUri} as the OAuth redirect URI in the ${provider.label} app — then this button starts the real ${provider.label} consent flow. Email and password sign-in works right now.`,
-            'setup',
-          );
-          if (note) {
-            note.setAttribute('role', 'status');
-            note.setAttribute('tabindex', '-1');
-            if (typeof note.focus === 'function') note.focus({ preventScroll: true });
-            // Not every DOM implementation has scrollIntoView (jsdom, embedded
-            // webviews): the explanation is the point, the scroll is a nicety.
-            if (typeof note.scrollIntoView === 'function') note.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          }
-          toast(`${provider.label} sign-in needs server-side credentials: ${requiredFor(provider)}`, 'info');
+          if (button.dataset.oauthConfigured !== '1') return;
+          window.location.href = `/api/auth/oauth/${encodeURIComponent(button.dataset.oauthProvider)}/authorize`;
         });
       });
-    } catch { wrap.hidden = true; }
+    } catch {
+      wrap.hidden = true;
+    }
   }
 
-  async function loadConnectedAccounts() {
+async function loadConnectedAccounts() {
     const list = $('#settings-oauth-list');
     const actions = $('#settings-oauth-actions');
     if (!list || !actions) return;
@@ -1859,6 +1860,9 @@
 
   function showScreen(name) {
     $$('.screen').forEach((screen) => { screen.hidden = true; });
+    // The pre-login surface is the product's front door, not a marketing page:
+    // retire the public header and footer so nothing sits around the way in.
+    document.body.classList.toggle('is-auth', name === 'auth');
     const map = {
       landing: 'screen-landing',
       auth: 'screen-auth',
@@ -3483,6 +3487,7 @@
       api('/api/economy/dashboard'),
       api('/api/economy/report/today'),
     ]);
+    void renderProviderSetupDiagnostics();
     const t = dashboard.treasury || {};
     const money = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`;
     $('#economy-stats').innerHTML = [
@@ -3655,6 +3660,28 @@
 
     const feedback = await api('/api/admin/feedback').catch(() => ({ feedback: [] }));
     renderAdminFeedback(feedback.feedback || []);
+
+    await renderProviderSetupDiagnostics();
+  }
+
+  /**
+   * Owner-only provider diagnostics. This is the surface that answers "why is
+   * that button unavailable, and what exactly do I set?" — the public sign-in
+   * screen deliberately never says any of it.
+   */
+  async function renderProviderSetupDiagnostics() {
+    const roots = $$('[data-provider-setup]');
+    if (!roots.length) return;
+    let providers = [];
+    try { providers = (await api('/api/auth/oauth/providers')).providers || []; } catch { providers = []; }
+    const html = providers.length ? providers.map((p) => {
+      const required = (p.required || []).join(' + ') || 'provider credentials';
+      const redirectUri = `${location.origin}/api/auth/oauth/${encodeURIComponent(p.key)}/callback`;
+      return p.configured
+        ? `<div class="list-item"><div><b>${esc(p.label)}</b><small>Enabled — the sign-in button starts the real consent flow.</small><small>Redirect URI to register: ${esc(redirectUri)}</small></div>${badge('enabled')}</div>`
+        : `<div class="list-item"><div><b>${esc(p.label)}</b><small>Not configured — set ${esc(required)} server-side.</small><small>Then register ${esc(redirectUri)} as the OAuth redirect URI in the ${esc(p.label)} app.</small></div>${badge('not configured')}</div>`;
+    }).join('') : '<div class="list-item"><small>No providers are registered on this deployment.</small></div>';
+    roots.forEach((root) => { root.innerHTML = html; });
   }
 
   function renderAdminFeedback(items) {

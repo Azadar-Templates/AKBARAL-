@@ -286,22 +286,48 @@ export default function Home() {
       </section>
 
       {/* ================= AUTH ================= */}
-      <section className="screen auth-screen" id="screen-auth" hidden><div className="aw-container"><div className="auth-card"><div className="auth-core" aria-hidden="true"><span className="auth-core-ring"></span><span className="auth-core-dot">
+      <section className="screen auth-screen" id="screen-auth" hidden>
+        {/* Deliberately one surface and nothing else. app.js sets `body.is-auth`,
+            which retires the public marketing chrome while this screen is up, so
+            the only things on screen are the AKBARAL! identity and the way in. */}
+        <div className="auth-atmo" aria-hidden="true"></div>
+        <div className="aw-container auth-wrap">
+          <div className="auth-card">
+            <header className="auth-brand">
+              <span className="auth-mark" aria-hidden="true">A!</span>
+              <span className="auth-wordmark">AKBARAL!</span>
+              <p className="auth-tagline">One intelligence. Every solution.</p>
+            </header>
 
-          A!</span></div><h2 id="auth-title">
-          Sign in</h2><p className="auth-sub" id="auth-sub">
-          Access your agent operations center.</p><form id="auth-form" autoComplete="on"><label>
+            <h1 className="auth-title" id="auth-title">Sign in</h1>
+            <p className="auth-sub" id="auth-sub">Access your agent operations center.</p>
 
+            <form id="auth-form" autoComplete="on">
+              <label className="auth-field">
+                <span>Email</span>
+                <input type="email" id="auth-email" autoComplete="email" placeholder="you@company.com" required />
+              </label>
+              <label className="auth-field">
+                <span>Password</span>
+                <input type="password" id="auth-password" minLength={8} autoComplete="current-password" placeholder="Your password" required />
+              </label>
+              <label className="auth-field" id="auth-name-wrap" hidden>
+                <span>Name</span>
+                <input type="text" id="auth-name" autoComplete="name" placeholder="Your name" />
+              </label>
+              <button className="btn btn-primary btn-block btn-lg" id="auth-submit" type="submit">Sign in</button>
+            </form>
 
-            Email<input type="email" id="auth-email" autoComplete="email" required /></label><label>
-            Password<input type="password" id="auth-password" minLength={ 8 } autoComplete="current-password" required /></label><label id="auth-name-wrap" hidden>
-            Name<input type="text" id="auth-name" autoComplete="name" /></label><button className="btn btn-primary btn-block" id="auth-submit" type="submit">
-            Continue</button></form><div className="auth-oauth" id="auth-oauth" hidden><div className="auth-oauth-divider"><span>or continue with</span></div><div className="auth-oauth-buttons" id="auth-oauth-buttons"></div><p className="auth-oauth-note" id="auth-oauth-note"></p></div><p className="auth-switch" id="auth-switch">
+            <div className="auth-oauth" id="auth-oauth" hidden>
+              <div className="auth-oauth-divider"><span>or continue with</span></div>
+              <div className="auth-oauth-buttons" id="auth-oauth-buttons"></div>
+              <p className="auth-oauth-note" id="auth-oauth-note" hidden></p>
+            </div>
 
-
-          No account? <a href="#/register">Create one</a></p><p className="auth-trust" role="note"><span aria-hidden="true">
-
-          ⬡</span> Secured with rotated session tokens and honest provider checks.</p></div></div></section>
+            <p className="auth-switch" id="auth-switch">No account? <a href="#/register">Create one</a></p>
+          </div>
+        </div>
+      </section>
 
       {/* ================= Dashboard ================= */}
       <section className="screen screen-default" id="screen-dashboard" hidden><div className="aw-container"><div className="page-head"><div><p className="eyebrow" data-kicker="Overview"></p><h1>
@@ -741,7 +767,7 @@ export default function Home() {
 
         Platform (registry · tasks · cost mix)</h3><div id="economy-platform" className="econ-list"></div></div><div className="panel"><h3>
 
-        Private economy activity today</h3><div id="economy-today" className="econ-today"></div></div><div className="panel"><h3>
+        Private economy activity today</h3><div id="economy-today" className="econ-today"></div></div><div className="panel"><h3>Provider sign-in</h3><p className="sub">Owner diagnostics. The sign-in screen never shows any of this: visitors get polished provider buttons, and a provider this deployment cannot serve simply appears unavailable.</p><div id="owner-provider-setup" data-provider-setup="1" className="list"></div></div><div className="panel"><h3>
         Mission chat (owner ↔ agent)</h3><div className="econ-controls"><input id="mission-agent" placeholder="agent slug, e.g. web-research-001" aria-label="Agent slug" /><input id="mission-input" placeholder="Message the agent — ask about status, earnings, costs, capabilities" aria-label="Mission message" /><button className="btn btn-primary" id="mission-send" type="button">
 
         Send</button></div><div id="mission-history" className="econ-list"></div><p className="sub" id="mission-note"></p></div><div className="panel"><h3>
@@ -768,7 +794,7 @@ export default function Home() {
             Set / enable</button></form><div id="flag-list" className="list"></div></div><div className="panel"><h3>
 
 
-          Feedback &amp; reports queue</h3><div id="admin-feedback" className="list"></div></div><div className="panel danger-panel"><h3>
+          Feedback &amp; reports queue</h3><div id="admin-feedback" className="list"></div></div><div className="panel"><h3>Provider sign-in</h3><p className="sub">Owner-only diagnostics. The sign-in screen never shows this — visitors get polished provider buttons, and an unconfigured provider simply appears unavailable.</p><div id="admin-provider-setup" data-provider-setup="1" className="list"></div></div><div className="panel danger-panel"><h3>
 
 
           Emergency controls</h3><p className="sub">

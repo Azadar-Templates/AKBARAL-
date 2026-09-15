@@ -939,26 +939,6 @@ form label + label { margin-top: 14px; }
 }
 
 /* ===== OAuth provider sign-in (auth card) ===== */
-.auth-oauth { margin-top: 18px; }
-.auth-oauth-divider { display: flex; align-items: center; gap: 12px; color: var(--text-dim, #8293b7); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
-.auth-oauth-divider::before, .auth-oauth-divider::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: 0.25; }
-.auth-oauth-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.auth-oauth-buttons .btn { flex: 1 1 140px; justify-content: center; text-decoration: none; }
-.auth-oauth-note { margin-top: 10px; color: var(--text-faint, #5a6a8f); font-size: 11px; }
-/* Provider buttons that are not configured yet stay PRESSABLE — they answer
-   with the exact credentials an operator must set. A dead `disabled` control
-   that ignores taps reads as a broken button (reported live 2026-09-15). */
-.auth-oauth-buttons .oauth-btn[aria-disabled="true"] { opacity: 0.78; border-style: dashed; }
-.auth-oauth-buttons .oauth-btn .oauth-needs {
-  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
-  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
-  background: var(--accent-soft); color: var(--text-dim);
-}
-.auth-oauth-note[data-kind="setup"] {
-  padding: 9px 11px; border-radius: var(--radius, 12px); line-height: 1.55;
-  border: 1px solid var(--amber-soft); background: var(--amber-soft); color: var(--text);
-}
-.auth-oauth-note[data-kind="setup"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 #settings-oauth-list .list-item { flex-wrap: wrap; }
 #settings-oauth-list .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 
@@ -3411,42 +3391,92 @@ label { color: var(--text-2); font-size: 0.86rem; }
    survive in a stale document they must not create the old scroll. */
 .landing-screen .section-rail, .landing-screen .chapter-watermark { display: none; }
 
-/* ---------- 7 · Auth ---------- */
+/* ---------- 7 · Pre-login surface ---------- */
 
-.auth-screen { display: grid; place-items: center; min-height: calc(100dvh - var(--header-h) - 40px); padding: 40px 0 60px; }
+/* While the sign-in surface is up, the page IS the front door: the public
+   marketing chrome retires and nothing sits around the way in. Scoped to
+   body.is-auth, so a no-JS visitor still gets the full page. */
+body.is-auth .site-header,
+body.is-auth .site-footer { display: none; }
+body.is-auth .auth-screen { min-height: 100dvh; padding: 0; }
+
+.auth-screen { position: relative; display: grid; place-items: center; overflow: hidden; }
+.auth-atmo {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(62% 58% at 50% -6%, rgba(47,131,72,0.24) 0%, rgba(47,131,72,0.05) 46%, transparent 74%),
+    radial-gradient(46% 44% at 88% 104%, rgba(87,179,120,0.10) 0%, transparent 72%);
+}
+.auth-wrap { position: relative; z-index: 1; display: grid; place-items: center; padding: 34px 22px; }
 .auth-card {
-  width: min(440px, 100%); padding: 30px; border-radius: 22px;
-  background: linear-gradient(180deg, rgba(16,24,20,0.82), rgba(8,13,10,0.86));
-  box-shadow: var(--shadow);
+  width: min(438px, 100%);
+  padding: 34px 32px 30px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(16,24,20,0.88), rgba(8,13,10,0.93));
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.07);
+  -webkit-backdrop-filter: blur(26px) saturate(130%);
+  backdrop-filter: blur(26px) saturate(130%);
 }
-.auth-card h2 { margin: 0 0 6px; font-size: 1.5rem; }
-.auth-sub { margin: 0 0 20px; color: var(--text-dim); font-size: 0.9rem; }
+.auth-brand { display: grid; justify-items: center; gap: 9px; margin-bottom: 24px; }
+.auth-mark {
+  display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px;
+  border: 1px solid rgba(87,179,120,0.48);
+  background: radial-gradient(120% 120% at 30% 0%, #379354 0%, #2f8348 52%, #1b4e2d 100%);
+  color: var(--on-accent); font-family: var(--font-display); font-size: 1.04rem; font-weight: 700;
+  box-shadow: 0 14px 34px rgba(36,106,58,0.42), inset 0 1px 0 rgba(255,255,255,0.18);
+}
+.auth-wordmark { font-family: var(--font-display); font-size: 1.16rem; font-weight: 600; letter-spacing: 0.07em; }
+.auth-tagline { margin: 0; color: var(--text-dim); font-size: 0.8rem; }
+.auth-title { margin: 0; text-align: center; font-size: 1.6rem; }
+.auth-sub { margin: 8px 0 24px; text-align: center; color: var(--text-dim); font-size: 0.88rem; }
 #auth-form { display: grid; gap: 14px; }
-.auth-core { display: grid; place-items: center; margin-bottom: 18px; }
-.auth-core-dot {
-  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px;
-  border: 1px solid rgba(87,179,120,0.45); background: linear-gradient(160deg, #2f8348, #1b4e2d);
-  color: var(--on-accent); font-family: var(--font-display); font-weight: 700;
-  box-shadow: 0 12px 30px rgba(36,106,58,0.4);
+.auth-field { display: grid; gap: 7px; }
+.auth-field > span {
+  font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-dim);
 }
-.auth-oauth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 14px; color: var(--text-faint); font-size: 0.76rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.auth-field input { height: 46px; }
+#auth-submit { margin-top: 4px; }
+
+/* Provider sign-in: official marks, one column, consistent geometry. */
+.auth-oauth { margin-top: 24px; }
+.auth-oauth-divider {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+  color: var(--text-faint); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase;
+}
 .auth-oauth-divider::before, .auth-oauth-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .auth-oauth-buttons { display: grid; gap: 9px; }
+.oauth-slot { display: block; }
 .oauth-btn {
-  display: flex; align-items: center; gap: 11px; width: 100%; height: 46px; padding: 0 14px;
-  border-radius: 11px; border: 1px solid var(--line); background: rgba(226,240,232,0.04);
-  color: var(--text); font-size: 0.9rem; font-weight: 500; cursor: pointer; text-align: left;
-  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  display: flex; align-items: center; gap: 12px; width: 100%; height: 48px; padding: 0 16px;
+  border-radius: 12px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(226,240,232,0.055), rgba(226,240,232,0.02));
+  color: var(--text); font-size: 0.9rem; font-weight: 500; text-align: left; cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
-.oauth-btn:hover { background: rgba(226,240,232,0.08); border-color: var(--line-strong); transform: translateY(-1px); }
-.oauth-btn[aria-disabled="true"] { border-style: dashed; border-color: rgba(47,131,72,0.4); }
-.oauth-btn .oauth-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: rgba(226,240,232,0.07); font-size: 0.8rem; }
-.oauth-btn em { margin-left: auto; font-style: normal; font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-bright); }
-.auth-oauth-note { margin: 12px 0 0; font-size: 0.82rem; color: var(--text-dim); }
-.auth-oauth-note[data-kind="setup"] { border-left: 2px solid var(--accent); padding-left: 11px; color: var(--text-2); }
-.auth-switch { margin: 16px 0 0; font-size: 0.86rem; color: var(--text-dim); }
-.auth-switch a, a { color: var(--accent-bright); }
-.auth-trust { margin: 14px 0 0; font-size: 0.76rem; color: var(--text-faint); }
+.oauth-btn .oauth-mark { display: grid; place-items: center; width: 20px; height: 20px; flex: none; }
+.oauth-btn .oauth-mark svg { display: block; width: 20px; height: 20px; }
+.oauth-btn .oauth-label { flex: 1; }
+.oauth-btn:hover {
+  transform: translateY(-1px); border-color: rgba(87,179,120,0.5);
+  background: linear-gradient(180deg, rgba(226,240,232,0.09), rgba(226,240,232,0.035));
+  box-shadow: 0 8px 22px rgba(0,0,0,0.28);
+}
+.oauth-btn:focus-visible { outline: none; border-color: rgba(87,179,120,0.6); box-shadow: var(--focus-ring); }
+/* Not configured on this deployment: still a designed control, plainly
+   unavailable, never explained to a visitor in internal terms. */
+.oauth-btn.is-unavailable {
+  border-color: var(--line-faint); background: rgba(226,240,232,0.024);
+  color: var(--text-2); cursor: not-allowed;
+}
+.oauth-btn.is-unavailable .oauth-mark { opacity: 0.55; filter: saturate(0.7); }
+.oauth-btn.is-unavailable .oauth-label { color: var(--text-dim); }
+.oauth-btn.is-unavailable:hover { transform: none; box-shadow: none; border-color: var(--line-faint); background: rgba(226,240,232,0.024); }
+.auth-oauth-note { margin: 12px 0 0; font-size: 0.78rem; color: var(--text-faint); }
+.auth-oauth-note:focus-visible { outline: none; border-radius: 8px; box-shadow: var(--focus-ring); }
+.auth-switch { margin: 22px 0 0; text-align: center; font-size: 0.86rem; color: var(--text-dim); }
 
 /* ---------- 8 · Application shell ---------- */
 
@@ -3728,3 +3758,19 @@ label { color: var(--text-2); font-size: 0.86rem; }
 .legal-body { color: var(--text-2); }
 .modal-card { border: 1px solid var(--line); border-radius: 20px; background: rgba(10,16,13,0.9); }
 .ads-consent { border: 1px solid var(--line); border-radius: 16px; background: rgba(8,14,11,0.9); }
+
+/* ---------- Pre-login surface · small screens ---------- */
+
+@media (max-width: 560px) {
+  .auth-wrap { padding: 24px 16px; }
+  .auth-card { padding: 28px 20px 24px; border-radius: 20px; }
+  .auth-title { font-size: 1.45rem; }
+  .oauth-btn { height: 46px; font-size: 0.875rem; }
+  .auth-oauth-divider { font-size: 0.64rem; }
+}
+
+@media (max-width: 380px) {
+  .auth-mark { width: 46px; height: 46px; border-radius: 14px; }
+  .auth-wordmark { font-size: 1.05rem; }
+  .oauth-btn { padding: 0 13px; gap: 10px; }
+}

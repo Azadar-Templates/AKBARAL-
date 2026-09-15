@@ -284,7 +284,10 @@ describe('AKBARAL! application shell — source contract (web)', () => {
 
   it('the AKBARAL! identity heads the sidebar and the conversation rail', () => {
     const brand = page.indexOf('brand-mark ak-brand-mark');
-    const tagline = page.indexOf('One Intelligence. Every Solution.');
+    const sideHead = page.indexOf('ak-side-head');
+    // Scoped to the sidebar: the tagline is brand identity and legitimately
+    // appears on the pre-login surface too, which must not satisfy this check.
+    const tagline = page.indexOf('One Intelligence. Every Solution.', sideHead);
     const chatBrand = page.indexOf('brand-mark chat-brand');
     const log = page.indexOf('id="master-chat-log"');
     const composer = page.indexOf('id="master-form"');

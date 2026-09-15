@@ -136,24 +136,38 @@ const turns = () => doc.querySelectorAll('.chat-msg').length;
 check('bundle boots and mounts the application shell', Boolean(q('#master-shell')), `hash=${window.location.hash}`);
 check('signed-out /workspace shows the real sign-in card', q('#screen-auth')?.hidden === false);
 check('the OAuth area lists the real providers', Boolean(q('#auth-oauth')));
-await tick(800);
-const oauthLabels = [...doc.querySelectorAll('#auth-oauth-buttons .oauth-btn')].map((button) => button.textContent.trim());
-check('Google / GitHub / Facebook buttons are mounted', oauthLabels.length >= 5, oauthLabels.join(' | ').slice(0, 170));
+await tick(900);
 const oauthButtons = [...doc.querySelectorAll('#auth-oauth-buttons .oauth-btn')];
-check('every provider button is pressable — no dead control', oauthButtons.length > 0 && oauthButtons.every((button) => button.disabled === false), `${oauthButtons.length} buttons`);
-const setupButton = oauthButtons.find((button) => button.dataset.oauthConfigured === '0' && /Facebook/.test(button.textContent));
-check('a provider that is not configured says so on its face', Boolean(setupButton) && setupButton.getAttribute('aria-disabled') === 'true' && /setup needed/i.test(setupButton.textContent));
-if (setupButton) {
-  const before = q('#auth-oauth-note').textContent;
-  setupButton.click();
-  await tick(250);
-  const note = q('#auth-oauth-note');
-  check('pressing it names the exact credential an operator must set',
-    note.textContent.includes('FACEBOOK_CLIENT_ID') && note.textContent.includes('/api/auth/oauth/facebook/callback'),
-    note.textContent.slice(0, 150));
-  check('the honest answer is styled as a setup notice, not an error page', note.dataset.kind === 'setup' && window.location.href.startsWith(`${WEB}/workspace`));
-  check('the press never faked a login or navigation', q('#screen-auth')?.hidden === false && before !== note.textContent);
-}
+const oauthLabels = oauthButtons.map((button) => button.textContent.trim());
+check('every provider is mounted as one polished control', oauthButtons.length >= 5, `${oauthButtons.length} controls :: ${oauthLabels.join(' | ').slice(0, 150)}`);
+check('each control carries its official provider mark',
+  oauthButtons.length > 0 && oauthButtons.every((button) => Boolean(button.querySelector('.oauth-mark svg'))),
+  `${oauthButtons.filter((b) => b.querySelector('.oauth-mark svg')).length}/${oauthButtons.length} marks`);
+check('labels read "Continue with <Provider>" with no badge or suffix',
+  oauthButtons.length > 0 && oauthButtons.every((button) => /^Continue with [A-Za-z]+$/.test(button.textContent.trim())),
+  oauthLabels.join(' | ').slice(0, 150));
+check('the pre-login screen exposes no configuration or debug text',
+  !/setup needed|CLIENT_ID|CLIENT_SECRET|not configured|provider credentials|GOOGLE_|MICROSOFT_/i.test(q('#screen-auth').textContent),
+  'no credential or setup strings on the public screen');
+check('the route retires the public marketing chrome before sign-in', doc.body.classList.contains('is-auth'));
+const cssVersion = (html.match(/\/assets\/styles\.css\?v=([\w.-]+)/) || [])[1];
+const servedCss = await (await fetch(`${WEB}/assets/styles.css?v=${cssVersion}`)).text();
+check('and that chrome is genuinely hidden, not merely restyled',
+  /body\.is-auth \.site-header,\s*body\.is-auth \.site-footer \{ display: none; \}/.test(servedCss));
+check('the pre-login surface fills the viewport while it is up',
+  /body\.is-auth \.auth-screen \{ min-height: 100dvh/.test(servedCss));
+const unavailable = oauthButtons.filter((button) => button.dataset.oauthConfigured === '0');
+const configured = oauthButtons.filter((button) => button.dataset.oauthConfigured === '1');
+check('a provider this deployment cannot serve is plainly unavailable, never a silent dead button',
+  unavailable.length === 0 || unavailable.every((button) => button.disabled === true && button.getAttribute('aria-disabled') === 'true' && button.classList.contains('is-unavailable')),
+  `${unavailable.length} unavailable of ${oauthButtons.length}`);
+check('a configured provider is pressable and wired to the real authorize endpoint',
+  configured.length === 0 || configured.every((button) => button.disabled === false && button.getAttribute('aria-disabled') === null),
+  `${configured.length} configured`);
+const urlBefore = window.location.href;
+if (unavailable.length) { unavailable[0].click(); await tick(150); }
+check('pressing an unavailable provider never invents a session or a navigation',
+  q('#screen-auth')?.hidden === false && window.location.href === urlBefore && !JSON.stringify(window.localStorage).includes('access'));
 // The server-side half of every provider button: the authorize endpoint is real
 // and refuses honestly (503 provider_not_configured) instead of pretending.
 const unconfigured = await fetch(`${API}/api/auth/oauth/facebook/authorize`, { redirect: 'manual' });
