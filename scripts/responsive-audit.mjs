@@ -108,13 +108,19 @@ function specificity(sel) {
 }
 
 /* ---------- length resolution (px / rem / em / vw / clamp / min / max / calc) ---------- */
+const propsCache = new Map();
+const winCache = new WeakMap();
+function resetCaches() { propsCache.clear(); }
 function customProps(width) {
+  const cached = propsCache.get(width);
+  if (cached) return cached;
   const map = new Map();
   for (const rule of rules) {
     if (!mediaMatches(rule.media, width)) continue;
     if (!rule.selectors.some((sel) => /^(:root|html|body|\*)$/.test(sel.trim()))) continue;
     for (const decl of rule.decls) if (decl.prop.startsWith('--')) map.set(decl.prop, decl.value.trim());
   }
+  propsCache.set(width, map);
   return map;
 }
 function substituteVars(value, vars, depth = 0) {
@@ -165,6 +171,86 @@ function resolveLength(value, el, width, parentFont) {
   return unit(v);
 }
 
+
+/* ---------- colour: contrast is part of legibility ---------- */
+const NAMED = { transparent: { r: 0, g: 0, b: 0, a: 0 }, white: { r: 255, g: 255, b: 255, a: 1 }, black: { r: 0, g: 0, b: 0, a: 1 } };
+function parseColor(value, vars) {
+  if (!value) return null;
+  let v = substituteVars(value, vars).trim().toLowerCase();
+  if (NAMED[v]) return { ...NAMED[v] };
+  let m = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
+  if (m) {
+    const h = m[1].length === 3 ? m[1].split('').map((c) => c + c).join('') : m[1];
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 };
+  }
+  m = v.match(/^rgba?\(([^)]+)\)$/);
+  if (m) {
+    const parts = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    if (parts.length >= 3 && parts.slice(0, 3).every((n) => Number.isFinite(n))) {
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+    }
+  }
+  m = v.match(/^color-mix\(in srgb,\s*([\s\S]+?)\s+(\d+(?:\.\d+)?)%,?\s*([\s\S]+?)\s+(\d+(?:\.\d+)?)%?\)$/);
+  if (m) {
+    const c1 = parseColor(m[1], vars), c2 = parseColor(m[3], vars);
+    if (c1 && c2) {
+      const p1 = Number(m[2]) / 100, p2 = Number(m[4]) / 100;
+      const total = p1 + p2 || 1;
+      return {
+        r: (c1.r * p1 + c2.r * p2) / total,
+        g: (c1.g * p1 + c2.g * p2) / total,
+        b: (c1.b * p1 + c2.b * p2) / total,
+        a: (c1.a * p1 + c2.a * p2) / total,
+      };
+    }
+  }
+  return null;
+}
+const over = (fg, bg) => ({
+  r: fg.r * fg.a + bg.r * (1 - fg.a),
+  g: fg.g * fg.a + bg.g * (1 - fg.a),
+  b: fg.b * fg.a + bg.b * (1 - fg.a),
+  a: 1,
+});
+function luminance(c) {
+  const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+}
+function contrast(fg, bg) {
+  const a = luminance(fg), b = luminance(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+/** The painted backdrop behind an element: ancestor fills + gradients over the obsidian field. */
+function backdrop(el, width, vars) {
+  const chain = [];
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) chain.push(n);
+  chain.reverse();
+  let base = parseColor('#070a08', vars) || { r: 7, g: 10, b: 8, a: 1 };
+  for (const node of chain) {
+    const fill = winning(node, 'background-color', rules, width);
+    const fillColor = fill ? parseColor(fill.value, vars) : null;
+    if (fillColor && fillColor.a > 0.001) base = over(fillColor, base);
+    const paint = winning(node, 'background', rules, width) || winning(node, 'background-image', rules, width);
+    if (!paint) continue;
+    const stops = [...substituteVars(paint.value, vars).matchAll(/(#[0-9a-fA-F]{3,6}\b|rgba?\([^)]*\)|\btransparent\b)/g)]
+      .map((mm) => parseColor(mm[1], vars)).filter(Boolean);
+    if (!stops.length) continue;
+    const avg = stops.reduce((acc, c) => ({ r: acc.r + c.r / stops.length, g: acc.g + c.g / stops.length, b: acc.b + c.b / stops.length, a: acc.a + c.a / stops.length }), { r: 0, g: 0, b: 0, a: 0 });
+    if (avg.a > 0.001) base = over(avg, base);
+  }
+  return base;
+}
+
+function winning(el, prop, rules, width) {
+  let perEl = winCache.get(el);
+  if (!perEl) { perEl = new Map(); winCache.set(el, perEl); }
+  const key = `${prop}@${width}`;
+  if (perEl.has(key)) return perEl.get(key);
+  const result = winningRaw(el, prop, rules, width);
+  perEl.set(key, result);
+  return result;
+}
+
 /* ---------- shorthand expansion we care about ---------- */
 const LONGHANDS = {
   'padding-left': ['padding', 'padding-inline'],
@@ -172,7 +258,7 @@ const LONGHANDS = {
   'padding-top': ['padding', 'padding-block'],
   'padding-bottom': ['padding', 'padding-block'],
 };
-function winning(el, prop, rules, width) {
+function winningRaw(el, prop, rules, width) {
   let best = null;
   const consider = (decl, spec, ord, sel) => {
     const key = [decl.important ? 1 : 0, spec, ord];
@@ -276,6 +362,7 @@ for (const width of WIDTHS) {
   };
   const sideOf = () => 'left';
 
+  resetCaches();
   // Screens plus every dialog surface: a modal has to survive a 320px phone too.
   const surfaces = [...doc.querySelectorAll('section.screen'), ...doc.querySelectorAll('[role="dialog"]')];
 if (SELFTEST) {
@@ -388,7 +475,51 @@ if (SELFTEST) {
       }
     }
 
-    // 6 · grid tracks without a min() guard
+    // 6 · text nobody can read: WCAG AA contrast against the real painted backdrop
+    const directText = [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim().length > 0);
+    if (directText) {
+      const varsHere = customProps(width);
+      const fg = parseColor(winning(el, 'color', rules, width)?.value, varsHere);
+      if (fg && fg.a > 0.05) {
+        const back = backdrop(el, width, varsHere);
+        const size = fontOf(el) ?? BASE;
+        const weight = winning(el, 'font-weight', rules, width)?.value || '';
+        const large = size >= 24 || (size >= 18.66 && /^(bold|[6-9]00)$/.test(weight.trim()));
+        const need = large ? 3 : 4.5;
+        const got = contrast(over(fg, back), back);
+        if (got < need - 0.02) {
+          findings.push({
+            width, kind: 'contrast', el: path(el),
+            detail: `${got.toFixed(2)}:1 needs ${need}:1 at ${size.toFixed(1)}px`,
+            rule: winning(el, 'color', rules, width)?.sel,
+          });
+        }
+      }
+    }
+
+    // 7 · a control anchored outside the box it is anchored to
+    const position = winning(el, 'position', rules, width)?.value?.trim();
+    if (position === 'absolute' || position === 'fixed') {
+      const box = position === 'fixed' ? null : el.offsetParent || el.parentElement;
+      const left = resolveLength(winning(el, 'left', rules, width)?.value, el, width);
+      const right = resolveLength(winning(el, 'right', rules, width)?.value, el, width);
+      const w = resolveLength(winning(el, 'width', rules, width)?.value, el, width)
+        ?? resolveLength(winning(el, 'min-width', rules, width)?.value, el, width);
+      const containerW = position === 'fixed' ? width : (box ? contentWidth(box) : width);
+      const interactive = el.matches('button, a, input, select, textarea, [role]') || directText;
+      if (interactive && w !== null && containerW !== null) {
+        const rightEdge = left !== null ? left + w : right !== null ? containerW - right : null;
+        if (rightEdge !== null && rightEdge > containerW + 2) {
+          findings.push({ width, kind: 'anchored-overflow', el: path(el), detail: `${Math.round(rightEdge)}px of ${Math.round(containerW)}px box`, rule: (winning(el, 'left', rules, width) || winning(el, 'right', rules, width))?.sel });
+        }
+        const leftEdge = right !== null ? containerW - right - w : left;
+        if (leftEdge !== null && leftEdge < -2) {
+          findings.push({ width, kind: 'anchored-overflow', el: path(el), detail: `starts ${Math.round(leftEdge)}px outside its ${Math.round(containerW)}px box`, rule: winning(el, 'right', rules, width)?.sel });
+        }
+      }
+    }
+
+    // 8 · grid tracks without a min() guard
     const gtc = winning(el, 'grid-template-columns', rules, width);
     if (gtc && /repeat\(auto-(fit|fill),\s*minmax\((?!min\()/.test(gtc.value)) {
       findings.push({ width, kind: 'grid-guard', el: path(el), detail: gtc.value.slice(0, 60), rule: gtc.sel });

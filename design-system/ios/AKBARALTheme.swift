@@ -54,9 +54,9 @@ enum AKBARALTheme {
     /// Secondary text.
     static let text2 = hex("#b6c3bb")
     /// Muted text / labels.
-    static let textDim = hex("#86958c")
+    static let textDim = hex("#93a29a")
     /// Faint text / metadata.
-    static let textFaint = hex("#5c6a62")
+    static let textFaint = hex("#7c8d84")
 
     // MARK: - Atmosphere (the only accent family)
 

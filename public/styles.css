@@ -332,7 +332,7 @@ form label + label { margin-top: 14px; }
 .master-console-panel { padding: 0; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
 .master-console-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid var(--line-faint); background: var(--bg-2); }
 .master-console-head b { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-2); font-weight: 500; }
-.console-state { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); }
+.console-state { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
 .console-state[data-state="running"] { color: var(--telemetry); }
 .console-state[data-state="error"] { color: var(--red); }
 .console-state[data-state="ok"] { color: var(--green); }
@@ -2579,7 +2579,7 @@ body.is-workspace .skip-link { display: none; }
 }
 .chat-drawer-btn:hover { color: var(--text); border-color: var(--line-strong); }
 .chat-drawer-btn[aria-expanded="true"] { color: var(--accent-2); border-color: var(--line-accent); background: var(--accent-soft); }
-.console-state { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint); }
+.console-state { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
 .console-state[data-state="running"] { color: var(--telemetry); }
 .console-state[data-state="error"] { color: var(--red); }
 .console-state[data-state="ok"] { color: var(--green); }
@@ -2787,7 +2787,7 @@ body.is-workspace .master-console { max-height: none; }
   width: 54px; height: 54px; border-radius: 15px;
   border: 1px solid var(--line-accent);
   background: var(--accent-soft);
-  color: var(--accent-2);
+  color: var(--accent-bright);
   font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em;
 }
 .ws-preview-empty b { color: var(--text); font-size: 1rem; font-weight: 600; }
@@ -3621,7 +3621,7 @@ body.is-auth .auth-screen { min-height: 100dvh; padding: 0; overflow-x: hidden; 
   padding: 10px 12px; border: 1px solid var(--line-faint); border-radius: 12px;
   background: rgba(226,240,232,0.03);
 }
-.ws-export-label, .ws-export-id { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
+.ws-export-label, .ws-export-id { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
 .ws-export-id { color: var(--accent-bright); }
 .file-item { align-items: flex-start; }
 .file-item [data-artifact-kind] {
@@ -3917,3 +3917,20 @@ pre, code, .chat-msg .cm-body, .console-line, .result-block { overflow-wrap: any
 .attach-item b, .attach-item strong, .attach-item span:not(.attach-chip) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
+
+/* ---------- 12.10 · one keyboard language for every control ---------- */
+:where(a, button, input, select, textarea, summary, [role="tab"], [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-bright) 80%, transparent);
+  outline-offset: 2px;
+}
+:where(input, select, textarea):focus-visible { outline-offset: 1px; }
+:where(.ak-nav-item, .ak-rail-tabs button, .master-pane-switch button):focus-visible { outline-offset: -3px; }
+.auth-field input:focus-visible, .chat-composer textarea:focus-visible { outline-offset: 1px; }
+
+/* Disabled controls must read as disabled — never as a live control that ignored you. */
+:where(button, input, select, textarea, [role="button"])[disabled],
+:where(button, [role="button"])[aria-disabled="true"] { cursor: not-allowed; }
+:where(button, input, select, textarea)[disabled] { opacity: 0.62; }
+.btn[aria-disabled="true"], .btn:disabled { opacity: 0.6; box-shadow: none; transform: none; }
+.oauth-btn[aria-disabled="true"] { opacity: 1; }
+:where(button, [role="button"]):disabled:active, :where(button, [role="button"])[aria-disabled="true"]:active { transform: none; }

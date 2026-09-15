@@ -1361,18 +1361,39 @@
         body: '<h3>Support &amp; feedback</h3><p>The fastest channel is the built-in report system: Settings → “Feedback &amp; reports” (Report a bug / Request a feature / Report abuse). Reports go to a real admin review queue and are answered from there.</p><h3>Platform status</h3><p>Live service status is always visible at <a href="/api/health" target="_blank" rel="noopener">/api/health</a> and <a href="/api/ready" target="_blank" rel="noopener">/api/ready</a>.</p>',
       },
     };
-    const open = (key) => {
+    // Opening and closing a dialog must not strand keyboard users: focus moves
+    // into the sheet, is kept inside it while it is open, and returns to the
+    // control that opened it on every close path (button, backdrop, Escape).
+    let returnFocusTo = null;
+    const open = (key, opener) => {
       const item = content[key];
       if (!item) return;
       $('#legal-title').textContent = item.title;
       $('#legal-body').innerHTML = item.body;
+      returnFocusTo = opener || document.activeElement;
       modal.hidden = false;
       close.focus();
     };
-    $$('[data-legal]').forEach((btn) => btn.addEventListener('click', () => open(btn.dataset.legal)));
-    close.addEventListener('click', () => { modal.hidden = true; });
-    modal.addEventListener('click', (event) => { if (event.target === modal) modal.hidden = true; });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') modal.hidden = true; });
+    const closeModal = () => {
+      if (modal.hidden) return;
+      modal.hidden = true;
+      if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus();
+      returnFocusTo = null;
+    };
+    $$('[data-legal]').forEach((btn) => btn.addEventListener('click', () => open(btn.dataset.legal, btn)));
+    close.addEventListener('click', closeModal);
+    modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { closeModal(); return; }
+      if (event.key !== 'Tab' || modal.hidden) return;
+      const focusable = [...modal.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => el.offsetParent !== null || el === close);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
   }
 
   function bindFooter() {

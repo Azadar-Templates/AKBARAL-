@@ -114,11 +114,63 @@ describe('final UI/UX pass contract', () => {
     assert.match(css, /\.akx-band \{ padding: 34px 0; \}/, 'marketing bands stop dominating small screens');
   });
 
+  it('every tier of text clears WCAG AA on the obsidian field', () => {
+    const lin = (v: number) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = (hex: string) => {
+      const h = hex.replace('#', '');
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    };
+    const ratio = (a: string, b: string) => {
+      const [x, y] = [luminance(a), luminance(b)];
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    };
+    const dark = tokensJson.color.dark as Record<string, string>;
+    for (const field of ['#040705', '#070a08', '#0b100d', '#101713']) {
+      for (const tier of ['text', 'textDim', 'textFaint', 'accentBright']) {
+        const value = String(dark[tier]);
+        assert.match(value, /^#[0-9a-f]{6}$/, `${tier} is a real hex colour`);
+        assert.ok(
+          ratio(value, field) >= 4.5,
+          `${tier} (${value}) must clear 4.5:1 on ${field} — got ${ratio(value, field).toFixed(2)}:1`,
+        );
+      }
+    }
+    // The darker brand tone is for fills, never for glyphs on the field.
+    assert.match(css, /\.ws-preview-empty \.wpe-mark \{[^}]*color: var\(--accent-bright\)/, 'glyph marks use the readable accent');
+    assert.match(css, /\.console-state \{[^}]*color: var\(--text-dim\)/, 'chrome labels on raised glass use the dim tier');
+  });
+
+  it('keyboard and disabled states exist for every control family', () => {
+    const focusRules = css.match(/:focus-visible/g) ?? [];
+    assert.ok(focusRules.length >= 10, `expected a real focus layer, found ${focusRules.length} rules`);
+    assert.match(
+      css,
+      /:where\(a, button, input, select, textarea, summary, \[role="tab"\], \[role="button"\], \[tabindex\]:not\(\[tabindex="-1"\]\)\):focus-visible \{\s*outline: 2px solid color-mix\(in srgb, var\(--accent-bright\) 80%, transparent\);/,
+      'one emerald focus ring covers every control family',
+    );
+    assert.match(css, /\[disabled\] \{ opacity: 0\.62; \}/, 'disabled controls read as disabled');
+    assert.match(css, /\.btn:disabled \{ opacity: 0\.6; box-shadow: none; transform: none; \}/, 'disabled buttons lose their affordance');
+    assert.match(css, /\.oauth-btn\[aria-disabled="true"\] \{ opacity: 1; \}/, 'unavailable providers keep their honest, legible treatment');
+    assert.match(css, /\.chat-composer textarea:focus-visible/, 'the composer has a keyboard state');
+  });
+
+  it('dialogs behave like dialogs', () => {
+    assert.match(appJs, /let returnFocusTo = null;/, 'the opener is remembered');
+    assert.match(appJs, /if \(returnFocusTo && document\.contains\(returnFocusTo\)\) returnFocusTo\.focus\(\);/,
+      'focus returns to the opener on every close path');
+    assert.match(appJs, /if \(event\.key !== 'Tab' \|\| modal\.hidden\) return;/, 'focus is trapped while the dialog is open');
+    assert.match(appJs, /event\.shiftKey && document\.activeElement === first/, 'shift+tab wraps backwards');
+  });
+
   it('the responsive audit gate is part of the repository', () => {
     const auditPath = join(root, 'scripts', 'responsive-audit.mjs');
     assert.ok(existsSync(auditPath), 'responsive-audit.mjs exists');
     const audit = readFileSync(auditPath, 'utf8');
-    for (const kind of ['overflow', 'tiny-text', 'clipped', 'small-target', 'grid-guard']) {
+    for (const kind of ['overflow', 'tiny-text', 'clipped', 'small-target', 'grid-guard', 'contrast', 'anchored-overflow']) {
       assert.ok(audit.includes(`'${kind}'`), `the audit reports ${kind}`);
     }
     assert.match(audit, /AUDIT_BASE/, 'the audit can target a served build');
