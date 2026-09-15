@@ -12,7 +12,7 @@ import { createId } from './id';
  *     consumed_at) and expire; nothing trusts an unconsumed stale state.
  */
 
-export type OAuthProviderKey = 'google' | 'github' | 'microsoft' | 'apple';
+export type OAuthProviderKey = 'google' | 'github' | 'microsoft' | 'apple' | 'facebook';
 
 export interface OAuthIdentityRow {
   id: string;

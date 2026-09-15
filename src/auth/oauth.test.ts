@@ -46,6 +46,7 @@ interface FixtureState {
   github: FixtureProfile;
   microsoft: FixtureProfile;
   apple: FixtureProfile;
+  facebook: FixtureProfile;
   tokenFail: boolean;
   /** code_challenge observed from an authorize URL (PKCE verification). */
   challenges: Map<string, string>;
@@ -57,6 +58,7 @@ const fixture: FixtureState = {
   github: { sub: '42', email: 'oauth-github@akbaral.test', emailVerified: true, name: 'GitHub User' },
   microsoft: { sub: 'ms-sub-333', email: 'oauth-ms@akbaral.test', emailVerified: true, name: 'MS User' },
   apple: { sub: 'apple-sub-444', email: 'oauth-apple@akbaral.test', emailVerified: true, name: 'Apple User' },
+  facebook: { sub: 'fb-sub-555', email: 'oauth-facebook@akbaral.test', emailVerified: true, name: 'Facebook User' },
   tokenFail: false,
   challenges: new Map(),
   issuedTokens: new Set(),
@@ -146,6 +148,18 @@ async function startFixture(): Promise<{ baseUrl: string; close(): Promise<void>
       if (provider === 'github' && url.pathname.endsWith('/user/emails')) {
         const p = fixture.github;
         json(200, [{ email: p.email, primary: true, verified: p.emailVerified }]);
+        return;
+      }
+      if (provider === 'facebook' && url.pathname.endsWith('/me')) {
+        const p = fixture.facebook;
+        // Graph API: `email_verified` is only present for apps that request
+        // it; when absent the API must treat the address as unverified.
+        json(200, {
+          id: p.sub,
+          name: p.name,
+          ...(p.email ? { email: p.email } : {}),
+          ...(p.emailVerified ? { email_verified: true } : {}),
+        });
         return;
       }
       if (provider === 'ms' && url.pathname.endsWith('/me')) {
@@ -249,7 +263,9 @@ const ENV_KEYS = [
   'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET',
   'MS_CLIENT_ID', 'MS_CLIENT_SECRET',
   'APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET', 'APPLE_KEY_ID', 'APPLE_TEAM_ID', 'APPLE_PRIVATE_KEY',
+  'FACEBOOK_CLIENT_ID', 'FACEBOOK_CLIENT_SECRET',
   'OAUTH_GOOGLE_BASE_URL', 'OAUTH_GITHUB_BASE_URL', 'OAUTH_MS_BASE_URL', 'OAUTH_APPLE_BASE_URL',
+  'OAUTH_FACEBOOK_BASE_URL',
 ];
 
 describe('OAuth providers & account linking', () => {
@@ -275,6 +291,9 @@ describe('OAuth providers & account linking', () => {
     process.env.APPLE_TEAM_ID = 'fixture-team';
     process.env.APPLE_PRIVATE_KEY = appleKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
     process.env.OAUTH_APPLE_BASE_URL = `${base}/apple`;
+    process.env.FACEBOOK_CLIENT_ID = 'test-facebook-client-id-akbaral';
+    process.env.FACEBOOK_CLIENT_SECRET = 'test-facebook-client-secret-akbaral';
+    process.env.OAUTH_FACEBOOK_BASE_URL = `${base}/facebook`;
 
     api = createApiServer();
     const { port } = await api.listen(0);
@@ -295,8 +314,10 @@ describe('OAuth providers & account linking', () => {
     assert.equal(response.status, 200);
     const body = (await response.json()) as { providers: Array<{ key: string; configured: boolean; required: string[] }> };
     const keys = body.providers.map((p) => p.key);
-    assert.deepEqual(keys.sort(), ['apple', 'github', 'google', 'microsoft']);
-    assert.ok(body.providers.every((p) => p.configured === true), 'all four configured against the fixture');
+    assert.deepEqual(keys.sort(), ['apple', 'facebook', 'github', 'google', 'microsoft']);
+    assert.ok(body.providers.every((p) => p.configured === true), 'all five configured against the fixture');
+    const facebook = body.providers.find((p) => p.key === 'facebook');
+    assert.ok(facebook?.required.includes('FACEBOOK_CLIENT_SECRET'), 'Facebook reports its required env names');
     const google = body.providers.find((p) => p.key === 'google');
     assert.ok(google?.required.includes('GOOGLE_CLIENT_SECRET'));
   });
@@ -383,6 +404,30 @@ describe('OAuth providers & account linking', () => {
     assert.equal(params.get('outcome'), 'registered');
     const identity = dbGet<{ user_id: string }>(`SELECT user_id FROM oauth_identities WHERE provider = 'apple' AND provider_account_id = ?`, [fixture.apple.sub]);
     assert.ok(identity);
+  });
+
+  it('completes the Facebook flow through the Graph API (versioned endpoints)', async () => {
+    const { state, code } = await startFlow('facebook');
+    const result = await completeCallback('facebook', code, state);
+    const params = fragmentParams(result.location);
+    assert.equal(params.get('status'), 'ok', `facebook flow must succeed (got ${params.get('error')})`);
+    assert.equal(params.get('outcome'), 'registered');
+    assert.ok(params.get('access_token'));
+    const identity = dbGet<{ user_id: string }>(`SELECT user_id FROM oauth_identities WHERE provider = 'facebook' AND provider_account_id = ?`, [fixture.facebook.sub]);
+    assert.ok(identity, 'the Facebook identity is stored');
+    const me = await fetch(`${baseUrl}/api/me`, { headers: { authorization: `Bearer ${params.get('access_token')}` } });
+    assert.equal(me.status, 200);
+  });
+
+  it('never auto-links Facebook emails (Graph email_verified is not an ownership proof)', async () => {
+    const user = await registerUser('fb-policy');
+    fixture.facebook = { sub: 'fb-takeover-1', email: user.email, emailVerified: false, name: 'FB Takeover' };
+    const { state, code } = await startFlow('facebook');
+    const result = await completeCallback('facebook', code, state);
+    const params = fragmentParams(result.location);
+    assert.equal(params.get('error'), 'oauth_link_blocked', 'an unverified Facebook email never auto-links');
+    const identity = db.get(`SELECT id FROM oauth_identities WHERE provider = 'facebook' AND provider_account_id = 'fb-takeover-1'`);
+    assert.equal(identity, undefined, 'no identity is created for the attempted takeover');
   });
 
   it('links a provider to the authenticated account (Settings flow)', async () => {

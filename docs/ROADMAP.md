@@ -830,7 +830,7 @@ fully server-side, for Google, GitHub, Microsoft and Apple:
   provider identity → one user) + `oauth_states` (hashed, single-use).
 - **Providers configured?** None in this deployment — all four are
   implemented for real but report `configured: false` until their
-  credentials exist (GOOGLE_CLIENT_ID/SECRET, GITHUB_*, MS_*, APPLE_* +
+  credentials exist (GOOGLE_CLIENT_ID/SECRET, GITHUB_*, FACEBOOK_*, MS_*, APPLE_* +
   key). The machinery is verified end-to-end by 18 integration tests
   against a spec-accurate local OAuth fixture (real ES256 keys, JWKS, PKCE
   verification, per-provider profile shapes) plus live E2E.

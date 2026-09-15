@@ -99,6 +99,22 @@ const PROVIDERS: Record<OAuthProviderKey, ProviderDefinition> = {
     clientSecretEnv: 'MS_CLIENT_SECRET',
     formPostCallback: false,
   },
+  facebook: {
+    key: 'facebook',
+    label: 'Facebook',
+    baseUrlEnv: 'OAUTH_FACEBOOK_BASE_URL',
+    defaultAuthorizeBase: 'https://www.facebook.com',
+    defaultTokenBase: 'https://graph.facebook.com',
+    // Graph API version pinned: Facebook requires an explicit version in
+    // both the dialog and the token/profile paths.
+    authorizePath: '/v19.0/dialog/oauth',
+    tokenPath: '/v19.0/oauth/access_token',
+    scopes: ['email', 'public_profile'],
+    supportsPkce: true,
+    clientIdEnv: 'FACEBOOK_CLIENT_ID',
+    clientSecretEnv: 'FACEBOOK_CLIENT_SECRET',
+    formPostCallback: false,
+  },
   apple: {
     key: 'apple',
     label: 'Apple',
@@ -166,6 +182,7 @@ function requiredEnv(key: OAuthProviderKey): string[] {
     github: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
     microsoft: ['MS_CLIENT_ID', 'MS_CLIENT_SECRET'],
     apple: [],
+    facebook: ['FACEBOOK_CLIENT_ID', 'FACEBOOK_CLIENT_SECRET'],
   };
   return map[key];
 }
@@ -367,6 +384,27 @@ async function fetchProfile(provider: ResolvedProvider, tokens: { accessToken: s
         email: (body.mail ?? body.userPrincipalName ?? '').toLowerCase() || null,
         emailVerified: false,
         name: body.displayName ?? null,
+      };
+    }
+    case 'facebook': {
+      const graphBase = process.env.OAUTH_FACEBOOK_BASE_URL ?? 'https://graph.facebook.com';
+      const response = await fetch(`${graphBase}/v19.0/me?fields=id,name,email,email_verified`, {
+        headers: { authorization: `Bearer ${tokens.accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new HttpError(502, 'Facebook profile fetch failed', 'oauth_profile_failed');
+      const body = (await response.json()) as { id?: string; name?: string; email?: string; email_verified?: boolean | string };
+      if (!body.id) throw new HttpError(502, 'Facebook profile missing id', 'oauth_profile_failed');
+      // Facebook returns email_verified only for apps that ask for it, and it
+      // is NOT an email-ownership assertion in the general case. Treat the
+      // address as UNVERIFIED unless the provider explicitly says otherwise so
+      // a provider email never auto-links to an existing password account.
+      // Explicit linking from Settings still works.
+      return {
+        providerAccountId: String(body.id),
+        email: body.email?.toLowerCase() ?? null,
+        emailVerified: body.email_verified === true || body.email_verified === 'true',
+        name: body.name ?? null,
       };
     }
     case 'apple': {

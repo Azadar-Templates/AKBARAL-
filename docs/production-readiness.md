@@ -80,7 +80,7 @@ Failure cases are explicitly covered: provider not configured, network failure, 
 | Google Places | `GOOGLE_API_KEY` |
 | Password reset / email verification / campaign delivery | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` |
 | Billing webhook verification | `BILLING_WEBHOOK_SECRET` |
-| OAuth logins | `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET`, `MS_CLIENT_ID/SECRET` |
+| OAuth logins | `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `FACEBOOK_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET`, `MS_CLIENT_ID/SECRET` |
 
 When a credential is missing, the platform returns an honest error (e.g. `provider_not_configured`, `email_delivery_not_configured`, `webhook_not_configured`) with the required env key. It never fabricates output.
 
