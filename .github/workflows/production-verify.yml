@@ -262,14 +262,58 @@ jobs:
             fail=1
           fi
           exit $fail
-      - name: Run the real journeys against the running container
+      - name: Give the container an owner account (as an operator would)
         if: steps.pull.outputs.available == 'true'
         run: |
+          OWNER_EMAIL="image-owner-$(date +%s)@akbaral.test"
+          OWNER_PASSWORD="image-owner-password-1"
+          curl -sS -m 15 -X POST http://127.0.0.1:4000/api/auth/register \
+            -H 'content-type: application/json' \
+            -d "{\"email\":\"$OWNER_EMAIL\",\"password\":\"$OWNER_PASSWORD\",\"name\":\"Image Owner\"}" > /dev/null
+          # The owner identity is a ROLE in the deployed database, so the
+          # operator's own promotion path is exercised, not a bypass: the same
+          # role check the product enforces then applies to this account.
+          docker exec -i -e PROMOTE_EMAIL="$OWNER_EMAIL" akbaral-e2e node - <<'NODE'
+          const { DatabaseSync } = require('node:sqlite');
+          const db = new DatabaseSync('/data/akbaral.db');
+          db.prepare('UPDATE users SET role = ? WHERE email = ?').run('owner', process.env.PROMOTE_EMAIL);
+          const row = db.prepare('SELECT role FROM users WHERE email = ?').get(process.env.PROMOTE_EMAIL);
+          console.log('owner role in the container:', row && row.role);
+          db.close();
+          NODE
+          {
+            echo "OWNER_EMAIL=$OWNER_EMAIL"
+            echo "OWNER_PASSWORD=$OWNER_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Run the real journeys against the running container
+        if: steps.pull.outputs.available == 'true'
+        env:
+          AUDIT_BASE: http://127.0.0.1:3000
+          API_BASE: http://127.0.0.1:4000
+        run: |
           npm ci
+          set +e
           echo "── refresh / deep links (browser-shaped, against the container) ──"
-          AUDIT_BASE=http://127.0.0.1:3000 node scripts/verify-refresh-deeplinks.mjs
+          node scripts/verify-refresh-deeplinks.mjs > /tmp/refresh.log 2>&1
+          refresh_status=$?
           echo "── customer journey (auth, MASTER, credits, RBAC) ──"
-          API_BASE=http://127.0.0.1:4000 node scripts/verify-user-journey.mjs
+          node scripts/verify-user-journey.mjs > /tmp/journey.log 2>&1
+          journey_status=$?
+          set -e
+          tail -4 /tmp/refresh.log; tail -4 /tmp/journey.log
+          # Job logs are not reachable from every environment, so a failure
+          # explains itself here as well.
+          if [ "$refresh_status" -ne 0 ]; then
+            grep '^FAIL' /tmp/refresh.log | head -8 | sed 's/::/:/g' | cut -c1-280 | \
+              while read -r line; do echo "::error title=refresh-deeplinks::$line"; done
+          fi
+          if [ "$journey_status" -ne 0 ]; then
+            grep '^FAIL' /tmp/journey.log | head -8 | sed 's/::/:/g' | cut -c1-280 | \
+              while read -r line; do echo "::error title=user-journey::$line"; done
+          fi
+          if [ "$refresh_status" -ne 0 ] || [ "$journey_status" -ne 0 ]; then
+            exit 1
+          fi
       - name: Container diagnostics on failure (logs are not always reachable)
         if: failure()
         run: |
