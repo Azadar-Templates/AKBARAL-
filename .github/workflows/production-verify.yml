@@ -261,6 +261,7 @@ jobs:
             echo "::error title=image-e2e::a paid plan was not refused without a payment provider (HTTP ${paid:-000})"
             fail=1
           fi
+          echo "::notice title=image-e2e product::plans=$plans agents=$agents paid_plan_refused=HTTP_${paid:-000}"
           exit $fail
       - name: Give the container an owner account (as an operator would)
         if: steps.pull.outputs.available == 'true'
@@ -311,6 +312,8 @@ jobs:
             grep '^FAIL' /tmp/journey.log | head -8 | sed 's/::/:/g' | cut -c1-280 | \
               while read -r line; do echo "::error title=user-journey::$line"; done
           fi
+          grep -E 'VERIFIED|JOURNEY —' /tmp/refresh.log /tmp/journey.log | sed 's/::/:/g' | cut -c1-160 | \
+            while read -r line; do echo "::notice title=image-e2e::$line"; done
           if [ "$refresh_status" -ne 0 ] || [ "$journey_status" -ne 0 ]; then
             exit 1
           fi
