@@ -609,15 +609,33 @@ describe('Milestone 8: trial/credits/billing', () => {
     const plansBody = (await plans.json()) as { plans: Array<{ key: string }> };
     assert.ok(plansBody.plans.length >= 1);
 
-    const target = plansBody.plans.find((plan) => plan.key !== 'free') ?? plansBody.plans[0];
+    // A PAID plan can never be self-assigned by a request body: without a
+    // configured payment provider the switch is refused with the missing
+    // credential, and no subscription is created.
+    const paid = plansBody.plans.find((plan) => plan.key !== 'free') ?? plansBody.plans[0];
+    const refused = await fetch(`${baseUrl}/api/billing/switch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({ plan_key: paid.key }),
+    });
+    assert.equal(refused.status, 402, 'a paid plan must not be granted for free');
+    const refusedBody = (await refused.json()) as { error?: { code?: string; requiredCredential?: string } };
+    assert.equal(refusedBody.error?.code, 'payment_required');
+    assert.match(String(refusedBody.error?.requiredCredential ?? ''), /STRIPE_SECRET_KEY/);
+
+    const afterRefusal = await fetch(`${baseUrl}/api/billing/account`, { headers: authHeaders(token) });
+    const afterRefusalBody = (await afterRefusal.json()) as { subscription: { plan_key: string } | null };
+    assert.notEqual(afterRefusalBody.subscription?.plan_key, paid.key, 'the refused plan was not activated');
+
+    // The only plan a caller may self-assign is the free one.
     const switchResponse = await fetch(`${baseUrl}/api/billing/switch`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders(token) },
-      body: JSON.stringify({ plan_key: target.key }),
+      body: JSON.stringify({ plan_key: 'free' }),
     });
     assert.equal(switchResponse.status, 202);
     const switchBody = (await switchResponse.json()) as { planKey: string; status: string };
-    assert.equal(switchBody.planKey, target.key);
+    assert.equal(switchBody.planKey, 'free');
 
     const account = await fetch(`${baseUrl}/api/billing/account`, { headers: authHeaders(token) });
     assert.equal(account.status, 200);
@@ -629,11 +647,42 @@ describe('Milestone 8: trial/credits/billing', () => {
       trial: { active: boolean };
     };
     assert.ok(accountBody.subscription);
-    assert.equal(accountBody.subscription?.plan_key, target.key);
+    assert.equal(accountBody.subscription?.plan_key, 'free');
     assert.ok(Array.isArray(accountBody.invoices) && accountBody.invoices.length >= 5);
     assert.ok(Array.isArray(accountBody.payments) && accountBody.payments.length >= 5);
     assert.ok(Array.isArray(accountBody.entitlements));
     assert.ok(typeof accountBody.trial?.active === 'boolean');
+  });
+
+  it('starts a real provider checkout for a paid plan instead of granting it', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_m8_fixture';
+    process.env.STRIPE_BASE_URL = paymentFixture.baseUrl;
+    try {
+      const plans = await fetch(`${baseUrl}/api/billing/plans`);
+      const plansBody = (await plans.json()) as { plans: Array<{ key: string; price_cents: number }> };
+      const paid = plansBody.plans.find((plan) => Number(plan.price_cents) > 0);
+      assert.ok(paid, 'a paid plan exists in the catalog');
+
+      const response = await fetch(`${baseUrl}/api/billing/switch`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders(token) },
+        body: JSON.stringify({ plan_key: paid!.key }),
+      });
+      assert.equal(response.status, 201);
+      const body = (await response.json()) as { status: string; provider: string; providerReference: string; checkoutUrl: string };
+      assert.equal(body.status, 'requires_external_payment');
+      assert.equal(body.provider, 'stripe');
+      assert.equal(body.providerReference, 'cs_test_m8fixture', 'real provider session id stored');
+      assert.equal(body.checkoutUrl, 'https://checkout.stripe.test/pay/cs_test_m8fixture');
+
+      // The plan is NOT active until the provider confirms payment.
+      const account = await fetch(`${baseUrl}/api/billing/account`, { headers: authHeaders(token) });
+      const accountBody = (await account.json()) as { subscription: { plan_key: string } | null };
+      assert.notEqual(accountBody.subscription?.plan_key, paid!.key);
+    } finally {
+      delete process.env.STRIPE_SECRET_KEY;
+      delete process.env.STRIPE_BASE_URL;
+    }
   });
 
   it('exposes an admin billing overview with real aggregates and denies non-admins', async () => {

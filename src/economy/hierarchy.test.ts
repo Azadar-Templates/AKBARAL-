@@ -60,6 +60,11 @@ const CREATED_SLUGS = [
 ];
 
 let policySnapshot: Record<string, unknown> | null = null;
+// Spawn rate is counted over a real 60-minute window in this shared database,
+// and earlier suites leave authorized decisions inside that window. Those rows
+// are held aside for the duration of this suite and put back afterwards, so the
+// rate test measures only the spawns it makes itself.
+let rateWindowRows: Array<Record<string, unknown>> = [];
 
 before(() => {
   applyMigrations(db);
@@ -67,6 +72,9 @@ before(() => {
   // tests below can change limits freely and leave everything exactly as found
   // (other suites assert against the real policy defaults).
   policySnapshot = { ...getEconomyPolicy() } as unknown as Record<string, unknown>;
+  const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  rateWindowRows = db.all<Record<string, unknown>>('SELECT * FROM economy_delegations WHERE decided_at >= ?', [windowStart]);
+  db.run('DELETE FROM economy_delegations WHERE decided_at >= ?', [windowStart]);
   for (const slug of TREE) {
     upsertAgentProfile({
       agentSlug: slug,
@@ -93,6 +101,13 @@ after(() => {
   // so nothing here can influence another suite's agent counts.
   if (policySnapshot) updateEconomyPolicy(policySnapshot as never);
   else resetPolicy();
+  for (const row of rateWindowRows) {
+    const columns = Object.keys(row);
+    db.run(
+      `INSERT OR IGNORE INTO economy_delegations (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+      columns.map((column) => row[column] as string | number | null),
+    );
+  }
   try {
     const placeholders = CREATED_SLUGS.map(() => '?').join(', ');
     db.run(`DELETE FROM economy_delegations WHERE parent_agent_slug IN (${placeholders}) OR child_agent_slug IN (${placeholders})`, [...CREATED_SLUGS, ...CREATED_SLUGS]);
@@ -115,7 +130,11 @@ function resetPolicy(patch: Record<string, number> = {}): void {
     freeze_spending: 0,
     freeze_withdrawals: 0,
     provider_access_revoked: 0,
-    max_daily_spend_cents: 500,
+    // The daily ceiling is spent from the shared ledger, and suites that ran
+    // before this file already posted today's costs. It is set high here so the
+    // gate under test is the one each test sets up itself (the parent budget);
+    // tests that need a constrained budget constrain the parent, not the day.
+    max_daily_spend_cents: 1_000_000,
     ...patch,
   });
 }

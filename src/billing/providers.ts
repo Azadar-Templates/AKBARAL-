@@ -49,6 +49,8 @@ export async function createStripeCheckout(input: {
   invoiceNumber: string;
   successUrl: string;
   cancelUrl: string;
+  /** Line-item label; defaults to the credit-pack wording. */
+  productName?: string;
 }): Promise<CheckoutSession> {
   const secret = process.env.STRIPE_SECRET_KEY;
   if (!secret) {
@@ -62,7 +64,7 @@ export async function createStripeCheckout(input: {
   params.set('line_items[0][quantity]', '1');
   params.set('line_items[0][price_data][currency]', 'usd');
   params.set('line_items[0][price_data][unit_amount]', String(input.amountCents));
-  params.set('line_items[0][price_data][product_data][name]', `${input.credits} AKBARAL credits`);
+  params.set('line_items[0][price_data][product_data][name]', input.productName ?? `${input.credits} AKBARAL credits`);
   try {
     const result = await externalHttpRequest('stripe', `${resolveBase('stripe', 'https://api.stripe.com')}/v1/checkout/sessions`, {
       method: 'POST',

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type ErrorRequestHandler } from 'express';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
 import { HttpError, asyncRoute } from '../server/http';
@@ -20,6 +20,7 @@ function toHttpError(error: unknown): unknown {
 }
 import { DISCOVERY_CATEGORIES, type RiskLevel } from '../economy/policy';
 import {
+  HierarchyControlError,
   delegationChain,
   hierarchyControls,
   hierarchyTree,
@@ -116,6 +117,13 @@ export function createEconomyRouter(): Router {
       ['min_expected_net_cents', 0, 1_000_000],
       ['settlement_threshold_cents', 0, 10_000_000],
       ['max_economy_agents', 1, 500],
+      // Hierarchy policy (Section 3): the operator sets how fast the workforce
+      // may grow, how deep it may go, how many children a parent may have and
+      // what one delegation costs the parent. 0 disables spawning entirely.
+      ['max_agent_depth', 0, 10],
+      ['max_children_per_agent', 0, 100],
+      ['spawn_rate_per_hour', 0, 1_000],
+      ['spawn_cost_cents', 0, 100_000],
     ];
     for (const [field, min, max] of intFields) {
       if (body[field] !== undefined) patch[field] = clampInt(body[field], min, max, min);
@@ -551,6 +559,23 @@ export function createEconomyRouter(): Router {
   router.get('/controls', (_req, res) => {
     res.status(200).json({ controls: hierarchyControls() });
   });
+
+  // Domain refusals carry their own status and code — a frozen control or a
+  // refused transfer must answer 4xx with a machine-readable reason, never a
+  // generic 500. Anything that is not a known domain error continues to the
+  // application error handler unchanged.
+  router.use(((error: unknown, _req, res, next) => {
+    const domain = error instanceof HierarchyControlError
+      ? { statusCode: error.statusCode, code: error.code, message: error.message }
+      : error instanceof TreasuryTransferError
+        ? { statusCode: error.statusCode, code: error.code, message: error.message }
+        : null;
+    if (!domain) {
+      next(error);
+      return;
+    }
+    res.status(domain.statusCode).json({ error: { code: domain.code, message: domain.message } });
+  }) as ErrorRequestHandler);
 
   return router;
 }

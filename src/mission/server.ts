@@ -473,8 +473,10 @@ async function handleApi(
         const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0));
         const where = query ? 'WHERE lower(slug) LIKE ? OR lower(name) LIKE ?' : '';
         const params: Array<string | number> = query ? [`%${query}%`, `%${query}%`] : [];
+        // Newest first: an agent the owner just created must be visible at the
+        // top of the list, not buried behind thousands of synced registry rows.
         const rows = missionDb.all<Row>(
-          `SELECT id, slug, name, category, mission_role, status, depth, parent_id, generation FROM mission_agents ${where} ORDER BY slug LIMIT ? OFFSET ?`,
+          `SELECT id, slug, name, category, mission_role, status, depth, parent_id, generation FROM mission_agents ${where} ORDER BY created_at DESC, slug LIMIT ? OFFSET ?`,
           [...params, limit, offset],
         );
         const total = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_agents ${where}`, params);
@@ -1313,8 +1315,10 @@ function createRootAgent(input: {
   const agentId = missionId('agt');
   return missionDb.transaction(() => {
     missionDb.run(
+      // Column/value order matters here: the root agent's mission role is its own
+      // typed role, and its capability list is the activity it was created for.
       `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
-       VALUES (?, ?, ?, ?, ?, NULL, 0, 'custom', 'active', ?, 'mission', ?)`,
+       VALUES (?, ?, ?, ?, 'root', NULL, 0, 'custom', 'active', ?, 'mission', ?)`,
       [agentId, slug, input.name.slice(0, 160), input.activityKey, input.missionRole, JSON.stringify([input.activityKey])],
     );
     const contractId = missionId('ctr');

@@ -161,6 +161,7 @@ async function login(email, password) {
   const payload = await api('/session/login', { method: 'POST', body: { email, password } });
   state.token = payload.token;
   state.owner = payload.owner;
+  showIdentity();
   state.link = '';
   sessionStorage.setItem(TOKEN_KEY, payload.token);
   sessionStorage.removeItem(LINK_KEY);
@@ -171,18 +172,28 @@ async function start() {
   $('#login-panel').hidden = true;
   $('#app').hidden = false;
   $('#signout').hidden = !canMutate();
+  // Identify the operator from the session state we already hold, before any
+  // network round-trip: a signed-in person must never see "not signed in".
+  showIdentity();
   try {
     const overview = await api('/overview');
     state.overview = overview;
-    $('#identity').textContent = canMutate()
-      ? `signed in as ${state.owner ? state.owner.email : 'mission owner'}`
-      : 'read-only access link';
+    showIdentity();
     renderOverview(overview);
   } catch (error) {
     if (error.status !== 401) banner(error.message, 'error');
   }
   await loadTab(state.activeTab);
   await loadActivityOptions();
+}
+
+/** The identity line, kept true from whatever session state the tab holds. */
+function showIdentity() {
+  if (!canMutate()) {
+    $('#identity').textContent = 'read-only access link';
+    return;
+  }
+  $('#identity').textContent = state.owner ? `signed in as ${state.owner.email}` : 'signed in — session restored';
 }
 
 /**
@@ -1066,6 +1077,37 @@ function wire() {
   $('#agent-search').addEventListener('submit', async (event) => {
     event.preventDefault();
     await loadAgents(new FormData(event.target).get('q') || '');
+  });
+
+  // Create a root mission agent. The server gates the creation itself (hierarchy
+  // depth/children policy, agent cap, activity allowlist) and answers with the
+  // agent, its contract and its wallet — the console shows that answer and opens
+  // the new report, so what is on screen is always the server's own state.
+  $('#create-agent-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!guardMutation()) return;
+    const form = event.target;
+    const field = (name) => form.querySelector(`[name="${name}"]`);
+    const body = {
+      name: (field('name').value || '').trim(),
+      specialization: (field('specialization').value || '').trim(),
+      activity: $('#create-agent-activity').value,
+      missionRole: field('missionRole').value,
+      budgetCents: Number(field('budgetCents').value) || 0,
+    };
+    if (body.name.length < 3) {
+      banner('A name of at least 3 characters is required to create an agent.', 'error');
+      return;
+    }
+    try {
+      const created = await api('/agents', { method: 'POST', body });
+      banner(`Agent ${created.agent.slug} created — wallet ${created.wallet.id}, budget ${money(created.wallet.budgetCents, created.wallet.currency)}.`, 'ok');
+      form.reset();
+      await loadAgents();
+      renderAgentReport(await api(`/agents/${encodeURIComponent(created.agent.slug)}/report`));
+    } catch (error) {
+      banner(error.message, 'error');
+    }
   });
 
   $('#target-form').addEventListener('submit', async (event) => {

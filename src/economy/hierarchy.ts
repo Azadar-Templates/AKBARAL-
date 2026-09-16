@@ -22,6 +22,7 @@ import {
 } from '../db/economy-repositories';
 import { currentPolicy, type PolicySnapshot } from './policy';
 import { appendAuditLog } from '../db';
+import { getAgentBySlug } from '../agents/registry';
 
 /**
  * ZA141251SA — agent hierarchy, delegation and emergency controls.
@@ -177,9 +178,22 @@ export function evaluateSpawn(input: {
   );
   add('spending_freeze', !policy.freezeSpending, policy.freezeSpending ? 'spending frozen — spawning costs budget' : 'spending permitted');
 
+  // A parent may be an economy agent (it has a profile overlay) or a registry
+  // specialist that is being given its first delegation. Both are real
+  // provenance; only an unknown slug is refused.
   const parentProfile = parentSlug ? getAgentProfileBySlug(parentSlug) : undefined;
   if (parentSlug) {
-    add('parent_exists', Boolean(parentProfile), parentProfile ? `parent ${parentSlug} found` : `parent ${parentSlug} is not an economy agent`);
+    const registryParent = parentProfile ? undefined : getAgentBySlug(parentSlug);
+    const exists = Boolean(parentProfile ?? registryParent);
+    add(
+      'parent_exists',
+      exists,
+      exists
+        ? parentProfile
+          ? `parent ${parentSlug} found (economy agent)`
+          : `parent ${parentSlug} found (registry specialist, no economy profile yet)`
+        : `parent ${parentSlug} is not a registered agent`,
+    );
   }
 
   add(

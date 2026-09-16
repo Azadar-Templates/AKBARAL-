@@ -82,6 +82,96 @@ export class BillingService {
     return { subscriptionId: subscription.id, planKey, status };
   }
 
+  /**
+   * A paid plan is never activated by a request body. This starts a REAL
+   * provider checkout for the plan's own price; when no payment provider is
+   * configured the answer is an honest 402 naming the credential that is
+   * missing, never a free upgrade. Free plans switch immediately and are the
+   * only plans a caller can self-assign.
+   */
+  async startPlanCheckout(input: {
+    userId: string;
+    planKey: string;
+    successUrl?: string;
+    cancelUrl?: string;
+  }): Promise<{
+    status: string;
+    planKey: string;
+    amountCents: number;
+    currency: string;
+    provider: string;
+    invoiceId?: string;
+    invoiceNumber?: string;
+    checkoutUrl?: string | null;
+    providerReference?: string | null;
+    requiredCredential?: string;
+  }> {
+    ensureBootstrapPlans();
+    const plan = getPlanByKey(input.planKey);
+    if (!plan) throw new HttpError(404, `plan ${input.planKey} not found`, 'not_found');
+    const amountCents = Number(plan.price_cents ?? 0);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      throw new HttpError(400, 'this plan has no price — switch to it directly', 'validation_error');
+    }
+    const provider = stripeConfigured() ? 'stripe' : razorpayConfigured() ? 'razorpay' : 'manual';
+    if (provider === 'manual') {
+      return {
+        status: 'provider_not_configured',
+        planKey: plan.key,
+        amountCents,
+        currency: plan.currency,
+        provider,
+        requiredCredential: 'STRIPE_SECRET_KEY',
+      };
+    }
+
+    const invoice = createInvoice({
+      userId: input.userId,
+      amountCents,
+      currency: plan.currency,
+      provider,
+      lineItems: [{ description: `${plan.name} plan (${plan.billing_interval})`, amountCents }],
+      status: 'pending',
+    });
+    const returnUrls = resolveCheckoutUrls(input);
+    const session = provider === 'stripe'
+      ? await createStripeCheckout({
+        amountCents,
+        credits: Number(plan.monthly_credits ?? 0),
+        invoiceNumber: invoice.number,
+        successUrl: returnUrls.successUrl,
+        cancelUrl: returnUrls.cancelUrl,
+        productName: `AKBARAL ${plan.name} plan`,
+      })
+      : await createRazorpayOrder({ amountCents, invoiceNumber: invoice.number });
+
+    createPayment({
+      userId: input.userId,
+      invoiceId: invoice.id,
+      provider,
+      amountCents,
+      status: 'pending',
+      providerPaymentId: session.providerReference,
+    });
+    recordBillingEvent({
+      userId: input.userId,
+      eventType: 'plan_checkout.requested',
+      provider,
+      payload: { invoiceId: invoice.id, planKey: plan.key, amountCents, providerReference: session.providerReference },
+    });
+    return {
+      status: 'requires_external_payment',
+      planKey: plan.key,
+      amountCents,
+      currency: plan.currency,
+      provider,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.number,
+      checkoutUrl: session.checkoutUrl,
+      providerReference: session.providerReference,
+    };
+  }
+
   async purchaseCustomCredits(input: {
     userId: string;
     credits: number;

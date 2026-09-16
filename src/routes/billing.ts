@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { billingService } from '../billing/service';
-import { getTrialStatus } from '../db';
+import { appendAuditLog, getPlanByKey, getTrialStatus } from '../db';
 import { verifyWebhookSignature, verifyRazorpaySignature } from '../security/webhooks';
 import { StripeWebhookError, normalizeStripeEvent, verifyStripeWebhook } from '../billing/stripe';
 import { recordBillingEvent } from '../db';
@@ -27,14 +27,56 @@ export function createBillingRouter(): Router {
     });
   });
 
-  router.post('/switch', requireAuth, (req: AuthenticatedRequest, res) => {
+  router.post('/switch', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res) => {
     const body = getBody(req);
     const planKey = typeof body.plan_key === 'string' ? body.plan_key : '';
     if (!planKey) {
       throw new HttpError(400, 'plan_key is required', 'validation_error');
     }
+    const plan = getPlanByKey(planKey);
+    if (!plan) {
+      throw new HttpError(404, `plan ${planKey} not found`, 'not_found');
+    }
+    // A plan that costs money is only ever activated by a verified provider
+    // payment. Without a payment provider the caller gets an honest 402 naming
+    // the missing credential — a request body can never buy an upgrade.
+    if (Number(plan.price_cents ?? 0) > 0) {
+      const checkout = await billingService.startPlanCheckout({
+        userId: req.auth!.userId,
+        planKey,
+        successUrl: optionalString(body, 'success_url') ?? undefined,
+        cancelUrl: optionalString(body, 'cancel_url') ?? undefined,
+      });
+      if (checkout.status === 'provider_not_configured') {
+        appendAuditLog({
+          actorId: req.auth!.userId,
+          action: 'billing.plan.checkout_refused',
+          resourceType: 'plan',
+          resourceId: plan.id,
+          description: `paid plan ${planKey} refused: payment provider not configured`,
+        });
+        res.status(402).json({
+          error: {
+            code: 'payment_required',
+            message: `the ${plan.key} plan costs ${plan.price_cents} ${plan.currency} cents per ${plan.billing_interval} and no payment provider is configured on this deployment`,
+            requiredCredential: checkout.requiredCredential,
+          },
+          plan: { key: plan.key, priceCents: plan.price_cents, currency: plan.currency },
+        });
+        return;
+      }
+      appendAuditLog({
+        actorId: req.auth!.userId,
+        action: 'billing.plan.checkout_started',
+        resourceType: 'plan',
+        resourceId: plan.id,
+        description: `checkout started for ${planKey} via ${checkout.provider}`,
+      });
+      res.status(201).json(checkout);
+      return;
+    }
     res.status(202).json(billingService.switchPlan(req.auth!.userId, planKey));
-  });
+  }));
 
   router.post(
     '/credits',
