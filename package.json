@@ -45,7 +45,8 @@
     "verify:user-journey": "node scripts/verify-user-journey.mjs",
     "verify:refresh": "node scripts/verify-refresh-deeplinks.mjs",
     "verify:mission-lock": "node scripts/verify-mission-identity-lock.mjs",
-    "verify:owner-identity": "node scripts/verify-owner-identity.mjs"
+    "verify:owner-identity": "node scripts/verify-owner-identity.mjs",
+    "verify:mission-money": "node scripts/verify-mission-money.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -71,6 +71,8 @@ import {
   walletForAgent,
   credit,
   setWalletBudget,
+  reinvestmentSummary,
+  sweepDailyTarget,
 } from './treasury';
 import {
   MissionSelfServiceError,
@@ -411,6 +413,16 @@ async function handleApi(
         const decision = param('decision', '') === 'approved' ? 'approved' : 'rejected';
         const result = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
         if (!result.ok) throw new HttpProblem(result.status === 'not_found' ? 404 : 409, result.reason ?? 'approval not actionable', result.status === 'not_found' ? 'not_found' : 'conflict');
+        // Approving an EXPENSE approval must pay the expense: the queue is a
+        // real control surface, not a status toggle that strands the request.
+        const subject = result.approval
+          ? { type: String(result.approval.subject_type), id: String(result.approval.subject_id) }
+          : null;
+        if (subject?.type === 'expense') {
+          const expense = decideExpense({ id: subject.id, decision , actorId: session.owner.id, note: param('note'), actorType: 'owner' });
+          json(res, 200, { ...result, expense });
+          return true;
+        }
         json(res, 200, result);
         return true;
       }
@@ -435,7 +447,7 @@ async function handleApi(
         if (body.autonomousEnabled !== undefined) patch.autonomousEnabled = Boolean(body.autonomousEnabled);
         if (body.allowAgentCreation !== undefined) patch.allowAgentCreation = Boolean(body.allowAgentCreation);
         if (body.requireOwnerForPayout !== undefined) patch.requireOwnerForPayout = Boolean(body.requireOwnerForPayout);
-        for (const key of ['maxDepth', 'maxChildrenPerAgent', 'maxAgents', 'maxDailySpendCents', 'maxExpenseCents', 'maxPayoutCents', 'requireApprovalAboveCents'] as const) {
+        for (const key of ['maxDepth', 'maxChildrenPerAgent', 'maxAgents', 'maxDailySpendCents', 'maxExpenseCents', 'maxPayoutCents', 'requireApprovalAboveCents', 'reinvestShareBps', 'dailyRevenueTargetCents'] as const) {
           if (body[key] !== undefined) patch[key] = num(key);
         }
         if (Array.isArray(body.allowedActivities)) patch.allowedActivities = body.allowedActivities.map((entry) => String(entry));
@@ -1086,11 +1098,25 @@ async function handleApi(
       break;
     }
 
+    // ── Reinvestment reserve (real ledger transfers, owner-configured share) ─
+    case 'reinvestment': {
+      requireRead(context);
+      json(res, 200, { reinvestment: reinvestmentSummary() });
+      return true;
+    }
+
     // ── Targets (aggressive KPIs, labelled as targets) ─────────────────────
     case 'targets': {
       requireRead(context);
       if (method === 'GET') {
-        json(res, 200, { targets: listTargets(), note: 'Targets are KPIs. Progress counts verified realized revenue only and a target is never reported as an achievement.' });
+        // The daily sweep is idempotent and records the day's progress; it is
+        // part of reading the target board so the owner always sees fresh
+        // numbers and a met day is announced exactly once.
+        json(res, 200, {
+          targets: listTargets(),
+          daily: sweepDailyTarget(context.session?.owner.id ?? null),
+          note: 'Targets are KPIs. Progress counts verified realized revenue only and a target is never reported as an achievement.',
+        });
         return true;
       }
       const session = requireOwner(context, true);

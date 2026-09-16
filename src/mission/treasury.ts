@@ -426,7 +426,7 @@ export interface RevenueInput {
  * webhook or bank statement) — the mission never claims money arrived without
  * a documentary basis, and only 'received' counts as realized revenue.
  */
-export function recordRevenue(input: RevenueInput): { revenue: Row; duplicated: boolean; ledger?: LedgerEntry } {
+export function recordRevenue(input: RevenueInput): { revenue: Row; duplicated: boolean; ledger?: LedgerEntry; reinvestment?: LedgerEntry } {
   const amount = Math.round(input.amountCents);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new MissionTreasuryError(400, 'revenue amount must be positive', 'validation_error');
@@ -453,6 +453,7 @@ export function recordRevenue(input: RevenueInput): { revenue: Row; duplicated: 
   );
 
   let ledger: LedgerEntry | undefined;
+  let reinvestment: LedgerEntry | undefined;
   let treasuryWalletId: string | null = null;
   if (input.status === 'received') {
     // Revenue flows: agent wallet (earned) → mission treasury (payout source).
@@ -502,6 +503,11 @@ export function recordRevenue(input: RevenueInput): { revenue: Row; duplicated: 
     });
     treasuryWalletId = ledger.walletId;
     missionDb.run('UPDATE mission_revenue SET wallet_id = ? WHERE id = ?', [treasuryWalletId, id]);
+    // Reinvestment: a configured share of verified revenue is moved OUT of the
+    // treasury and INTO the reinvestment wallet as a real ledger transfer (the
+    // same minor units, no rounding invented — the remainder stays liquid).
+    const allocation = allocateReinvestment({ revenueId: id, amountCents: amount, treasuryWalletId, actorId: input.actorId ?? null });
+    if (allocation) reinvestment = allocation;
   }
 
   appendMissionAudit({
@@ -512,7 +518,7 @@ export function recordRevenue(input: RevenueInput): { revenue: Row; duplicated: 
     subjectId: id,
     detail: { amountCents: amount, source: input.source, status: input.status, workId: input.workId ?? null, agentId: input.agentId ?? null },
   });
-  return { revenue: missionDb.get<Row>('SELECT * FROM mission_revenue WHERE id = ?', [id])!, duplicated: false, ledger };
+  return { revenue: missionDb.get<Row>('SELECT * FROM mission_revenue WHERE id = ?', [id])!, duplicated: false, ledger, reinvestment };
 }
 
 export function listRevenue(limit = 100): Row[] {
@@ -616,10 +622,16 @@ export function decideExpense(input: { id: string; decision: 'approved' | 'rejec
   if (String(expense.status) !== 'requested') {
     throw new MissionTreasuryError(409, `expense is already ${expense.status}`, 'conflict');
   }
+  // The owner has TWO real entry points for the same decision — the approval
+  // queue (`mission_approvals`) and this expense. They must agree: an approval
+  // the owner already granted is honoured here (so approving in the queue pays
+  // the expense instead of stranding it), an approval the owner rejected stops
+  // the payment, and a second payment attempt on a paid expense is refused.
   if (expense.approval_id) {
     const decided = missionDb.get<Row>('SELECT status FROM mission_approvals WHERE id = ?', [String(expense.approval_id)]);
-    if (decided && String(decided.status) !== 'pending') {
-      throw new MissionTreasuryError(409, `approval already ${decided.status}`, 'conflict');
+    const approvalStatus = decided ? String(decided.status) : 'pending';
+    if (approvalStatus === 'rejected') {
+      throw new MissionTreasuryError(409, 'the owner rejected this expense — it cannot be paid', 'conflict');
     }
   }
   if (input.decision === 'rejected') {
@@ -638,7 +650,8 @@ export function decideExpense(input: { id: string; decision: 'approved' | 'rejec
   }
   if (expense.approval_id) {
     missionDb.run(
-      `UPDATE mission_approvals SET status = ?, decided_by = ?, decided_at = ?, note = COALESCE(?, note) WHERE id = ?`,
+      `UPDATE mission_approvals SET status = ?, decided_by = ?, decided_at = ?, note = COALESCE(?, note)
+        WHERE id = ? AND status = 'pending'`,
       [input.decision === 'approved' ? 'approved' : 'rejected', input.actorId, nowIso(), input.note ?? null, String(expense.approval_id)],
     );
   }
@@ -995,4 +1008,191 @@ export function listApprovals(status?: string): Row[] {
   return status
     ? missionDb.all<Row>('SELECT * FROM mission_approvals WHERE status = ? ORDER BY created_at DESC LIMIT 200', [status])
     : missionDb.all<Row>('SELECT * FROM mission_approvals ORDER BY created_at DESC LIMIT 200');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reinvestment (verified earnings → real ledger transfer → reinvestment wallet)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The reinvestment wallet. Like the treasury it is a real ledger account — its
+ * balance exists only because transfers were posted to it, so it can never
+ * show a fabricated figure.
+ */
+export function ensureReinvestmentWallet(): Wallet {
+  const existing = listWallets('reserve').find((wallet) => wallet.label === REINVESTMENT_LABEL);
+  if (existing) return existing;
+  return createWallet({ kind: 'reserve', label: REINVESTMENT_LABEL, currency: currentPolicy().currency });
+}
+
+export const REINVESTMENT_LABEL = 'Mission reinvestment reserve';
+
+/**
+ * Move the configured share of a verified revenue receipt into the
+ * reinvestment reserve. Idempotent per revenue row (the ledger enforces a
+ * unique idempotency key), and skipped entirely when the share is 0 — an
+ * unconfigured policy allocates nothing.
+ */
+export function allocateReinvestment(input: {
+  revenueId: string;
+  amountCents: number;
+  treasuryWalletId: string;
+  actorId?: string | null;
+}): LedgerEntry | null {
+  const policy = currentPolicy();
+  const bps = Math.max(0, Math.min(10_000, Math.round(policy.reinvestShareBps)));
+  if (bps === 0) return null;
+  const share = Math.floor((Math.round(input.amountCents) * bps) / 10_000);
+  if (share <= 0) return null; // a share smaller than one minor unit is not invented
+  const idempotencyKey = `reinvest:${input.revenueId}`;
+  const existing = missionDb.get<Row>('SELECT id FROM mission_ledger WHERE idempotency_key = ?', [idempotencyKey]);
+  if (existing) return null;
+  const reserve = ensureReinvestmentWallet();
+  const memo = `reinvestment allocation ${bps / 100}% of verified revenue ${input.revenueId}`;
+  debit({
+    walletId: input.treasuryWalletId,
+    amountCents: share,
+    category: 'reinvestment',
+    reference: input.revenueId,
+    memo: 'allocated to the reinvestment reserve',
+    actorType: 'system',
+    actorId: null,
+    idempotencyKey: `${idempotencyKey}:out`,
+  });
+  const entry = credit({
+    walletId: reserve.id,
+    amountCents: share,
+    category: 'reinvestment',
+    reference: input.revenueId,
+    memo,
+    actorType: input.actorId ? 'owner' : 'system',
+    actorId: input.actorId ?? null,
+    idempotencyKey,
+  });
+  appendMissionAudit({
+    actorType: 'system',
+    action: 'reinvestment.allocated',
+    subjectType: 'wallet',
+    subjectId: reserve.id,
+    detail: { revenueId: input.revenueId, amountCents: share, shareBps: bps },
+  });
+  return entry;
+}
+
+export interface ReinvestmentSummary {
+  shareBps: number;
+  sharePercent: number;
+  wallet: Wallet | null;
+  balanceCents: number;
+  allocatedCents: number;
+  entries: LedgerEntry[];
+  note: string;
+}
+
+export function reinvestmentSummary(limit = 50): ReinvestmentSummary {
+  const policy = currentPolicy();
+  const wallet = listWallets('reserve').find((row) => row.label === REINVESTMENT_LABEL) ?? null;
+  const allocated =
+    missionDb.get<{ total: number }>(
+      "SELECT COALESCE(SUM(amount_cents), 0) AS total FROM mission_ledger WHERE direction = 'credit' AND category = 'reinvestment'",
+    )?.total ?? 0;
+  return {
+    shareBps: Math.max(0, Math.min(10_000, Math.round(policy.reinvestShareBps))),
+    sharePercent: Math.round(policy.reinvestShareBps) / 100,
+    wallet,
+    balanceCents: wallet?.balanceCents ?? 0,
+    allocatedCents: Number(allocated),
+    entries: wallet ? listLedger({ walletId: wallet.id, limit }) : [],
+    note: 'Allocations are real ledger transfers out of the treasury. A 0 bps share allocates nothing.',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fixed daily revenue target (progress counts VERIFIED revenue only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface DailyTargetStatus {
+  configured: boolean;
+  targetCents: number;
+  realizedCents: number;
+  expectedCents: number;
+  contractedCents: number;
+  remainingCents: number;
+  progressPct: number;
+  met: boolean;
+  metAt: string | null;
+  day: string;
+  currency: string;
+  label_kind: 'target';
+  note: string;
+}
+
+function utcDay(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/**
+ * Report the fixed daily realized-revenue target. Only revenue whose status is
+ * 'received' AND that carries a verifier counts — expected/contracted amounts
+ * are reported separately and never inflate progress.
+ */
+export function dailyTargetStatus(day = utcDay()): DailyTargetStatus {
+  const policy = currentPolicy();
+  const targetCents = Math.max(0, Math.round(policy.dailyRevenueTargetCents));
+  const sum = (status: string) =>
+    Number(
+      missionDb.get<{ total: number }>(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS total FROM mission_revenue
+          WHERE status = ? AND verifier IS NOT NULL AND substr(COALESCE(received_at, created_at), 1, 10) = ?`,
+        [status, day],
+      )?.total ?? 0,
+    );
+  const realizedCents = sum('received');
+  const expectedCents = sum('expected');
+  const contractedCents = sum('contracted');
+  const record = missionDb.get<Row>('SELECT * FROM mission_daily_target_days WHERE day = ?', [day]);
+  const met = targetCents > 0 && realizedCents >= targetCents;
+  return {
+    configured: targetCents > 0,
+    targetCents,
+    realizedCents,
+    expectedCents,
+    contractedCents,
+    remainingCents: Math.max(0, targetCents - realizedCents),
+    progressPct: targetCents > 0 ? Math.round((realizedCents / targetCents) * 10000) / 100 : 0,
+    met,
+    metAt: record?.met ? String(record.met_at) : null,
+    day,
+    currency: policy.currency,
+    label_kind: 'target',
+    note: 'A configured KPI. Progress counts verified (received) revenue only; a target is never presented as achieved revenue.',
+  };
+}
+
+/**
+ * Record the day's progress. The met event is written once per day and audited
+ * — the system never re-announces the same achievement.
+ */
+export function sweepDailyTarget(actorId: string | null = null): DailyTargetStatus {
+  const status = dailyTargetStatus();
+  const existing = missionDb.get<Row>('SELECT * FROM mission_daily_target_days WHERE day = ?', [status.day]);
+  const metNow = status.met && !(existing?.met === 1);
+  missionDb.run(
+    `INSERT INTO mission_daily_target_days (day, target_cents, realized_cents, met, met_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(day) DO UPDATE SET target_cents = excluded.target_cents, realized_cents = excluded.realized_cents,
+       met = excluded.met, met_at = COALESCE(mission_daily_target_days.met_at, excluded.met_at), updated_at = excluded.updated_at`,
+    [status.day, status.targetCents, status.realizedCents, status.met ? 1 : 0, status.met ? (existing?.met_at ? String(existing.met_at) : nowIso()) : null, nowIso()],
+  );
+  if (metNow) {
+    appendMissionAudit({
+      actorType: actorId ? 'owner' : 'system',
+      actorId,
+      action: 'target.daily_met',
+      subjectType: 'target',
+      subjectId: status.day,
+      detail: { targetCents: status.targetCents, realizedCents: status.realizedCents },
+    });
+  }
+  return dailyTargetStatus(status.day);
 }

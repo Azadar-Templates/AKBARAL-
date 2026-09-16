@@ -91,6 +91,10 @@ export interface MissionPolicy {
   maxPayoutCents: number;
   requireApprovalAboveCents: number;
   requireOwnerForPayout: boolean;
+  /** Share of verified received revenue moved to the reinvestment wallet, in basis points (0..10000). */
+  reinvestShareBps: number;
+  /** Fixed daily realized-revenue target in minor units; 0 = no target configured. */
+  dailyRevenueTargetCents: number;
   currency: string;
   allowedActivities: string[];
   prohibitedActivities: string[];
@@ -109,6 +113,8 @@ interface PolicyRow extends Row {
   max_payout_cents: number;
   require_approval_above_cents: number;
   require_owner_for_payout: number;
+  reinvest_share_bps: number;
+  daily_revenue_target_cents: number;
   currency: string;
   allowed_activities: string;
   prohibited_activities: string;
@@ -167,6 +173,8 @@ export function currentPolicy(currency = 'USD'): MissionPolicy {
     maxPayoutCents: Number(row.max_payout_cents),
     requireApprovalAboveCents: Number(row.require_approval_above_cents),
     requireOwnerForPayout: Number(row.require_owner_for_payout) === 1,
+    reinvestShareBps: Number(row.reinvest_share_bps ?? 0),
+    dailyRevenueTargetCents: Number(row.daily_revenue_target_cents ?? 0),
     currency: row.currency,
     // Allow-list = the configured subset of the compiled allowed keys.
     allowedActivities: parseArray(row.allowed_activities).filter((key) =>
@@ -201,6 +209,8 @@ export function updatePolicy(patch: Partial<MissionPolicy>, actorId: string): Mi
   setNumber('max_expense_cents', patch.maxExpenseCents, 0, 100_000_000);
   setNumber('max_payout_cents', patch.maxPayoutCents, 0, 1_000_000_000);
   setNumber('require_approval_above_cents', patch.requireApprovalAboveCents, 0, 1_000_000_000);
+  setNumber('reinvest_share_bps', patch.reinvestShareBps, 0, 10_000);
+  setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 1_000_000_000);
   if (patch.currency) {
     fields.push('currency = ?');
     values.push(String(patch.currency).slice(0, 8));
