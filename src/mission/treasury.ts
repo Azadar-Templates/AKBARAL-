@@ -113,6 +113,40 @@ export function ensureAgentWallet(agentId: string, label: string, budgetCents = 
   return createWallet({ kind: 'agent', label, agentId, budgetCents });
 }
 
+/**
+ * Owner control over a wallet's authorised spend ceiling. A budget is an
+ * authority limit, not a balance: funding a wallet adds money, raising its
+ * budget allows that money to be spent. Both are owner-only and audited.
+ */
+export function setWalletBudget(input: {
+  walletId: string;
+  budgetCents: number;
+  actorId: string;
+  label?: string | null;
+  status?: 'active' | 'frozen' | null;
+}): Wallet {
+  const wallet = getWallet(input.walletId);
+  if (!wallet) throw new MissionTreasuryError(404, 'wallet not found', 'not_found');
+  const budget = Math.round(Number(input.budgetCents));
+  if (!Number.isFinite(budget) || budget < 0) {
+    throw new MissionTreasuryError(400, 'budgetCents must be zero or a positive integer of minor units', 'validation_error');
+  }
+  const previous = wallet.budgetCents;
+  missionDb.run(
+    `UPDATE mission_wallets SET budget_cents = ?, label = COALESCE(?, label), status = COALESCE(?, status), updated_at = ? WHERE id = ?`,
+    [budget, input.label?.slice(0, 160) ?? null, input.status ?? null, nowIso(), input.walletId],
+  );
+  appendMissionAudit({
+    actorType: 'owner',
+    actorId: input.actorId,
+    action: 'wallet.budget_updated',
+    subjectType: 'wallet',
+    subjectId: input.walletId,
+    detail: { previousBudgetCents: previous, budgetCents: budget, spentCents: wallet.spentCents, status: input.status ?? wallet.status },
+  });
+  return getWallet(input.walletId)!;
+}
+
 export function listWallets(kind?: string): Wallet[] {
   const rows = kind
     ? missionDb.all<Row>('SELECT * FROM mission_wallets WHERE kind = ? ORDER BY created_at DESC', [kind])
@@ -149,7 +183,15 @@ function appendLedger(input: {
   memo?: string | null;
   actorType?: 'owner' | 'agent' | 'system' | 'provider';
   actorId?: string | null;
+  /** Caller-supplied key: a retried deposit cannot post twice. */
+  idempotencyKey?: string | null;
 }): LedgerEntry {
+  // Checked before the hash is computed so a duplicate never perturbs the
+  // chain; the unique index is the backstop for concurrent requests.
+  if (input.idempotencyKey) {
+    const existing = missionDb.get<Row>('SELECT * FROM mission_ledger WHERE idempotency_key = ?', [input.idempotencyKey]);
+    if (existing) return existing as unknown as LedgerEntry;
+  }
   const amount = Math.round(input.amountCents);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new MissionTreasuryError(400, 'ledger amount must be a positive integer of minor units', 'validation_error');
@@ -179,11 +221,12 @@ function appendLedger(input: {
     const payload = [id, input.walletId, input.direction, amount, input.category, input.reference ?? '', balanceAfter, previous?.hash ?? '', createdAt].join('|');
     const hash = sha256(payload);
     missionDb.run(
-      `INSERT INTO mission_ledger (id, wallet_id, direction, amount_cents, category, reference, memo, actor_type, actor_id, balance_after, prev_hash, hash, created_at, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mission_ledger (id, wallet_id, direction, amount_cents, category, reference, memo, actor_type, actor_id, balance_after, prev_hash, hash, created_at, seq, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, input.walletId, input.direction, amount, input.category, input.reference ?? null, input.memo ?? null,
         input.actorType ?? 'system', input.actorId ?? null, balanceAfter, previous?.hash ?? null, hash, createdAt, nextSeq,
+        input.idempotencyKey ?? null,
       ],
     );
     // `spent_cents` tracks real operating expenditure (expenses, upgrades, fees)
@@ -225,6 +268,7 @@ export function credit(input: {
   memo?: string | null;
   actorType?: 'owner' | 'agent' | 'system' | 'provider';
   actorId?: string | null;
+  idempotencyKey?: string | null;
 }): LedgerEntry {
   const entry = appendLedger({ ...input, direction: 'credit' });
   appendMissionAudit({
@@ -246,6 +290,7 @@ export function debit(input: {
   memo?: string | null;
   actorType?: 'owner' | 'agent' | 'system' | 'provider';
   actorId?: string | null;
+  idempotencyKey?: string | null;
 }): LedgerEntry {
   const entry = appendLedger({ ...input, direction: 'debit' });
   appendMissionAudit({

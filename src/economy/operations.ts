@@ -33,6 +33,7 @@ import {
   type PolicySnapshot,
 } from './policy';
 import { proposeSettlement } from './treasury';
+import { assertAgentRunnable } from './hierarchy';
 import { createHash } from 'node:crypto';
 
 /**
@@ -268,6 +269,31 @@ export async function runExecution(executionId: string): Promise<ExecutionOutcom
     updateOpportunity(opportunity.id, { status: 'failed' });
     recordEconomyEvent({ kind: 'execution', summary: `execution ${execution.id} CANCELLED by kill switch` });
     return { status: 'cancelled', error: 'kill switch engaged', verified: false };
+  }
+  // Narrow brakes: a revoked provider access means the agent could not reach a
+  // model at all, and a spending freeze means it must not start work that
+  // costs money. Both are refusals, not silent skips.
+  if (policy.providerAccessRevoked) {
+    updateExecution(execution.id, { status: 'cancelled', completed_at: new Date().toISOString(), error_message: 'provider access revoked' });
+    updateOpportunity(opportunity.id, { status: 'blocked' });
+    recordEconomyEvent({ kind: 'security', summary: `execution ${execution.id} CANCELLED — provider access revoked by owner` });
+    return { status: 'cancelled', error: 'provider access revoked', verified: false };
+  }
+  if (policy.freezeSpending) {
+    updateExecution(execution.id, { status: 'cancelled', completed_at: new Date().toISOString(), error_message: 'spending frozen' });
+    updateOpportunity(opportunity.id, { status: 'blocked' });
+    recordEconomyEvent({ kind: 'security', summary: `execution ${execution.id} CANCELLED — spending frozen by owner` });
+    return { status: 'cancelled', error: 'spending frozen', verified: false };
+  }
+  // A paused agent — or one inside a paused hierarchy — must not be dispatched.
+  try {
+    assertAgentRunnable(execution.agent_slug);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    updateExecution(execution.id, { status: 'cancelled', completed_at: new Date().toISOString(), error_message: message });
+    updateOpportunity(opportunity.id, { status: 'blocked' });
+    recordEconomyEvent({ kind: 'security', summary: `execution ${execution.id} CANCELLED — ${message}` });
+    return { status: 'cancelled', error: message, verified: false };
   }
   assertEmergencyStopDisabled(); // the platform-wide emergency stop halts economy work too
 

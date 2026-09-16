@@ -54,3 +54,4 @@ mission.db-*
 mission-preview-access.txt
 .mission-secrets.env
 .platform-owner.env
+.mission-owner-credentials.txt

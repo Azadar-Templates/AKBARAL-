@@ -66,6 +66,10 @@ import {
   verifyPayoutSlot,
   verifyLedger,
   type Wallet,
+  getWallet,
+  walletForAgent,
+  credit,
+  setWalletBudget,
 } from './treasury';
 import {
   MissionSelfServiceError,
@@ -113,8 +117,7 @@ import {
   listTargets,
   snapshotAgentReport,
   updateTarget,
-  activityCatalog,
-} from './reporting';
+  activityCatalog, type AgentRow} from './reporting';
 
 /**
  * ZA141251SA MISSION SERVER — a SEPARATE private application.
@@ -214,9 +217,18 @@ function requireOwner(context: RequestContext, mutation = false): SessionContext
 
 /** Agent-scoped authorization for the self-management surface. */
 function requireAgent(context: RequestContext, agentSlugOrId: string | null): { agentId: string; actorId: string; actorType: 'agent' } {
+  // One enforcement point for every agent-initiated mutation (work, tools,
+  // resources, services, upgrades, expenses): an agent that is not 'active'
+  // cannot act. Pausing is therefore a real brake, not a label.
+  const assertActive = (agent: AgentRow): void => {
+    if (String(agent.status) !== 'active') {
+      throw new HttpProblem(409, `agent ${agent.slug} is ${agent.status} — an operator paused it, so it cannot act until it is resumed`, 'agent_not_active');
+    }
+  };
   if (context.session) {
     const agent = agentSlugOrId ? (findAgentBySlug(agentSlugOrId) ?? findAgentById(agentSlugOrId)) : undefined;
     if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+    assertActive(agent);
     return { agentId: agent.id, actorId: context.session.owner.id, actorType: 'agent' };
   }
   if (context.link) {
@@ -229,6 +241,10 @@ function requireAgent(context: RequestContext, agentSlugOrId: string | null): { 
         // A link may only ever act for the agent it is bound to.
         throw new HttpProblem(403, 'this link is bound to a different agent', 'forbidden');
       }
+      assertActive(requested);
+    } else {
+      const bound = findAgentById(context.link.agentId);
+      if (bound) assertActive(bound);
     }
     return { agentId: context.link.agentId, actorId: context.link.agentId, actorType: 'agent' };
   }
@@ -399,6 +415,14 @@ async function handleApi(
     // ── Policy ──────────────────────────────────────────────────────────────
     case 'policy': {
       requireRead(context);
+      // Order matters: the kill switch is a POST sub-route and must be handled
+      // before the policy-update branch, otherwise it would silently update
+      // policy instead of stopping the mission.
+      if (method === 'POST' && rest[0] === 'kill-switch') {
+        const session = requireOwner(context, true);
+        json(res, 200, { killSwitch: setKillSwitch(Boolean(body.engage ?? true), session.owner.id) });
+        return true;
+      }
       if (method === 'PATCH' || method === 'POST') {
         const session = requireOwner(context, true);
         const patch: Record<string, unknown> = {};
@@ -411,11 +435,6 @@ async function handleApi(
         if (Array.isArray(body.allowedActivities)) patch.allowedActivities = body.allowedActivities.map((entry) => String(entry));
         if (body.providerActivation !== undefined) patch.providerActivation = body.providerActivation as Array<Record<string, unknown>>;
         json(res, 200, { policy: updatePolicy(patch, session.owner.id), categories: activityCatalog() });
-        return true;
-      }
-      if (method === 'POST' && rest[0] === 'kill-switch') {
-        const session = requireOwner(context, true);
-        json(res, 200, { killSwitch: setKillSwitch(Boolean(body.engage ?? true), session.owner.id) });
         return true;
       }
       json(res, 200, { policy: currentPolicy(), categories: activityCatalog() });
@@ -431,6 +450,23 @@ async function handleApi(
     // ── Agents ──────────────────────────────────────────────────────────────
     case 'agents': {
       requireRead(context);
+      if (rest.length === 0 && method === 'POST') {
+        // Root-agent creation (owner only). Without this, a POST here used to
+        // fall through to the LIST handler and answer 200 with a page of
+        // agents — a silent fake success. Creation is real: policy gates,
+        // contract, funded wallet, audit entry.
+        const session = requireOwner(context, true);
+        const created = createRootAgent({
+          name: param('name', '') ?? '',
+          specialization: param('specialization', '') ?? '',
+          activityKey: param('activity', 'general') ?? 'general',
+          budgetCents: num('budgetCents'),
+          missionRole: (param('missionRole', 'director') ?? 'director') as 'worker' | 'supervisor' | 'director',
+          actorId: session.owner.id,
+        });
+        json(res, 201, created);
+        return true;
+      }
       if (rest.length === 0) {
         const query = (url.searchParams.get('q') ?? '').trim().toLowerCase();
         const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 50)));
@@ -463,6 +499,33 @@ async function handleApi(
         const created = snapshotAgentReport(slug, param('periodStart', new Date(Date.now() - 24 * 3600 * 1000).toISOString())!, param('periodEnd', nowIso())!);
         appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'report.snapshot_requested', subjectType: 'agent', subjectId: slug });
         json(res, 201, { id: created.id, report: created.report });
+        return true;
+      }
+      if (rest[1] === 'status' && method === 'POST') {
+        // Operator brake on one agent (Section 9): owner-only, reasoned and
+        // audited. 'paused' stops the agent acting; 'retired' retires it
+        // permanently; 'active' restores work.
+        const session = requireOwner(context, true);
+        const agent = findAgentBySlug(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        const status = param('status', '') ?? '';
+        if (!['active', 'paused', 'retired'].includes(status)) {
+          throw new HttpProblem(400, "status must be one of active, paused, retired", 'validation_error');
+        }
+        const reason = (param('reason', '') ?? '').trim();
+        if (status !== 'active' && reason.length < 3) {
+          throw new HttpProblem(400, 'a reason is required to pause or retire an agent', 'validation_error');
+        }
+        missionDb.run('UPDATE mission_agents SET status = ?, updated_at = ? WHERE id = ?', [status, nowIso(), agent.id]);
+        appendMissionAudit({
+          actorType: 'owner',
+          actorId: session.owner.id,
+          action: status === 'active' ? 'agent.resumed' : status === 'paused' ? 'agent.paused' : 'agent.retired',
+          subjectType: 'agent',
+          subjectId: agent.id,
+          detail: { slug: agent.slug, from: agent.status, to: status, reason: reason || null },
+        });
+        json(res, 200, { agent: findAgentBySlug(slug) });
         return true;
       }
       if (rest[1] === 'children' && method === 'POST') {
@@ -737,9 +800,20 @@ async function handleApi(
       }
       if (rest.length === 0 && method === 'POST') {
         const agent = requireAgent(context, param('agentSlug') ?? param('agentId'));
+        // An expense belongs to the agent's own wallet unless the caller names
+        // another one; without this the request would be refused with
+        // wallet_not_found and no agent could ever spend.
+        const namedWallet = (param('walletId', '') ?? '').trim();
+        const wallet = namedWallet ? getWallet(namedWallet) : walletForAgent(agent.agentId);
+        if (!wallet) {
+          throw new HttpProblem(409, 'this agent has no wallet yet — create or fund one before requesting an expense', 'wallet_required');
+        }
+        if (namedWallet && wallet.agentId && wallet.agentId !== agent.agentId) {
+          throw new HttpProblem(403, 'that wallet belongs to a different agent', 'forbidden');
+        }
         const result = requestExpense({
           agentId: agent.agentId,
-          walletId: param('walletId', '') ?? '',
+          walletId: wallet.id,
           category: param('category', 'api') ?? 'api',
           provider: param('provider', '') ?? '',
           description: param('description', '') ?? '',
@@ -764,6 +838,70 @@ async function handleApi(
       requireRead(context);
       if (method === 'GET') {
         json(res, 200, { wallets: listWallets() });
+        return true;
+      }
+
+      if (rest[1] === 'fund' && method === 'POST') {
+        // Owner working capital: money the owner deliberately puts into a
+        // wallet. It is a deposit in the ledger (category owner_capital), never
+        // revenue — revenue is only ever recorded against a verified external
+        // payment. Idempotent by key so a retried request cannot double-fund.
+        const session = requireOwner(context, true);
+        const wallet = getWallet(rest[0]);
+        if (!wallet) throw new HttpProblem(404, 'wallet not found', 'not_found');
+        if (currentPolicy().killSwitch) throw new HttpProblem(409, 'the mission kill switch is engaged', 'policy_denied');
+        const amountCents = Math.round(num('amountCents'));
+        if (!Number.isFinite(amountCents) || amountCents <= 0) throw new HttpProblem(400, 'amountCents must be positive', 'validation_error');
+        const reference = (param('reference', '') ?? '').trim();
+        if (reference.length < 3) throw new HttpProblem(400, 'a funding reference is required (bank transfer id, statement line, or owner note)', 'validation_error');
+        const idempotencyKey = (param('idempotencyKey', '') ?? '').trim();
+        if (idempotencyKey.length < 4) throw new HttpProblem(400, 'an idempotencyKey of at least 4 characters is required', 'validation_error');
+        const existing = missionDb.get<Row>('SELECT id FROM mission_ledger WHERE idempotency_key = ?', [idempotencyKey]);
+        if (existing) {
+          json(res, 200, { duplicated: true, wallet: getWallet(wallet.id) });
+          return true;
+        }
+        credit({
+          walletId: wallet.id,
+          amountCents,
+          category: 'owner_capital',
+          reference,
+          memo: param('memo'),
+          actorType: 'owner',
+          actorId: session.owner.id,
+          idempotencyKey,
+        });
+        appendMissionAudit({
+          actorType: 'owner',
+          actorId: session.owner.id,
+          action: 'wallet.funded',
+          subjectType: 'wallet',
+          subjectId: wallet.id,
+          detail: { amountCents, reference, idempotencyKey },
+        });
+        json(res, 201, { wallet: getWallet(wallet.id), amountCents, category: 'owner_capital' });
+        return true;
+      }
+      if (method === 'PATCH' && rest[0]) {
+        // Owner budget control (Section 9): raise/lower a wallet's authorised
+        // spend ceiling, relabel it, or freeze it. Audited with the delta.
+        const session = requireOwner(context, true);
+        const wallet = getWallet(rest[0]);
+        if (!wallet) throw new HttpProblem(404, 'wallet not found', 'not_found');
+        const budgetCents = body.budgetCents === undefined ? wallet.budgetCents : num('budgetCents');
+        const status = param('status');
+        if (status !== null && !['active', 'frozen'].includes(status)) {
+          throw new HttpProblem(400, "status must be 'active' or 'frozen'", 'validation_error');
+        }
+        json(res, 200, {
+          wallet: setWalletBudget({
+            walletId: wallet.id,
+            budgetCents,
+            actorId: session.owner.id,
+            label: param('label'),
+            status: status as 'active' | 'frozen' | null,
+          }),
+        });
         return true;
       }
       if (method === 'POST') {
@@ -1141,6 +1279,71 @@ async function handleApi(
       break;
   }
   return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root-agent creation — the mission's own workforce, seeded from the platform
+// registry or created deliberately by the owner. Same policy gates as a
+// sub-agent, but with no parent and depth 0.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createRootAgent(input: {
+  name: string;
+  specialization: string;
+  activityKey: string;
+  budgetCents: number;
+  missionRole: 'worker' | 'supervisor' | 'director';
+  actorId: string;
+}): { agent: Row; contract: Row; wallet: Wallet } {
+  const policy = currentPolicy();
+  if (!policy.allowAgentCreation) throw new HttpProblem(403, 'agent creation is disabled by policy', 'policy_denied');
+  if (policy.killSwitch) throw new HttpProblem(409, 'the mission kill switch is engaged', 'policy_denied');
+  if (!input.name.trim()) throw new HttpProblem(400, 'a name is required', 'validation_error');
+  const activity = checkActivity(input.activityKey, policy);
+  if (!activity.allowed) throw new HttpProblem(403, `activity refused by policy: ${activity.reasons.join('; ')}`, 'policy_denied');
+  const total = missionDb.get<Row>('SELECT COUNT(*) AS count FROM mission_agents');
+  if (Number(total?.count ?? 0) >= policy.maxAgents) {
+    throw new HttpProblem(409, `agent cap reached (max ${policy.maxAgents})`, 'policy_denied');
+  }
+
+  const slugBase = `${input.specialization || input.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'root-agent';
+  let slug = `${slugBase}-${missionId('x').slice(-6)}`;
+  if (findAgentBySlug(slug)) slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
+
+  const agentId = missionId('agt');
+  return missionDb.transaction(() => {
+    missionDb.run(
+      `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
+       VALUES (?, ?, ?, ?, ?, NULL, 0, 'custom', 'active', ?, 'mission', ?)`,
+      [agentId, slug, input.name.slice(0, 160), input.activityKey, input.missionRole, JSON.stringify([input.activityKey])],
+    );
+    const contractId = missionId('ctr');
+    missionDb.run(
+      `INSERT INTO mission_agent_contracts (id, agent_id, parent_agent_id, purpose, permissions, resource_limits, budget_cents, status, approved_by, approved_at, expires_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+      [
+        contractId, agentId, input.specialization || input.name,
+        JSON.stringify([input.activityKey, 'tool.request', 'resource.request', 'expense.request', 'report.submit', 'agent.create']),
+        JSON.stringify({ maxChildren: policy.maxChildrenPerAgent, maxSpendCents: input.budgetCents, maxDepth: policy.maxDepth }),
+        Math.max(0, Math.round(input.budgetCents)), input.actorId, nowIso(),
+        new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+      ],
+    );
+    const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId: input.actorId,
+      action: 'agent.created',
+      subjectType: 'agent',
+      subjectId: agentId,
+      detail: { slug, parent: null, activity: input.activityKey, budgetCents: input.budgetCents, missionRole: input.missionRole, contractId },
+    });
+    return {
+      agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
+      contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
+      wallet,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -29,6 +29,11 @@ export interface PolicySnapshot {
   maxEconomyAgents: number;
   maxAgentDepth: number;
   maxChildrenPerAgent: number;
+  spawnRatePerHour: number;
+  spawnCostCents: number;
+  freezeSpending: boolean;
+  freezeWithdrawals: boolean;
+  providerAccessRevoked: boolean;
   economyModelKey: string | null;
   discoveryCategories: string[];
 }
@@ -55,6 +60,11 @@ export function snapshotPolicy(row: EconomyPolicyRow): PolicySnapshot {
     maxEconomyAgents: row.max_economy_agents,
     maxAgentDepth: row.max_agent_depth,
     maxChildrenPerAgent: row.max_children_per_agent,
+    spawnRatePerHour: row.spawn_rate_per_hour,
+    spawnCostCents: row.spawn_cost_cents,
+    freezeSpending: row.freeze_spending === 1,
+    freezeWithdrawals: row.freeze_withdrawals === 1,
+    providerAccessRevoked: row.provider_access_revoked === 1,
     economyModelKey: row.economy_model_key ?? null,
     discoveryCategories: categories,
   };

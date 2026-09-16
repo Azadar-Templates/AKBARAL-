@@ -3,7 +3,6 @@ import { findUserByEmail, createUser, appendAuditLog } from '../db';
 import { agentFactory } from '../orchestrator/agent-factory';
 import { getAgentBySlug } from '../agents/registry';
 import {
-  countAgentProfiles, countAgentChildren, agentHierarchyDepth,
   getEconomyPolicy,
   getExpansion,
   getImprovement,
@@ -41,6 +40,7 @@ import {
   listTransfers,
 } from '../db/economy-repositories';
 import { currentPolicy } from './policy';
+import { assertSpendingAllowed, assertWithdrawalsAllowed, chargeSpawn, evaluateSpawn, recordSpawnDecision } from './hierarchy';
 
 /**
  * ZA141251SA treasury + agent self-management flows.
@@ -182,6 +182,9 @@ export function proposeSettlement(): SettlementOutcome {
 export function completeSettlement(id: string, evidence: string): void {
   const settlement = listSettlements().find((row) => row.id === id);
   if (!settlement) throw new Error('settlement not found');
+  // Money leaving the system is the last place a freeze must hold: a frozen
+  // withdrawal state stops confirmation even with valid evidence.
+  assertWithdrawalsAllowed();
   if (!evidence || evidence.trim().length < 4) throw new Error('settlement completion requires evidence (reference/confirmation of the real transfer)');
   updateSettlement(id, { status: 'completed', completed_at: new Date().toISOString(), evidence: evidence.trim() });
   recordEconomyEvent({ kind: 'settlement', actor: 'owner', summary: `settlement ${id} confirmed completed with evidence` });
@@ -200,6 +203,26 @@ export interface ResourceDecision {
 
 export function requestResource(input: { kind: string; provider: string; description: string; monthlyCostCents: number; requestedByAgent?: string | null }): { decision: ResourceDecision; resourceId: string } {
   const policy = currentPolicy();
+  // A spending freeze stops new commitments outright; the request is still
+  // recorded (denied) so the attempt stays visible in the audit trail.
+  if (policy.freezeSpending) {
+    const resource = insertResource({
+      kind: input.kind,
+      provider: input.provider,
+      description: input.description,
+      monthlyCostCents: input.monthlyCostCents,
+      requestedByAgent: input.requestedByAgent ?? null,
+      policyDecision: 'denied: spending frozen by owner',
+    });
+    updateResource(resource.id, { status: 'denied' });
+    recordEconomyEvent({
+      kind: 'resource',
+      actor: input.requestedByAgent ?? 'system',
+      summary: `resource ${input.kind}/${input.provider} DENIED — spending is frozen`,
+      details: { resourceId: resource.id },
+    });
+    return { decision: { status: 'denied', reason: 'spending frozen by owner' }, resourceId: resource.id };
+  }
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
   const spentToday = db.get<{ total: number }>(
@@ -250,6 +273,8 @@ export function confirmResourceProvisioned(id: string, evidence: string, actualC
   if (!resource) throw new Error('resource not found');
   if (resource.status !== 'approved') throw new Error(`resource is '${resource.status}', not approved`);
   if (!evidence || evidence.trim().length < 4) throw new Error('provisioning evidence required');
+  // Committing real money while spending is frozen would defeat the freeze.
+  assertSpendingAllowed(`provisioning resource ${id}`);
   const cost = actualCostCents ?? resource.monthly_cost_cents;
   updateResource(id, { status: 'provisioned', provisioned_at: new Date().toISOString() });
   postLedger({
@@ -355,43 +380,43 @@ export interface ExpansionOutcome {
   blockedReason?: string;
 }
 
-export function expandCapability(input: { gap: string; specialization: string; systemInstructions: string; parentAgentSlug?: string | null; name?: string }): ExpansionOutcome {
-  const policy = currentPolicy();
+export function expandCapability(input: {
+  gap: string;
+  specialization: string;
+  systemInstructions: string;
+  parentAgentSlug?: string | null;
+  name?: string;
+  /** Actor driving the spawn: 'owner' for a manual decision, an agent slug for delegation. */
+  actor?: string;
+  /** Budget the new child may spend; the parent pays the spawn cost either way. */
+  childBudgetCents?: number;
+}): ExpansionOutcome {
+  const actor = input.actor ?? input.parentAgentSlug ?? 'system';
 
   const rejectExpansion = (reason: string, summary: string): ExpansionOutcome => {
     const expansion = insertExpansion({ gap: input.gap, parentAgentSlug: input.parentAgentSlug ?? null });
     updateExpansion(expansion.id, { status: 'rejected', decided_at: new Date().toISOString() });
-    recordEconomyEvent({ kind: 'expansion', actor: input.parentAgentSlug ?? 'system', summary });
+    recordEconomyEvent({ kind: 'expansion', actor, summary });
     return { expansionId: expansion.id, agentSlug: '', status: 'rejected', blockedReason: reason };
   };
 
   // Hierarchy gates (Section 2): no uncontrolled recursive spawning.
-  if (input.parentAgentSlug) {
-    if (!getAgentBySlug(input.parentAgentSlug)) {
-      return rejectExpansion('parent agent not found', `expansion REJECTED: parent ${input.parentAgentSlug} does not exist`);
-    }
-    const parentDepth = agentHierarchyDepth(input.parentAgentSlug);
-    if (parentDepth + 1 > policy.maxAgentDepth) {
-      return rejectExpansion(
-        `max agent depth reached (${parentDepth}+1 > ${policy.maxAgentDepth})`,
-        `expansion REJECTED: depth limit (parent ${input.parentAgentSlug} at depth ${parentDepth}, cap ${policy.maxAgentDepth}) — no uncontrolled recursion`,
-      );
-    }
-    const children = countAgentChildren(input.parentAgentSlug);
-    if (children >= policy.maxChildrenPerAgent) {
-      return rejectExpansion(
-        `parent child limit reached (${children}/${policy.maxChildrenPerAgent})`,
-        `expansion REJECTED: parent ${input.parentAgentSlug} already has ${children} children (cap ${policy.maxChildrenPerAgent})`,
-      );
-    }
+  if (input.parentAgentSlug && !getAgentBySlug(input.parentAgentSlug)) {
+    return rejectExpansion('parent agent not found', `expansion REJECTED: parent ${input.parentAgentSlug} does not exist`);
   }
 
-  const profileCount = countAgentProfiles();
-  if (profileCount >= policy.maxEconomyAgents) {
-    return rejectExpansion(
-      'agent cap reached',
-      `expansion REJECTED: agent cap reached (${profileCount}/${policy.maxEconomyAgents}) — no uncontrolled replication`,
-    );
+  // Every remaining gate — kill switch, provider access, spending freeze, depth,
+  // children-per-parent, total cap, spawn rate and budget — is evaluated in one
+  // place and recorded, so a refusal always states exactly which gate held.
+  const decision = evaluateSpawn({
+    parentAgentSlug: input.parentAgentSlug ?? null,
+    actor,
+    gap: input.gap,
+    ...(input.childBudgetCents !== undefined ? { childBudgetCents: input.childBudgetCents } : {}),
+  });
+  if (!decision.allowed) {
+    recordSpawnDecision({ decision, parentAgentSlug: input.parentAgentSlug ?? null, gap: input.gap, actor });
+    return rejectExpansion(`expansion refused (${decision.reason})`, `expansion REJECTED: ${decision.reason}`);
   }
   const systemUserId = getEconomySystemUserId();
   const created = agentFactory.create({
@@ -408,6 +433,16 @@ export function expandCapability(input: { gap: string; specialization: string; s
     agentSlug: created.slug,
     parentAgentSlug: input.parentAgentSlug ?? null,
     objectives: input.gap,
+  });
+  // The delegation is authorized and PAID FOR: the decision row records the
+  // exact gates, the parent is charged the spawn cost, and the child receives
+  // the budget the owner (or its parent) granted it.
+  recordSpawnDecision({ decision, parentAgentSlug: input.parentAgentSlug ?? null, childAgentSlug: created.slug, gap: input.gap, actor });
+  chargeSpawn({
+    parentAgentSlug: input.parentAgentSlug ?? null,
+    childAgentSlug: created.slug,
+    costCents: decision.costCents,
+    ...(input.childBudgetCents !== undefined ? { childBudgetCents: input.childBudgetCents } : {}),
   });
   // Lifecycle gates: draft → testing → security_verified → approved → active.
   // The factory's real security review runs now; the real test run requires
@@ -533,6 +568,9 @@ export function proposeTreasuryTransfer(input: {
   if (!input.idempotencyKey || input.idempotencyKey.trim().length < 4) {
     throw new TreasuryTransferError(400, 'invalid_request', 'idempotency key must be at least 4 characters');
   }
+  // Withdrawal brake: an owner can freeze money movement without engaging the
+  // kill switch (which would stop unrelated work too).
+  assertWithdrawalsAllowed();
   // Idempotency: the same key always returns the same proposal, no side effects.
   const existing = getTransferByIdempotencyKey(input.idempotencyKey);
   if (existing) {

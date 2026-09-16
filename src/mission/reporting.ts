@@ -25,6 +25,7 @@ export interface AgentReport {
     depth: number;
     parentSlug: string | null;
     childCount: number;
+    children: Array<{ id: string; slug: string; name: string; role: string; status: string; depth: number }>;
   };
   wallet: {
     id: string;
@@ -115,6 +116,10 @@ export function buildAgentReport(agent: AgentRow): AgentReport {
   }
   const children = missionDb.get<Row>('SELECT COUNT(*) AS count FROM mission_agents WHERE parent_id = ?', [agent.id]);
   const childCount = Number(children?.count ?? 0);
+  const childAgents = missionDb.all<Row>(
+    'SELECT id, slug, name, role_key, status, depth FROM mission_agents WHERE parent_id = ? ORDER BY slug LIMIT 100',
+    [agent.id],
+  );
   const auditRow = missionDb.get<Row>('SELECT COUNT(*) AS count FROM mission_audit WHERE actor_id = ?', [agent.id]);
   const lastAudit = missionDb.get<Row>('SELECT action FROM mission_audit WHERE actor_id = ? ORDER BY seq DESC LIMIT 1', [agent.id]);
 
@@ -129,6 +134,16 @@ export function buildAgentReport(agent: AgentRow): AgentReport {
       depth: Number(agent.depth),
       parentSlug: parentSlug(agent.parent_id),
       childCount,
+      // The delegation chain is inspectable: an owner can see exactly which
+      // agents a parent created, and in what state they are.
+      children: childAgents.map((child) => ({
+        id: String(child.id),
+        slug: String(child.slug),
+        name: String(child.name),
+        role: String(child.role_key ?? 'sub-agent'),
+        status: String(child.status),
+        depth: Number(child.depth),
+      })),
     },
     wallet: walletRow
       ? {

@@ -3,7 +3,9 @@ import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
 import { HttpError, asyncRoute } from '../server/http';
 import { appendAuditLog } from '../db';
-import { getEconomyPolicy, listEconomyEvents, listExecutions, listOpportunities, getOpportunity, updateEconomyPolicy, listMissionThreads } from '../db/economy-repositories';
+import { getEconomyPolicy, listEconomyEvents, listExecutions, listOpportunities, getOpportunity, updateEconomyPolicy, listMissionThreads,
+  getAgentProfileBySlug,
+} from '../db/economy-repositories';
 import { MissionChatError, missionChatHistory, missionChatWithAgent, missionChatWithGroup } from '../economy/mission-chat';
 import { rateLimit } from '../server/middleware/rate-limit';
 import { readinessPayload } from '../server/health';
@@ -17,6 +19,20 @@ function toHttpError(error: unknown): unknown {
   return error;
 }
 import { DISCOVERY_CATEGORIES, type RiskLevel } from '../economy/policy';
+import {
+  delegationChain,
+  hierarchyControls,
+  hierarchyTree,
+  listDelegations,
+  pauseAgent,
+  pauseAllAgents,
+  pauseHierarchy,
+  resumeAgent,
+  resumeAllAgents,
+  resumeHierarchy,
+  setControl,
+  subtreeSpend,
+} from '../economy/hierarchy';
 import { evaluateOpportunity as evaluate } from '../economy/operations';
 import { runDiscovery, startExecution, runExecution, reconcileStaleExecutions, economyScheduler } from '../economy/operations';
 import { buildDashboard, buildDailyReport } from '../economy/report';
@@ -309,7 +325,7 @@ export function createEconomyRouter(): Router {
     res.status(200).json({ expansions: listExpansions() });
   });
 
-  router.post('/expansions', (req, res) => {
+  router.post('/expansions', (req: AuthenticatedRequest, res) => {
     const gap = String(req.body?.gap ?? '');
     const specialization = String(req.body?.specialization ?? '');
     const systemInstructions = String(req.body?.system_instructions ?? '');
@@ -318,6 +334,8 @@ export function createEconomyRouter(): Router {
       gap, specialization, systemInstructions,
       parentAgentSlug: typeof req.body?.parent_agent_slug === 'string' ? req.body.parent_agent_slug : null,
       name: typeof req.body?.name === 'string' ? req.body.name : undefined,
+      actor: req.auth?.userId ? `owner:${req.auth.userId}` : 'owner',
+      ...(Number.isFinite(Number(req.body?.child_budget_cents)) ? { childBudgetCents: Math.max(0, Number(req.body.child_budget_cents)) } : {}),
     }));
   });
 
@@ -455,6 +473,83 @@ export function createEconomyRouter(): Router {
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : String(error), 'improvement_rejected');
     }
+  });
+
+  // ── Hierarchy, delegation and emergency controls (Section 2 / 3 / 14) ────
+  //
+  // The hierarchy is the delegation record: which agent created which, under
+  // which gates, and who was accountable. The controls are the narrow brakes an
+  // operator needs during an incident — each one is audited with the actor.
+
+  router.get('/hierarchy', (req, res) => {
+    const root = typeof req.query.root === 'string' && req.query.root ? req.query.root : null;
+    res.status(200).json({ ...hierarchyTree(root), controls: hierarchyControls() });
+  });
+
+  router.get('/hierarchy/delegations', (req, res) => {
+    const parent = typeof req.query.parent === 'string' && req.query.parent ? req.query.parent : undefined;
+    const child = typeof req.query.child === 'string' && req.query.child ? req.query.child : undefined;
+    const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 100;
+    res.status(200).json({ delegations: listDelegations({ parentAgentSlug: parent, childAgentSlug: child, limit }) });
+  });
+
+  router.get('/hierarchy/:slug', (req, res) => {
+    const slug = req.params.slug;
+    const profile = getAgentProfileBySlug(slug);
+    if (!profile) throw new HttpError(404, `agent ${slug} is not an economy agent`, 'not_found');
+    res.status(200).json({
+      agent: profile,
+      chain: delegationChain(slug),
+      subtree: hierarchyTree(slug),
+      subtreeSpendCents: subtreeSpend(slug),
+      delegations: listDelegations({ parentAgentSlug: slug, limit: 50 }),
+    });
+  });
+
+  router.post('/hierarchy/:slug/pause', (req: AuthenticatedRequest, res) => {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator pause';
+    res.status(200).json(pauseAgent({ agentSlug: req.params.slug, reason, actor: `owner:${req.auth!.userId}` }));
+  });
+
+  router.post('/hierarchy/:slug/resume', (req: AuthenticatedRequest, res) => {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator resume';
+    res.status(200).json(resumeAgent({ agentSlug: req.params.slug, reason, actor: `owner:${req.auth!.userId}` }));
+  });
+
+  router.post('/hierarchy/:slug/pause-tree', (req: AuthenticatedRequest, res) => {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator pause';
+    const result = pauseHierarchy({ rootAgentSlug: req.params.slug, reason, actor: `owner:${req.auth!.userId}` });
+    res.status(200).json({ ...result, pausedCount: result.paused.length });
+  });
+
+  router.post('/hierarchy/:slug/resume-tree', (req: AuthenticatedRequest, res) => {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator resume';
+    const result = resumeHierarchy({ rootAgentSlug: req.params.slug, reason, actor: `owner:${req.auth!.userId}` });
+    res.status(200).json({ ...result, resumedCount: result.resumed.length });
+  });
+
+  router.post('/controls/pause-all', (req: AuthenticatedRequest, res) => {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator pause-all';
+    res.status(200).json(pauseAllAgents({ reason, actor: `owner:${req.auth!.userId}` }));
+  });
+
+  router.post('/controls/resume-all', (req: AuthenticatedRequest, res) => {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator resume-all';
+    res.status(200).json(resumeAllAgents({ reason, actor: `owner:${req.auth!.userId}` }));
+  });
+
+  router.post('/controls/:kind', (req: AuthenticatedRequest, res) => {
+    const kind = req.params.kind;
+    if (kind !== 'spending' && kind !== 'withdrawals' && kind !== 'provider_access') {
+      throw new HttpError(400, "kind must be 'spending', 'withdrawals' or 'provider_access'", 'validation_error');
+    }
+    if (typeof req.body?.frozen !== 'boolean') throw new HttpError(400, 'frozen (boolean) is required', 'validation_error');
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'operator control';
+    res.status(200).json(setControl({ kind, frozen: req.body.frozen, reason, actor: `owner:${req.auth!.userId}` }));
+  });
+
+  router.get('/controls', (_req, res) => {
+    res.status(200).json({ controls: hierarchyControls() });
   });
 
   return router;

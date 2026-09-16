@@ -41,6 +41,11 @@ export interface EconomyPolicyRow {
   max_economy_agents: number;
   max_agent_depth: number;
   max_children_per_agent: number;
+  spawn_rate_per_hour: number;
+  spawn_cost_cents: number;
+  freeze_spending: number;
+  freeze_withdrawals: number;
+  provider_access_revoked: number;
   economy_model_key: string | null;
   discovery_categories_json: string;
 }
@@ -658,6 +663,10 @@ export interface AgentProfileRow {
   objectives: string | null;
   status: string;
   enabled_at: string;
+  budget_cents: number;
+  spend_cents: number;
+  paused_at: string | null;
+  paused_reason: string | null;
 }
 
 /** Children count for a parent agent (hierarchy gate). */
@@ -704,6 +713,208 @@ export function listAgentProfiles(): AgentProfileRow[] {
 export function countAgentProfiles(): number {
   const row = db.get<{ n: number }>('SELECT COUNT(*) AS n FROM economy_agent_profiles');
   return row ? Number(row.n) : 0;
+}
+
+/**
+ * Every profile as a flat parent→children map.
+ *
+ * The descendant walk is done in JS rather than with a recursive CTE on
+ * purpose: SQLite and PostgreSQL disagree on recursive-CTE syntax and this
+ * layer must behave identically on both engines. One indexed parent lookup
+ * builds the whole forest for any realistic economy size (hundreds to
+ * thousands of agents), and the walk is cycle-safe by construction.
+ */
+export function agentChildrenMap(): Map<string | null, string[]> {
+  const rows = db.all<{ agent_slug: string; parent_agent_slug: string | null }>(
+    'SELECT agent_slug, parent_agent_slug FROM economy_agent_profiles',
+  );
+  const map = new Map<string | null, string[]>();
+  for (const row of rows) {
+    const key = row.parent_agent_slug ?? null;
+    const bucket = map.get(key);
+    if (bucket) bucket.push(row.agent_slug);
+    else map.set(key, [row.agent_slug]);
+  }
+  return map;
+}
+
+/** Every descendant of `rootSlug` (exclusive of the root), breadth-first, cycle-safe. */
+export function listDescendantSlugs(rootSlug: string): string[] {
+  const children = agentChildrenMap();
+  const out: string[] = [];
+  const seen = new Set<string>([rootSlug]);
+  const queue = [...(children.get(rootSlug) ?? [])];
+  while (queue.length > 0) {
+    const slug = queue.shift() as string;
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+    queue.push(...(children.get(slug) ?? []));
+  }
+  return out;
+}
+
+/** Depth of every profile, keyed by slug (top-level agents are depth 0). */
+export function agentDepths(): Map<string, number> {
+  const rows = db.all<{ agent_slug: string; parent_agent_slug: string | null }>(
+    'SELECT agent_slug, parent_agent_slug FROM economy_agent_profiles',
+  );
+  const parentOf = new Map<string, string | null>();
+  for (const row of rows) parentOf.set(row.agent_slug, row.parent_agent_slug ?? null);
+  const depths = new Map<string, number>();
+  for (const row of rows) {
+    if (depths.has(row.agent_slug)) continue;
+    const chain: string[] = [];
+    let current: string | null = row.agent_slug;
+    const seen = new Set<string>();
+    let depth = 0;
+    while (current && !seen.has(current) && depth < 100) {
+      const known = depths.get(current);
+      if (known !== undefined) {
+        depth += known;
+        break;
+      }
+      seen.add(current);
+      chain.push(current);
+      const parentSlug: string | null = parentOf.get(current) ?? null;
+      if (!parentSlug || !parentOf.has(parentSlug)) break;
+      current = parentSlug;
+      depth += 1;
+    }
+    // Resolve the recorded chain back down with absolute depths.
+    chain.forEach((slug, index) => {
+      const value = depth - index;
+      depths.set(slug, value < 0 ? 0 : value);
+    });
+    if (!depths.has(row.agent_slug)) depths.set(row.agent_slug, depth);
+  }
+  return depths;
+}
+
+export function setAgentProfileStatus(input: {
+  agentSlug: string;
+  status: 'active' | 'paused';
+  pausedAt?: string | null;
+  pausedReason?: string | null;
+}): number {
+  const result = db.run(
+    'UPDATE economy_agent_profiles SET status = ?, paused_at = ?, paused_reason = ? WHERE agent_slug = ?',
+    [input.status, input.pausedAt ?? null, input.pausedReason ?? null, input.agentSlug],
+  );
+  return Number((result as { changes?: number }).changes ?? 0);
+}
+
+export function setAgentBudgetCents(agentSlug: string, budgetCents: number): void {
+  db.run('UPDATE economy_agent_profiles SET budget_cents = ? WHERE agent_slug = ?', [Math.max(0, Math.round(budgetCents)), agentSlug]);
+}
+
+/** Record real spend against an agent's budget (debits are posted to the ledger separately). */
+export function addAgentSpendCents(agentSlug: string, cents: number): void {
+  if (cents <= 0) return;
+  db.run('UPDATE economy_agent_profiles SET spend_cents = spend_cents + ? WHERE agent_slug = ?', [Math.round(cents), agentSlug]);
+}
+
+export interface DelegationRow {
+  id: string;
+  parent_agent_slug: string | null;
+  child_agent_slug: string | null;
+  gap: string | null;
+  decision: string;
+  reason: string;
+  checks_json: string;
+  depth: number;
+  spawn_cost_cents: number;
+  rate_used_in_window: number;
+  actor: string;
+  decided_at: string;
+}
+
+export function insertDelegation(input: {
+  parentAgentSlug: string | null;
+  childAgentSlug: string | null;
+  gap?: string | null;
+  decision: 'authorized' | 'rejected';
+  reason: string;
+  checks: unknown;
+  depth: number;
+  spawnCostCents: number;
+  rateUsedInWindow: number;
+  actor: string;
+}): DelegationRow {
+  const id = createId('dgt');
+  const decidedAt = NOW();
+  db.run(
+    `INSERT INTO economy_delegations
+       (id, parent_agent_slug, child_agent_slug, gap, decision, reason, checks_json, depth, spawn_cost_cents, rate_used_in_window, actor, decided_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.parentAgentSlug,
+      input.childAgentSlug,
+      input.gap ?? null,
+      input.decision,
+      input.reason,
+      JSON.stringify(input.checks ?? []),
+      input.depth,
+      input.spawnCostCents,
+      input.rateUsedInWindow,
+      input.actor,
+      decidedAt,
+    ],
+  );
+  return db.get<DelegationRow>('SELECT * FROM economy_delegations WHERE id = ?', [id])!;
+}
+
+export function listDelegations(filter: { parentAgentSlug?: string; childAgentSlug?: string; limit?: number } = {}): DelegationRow[] {
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  if (filter.childAgentSlug) {
+    return db.all<DelegationRow>('SELECT * FROM economy_delegations WHERE child_agent_slug = ? ORDER BY decided_at DESC LIMIT ?', [
+      filter.childAgentSlug,
+      limit,
+    ]);
+  }
+  if (filter.parentAgentSlug) {
+    return db.all<DelegationRow>('SELECT * FROM economy_delegations WHERE parent_agent_slug = ? ORDER BY decided_at DESC LIMIT ?', [
+      filter.parentAgentSlug,
+      limit,
+    ]);
+  }
+  return db.all<DelegationRow>('SELECT * FROM economy_delegations ORDER BY decided_at DESC LIMIT ?', [limit]);
+}
+
+/** Authorized spawns since `sinceIso` — the rate-limit window (rejections do not consume it). */
+export function countRecentAuthorizedDelegations(sinceIso: string): number {
+  const row = db.get<{ n: number | null }>(
+    "SELECT COUNT(*) AS n FROM economy_delegations WHERE decision = 'authorized' AND decided_at >= ?",
+    [sinceIso],
+  );
+  return Number(row?.n ?? 0);
+}
+
+/** Authorized spawns by ONE parent since `sinceIso` (per-parent fairness). */
+export function countRecentAuthorizedDelegationsByParent(parentAgentSlug: string | null, sinceIso: string): number {
+  const row = parentAgentSlug
+    ? db.get<{ n: number | null }>(
+        "SELECT COUNT(*) AS n FROM economy_delegations WHERE decision = 'authorized' AND parent_agent_slug = ? AND decided_at >= ?",
+        [parentAgentSlug, sinceIso],
+      )
+    : db.get<{ n: number | null }>(
+        "SELECT COUNT(*) AS n FROM economy_delegations WHERE decision = 'authorized' AND parent_agent_slug IS NULL AND decided_at >= ?",
+        [sinceIso],
+      );
+  return Number(row?.n ?? 0);
+}
+
+/** Realized spend of a whole subtree (sum of profile spend — includes descendants). */
+export function subtreeSpendCents(rootSlug: string): number {
+  const slugs = [rootSlug, ...listDescendantSlugs(rootSlug)];
+  if (slugs.length === 0) return 0;
+  const placeholders = slugs.map(() => '?').join(', ');
+  const row = db.get<{ total: number | null }>(
+    `SELECT SUM(spend_cents) AS total FROM economy_agent_profiles WHERE agent_slug IN (${placeholders})`,
+    slugs,
+  );
+  return Number(row?.total ?? 0);
 }
 
 export interface SettlementRow {

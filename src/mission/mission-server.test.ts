@@ -35,6 +35,8 @@ const OWNER_EMAIL = 'owner@mission.test';
 const OWNER_PASSWORD = 'mission-owner-password-1';
 
 let baseUrl = '';
+let rootAgentSlug = '';
+let rootWalletId = '';
 let ownerToken = '';
 let server: ReturnType<typeof createMissionServer>;
 
@@ -340,6 +342,187 @@ test('reporting helpers agree with the HTTP payloads', () => {
   assert.ok(overview.audit.ok && overview.integrity.ledger.ok, 'chains verify');
   void createTarget;
   void recordRevenue;
+});
+
+// ── Operator controls (Section 9 / 14): pause, budget, funding, honest refusals
+
+test('an owner can create a root agent with a contract and a funded wallet, and the contract carries the limits', async () => {
+  const created = await owner('/api/agents', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Control Root', specialization: 'operations', activity: 'software_development', budgetCents: 2000, missionRole: 'director' }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.ok(created.body.agent.slug);
+  assert.equal(Number(created.body.contract.budget_cents), 2000);
+  const limits = JSON.parse(String(created.body.contract.resource_limits));
+  assert.equal(limits.maxSpendCents, 2000);
+  assert.equal(Number(created.body.wallet.budgetCents), 2000);
+  rootAgentSlug = String(created.body.agent.slug);
+  rootWalletId = String(created.body.wallet.id);
+});
+
+test('a create request never answers with a list (no silent fake success)', async () => {
+  const { status, body } = await owner('/api/agents', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(status, 400);
+  assert.equal(body.error.code, 'validation_error');
+  assert.equal(body.agents, undefined, 'a rejected create never returns a page of agents');
+});
+
+test('pausing an agent is a real brake: the agent cannot act until it is resumed', async () => {
+  const paused = await owner(`/api/agents/${rootAgentSlug}/status`, { method: 'POST', body: JSON.stringify({ status: 'paused', reason: 'probe hold' }) });
+  assert.equal(paused.status, 200);
+  assert.equal(paused.body.agent.status, 'paused');
+
+  const refused = await owner('/api/work', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, title: 'should never be assigned', activity: 'software_development' }),
+  });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.error.code, 'agent_not_active');
+
+  const resumed = await owner(`/api/agents/${rootAgentSlug}/status`, { method: 'POST', body: JSON.stringify({ status: 'active', reason: 'probe clear' }) });
+  assert.equal(resumed.status, 200);
+  const allowed = await owner('/api/work', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, title: 'assigned after resume', activity: 'software_development' }),
+  });
+  assert.equal(allowed.status, 201);
+});
+
+test('pausing or retiring an agent requires a reason and is audited', async () => {
+  const noReason = await owner(`/api/agents/${rootAgentSlug}/status`, { method: 'POST', body: JSON.stringify({ status: 'paused' }) });
+  assert.equal(noReason.status, 400);
+  const entries = missionDb.all<Row>(`SELECT action, detail FROM mission_audit WHERE action IN ('agent.paused','agent.resumed') ORDER BY seq DESC LIMIT 4`);
+  assert.ok(entries.length >= 2, 'pause/resume decisions are in the audit trail');
+  const detail = JSON.parse(String(entries.find((entry) => String(entry.action) === 'agent.paused')!.detail));
+  assert.equal(detail.reason, 'probe hold');
+});
+
+test('owner funding is real, idempotent and never counted as revenue', async () => {
+  const key = `fund-${Date.now()}`;
+  const first = await owner(`/api/wallets/${rootWalletId}/fund`, {
+    method: 'POST',
+    body: JSON.stringify({ amountCents: 4000, reference: 'bank transfer 12345', idempotencyKey: key }),
+  });
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+  assert.equal(first.body.wallet.balanceCents, 4000);
+  assert.equal(first.body.category, 'owner_capital');
+
+  const retry = await owner(`/api/wallets/${rootWalletId}/fund`, {
+    method: 'POST',
+    body: JSON.stringify({ amountCents: 4000, reference: 'bank transfer 12345', idempotencyKey: key }),
+  });
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.duplicated, true);
+  assert.equal(retry.body.wallet.balanceCents, 4000, 'a retried request cannot double-credit the wallet');
+
+  const revenue = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_revenue WHERE wallet_id = ?`, [rootWalletId]);
+  assert.equal(Number(revenue?.count ?? 0), 0, 'owner capital is not revenue');
+  const ledger = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_ledger WHERE idempotency_key = ?`, [key]);
+  assert.equal(Number(ledger?.count ?? 0), 1, 'exactly one ledger row for the retried deposit');
+});
+
+test('funding requires a reference and a positive amount', async () => {
+  const noRef = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 100, reference: '', idempotencyKey: 'k-1' }) });
+  assert.equal(noRef.status, 400);
+  const noKey = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 100, reference: 'bank transfer 9', idempotencyKey: '' }) });
+  assert.equal(noKey.status, 400);
+  const zero = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 0, reference: 'bank transfer 9', idempotencyKey: 'k-2' }) });
+  assert.equal(zero.status, 400);
+});
+
+test('the owner controls a wallet budget and can freeze it', async () => {
+  const raised = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: 3500, label: 'control wallet' }) });
+  assert.equal(raised.status, 200);
+  assert.equal(raised.body.wallet.budgetCents, 3500);
+
+  const frozen = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ status: 'frozen' }) });
+  assert.equal(frozen.status, 200);
+  assert.equal(frozen.body.wallet.status, 'frozen');
+  const refused = await owner('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'p', description: 'frozen wallet', amountCents: 10 }),
+  });
+  assert.equal(refused.status, 409);
+  assert.match(String(refused.body.error.message), /wallet_frozen/);
+
+  await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ status: 'active' }) });
+  const bad = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: -5 }) });
+  assert.equal(bad.status, 400);
+});
+
+test('an expense uses the agent wallet, auto-executes under the threshold and queues above it', async () => {
+  const policy = (await owner('/api/policy')).body.policy;
+  const under = await owner('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'provider-a', description: 'under threshold', amountCents: Math.max(1, Math.floor(policy.requireApprovalAboveCents / 2)) }),
+  });
+  assert.equal(under.status, 201, `under-threshold expense: ${JSON.stringify(under.body)}`);
+  assert.equal(under.body.expense.status, 'paid', 'below the threshold the spend executes immediately');
+
+  // The budget is authority, the balance is money: raise the ceiling before
+  // committing more than what is left of the previous budget.
+  const raised = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: policy.requireApprovalAboveCents * 2 }) });
+  assert.equal(raised.status, 200);
+  const over = await owner('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'provider-a', description: 'over threshold', amountCents: policy.requireApprovalAboveCents + 1 }),
+  });
+  assert.equal(over.status, 201, `over-threshold expense: ${JSON.stringify(over.body)}`);
+  assert.equal(over.body.expense.status, 'requested');
+  assert.ok(over.body.approvalId, 'an approval was queued');
+
+  const rejected = await owner(`/api/expenses/${over.body.expense.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'rejected', note: 'not this month' }) });
+  assert.equal(rejected.status, 200);
+  assert.equal(rejected.body.expense.status, 'rejected');
+  const again = await owner(`/api/expenses/${over.body.expense.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
+  assert.equal(again.status, 409, 'a decided expense cannot be re-decided');
+});
+
+test('an agent wallet is resolved automatically and a missing wallet states the real requirement', async () => {
+  const orphan = await owner('/api/agents', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'No Wallet Agent', specialization: 'scratch', activity: 'software_development', budgetCents: 0, missionRole: 'worker' }),
+  });
+  const slug = String(orphan.body.agent.slug);
+  const walletId = String(orphan.body.wallet.id);
+  missionDb.run('DELETE FROM mission_wallets WHERE id = ?', [walletId]);
+  const expense = await owner('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: slug, category: 'api', provider: 'p', description: 'no wallet', amountCents: 10 }),
+  });
+  assert.equal(expense.status, 409);
+  assert.equal(expense.body.error.code, 'wallet_required');
+});
+
+test('the kill switch sub-route is reachable on both paths and blocks work', async () => {
+  const engaged = await owner('/api/policy/kill-switch', { method: 'POST', body: JSON.stringify({ engage: true }) });
+  assert.equal(engaged.status, 200);
+  assert.equal(engaged.body.killSwitch, true, 'the policy sub-route engages the switch instead of silently updating policy');
+  const blocked = await owner('/api/work', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, title: 'blocked', activity: 'software_development' }),
+  });
+  assert.equal(blocked.status, 403);
+  const released = await owner('/api/kill-switch', { method: 'POST', body: JSON.stringify({ engage: false }) });
+  assert.equal(released.body.killSwitch, false);
+  const allowed = await owner('/api/work', {
+    method: 'POST',
+    body: JSON.stringify({ agentSlug: rootAgentSlug, title: 'after release', activity: 'software_development' }),
+  });
+  assert.equal(allowed.status, 201);
+});
+
+test('the agent report lists the delegation children with their state', async () => {
+  const child = await owner(`/api/agents/${rootAgentSlug}/children`, {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Control Child', specialization: 'verification', activity: 'software_development', budgetCents: 250 }),
+  });
+  assert.equal(child.status, 201);
+  const report = await owner(`/api/agents/${rootAgentSlug}`);
+  const children = report.body.agent.children;
+  assert.ok(children.some((entry: any) => entry.slug === child.body.agent.slug && entry.status === 'active'));
+  assert.equal(report.body.agent.childCount, children.length);
 });
 
 test.after(async () => {
