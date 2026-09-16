@@ -664,6 +664,75 @@ describe('ZA141251SA agent economy', () => {
       }
     });
 
+    it('hides the hierarchy and every emergency control from users and staff admins', async () => {
+      const userToken = await loginAs(email);
+      const adminToken = await loginAs(adminEmail);
+      const reads = ['/api/economy/hierarchy', '/api/economy/hierarchy/delegations', '/api/economy/controls'];
+      const writes = [
+        ['POST', '/api/economy/hierarchy/some-agent/pause'],
+        ['POST', '/api/economy/hierarchy/some-agent/resume'],
+        ['POST', '/api/economy/hierarchy/some-agent/pause-tree'],
+        ['POST', '/api/economy/controls/pause-all'],
+        ['POST', '/api/economy/controls/resume-all'],
+        ['POST', '/api/economy/controls/spending'],
+      ];
+      for (const token of [userToken, adminToken]) {
+        for (const path of reads) {
+          const response = await fetch(`${baseUrl}${path}`, { headers: { authorization: `Bearer ${token}` } });
+          assert.equal(response.status, 403, `${path} hidden from non-owners (got ${response.status})`);
+        }
+        for (const [method, path] of writes) {
+          const response = await fetch(`${baseUrl}${path}`, {
+            method,
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ reason: 'should not be allowed', frozen: true }),
+          });
+          assert.equal(response.status, 403, `${method} ${path} hidden from non-owners (got ${response.status})`);
+        }
+      }
+      const anonymous = await fetch(`${baseUrl}/api/economy/controls`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      assert.equal(anonymous.status, 401, 'controls are never reachable anonymously');
+    });
+
+    it('the owner reads the hierarchy and drives the emergency controls for real', async () => {
+      const ownerToken = await loginAs(ownerEmail);
+      const auth = { authorization: `Bearer ${ownerToken}` };
+      const hierarchy = await fetch(`${baseUrl}/api/economy/hierarchy`, { headers: auth });
+      assert.equal(hierarchy.status, 200);
+      const payload = (await hierarchy.json()) as { nodes: unknown[]; controls: Record<string, unknown> };
+      assert.ok(Array.isArray(payload.nodes), 'the tree is a list of nodes');
+      assert.equal(typeof payload.controls.killSwitch, 'boolean');
+      assert.equal(typeof payload.controls.totalAgents, 'number');
+
+      const invalid = await fetch(`${baseUrl}/api/economy/controls/not_a_control`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...auth },
+        body: JSON.stringify({ frozen: true }),
+      });
+      assert.equal(invalid.status, 400, 'an unknown control is refused');
+
+      for (const kind of ['spending', 'withdrawals', 'provider_access']) {
+        const frozen = await fetch(`${baseUrl}/api/economy/controls/${kind}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...auth },
+          body: JSON.stringify({ frozen: true, reason: 'RBAC test' }),
+        });
+        assert.equal(frozen.status, 200, `freezing ${kind} is an owner action`);
+        const released = await fetch(`${baseUrl}/api/economy/controls/${kind}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...auth },
+          body: JSON.stringify({ frozen: false, reason: 'RBAC test release' }),
+        });
+        assert.equal(released.status, 200, `releasing ${kind} is an owner action`);
+      }
+
+      const audit = await fetch(`${baseUrl}/api/economy/events?limit=50`, { headers: auth });
+      assert.equal(audit.status, 200);
+      const events = ((await audit.json()) as { events: Array<{ summary: string }> }).events;
+      const controlEvents = events.filter((event) => /freeze|control/i.test(event.summary));
+      assert.ok(controlEvents.length >= 3, 'every control change is recorded in the economy event log');
+    });
+
     it('rejects revenue claims without evidence, even for the owner', async () => {
       const ownerToken = await loginAs(ownerEmail);
       const response = await fetch(`${baseUrl}/api/economy/revenue`, {

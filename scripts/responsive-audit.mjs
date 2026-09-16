@@ -314,13 +314,23 @@ const path = (el) => {
 };
 
 /* ---------- the audit ---------- */
-const rules = parseCss(readFileSync(`${repo}/public/tokens.css`, 'utf8') + '\n' + readFileSync(`${repo}/public/styles.css`, 'utf8'));
-const appJs = readFileSync(`${repo}/public/app.js`, 'utf8');
+// The audit engine is asset-agnostic so the same invariants (overflow, font
+// size, tap targets, nowrap clipping) can be checked on any delivered surface:
+// the public AKBARAL! web app by default, the private ZA141251SA mission console
+// with AUDIT_CSS/AUDIT_JS/AUDIT_HTML pointed at mission-dashboard/.
+const cssFiles = (process.env.AUDIT_CSS || 'public/tokens.css,public/styles.css').split(',').map((file) => file.trim()).filter(Boolean);
+const rules = parseCss(cssFiles.map((file) => readFileSync(`${repo}/${file}`, 'utf8')).join('\n'));
+const appJs = readFileSync(`${repo}/${process.env.AUDIT_JS || 'public/app.js'}`, 'utf8');
+const HTML_FILE = process.env.AUDIT_HTML || '';
 const WEB = process.env.AUDIT_BASE || 'http://127.0.0.1:3000';
 const screens = process.argv.find((a) => a.startsWith('--screens='))?.split('=')[1]?.split(',');
 
 let html;
-try { html = await (await fetch(`${WEB}/`)).text(); } catch { html = readFileSync(`${repo}/.next/server/app/index.html`, 'utf8'); }
+if (HTML_FILE) {
+  html = readFileSync(`${repo}/${HTML_FILE}`, 'utf8');
+} else {
+  try { html = await (await fetch(`${WEB}/`)).text(); } catch { html = readFileSync(`${repo}/.next/server/app/index.html`, 'utf8'); }
+}
 
 const dom = new JSDOM(html, { url: `${WEB}/`, runScripts: 'outside-only', pretendToBeVisual: true, virtualConsole: new VirtualConsole() });
 const { window } = dom, doc = window.document;

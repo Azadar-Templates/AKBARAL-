@@ -96,3 +96,62 @@ td.wrap { white-space: normal; max-width: 460px; }
 .stack-form h3 { margin-top: 0; }
 
 .footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; padding: 14px 20px; }
+
+/* ── Owner control blocks ─────────────────────────────────────────────────── */
+.control-block {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 12px 14px;
+  margin: 14px 0;
+}
+.control-block > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+.control-block > summary::-webkit-details-marker { display: none; }
+.control-block > summary::before { content: '▸ '; color: var(--muted); }
+.control-block[open] > summary::before { content: '▾ '; }
+.control-block .label {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 10px;
+}
+.control-block p { margin: 6px 0 0; }
+
+/* ── Responsive pass: 320 → 1440+ without horizontal overflow ─────────────── */
+html, body { max-width: 100%; overflow-x: hidden; }
+
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; padding: 12px 14px; }
+  .brand { flex-wrap: wrap; gap: 6px; }
+  .shell { padding: 14px; }
+  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card .value { font-size: 18px; }
+  .tabs { gap: 4px; }
+  .tab { padding: 7px 10px; font-size: 13px; }
+  .inline-form { flex-direction: column; align-items: stretch; }
+  .inline-form input, .inline-form select { width: 100%; min-width: 0; }
+  .inline-form button { width: 100%; }
+  .login { max-width: 100%; }
+  table { font-size: 12.5px; }
+  th, td { padding: 7px 8px; }
+  td.wrap { max-width: 220px; }
+}
+
+@media (max-width: 420px) {
+  .cards { grid-template-columns: 1fr; }
+  .shell { padding: 10px; }
+  h1 { font-size: 18px; }
+  .card .value { font-size: 17px; }
+  .table-wrap { border-radius: 8px; }
+}
+
+@media (min-width: 1440px) {
+  .shell { max-width: 1360px; }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}

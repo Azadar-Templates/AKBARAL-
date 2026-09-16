@@ -79,13 +79,35 @@ export interface DelegationCheck {
 
 export interface SpawnDecision {
   allowed: boolean;
+  /** Canonical, stable phrase for the failing gate ('' when allowed). */
   reason: string;
+  /** Machine name of the gate that refused, or null when allowed. */
+  failedGate: DelegationCheckName | null;
+  /** The numbers behind the decision, for the audit record and the operator UI. */
+  reasonDetail: string;
   checks: DelegationCheck[];
   depth: number;
   costCents: number;
   rateUsedInWindow: number;
   budgetRemainingCents: number | null;
 }
+
+/**
+ * The stable phrase for each gate. Callers (and the refusal records) depend on
+ * these strings, so the numbers live in `detail` instead of being interpolated
+ * into the reason — a dashboard can show the detail without parsing prose.
+ */
+const GATE_REASON: Record<DelegationCheckName, string> = {
+  kill_switch: 'kill switch engaged',
+  provider_access: 'provider access revoked',
+  spending_freeze: 'spending frozen',
+  parent_exists: 'parent agent not found',
+  depth_limit: 'max agent depth reached',
+  children_limit: 'parent child limit reached',
+  total_agent_cap: 'agent cap reached',
+  spawn_rate: 'spawn rate limit reached',
+  budget: 'parent budget exhausted',
+};
 
 export class HierarchyControlError extends Error {
   constructor(
@@ -118,11 +140,21 @@ export function evaluateSpawn(input: {
   gap?: string | null;
   /** Optional: a child may be granted its own budget at creation time. */
   childBudgetCents?: number;
+  /**
+   * Who is asking:
+   *   'owner' — a deliberate owner action (the economy API is owner-only). The
+   *             parent is not charged and its budget does not constrain the
+   *             decision, exactly like a hire approved by the owner.
+   *   'agent' — the parent is spawning a child on its own initiative. This is
+   *             the case the budget and rate gates exist for.
+   */
+  initiatedBy?: 'owner' | 'agent';
   policy?: PolicySnapshot;
   now?: Date;
 }): SpawnDecision {
   const policy = input.policy ?? currentPolicy();
   const now = input.now ?? new Date();
+  const initiatedBy = input.initiatedBy ?? 'owner';
   const parentSlug = input.parentAgentSlug ?? null;
   const checks: DelegationCheck[] = [];
   const add = (name: DelegationCheckName, passed: boolean, detail: string): void => {
@@ -131,7 +163,8 @@ export function evaluateSpawn(input: {
 
   const depths = agentDepths();
   const depth = parentSlug ? depthOf(parentSlug, depths) + 1 : 0;
-  const costCents = Math.max(0, policy.spawnCostCents);
+  // Only an agent-initiated delegation is a spend by the parent.
+  const costCents = initiatedBy === 'agent' && parentSlug ? Math.max(0, policy.spawnCostCents) : 0;
   const sinceIso = new Date(now.getTime() - SPAWN_WINDOW_MS).toISOString();
   const rateUsedInWindow = countRecentAuthorizedDelegations(sinceIso);
   const parentRateUsed = countRecentAuthorizedDelegationsByParent(parentSlug, sinceIso);
@@ -152,7 +185,9 @@ export function evaluateSpawn(input: {
   add(
     'depth_limit',
     depth <= policy.maxAgentDepth,
-    `depth ${depth} / cap ${policy.maxAgentDepth}${parentSlug ? ` (parent at ${depth - 1})` : ' (root level)'}`,
+    // The phrase "depth limit" is part of the operator-facing contract (the
+    // event log and the audit tests grep for it), so the detail keeps it.
+    `depth limit: depth ${depth} / cap ${policy.maxAgentDepth}${parentSlug ? ` (parent at ${depth - 1})` : ' (root level)'}`,
   );
 
   const children = parentSlug ? countAgentChildren(parentSlug) : 0;
@@ -176,20 +211,29 @@ export function evaluateSpawn(input: {
   const dailySpend = ledgerDailySpend(dayStartIso(now));
   const dailyHeadroom = policy.maxDailySpendCents - dailySpend;
   const budgetRemainingCents = parentProfile ? Math.max(0, Number(parentProfile.budget_cents) - Number(parentProfile.spend_cents)) : null;
-  const parentBudgetOk = parentProfile ? (budgetRemainingCents as number) >= costCents : true;
-  const dailyOk = costCents <= dailyHeadroom;
+  // Budgeting applies to DELEGATION: an agent that spawns a child on its own
+  // initiative pays for it from its own budget, and the economy's daily spend
+  // ceiling still applies. An owner-initiated creation is a hire: the owner
+  // already authorized it through the API, so the parent's budget neither
+  // blocks it nor is it charged.
+  const parentBudgetOk = initiatedBy === 'agent' && parentProfile ? (budgetRemainingCents as number) >= costCents : true;
+  const dailyOk = initiatedBy === 'agent' ? costCents <= dailyHeadroom : true;
   add(
     'budget',
     parentBudgetOk && dailyOk,
-    parentProfile
-      ? `parent budget remaining ${budgetRemainingCents}c vs cost ${costCents}c; daily spend headroom ${dailyHeadroom}c`
-      : `root spawn cost ${costCents}c vs daily spend headroom ${dailyHeadroom}c`,
+    initiatedBy === 'agent'
+      ? parentProfile
+        ? `parent budget remaining ${budgetRemainingCents}c vs cost ${costCents}c; daily spend headroom ${dailyHeadroom}c`
+        : `agent-initiated root spawn cost ${costCents}c vs daily spend headroom ${dailyHeadroom}c`
+      : 'owner-initiated creation (no parent budget to charge)',
   );
 
   const failed = checks.find((check) => !check.passed);
   return {
     allowed: !failed,
-    reason: failed ? `${failed.name}: ${failed.detail}` : `all ${checks.length} gates passed`,
+    reason: failed ? GATE_REASON[failed.name] : '',
+    failedGate: failed ? failed.name : null,
+    reasonDetail: failed ? failed.detail : `all ${checks.length} gates passed`,
     checks,
     depth,
     costCents,
@@ -212,7 +256,7 @@ export function recordSpawnDecision(input: {
     childAgentSlug: input.childAgentSlug ?? null,
     gap: input.gap ?? null,
     decision: decision.allowed ? 'authorized' : 'rejected',
-    reason: decision.reason,
+    reason: decision.allowed ? decision.reasonDetail : `${decision.reason} (${decision.reasonDetail})`,
     checks: decision.checks,
     depth: decision.depth,
     spawnCostCents: decision.costCents,

@@ -182,6 +182,23 @@ async function start() {
     if (error.status !== 401) banner(error.message, 'error');
   }
   await loadTab(state.activeTab);
+  await loadActivityOptions();
+}
+
+/**
+ * The activity catalog is the policy's own allow-list: the create form offers
+ * exactly the activities the mission is permitted to perform, nothing else.
+ */
+async function loadActivityOptions() {
+  const select = $('#create-agent-activity');
+  if (!select || select.options.length > 0) return;
+  try {
+    const policy = await api('/policy');
+    const activities = policy.categories && policy.categories.length > 0 ? policy.categories : policy.policy.allowedActivities;
+    for (const activity of activities) select.appendChild(el('option', { value: activity, text: activity }));
+  } catch {
+    /* the form simply stays empty; the server still enforces the policy */
+  }
 }
 
 // ── renderers ───────────────────────────────────────────────────────────────
@@ -288,6 +305,19 @@ function renderAgentReport(report) {
   ]));
 
   host.appendChild(el('p', { class: 'muted small', text: report.honesty.note }));
+  if (canMutate()) {
+    host.appendChild(renderAgentControls(report));
+  }
+
+  host.appendChild(el('h3', { text: 'Children (delegation)' }));
+  host.appendChild(table([
+    { label: 'Slug', key: 'slug' },
+    { label: 'Name', key: 'name' },
+    { label: 'Role', key: 'role' },
+    { label: 'Depth', key: 'depth' },
+    { label: 'Status', render: (row) => pill(String(row.status), row.status === 'active' ? 'ok' : 'warn') },
+  ], report.agent.children ?? [], 'This agent has not delegated any work yet.'));
+
   host.appendChild(el('h3', { text: 'Revenue by source (realized)' }));
   host.appendChild(table([
     { label: 'Source', key: 'source' },
@@ -369,6 +399,139 @@ async function loadTab(tab) {
   } catch (error) {
     banner(error.message, 'error');
   }
+}
+
+
+/**
+ * Owner controls on a single agent: pause / resume / retire, and the wallet
+ * controls (fund working capital, set the authorised budget, freeze). Every
+ * action goes to the real API and refreshes the report from the server, so what
+ * is displayed is always the server's answer — never an optimistic guess.
+ */
+function renderAgentControls(report) {
+  const slug = report.agent.slug;
+  const wallet = report.wallet;
+  const block = el('details', { class: 'control-block' });
+  block.appendChild(el('summary', { text: 'Owner controls' }));
+  const body = el('div', { class: 'stack-form' });
+  block.appendChild(body);
+
+  const reason = el('input', { placeholder: 'reason (required to pause or retire)', maxlength: '200' });
+
+  const statusRow = el('div', { class: 'inline-form' }, [
+    el('button', { class: 'small', text: 'Pause', type: 'button' }),
+    el('button', { class: 'small', text: 'Resume', type: 'button' }),
+    el('button', { class: 'small', text: 'Retire', type: 'button' }),
+    reason,
+  ]);
+  const [pauseButton, resumeButton, retireButton] = $$('button', statusRow);
+  const setStatus = async (status) => {
+    try {
+      if (status !== 'active' && reason.value.trim().length < 3) {
+        banner('A reason is required to pause or retire an agent.', 'error');
+        return;
+      }
+      await api(`/agents/${encodeURIComponent(slug)}/status`, { method: 'POST', body: { status, reason: reason.value.trim() } });
+      banner(`Agent ${slug} is now ${status}.`, 'ok');
+      await refreshAgentReport(slug);
+    } catch (error) {
+      banner(error.message, 'error');
+    }
+  };
+  pauseButton.addEventListener('click', () => setStatus('paused'));
+  resumeButton.addEventListener('click', () => setStatus('active'));
+  retireButton.addEventListener('click', () => setStatus('retired'));
+
+  body.appendChild(el('div', { class: 'label', text: 'Agent state' }));
+  body.appendChild(statusRow);
+  body.appendChild(el('p', { class: 'muted small', text: 'A paused agent cannot take work, request tools, resources, upgrades or expenses until it is resumed. Every change is audited.' }));
+
+  if (wallet) {
+    body.appendChild(el('div', { class: 'label', text: `Wallet ${wallet.id} — balance ${money(wallet.balanceCents, wallet.currency)} / budget ${money(wallet.budgetCents, wallet.currency)}` }));
+    const fundAmount = el('input', { type: 'number', min: '1', step: '1', placeholder: 'amount in minor units' });
+    const fundReference = el('input', { placeholder: 'funding reference (bank transfer / statement line)', maxlength: '160' });
+    const fundForm = el('div', { class: 'inline-form' }, [fundAmount, fundReference, el('button', { class: 'small', type: 'button', text: 'Fund wallet' })]);
+    $('button', fundForm).addEventListener('click', async () => {
+      try {
+        const amountCents = Number(fundAmount.value);
+        if (!Number.isFinite(amountCents) || amountCents <= 0) {
+          banner('Enter a positive amount.', 'error');
+          return;
+        }
+        const key = `ui-fund-${slug}-${Date.now().toString(36)}`;
+        const result = await api(`/wallets/${encodeURIComponent(wallet.id)}/fund`, {
+          method: 'POST',
+          body: { amountCents, reference: fundReference.value.trim(), idempotencyKey: key, memo: `funded from the mission console by the owner` },
+        });
+        banner(result.duplicated ? 'That funding request was already applied.' : `Funded ${money(amountCents, wallet.currency)} (owner capital, not revenue).`, 'ok');
+        await refreshAgentReport(slug);
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+    body.appendChild(el('div', { class: 'label', text: 'Fund working capital' }));
+    body.appendChild(fundForm);
+    body.appendChild(el('p', { class: 'muted small', text: 'Working capital is recorded as owner_capital in the ledger. Revenue is only ever recorded against a verified external payment.' }));
+
+    const budgetInput = el('input', { type: 'number', min: '0', step: '1', value: String(wallet.budgetCents) });
+    const freezeButton = el('button', { class: 'small', type: 'button', text: wallet.status === 'frozen' ? 'Unfreeze' : 'Freeze' });
+    const budgetRow = el('div', { class: 'inline-form' }, [budgetInput, el('button', { class: 'small', type: 'button', text: 'Set budget' }), freezeButton]);
+    const [setBudgetButton] = $$('button', budgetRow);
+    setBudgetButton.addEventListener('click', async () => {
+      try {
+        await api(`/wallets/${encodeURIComponent(wallet.id)}`, { method: 'PATCH', body: { budgetCents: Number(budgetInput.value) } });
+        banner('Wallet budget updated.', 'ok');
+        await refreshAgentReport(slug);
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+    freezeButton.addEventListener('click', async () => {
+      try {
+        await api(`/wallets/${encodeURIComponent(wallet.id)}`, {
+          method: 'PATCH',
+          body: { status: wallet.status === 'frozen' ? 'active' : 'frozen' },
+        });
+        banner(wallet.status === 'frozen' ? 'Wallet unfrozen.' : 'Wallet frozen — it cannot spend until it is unfrozen.', 'ok');
+        await refreshAgentReport(slug);
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+    body.appendChild(el('div', { class: 'label', text: 'Authorised budget / wallet state' }));
+    body.appendChild(budgetRow);
+    body.appendChild(el('p', { class: 'muted small', text: 'The budget is authority to spend, not money: funding adds balance, the budget allows it to be spent. A frozen wallet refuses every spend.' }));
+  }
+
+  const workForm = el('div', { class: 'inline-form' }, [
+    el('input', { placeholder: 'assign work — title', maxlength: '160' }),
+    el('button', { class: 'small', type: 'button', text: 'Assign work' }),
+  ]);
+  $('button', workForm).addEventListener('click', async () => {
+    try {
+      const title = $('input', workForm).value.trim();
+      if (title.length < 3) {
+        banner('A title is required to assign work.', 'error');
+        return;
+      }
+      // The agent's own category is the activity it is authorised to perform;
+      // fall back to the first policy-allowed activity offered by the console.
+      const activity = report.agent.category || $('#create-agent-activity').value || 'software_development';
+      const created = await api('/work', { method: 'POST', body: { agentSlug: slug, title, activity, description: 'Assigned from the mission console.' } });
+      banner(`Work assigned to ${slug} (${created.work.status}).`, 'ok');
+      await refreshAgentReport(slug);
+    } catch (error) {
+      banner(error.message, 'error');
+    }
+  });
+  body.appendChild(el('div', { class: 'label', text: 'Assign work' }));
+  body.appendChild(workForm);
+  return block;
+}
+
+async function refreshAgentReport(slug) {
+  const report = await api(`/agents/${encodeURIComponent(slug)}/report`);
+  renderAgentReport(report);
 }
 
 async function loadAgents(query = '') {

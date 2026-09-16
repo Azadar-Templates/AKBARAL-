@@ -4,6 +4,7 @@ import { db } from '../db/database';
 import { applyMigrations } from '../db/migrate';
 import {
   getAgentProfileBySlug,
+  getEconomyPolicy,
   setAgentBudgetCents,
   updateEconomyPolicy,
   upsertAgentProfile,
@@ -49,9 +50,23 @@ import {
  */
 
 const TREE = ['h-root', 'h-child-a', 'h-child-b', 'h-grand'];
+// Every agent this file creates, so the shared test database is left exactly as
+// found (other suites count economy agents against the real cap).
+const CREATED_SLUGS = [
+  ...TREE,
+  'h-budget-parent', 'h-budget-child',
+  'h-spend-root', 'h-spend-child', 'h-spend-grand',
+  'rate-child-0', 'rate-child-1', 'budget-child-1',
+];
+
+let policySnapshot: Record<string, unknown> | null = null;
 
 before(() => {
   applyMigrations(db);
+  // The policy is shared state in the shared test database: snapshot it so the
+  // tests below can change limits freely and leave everything exactly as found
+  // (other suites assert against the real policy defaults).
+  policySnapshot = { ...getEconomyPolicy() } as unknown as Record<string, unknown>;
   for (const slug of TREE) {
     upsertAgentProfile({
       agentSlug: slug,
@@ -73,10 +88,15 @@ function fundTrees(): void {
 }
 
 after(() => {
-  // Leave the shared database the way other test files expect to find it.
-  resetPolicy();
+  // Leave the shared database the way other test files expect to find it:
+  // policy restored to the snapshot, test agents and their audit rows removed,
+  // so nothing here can influence another suite's agent counts.
+  if (policySnapshot) updateEconomyPolicy(policySnapshot as never);
+  else resetPolicy();
   try {
-    db.run("DELETE FROM economy_delegations WHERE actor = 'test' OR actor = 'owner:test'");
+    const placeholders = CREATED_SLUGS.map(() => '?').join(', ');
+    db.run(`DELETE FROM economy_delegations WHERE parent_agent_slug IN (${placeholders}) OR child_agent_slug IN (${placeholders})`, [...CREATED_SLUGS, ...CREATED_SLUGS]);
+    db.run(`DELETE FROM economy_agent_profiles WHERE agent_slug IN (${placeholders})`, CREATED_SLUGS);
   } catch {
     /* ignore */
   }
@@ -104,7 +124,7 @@ describe('hierarchy: spawn authorization', () => {
   it('authorizes a spawn inside every limit and records the full check list', () => {
     resetPolicy();
     fundTrees();
-    const decision = evaluateSpawn({ parentAgentSlug: 'h-root', actor: 'test' });
+    const decision = evaluateSpawn({ parentAgentSlug: 'h-root', actor: 'test', initiatedBy: 'agent' });
     assert.equal(decision.allowed, true, decision.reason);
     assert.equal(decision.depth, 1);
     assert.equal(decision.costCents, 25);
@@ -119,7 +139,8 @@ describe('hierarchy: spawn authorization', () => {
     resetPolicy({ kill_switch: 1 });
     const decision = evaluateSpawn({ parentAgentSlug: 'h-root' });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /kill_switch/);
+    assert.equal(decision.failedGate, 'kill_switch');
+    assert.match(decision.reason, /kill switch engaged/);
     resetPolicy();
   });
 
@@ -127,15 +148,34 @@ describe('hierarchy: spawn authorization', () => {
     resetPolicy({ provider_access_revoked: 1 });
     const decision = evaluateSpawn({ parentAgentSlug: 'h-root' });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /provider_access/);
+    assert.equal(decision.failedGate, 'provider_access');
+    assert.match(decision.reason, /provider access revoked/);
     resetPolicy();
+  });
+
+  it('an owner-approved hire is not charged to the parent budget', () => {
+    resetPolicy({ spawn_cost_cents: 100 });
+    const parent = 'h-owner-hire-parent';
+    db.run('DELETE FROM economy_agent_profiles WHERE agent_slug = ?', [parent]);
+    db.run("DELETE FROM economy_delegations WHERE parent_agent_slug = ? OR child_agent_slug = ?", [parent, parent]);
+    upsertAgentProfile({ agentSlug: parent, parentAgentSlug: null, objectives: 'owner hire test' });
+    setAgentBudgetCents(parent, 0);
+    const ownerHire = evaluateSpawn({ parentAgentSlug: parent, initiatedBy: 'owner' });
+    assert.equal(ownerHire.allowed, true, ownerHire.reason);
+    assert.equal(ownerHire.costCents, 0, 'an owner hire costs the parent nothing');
+    const agentHire = evaluateSpawn({ parentAgentSlug: parent, initiatedBy: 'agent' });
+    assert.equal(agentHire.allowed, false, 'the same parent cannot delegate without budget');
+    assert.equal(agentHire.failedGate, 'budget');
+    resetPolicy();
+    fundTrees();
   });
 
   it('refuses when spending is frozen', () => {
     resetPolicy({ freeze_spending: 1 });
     const decision = evaluateSpawn({ parentAgentSlug: 'h-root' });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /spending_freeze/);
+    assert.equal(decision.failedGate, 'spending_freeze');
+    assert.match(decision.reason, /spending frozen/);
     resetPolicy();
   });
 
@@ -143,14 +183,16 @@ describe('hierarchy: spawn authorization', () => {
     resetPolicy();
     const decision = evaluateSpawn({ parentAgentSlug: 'does-not-exist' });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /parent_exists/);
+    assert.equal(decision.failedGate, 'parent_exists');
+    assert.match(decision.reason, /parent agent not found/);
   });
 
   it('enforces the depth limit', () => {
     resetPolicy({ max_agent_depth: 1 });
     const decision = evaluateSpawn({ parentAgentSlug: 'h-child-a' }); // grandchild = depth 2 > 1
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /depth_limit/);
+    assert.equal(decision.failedGate, 'depth_limit');
+    assert.match(decision.reason, /max agent depth reached/);
     resetPolicy();
   });
 
@@ -158,7 +200,8 @@ describe('hierarchy: spawn authorization', () => {
     resetPolicy({ max_children_per_agent: 2 }); // h-root already has 2
     const decision = evaluateSpawn({ parentAgentSlug: 'h-root' });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /children_limit/);
+    assert.equal(decision.failedGate, 'children_limit');
+    assert.match(decision.reason, /parent child limit reached/);
     resetPolicy();
   });
 
@@ -166,7 +209,8 @@ describe('hierarchy: spawn authorization', () => {
     resetPolicy({ max_economy_agents: 4 }); // exactly the profiles created above
     const decision = evaluateSpawn({ parentAgentSlug: 'h-root' });
     assert.equal(decision.allowed, false);
-    assert.match(decision.reason, /total_agent_cap/);
+    assert.equal(decision.failedGate, 'total_agent_cap');
+    assert.match(decision.reason, /agent cap reached/);
     resetPolicy();
   });
 
@@ -181,11 +225,13 @@ describe('hierarchy: spawn authorization', () => {
     }
     const refused = evaluateSpawn({ parentAgentSlug: null });
     assert.equal(refused.allowed, false);
-    assert.match(refused.reason, /spawn_rate/);
+    assert.equal(refused.failedGate, 'spawn_rate');
+    assert.match(refused.reason, /spawn rate limit reached/);
     // Rejections do not consume the window: still exactly 2 authorized.
     recordSpawnDecision({ decision: refused, parentAgentSlug: null, actor: 'test' });
     const stillRefused = evaluateSpawn({ parentAgentSlug: null });
-    assert.match(stillRefused.reason, /spawn_rate/);
+    assert.equal(stillRefused.failedGate, 'spawn_rate');
+    assert.match(stillRefused.reason, /spawn rate limit reached/);
     resetPolicy({ spawn_rate_per_hour: 6 });
   });
 
@@ -199,7 +245,9 @@ describe('hierarchy: spawn authorization', () => {
     setAgentBudgetCents(parent, 100);
     assert.equal(Number(getAgentProfileBySlug(parent)?.spend_cents), 0, 'a fresh parent starts with no spend');
 
-    const first = evaluateSpawn({ parentAgentSlug: parent });
+    // The parent delegates on its own initiative: this is the spend the budget
+    // gate exists for (an owner-approved hire is not charged to the parent).
+    const first = evaluateSpawn({ parentAgentSlug: parent, initiatedBy: 'agent' });
     assert.equal(first.allowed, true, first.reason);
     assert.equal(first.budgetRemainingCents, 100);
 
@@ -208,9 +256,10 @@ describe('hierarchy: spawn authorization', () => {
     assert.equal(Number(getAgentProfileBySlug(parent)?.spend_cents), 100, 'the parent really paid the spawn cost');
     assert.equal(Number(getAgentProfileBySlug(child)?.budget_cents), 50, 'the child received the granted budget');
 
-    const second = evaluateSpawn({ parentAgentSlug: parent });
+    const second = evaluateSpawn({ parentAgentSlug: parent, initiatedBy: 'agent' });
     assert.equal(second.allowed, false);
-    assert.match(second.reason, /budget/);
+    assert.equal(second.failedGate, 'budget');
+    assert.match(second.reason, /parent budget exhausted/);
     assert.equal(second.budgetRemainingCents, 0);
     resetPolicy();
     fundTrees();

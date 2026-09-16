@@ -388,8 +388,10 @@ export function expandCapability(input: {
   name?: string;
   /** Actor driving the spawn: 'owner' for a manual decision, an agent slug for delegation. */
   actor?: string;
-  /** Budget the new child may spend; the parent pays the spawn cost either way. */
+  /** Budget the new child may spend. */
   childBudgetCents?: number;
+  /** 'owner' for an owner-approved hire, 'agent' when a parent delegates. */
+  initiatedBy?: 'owner' | 'agent';
 }): ExpansionOutcome {
   const actor = input.actor ?? input.parentAgentSlug ?? 'system';
 
@@ -412,11 +414,12 @@ export function expandCapability(input: {
     parentAgentSlug: input.parentAgentSlug ?? null,
     actor,
     gap: input.gap,
+    initiatedBy: input.initiatedBy ?? 'owner',
     ...(input.childBudgetCents !== undefined ? { childBudgetCents: input.childBudgetCents } : {}),
   });
   if (!decision.allowed) {
     recordSpawnDecision({ decision, parentAgentSlug: input.parentAgentSlug ?? null, gap: input.gap, actor });
-    return rejectExpansion(`expansion refused (${decision.reason})`, `expansion REJECTED: ${decision.reason}`);
+    return rejectExpansion(decision.reason, `expansion REJECTED: ${decision.reason} — ${decision.reasonDetail}`);
   }
   const systemUserId = getEconomySystemUserId();
   const created = agentFactory.create({

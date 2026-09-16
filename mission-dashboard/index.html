@@ -98,6 +98,28 @@
             <input name="q" placeholder="Search agents by name or slug" />
             <button type="submit">Search</button>
           </form>
+
+          <details class="control-block" id="create-agent-block">
+            <summary>Create a mission agent (owner)</summary>
+            <form id="create-agent-form" class="stack-form">
+              <label>Name <input name="name" required maxlength="160" placeholder="Field Operations Lead" /></label>
+              <label>Specialisation <input name="specialization" placeholder="operations" /></label>
+              <label>Activity
+                <select name="activity" id="create-agent-activity"></select>
+              </label>
+              <label>Mission role
+                <select name="missionRole">
+                  <option value="director">director</option>
+                  <option value="supervisor">supervisor</option>
+                  <option value="worker">worker</option>
+                </select>
+              </label>
+              <label>Authorised budget (minor units) <input name="budgetCents" type="number" min="0" step="1" value="0" /></label>
+              <button type="submit">Create agent</button>
+              <p class="muted small">Creation is policy-gated (depth, children, agent cap, activity) and recorded with a contract and a wallet.</p>
+            </form>
+          </details>
+
           <div id="agent-list" class="table-wrap"></div>
           <div id="agent-report"></div>
         </section>
