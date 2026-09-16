@@ -148,6 +148,16 @@ const ownerPassword = process.env.AKBARAL_OWNER_PASSWORD ?? '';
 const ownerEmail = process.env.AKBARAL_OWNER_EMAIL ?? '';
 check('the owner credentials for the boot check are available', ownerEmail !== '' && ownerPassword.length >= 12, ownerEmail ? `${ownerEmail.slice(0, 3)}… / secret ${ownerPassword.length} chars` : 'AKBARAL_OWNER_EMAIL missing');
 
+// Guard: never attach to a server some earlier run left behind, and never
+// leave one behind ourselves. The drill's API is started in its OWN process
+// group so the whole group can be terminated — a killed `npx` wrapper alone
+// would orphan the real server and collide with the next run.
+const portBusy = await fetch(`http://127.0.0.1:${API_PORT}/api/ready`).then(() => true).catch(() => false);
+if (portBusy) {
+  console.error(`[recovery] port ${API_PORT} is already serving — stop that process first (the drill must not reuse a stale server)`);
+  process.exit(2);
+}
+
 const api = spawn('npx', ['tsx', 'src/index.ts'], {
   cwd: repo,
   env: {
@@ -158,7 +168,13 @@ const api = spawn('npx', ['tsx', 'src/index.ts'], {
     NODE_ENV: 'production',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
+  detached: true,
 });
+const stopApi = () => {
+  try { process.kill(-api.pid, 'SIGTERM'); } catch { /* already gone */ }
+  try { api.kill('SIGTERM'); } catch { /* already gone */ }
+};
+process.on('exit', stopApi);
 let apiLog = '';
 api.stdout.on('data', (chunk) => { apiLog += String(chunk); });
 api.stderr.on('data', (chunk) => { apiLog += String(chunk); });
@@ -204,9 +220,11 @@ try {
   const agents = await (await fetch(`${base}/api/public/agents`)).json().catch(() => ({}));
   check('the recovered database still serves the 4,001-agent registry', Number(agents.total ?? 0) >= 4_001, `total=${agents.total ?? 'n/a'}`);
 } finally {
-  api.kill('SIGTERM');
+  stopApi();
   await new Promise((resolve) => setTimeout(resolve, 1500));
-  if (!api.killed) api.kill('SIGKILL');
+  try { process.kill(-api.pid, 'SIGKILL'); } catch { /* already gone */ }
+  const stillListening = await fetch(`http://127.0.0.1:${API_PORT}/api/ready`).then(() => true).catch(() => false);
+  check('the drill leaves no runaway process behind', !stillListening, stillListening ? `port ${API_PORT} still serving` : `port ${API_PORT} released`);
 }
 
 /* ──────────────────────────────── B. mission ─────────────────────────────── */
