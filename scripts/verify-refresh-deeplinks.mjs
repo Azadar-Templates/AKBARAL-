@@ -47,25 +47,49 @@ function ownerCredentials() {
   }
   const file = path.resolve(process.cwd(), '.platform-owner-credentials.txt');
   if (!fs.existsSync(file)) return null;
-  const [email = '', password = ''] = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).map((line) => line.trim());
-  return email && password ? { email, password } : null;
+  return parseOwnerCredentials(fs.readFileSync(file, 'utf8'));
+}
+
+/**
+ * POST that respects the platform's REAL rate limiter (/api/auth allows 30
+ * requests per minute). A 429 is infrastructure, not a product verdict: it is
+ * retried with backoff, and if it still cannot get through the call reports
+ * that explicitly instead of silently degrading into a missing token.
+ */
+
+/** Accept both credentials formats: two lines (email, password) or labelled lines. */
+function parseOwnerCredentials(text) {
+  const lines = text.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const labelledEmail = /^email[:\s]+(\S+)$/i.exec(lines.find((line) => /^email[:\s]/i.test(line)) ?? '')?.[1];
+  const labelledPassword = /^password[:\s]+(\S+)$/i.exec(lines.find((line) => /^password[:\s]/i.test(line)) ?? '')?.[1];
+  if (labelledEmail && labelledPassword) return { email: labelledEmail, password: labelledPassword };
+  const [email = '', password = ''] = lines;
+  return email.includes('@') && password ? { email, password } : null;
+}
+
+async function postAuth(path, payload, { attempts = 6, waitMs = 12_000 } = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (response.status !== 429) return response;
+    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  return { status: 429, json: async () => null, text: async () => 'rate limited' };
 }
 
 async function freshSession() {
   const suffix = Math.random().toString(36).slice(2, 8);
   const email = `refresh-${suffix}@akbaral.test`;
   const password = 'refresh-check-password-1';
-  await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password, name: 'Refresh check' }),
-  });
-  const login = await fetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+  await postAuth('/api/auth/register', { email, password, name: 'Refresh check' });
+  const login = await postAuth('/api/auth/login', { email, password });
   const body = await login.json().catch(() => null);
+  if (login.status === 429) {
+    throw new Error('the platform rate limiter refused the verifier itself (429 on /api/auth/login) — this is an infrastructure limit, not a product verdict');
+  }
   return { email, password, refreshToken: body?.refreshToken ?? null };
 }
 
@@ -163,8 +187,24 @@ async function main() {
   // The proof that the session was restored is not a pixel: it is that the
   // SPA, after the refresh, holds a WORKING access token it obtained by
   // rotating the stored refresh token. Ask the API with exactly that token.
-  const persistedAccess = deep.window.localStorage.getItem('ak_access');
-  const persistedRefresh = deep.window.localStorage.getItem('ak_refresh');
+  // Boot is asynchronous: wait (bounded) for the SPA to finish restoring the
+  // session before judging it. The assertion itself is unchanged — a restored
+  // WORKING token, obtained by rotating the stored refresh token.
+  const readStorage = () => ({
+    access: deep.window.localStorage.getItem('ak_access') ?? '',
+    refresh: deep.window.localStorage.getItem('ak_refresh') ?? '',
+  });
+  try {
+    await waitFor(
+      () => {
+        const { access, refresh } = readStorage();
+        return access && refresh && refresh !== identitySession.refreshToken ? true : '';
+      },
+      'the SPA to rotate the stored refresh token after a refresh',
+    );
+  } catch { /* reported below */ }
+  const persistedAccess = readStorage().access || deep.window.localStorage.getItem('ak_access');
+  const persistedRefresh = readStorage().refresh || deep.window.localStorage.getItem('ak_refresh');
   let restoredEmail = '';
   if (persistedAccess) {
     const me = await fetch(`${BASE}/api/me`, { headers: { authorization: `Bearer ${persistedAccess}` } });
@@ -200,11 +240,7 @@ async function main() {
   // ── 5b. the owner session really opens the staff console ────────────────
   const ownerCreds = ownerCredentials();
   if (ownerCreds) {
-    const ownerLogin = await fetch(`${BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ownerCreds),
-    });
+    const ownerLogin = await postAuth('/api/auth/login', ownerCreds, { attempts: 12, waitMs: 15_000 });
     const ownerBody = await ownerLogin.json().catch(() => null);
     const ownerSession = await refreshAt('/admin', { refreshToken: ownerBody?.refreshToken ?? null });
     const ownerScreen = ownerSession.visibleScreen();
@@ -212,11 +248,24 @@ async function main() {
     // plane, so the owner role is sent to its own dashboard by /admin — and the
     // owner's real surface (/api/owner/dashboard) answers for the owner token
     // while refusing a customer token.
-    const ownerToken = ownerSession.window.localStorage.getItem('ak_access');
+    let ownerToken = ownerSession.window.localStorage.getItem('ak_access');
+    if (!ownerToken) {
+      try {
+        ownerToken = await waitFor(
+          () => ownerSession.window.localStorage.getItem('ak_access') || '',
+          'the owner session to be restored after a refresh',
+        );
+      } catch { /* reported below */ }
+    }
+    const ownerScreenAfterWait = ownerSession.visibleScreen();
+    void ownerScreenAfterWait;
     const ownerDashboard = ownerToken
       ? await fetch(`${BASE}/api/owner/dashboard`, { headers: { authorization: `Bearer ${ownerToken}` } })
       : { status: 0 };
-    const customerToken = identitySession ? (await (await fetch(`${BASE}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: identitySession.email, password: identitySession.password }) })).json()).accessToken : null;
+    const customerLogin = identitySession
+      ? await postAuth('/api/auth/login', { email: identitySession.email, password: identitySession.password }, { attempts: 12, waitMs: 15_000 })
+      : null;
+    const customerToken = customerLogin ? (await customerLogin.json().catch(() => ({}))).accessToken ?? null : null;
     const customerOwner = customerToken
       ? await fetch(`${BASE}/api/owner/dashboard`, { headers: { authorization: `Bearer ${customerToken}` } })
       : { status: 0 };

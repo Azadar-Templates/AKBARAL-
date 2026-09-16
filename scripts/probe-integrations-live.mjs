@@ -32,8 +32,18 @@ function row(name, state, detail) {
 function ownerCredentials() {
   const file = path.resolve(process.cwd(), '.platform-owner-credentials.txt');
   if (!fs.existsSync(file)) return { email: process.env.OWNER_EMAIL ?? '', password: process.env.OWNER_PASSWORD ?? '' };
-  const [email = '', password = ''] = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).map((line) => line.trim());
-  return { email, password };
+  return parseOwnerCredentials(fs.readFileSync(file, 'utf8'));
+}
+
+
+/** Accept both credentials formats: two lines (email, password) or labelled lines. */
+function parseOwnerCredentials(text) {
+  const lines = text.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const labelledEmail = /^email[:\s]+(\S+)$/i.exec(lines.find((line) => /^email[:\s]/i.test(line)) ?? '')?.[1];
+  const labelledPassword = /^password[:\s]+(\S+)$/i.exec(lines.find((line) => /^password[:\s]/i.test(line)) ?? '')?.[1];
+  if (labelledEmail && labelledPassword) return { email: labelledEmail, password: labelledPassword };
+  const [email = '', password = ''] = lines;
+  return email.includes('@') && password ? { email, password } : null;
 }
 
 async function api(route, { method = 'GET', body, token } = {}) {
