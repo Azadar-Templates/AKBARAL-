@@ -18,7 +18,7 @@
  * reason and costs the customer nothing. Minimum publishing scopes are not
  * involved and no engagement is ever synthesized.
  */
-const API='http://127.0.0.1:4000';
+const API = (process.env.API_BASE ?? 'http://127.0.0.1:4000').replace(/\/$/, '');
 const s=Math.random().toString(36).slice(2,8);
 const email=`e2e-${s}@akbaral.test`, password='e2e-journey-password-1';
 let pass=0, fail=0;

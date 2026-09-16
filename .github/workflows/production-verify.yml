@@ -145,6 +145,105 @@ jobs:
             echo "::warning title=deployment::no candidate production host is serving — the deploy step (run the published image on a host, point DNS/TLS) is the remaining owner action"
           fi
 
+  # ── PHASE 0c: does the PUBLISHED IMAGE boot and serve? (no credentials) ──
+  # An image in GHCR is a claim about a deployable artifact until someone runs
+  # it. This job pulls the image built for THIS commit, proves the commit stamp
+  # inside it matches, boots it exactly as a host would (real SESSION_SECRET,
+  # production env, SQLite on a volume), and then exercises the deployed
+  # product: readiness, every application route surviving a refresh, the 4,001
+  # agent registry, billing refusing a paid plan without a provider, and the
+  # full customer journey — all against a real container, not a local process.
+  image-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      image_verified: ${{ steps.pull.outputs.available }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Log in to GHCR (read)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Pull the image published for THIS commit
+        id: pull
+        run: |
+          # Same derivation as docker-publish: lowercase, strip trailing
+          # non-alphanumerics so "AKBARAL-" becomes the valid "akbaral".
+          NAME=$(printf '%s' "${{ github.repository }}" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9]+$//')
+          IMAGE="ghcr.io/${NAME}"
+          for attempt in $(seq 1 30); do
+            if docker pull "$IMAGE:${{ github.sha }}" >/dev/null 2>&1; then
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              echo "IMAGE_REF=$IMAGE:${{ github.sha }}" >> "$GITHUB_ENV"
+              echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=image::no image published for ${{ github.sha }} — the image E2E could not run"
+      - name: Boot the image exactly as a host would
+        if: steps.pull.outputs.available == 'true'
+        run: |
+          # A real production start: production env, an explicitly configured
+          # random session secret, SQLite on a volume, first-boot seeding on.
+          docker run -d --name akbaral-e2e \
+            -p 3000:3000 -p 4000:4000 \
+            -e SESSION_SECRET="$(openssl rand -base64 48)" \
+            -e SEED_DATABASE=true \
+            -e DISABLE_BACKUP_CRON=true \
+            -e AKBARAL_SITE_URL=http://127.0.0.1:3000 \
+            -e DATABASE_URL=file:/data/akbaral.db \
+            "$IMAGE_REF"
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS -m 5 -o /tmp/ready.json -w '%{http_code}' http://127.0.0.1:3000/api/ready 2>/dev/null || true)
+            if [ "${code:-000}" = "200" ]; then echo "ready after ${attempt} polls"; break; fi
+            sleep 5
+          done
+          echo "--- container /api/ready ---"; cat /tmp/ready.json || true; echo
+          echo "--- image commit stamp (must equal ${{ github.sha }}) ---"
+          stamp=$(docker exec akbaral-e2e cat /app/.image-version | tr -d '\n')
+          echo "stamp=$stamp expected=${{ github.sha }}"
+          if [ "$stamp" != "${{ github.sha }}" ]; then
+            echo "::error title=image::the image does not carry this commit — refusing to treat it as evidence for this revision"
+            exit 1
+          fi
+      - name: Verify the deployed product inside the container
+        if: steps.pull.outputs.available == 'true'
+        run: |
+          fail=0
+          check() { # name, url, expected_code
+            code=$(curl -sS -m 15 -o /tmp/body -w '%{http_code}' "$2" 2>/dev/null || true)
+            if [ "${code:-000}" = "$3" ]; then echo "PASS $1 ($code)"; else echo "FAIL $1 (got ${code:-000}, want $3)"; fail=1; fi
+          }
+          check "/api/ready"          "http://127.0.0.1:3000/api/ready" 200
+          check "/ (shell)"           "http://127.0.0.1:3000/" 200
+          check "/signin (refresh OK)" "http://127.0.0.1:3000/signin" 200
+          check "/billing (refresh OK)" "http://127.0.0.1:3000/billing" 200
+          check "/workspace (refresh OK)" "http://127.0.0.1:3000/workspace" 200
+          check "/nonexistent (404 kept)" "http://127.0.0.1:3000/nonexistent-xyz" 404
+          check "/mission (private, 404)" "http://127.0.0.1:3000/mission" 404
+          check "anonymous /api/tasks refused" "http://127.0.0.1:4000/api/tasks" 401
+          plans=$(curl -sS -m 15 http://127.0.0.1:4000/api/billing/plans | jq -r '.plans | length' 2>/dev/null || echo 0)
+          agents=$(curl -sS -m 15 "http://127.0.0.1:4000/api/agents" | jq -r '.agents | length' 2>/dev/null || echo 0)
+          echo "plans=$plans agents_on_first_page=$agents"
+          [ "${plans:-0}" -ge 1 ] || { echo "FAIL billing catalog empty"; fail=1; }
+          [ "${agents:-0}" -ge 1 ] || { echo "FAIL agent registry empty in the image"; fail=1; }
+          exit $fail
+      - name: Run the real journeys against the running container
+        if: steps.pull.outputs.available == 'true'
+        run: |
+          npm ci
+          echo "── refresh / deep links (browser-shaped, against the container) ──"
+          AUDIT_BASE=http://127.0.0.1:3000 node scripts/verify-refresh-deeplinks.mjs
+          echo "── customer journey (auth, MASTER, credits, RBAC) ──"
+          API_BASE=http://127.0.0.1:4000 node scripts/verify-user-journey.mjs
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs --tail 200 akbaral-e2e 2>&1 || true
+
   # ── PHASE 1: live provider verification (real APIs, real calls) ───────────
   # Every credential present in the secret store is exercised against its real
   # provider: Gemini model listing + a real generateContent call, a real search
