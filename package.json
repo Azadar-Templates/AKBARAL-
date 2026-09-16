@@ -43,7 +43,8 @@
     "audit:routes": "node scripts/rendered-route-audit.mjs",
     "fixture:model": "tsx scripts/local-model-fixture.ts",
     "verify:user-journey": "node scripts/verify-user-journey.mjs",
-    "verify:refresh": "node scripts/verify-refresh-deeplinks.mjs"
+    "verify:refresh": "node scripts/verify-refresh-deeplinks.mjs",
+    "verify:mission-lock": "node scripts/verify-mission-identity-lock.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

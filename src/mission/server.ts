@@ -27,6 +27,7 @@ import {
   vaultConfigured,
   type SessionContext,
 } from './auth';
+import { identityLockStatus } from './identity-lock';
 import {
   PAYOUT_VERIFICATION_CHECKS,
   PAYOUT_VERIFICATION_VALIDITY_DAYS,
@@ -363,7 +364,12 @@ async function handleApi(
       }
       if (method === 'GET' && action === 'me') {
         const session = requireOwner(context);
-        json(res, 200, { owner: session.owner, expiresAt: null, vaultConfigured: vaultConfigured() });
+        json(res, 200, {
+          owner: session.owner,
+          expiresAt: null,
+          vaultConfigured: vaultConfigured(),
+          identityLock: identityLockStatus(),
+        });
         return true;
       }
       break;

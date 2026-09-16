@@ -27,6 +27,7 @@ import {
 import { EXTERNAL_ACTIVATION, seedTools } from '../src/mission/self-management';
 import { PROHIBITION_STATEMENTS, currentPolicy, ensurePolicy } from '../src/mission/policy';
 import { ownerCount, provisionOwner, vaultConfigured } from '../src/mission/auth';
+import { enforceIdentityLock, identityLockEnabled, identityLockStatus, identityLockVerified } from '../src/mission/identity-lock';
 import { ensurePayoutSlots, treasurySummary, verifyLedger } from '../src/mission/treasury';
 
 function line(label: string, value: string): void {
@@ -72,6 +73,21 @@ async function main(): Promise<void> {
     if (!password) missing.push('ZA141251SA_OWNER_PASSWORD');
     line('mission owner', `not provisioned — missing ${missing.join(', ')}`);
     line('existing owners', String(ownerCount()));
+  }
+
+  // ── Single-identity lockdown ──────────────────────────────────────────────
+  // Everything that is not the configured identity is pushed out NOW: foreign
+  // accounts suspended, their sessions revoked, pre-existing access links
+  // revoked. Runs after provisioning so the configured identity is present.
+  const lock = enforceIdentityLock();
+  const lockCheck = identityLockVerified();
+  if (!identityLockEnabled()) {
+    line('identity lockdown', 'OFF — set ZA141251SA_OWNER_EMAIL to restrict authentication to one identity');
+  } else {
+    line('identity lockdown', lockCheck.ok ? `ENFORCED (${lock.swept ? 'sweep ran now' : 'already enforced'})` : `FAILED — ${lockCheck.reason}`);
+    line('  suspended accounts', String(identityLockStatus().ownersSuspended));
+    line('  sessions revoked', String(identityLockStatus().sessionsRevoked));
+    line('  access links revoked', String(identityLockStatus().linksRevoked));
   }
 
   const audit = verifyMissionAudit();

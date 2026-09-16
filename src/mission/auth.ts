@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { missionDb, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
+import { identityRefusalMessage, isIdentityPermitted, provisioningRefusalReason } from './identity-lock';
 
 /**
  * PRIVATE MISSION AUTHENTICATION — completely separate from AKBARAL! accounts.
@@ -81,6 +82,10 @@ export function ownerCount(): number {
 export function provisionOwner(input: { email: string; password: string; displayName?: string }): MissionOwner {
   const email = input.email.trim().toLowerCase();
   if (!email.includes('@')) throw new MissionAuthError(400, 'a valid owner email is required', 'validation_error');
+  // Single-identity lockdown: while ZA141251SA_OWNER_EMAIL is configured, no
+  // account other than that identity can be created or re-keyed.
+  const refusal = provisioningRefusalReason(email);
+  if (refusal) throw new MissionAuthError(403, refusal, 'identity_restricted');
   if (input.password.length < 12) {
     throw new MissionAuthError(400, 'the owner password must be at least 12 characters', 'validation_error');
   }
@@ -112,6 +117,14 @@ export interface MissionSession {
 
 export function login(input: { email: string; password: string; ip?: string | null; userAgent?: string | null }): MissionSession {
   const email = input.email.trim().toLowerCase();
+  // ── Single-identity lockdown ────────────────────────────────────────────
+  // The allowlist is checked BEFORE any credential work: an account that is
+  // not the configured mission identity can neither authenticate nor probe
+  // the password store, and the refusal never reveals the configured address.
+  if (!isIdentityPermitted(email)) {
+    appendMissionAudit({ actorType: 'system', action: 'auth.login_refused_identity_lock', detail: { attempted: email.slice(0, 3) + '…' } });
+    throw new MissionAuthError(403, identityRefusalMessage(), 'identity_restricted');
+  }
   const row = missionDb.get<OwnerRow>('SELECT * FROM mission_owner WHERE email = ?', [email]);
   // Constant-ish work either way: always run a verification to avoid revealing
   // whether the email exists through timing.
@@ -171,7 +184,17 @@ export function resolveSession(token: string | null): SessionContext | null {
   if (!session) return null;
   if (new Date(String(session.expires_at)).getTime() <= Date.now()) return null;
   const owner = missionDb.get<OwnerRow>('SELECT * FROM mission_owner WHERE id = ?', [String(session.owner_id)]);
-  if (!owner || String(owner.status) !== 'active') return null;
+  if (!owner) return null;
+  // Lockdown re-check: a session minted before the lockdown (or before the
+  // configured identity changed) must not keep reading mission data. It is
+  // revoked here — independently of the account's own status — so it fails
+  // closed everywhere rather than merely being ignored on this one route.
+  if (!isIdentityPermitted(owner.email)) {
+    missionDb.run('UPDATE mission_sessions SET revoked_at = ? WHERE id = ?', [nowIso(), String(session.id)]);
+    appendMissionAudit({ actorType: 'system', action: 'auth.session_revoked_identity_lock', subjectType: 'owner', subjectId: owner.id });
+    return null;
+  }
+  if (String(owner.status) !== 'active') return null;
   return {
     owner: { id: owner.id, email: owner.email, displayName: owner.display_name, role: owner.role, status: owner.status },
     sessionId: String(session.id),

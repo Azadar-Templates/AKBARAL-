@@ -16,6 +16,7 @@
  */
 import { missionEnv, missionDb, verifyMissionAudit } from '../src/mission/database';
 import { ownerCount, vaultConfigured } from '../src/mission/auth';
+import { enforceIdentityLock, identityLockEnabled, identityLockVerified } from '../src/mission/identity-lock';
 import { startMissionServer } from '../src/mission/server';
 import { verifyLedger } from '../src/mission/treasury';
 
@@ -34,6 +35,12 @@ async function main(): Promise<void> {
     }
   }
 
+  // Single-identity lockdown runs BEFORE the listener opens: any foreign
+  // account is suspended, its sessions revoked and pre-existing access links
+  // revoked, so the socket can only ever answer to the configured identity.
+  const lock = enforceIdentityLock();
+  const lockCheck = identityLockVerified();
+
   const running = await startMissionServer({ host, port: env.port });
   const audit = verifyMissionAudit();
   const ledger = verifyLedger();
@@ -45,7 +52,22 @@ async function main(): Promise<void> {
   process.stdout.write(`  credential vault     ${vaultConfigured() ? 'configured' : 'disabled (ZA141251SA_CREDENTIAL_KEY not set)'}\n`);
   process.stdout.write(`  audit chain          ${audit.ok ? `verified (${audit.rows})` : 'BROKEN'}\n`);
   process.stdout.write(`  ledger chain         ${ledger.ok ? `verified (${ledger.rows})` : 'BROKEN'}\n`);
+  process.stdout.write(
+    `  identity lockdown    ${
+      identityLockEnabled()
+        ? lockCheck.ok
+          ? `ENFORCED — single identity only (${lock.swept ? 'sweep ran on this boot' : `swept ${lock.enforcedAt}`})`
+          : `FAILED — ${lockCheck.reason}`
+        : 'OFF — set ZA141251SA_OWNER_EMAIL to restrict authentication to one identity'
+    }\n`,
+  );
   process.stdout.write('  isolation            separate process, database, auth and secrets from AKBARAL!\n\n');
+
+  if (identityLockEnabled() && !lockCheck.ok) {
+    process.stderr.write(`mission:serve refused: identity lockdown verification failed (${lockCheck.reason})\n`);
+    await running.close();
+    process.exit(1);
+  }
 
   const shutdown = async (signal: string) => {
     process.stdout.write(`\nmission:serve received ${signal}; shutting down\n`);

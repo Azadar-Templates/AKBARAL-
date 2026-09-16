@@ -2,6 +2,7 @@ import { missionDb, missionId, nowIso, sha256, appendMissionAudit, verifyMission
 import { currentPolicy, PROHIBITION_STATEMENTS, ALLOWED_ACTIVITY_KEYS } from './policy';
 import { treasurySummary, verifyLedger, listPayoutSlots, listPayouts, listApprovals, listRevenue, listExpenses } from './treasury';
 import { expiringCredentials, listTools, listServices, selfManagementSnapshot, listUpgrades } from './self-management';
+import { identityLockStatus } from './identity-lock';
 
 /**
  * MISSION REPORTING — every agent can account for its own operation, and the
@@ -390,6 +391,8 @@ export interface MissionOverview {
     platformLedger: 'not read, not written — AKBARAL! customer revenue is a different database and treasury';
     ownerAuth: 'mission-local sessions only';
   };
+  /** Single-identity lockdown state (observability; enforcement lives in auth). */
+  identityLock: ReturnType<typeof identityLockStatus>;
   policy: ReturnType<typeof currentPolicy> & { prohibitions: Array<{ key: string; statement: string }> };
   agents: {
     total: number;
@@ -521,6 +524,7 @@ export function buildMissionOverview(): MissionOverview {
       platformLedger: 'not read, not written — AKBARAL! customer revenue is a different database and treasury',
       ownerAuth: 'mission-local sessions only',
     },
+    identityLock: identityLockStatus(),
     policy: {
       ...policy,
       prohibitions: policy.prohibitedActivities.map((key) => ({ key, statement: PROHIBITION_STATEMENTS[key] ?? key })),
