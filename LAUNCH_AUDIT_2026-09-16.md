@@ -7,6 +7,9 @@
 2. The running preview uses the repo's **development model stub** (`scripts/local-model-fixture.ts` on :4999) because no AI provider key is configured. The orchestration, tool, verification, artifact, credit and queue layers are production code; **the language model in this preview is not**. Every stub-produced deliverable carries a visible "local model stub" footer.
 3. Data in `platform-live.db` is dev/preview data (seeded registry + audit-probe traffic), not customer data.
 
+
+**Live re-verification (same commit, second pass):** readiness still **44.4 % / 5 blockers**; registry 4,002 agents (4,001 seeded + 1 probe-created), 80 categories, **7 of 18 tools linked, 0 tool integrations**, 18 artifacts, credit ledger `consume_task=14 / refund_task=3`. The billing defect reproduced exactly: a fresh trial account switched to `enterprise` → `202 {status:'active'}` → owner MRR went **$400 → $800 with `paidCents: 0`** (then reverted to `free`). A real 3-step MASTER goal drafted `web-development-strategist-001 → builder-008 → validator-011`, completed, consumed **3 of 5** credits, and exported a 4,955-byte website artifact; a second account got **404** on that project and its artifact.
+
 ---
 
 ## 1. EXECUTIVE STATUS
