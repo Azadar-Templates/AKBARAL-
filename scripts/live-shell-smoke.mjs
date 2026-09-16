@@ -44,8 +44,14 @@ async function signup(email, password, name) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password, name }),
   });
-  if (![201, 409].includes(response.status)) {
-    throw new Error(`register failed (${response.status})`);
+  // 201 = created. The API answers an already-registered address with 400
+  // code 'conflict' (409 tolerated too) — that is the normal case when the
+  // operator file is present, and the login below is what proves the
+  // credentials. Anything else is a real failure.
+  const body = await response.json().catch(() => ({}));
+  const alreadyRegistered = response.status === 409 || body?.error?.code === 'conflict';
+  if (response.status !== 201 && !alreadyRegistered) {
+    throw new Error(`register failed (${response.status})${body?.error?.message ? `: ${body.error.message}` : ''}`);
   }
 }
 
