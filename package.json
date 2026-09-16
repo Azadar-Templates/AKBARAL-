@@ -42,7 +42,8 @@
     "audit:responsive:selftest": "node scripts/responsive-audit.mjs --selftest --widths=320",
     "audit:routes": "node scripts/rendered-route-audit.mjs",
     "fixture:model": "tsx scripts/local-model-fixture.ts",
-    "verify:user-journey": "node scripts/verify-user-journey.mjs"
+    "verify:user-journey": "node scripts/verify-user-journey.mjs",
+    "verify:refresh": "node scripts/verify-refresh-deeplinks.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

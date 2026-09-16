@@ -311,7 +311,14 @@ describe('AKBARAL! application shell — source contract (web)', () => {
     assert.match(route, /export default function WorkspacePage\(\)/, 'the route has a component');
     assert.match(route, /<Home \/>/, 'it renders the same application as `/` (one shell, one behaviour)');
     assert.match(route, /robots: \{ index: false, follow: false \}/, 'a signed-in surface is never indexed');
-    assert.match(appJs, /path === '\/workspace' \? 'master' : ''/, 'the client opens MASTER on the workspace path');
+    // Clean deep links are mapped explicitly (path → screen). `/workspace` and
+    // `/master` both open the MASTER surface; the sign-in, sign-up, projects,
+    // billing and admin paths open their own screens — each with a real route
+    // so a refresh on that URL cannot 404. Pinned by deep-link-refresh.test.ts.
+    assert.match(appJs, /const PATH_VIEWS = \{/, 'clean paths map to screens explicitly');
+    assert.match(appJs, /'\/workspace': 'master'/, 'the client opens MASTER on the workspace path');
+    assert.match(appJs, /'\/signin': 'login'/, 'the sign-in path opens the sign-in screen');
+    assert.match(appJs, /const rawView = hash\.length > 0 \? hashView : \(PATH_VIEWS\[path\] \?\? ''\)/, 'an explicit hash still wins, otherwise the path decides');
     assert.match(appJs, /const wantsMarketing = hash === '#\/' \|\| hash === '#\/landing'/, 'only an explicit hash asks for the marketing page');
     const entry = appJs.slice(appJs.indexOf("if (view === '') {"), appJs.indexOf('const taskMatch'));
     assert.ok(entry.length > 0, 'the clean-entry branch is present');

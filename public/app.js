@@ -720,6 +720,24 @@
     }
   }
 
+  /**
+   * Restore a session after a full page load.
+   *
+   * A browser refresh (F5, a bookmark, a shared link, a reopened tab) throws
+   * away every in-memory value: `state.accessToken` is null while the tab still
+   * holds a perfectly valid refresh token in storage. The router used to treat
+   * "no access token in memory" as "not signed in" and bounced the visitor to
+   * the sign-in screen — a refresh looked like being logged out even though the
+   * session was live. Restoring here costs one request per page load at most
+   * (single-flighted, and only when a refresh token exists), and a token the
+   * server rejects is cleared by refreshSession() itself.
+   */
+  async function ensureSession() {
+    if (state.accessToken) return true;
+    if (!storageGet('ak_refresh')) return false; // anonymous: nothing to restore
+    return refreshSession();
+  }
+
   // Keep multiple tabs of the same session coherent: when one tab rotates
   // or clears tokens, the others pick the change up immediately instead of
   // refreshing with stale values.
@@ -1433,6 +1451,9 @@
     initAds();
     initCinematic();
     window.addEventListener('hashchange', navigate);
+    // Restore the tab's session BEFORE the first route decision, so a refresh
+    // of any page (including a deep link) keeps the signed-in visitor signed in.
+    await ensureSession();
     await navigate();
   }
 
@@ -1658,7 +1679,24 @@
     // `#/workspace` IS the compact application shell (ChatGPT/Arena model) —
     // the legacy Projects & knowledge screen moved to `#/projects`, so every
     // "Workspace" entry point in the product reaches the new UI.
-    const rawView = hash.length > 0 ? hashView : (path === '/workspace' ? 'master' : '');
+    // Clean, refreshable deep links. The application is hash-routed (`#/login`,
+    // `#/projects`, …), which means a hard refresh of a hash URL always lands
+    // on `/` and works. A CLEAN path has no such guarantee: the server must
+    // have a real route for it or the browser gets a 404 on refresh. `/signin`,
+    // `/signup`, `/projects`, `/billing`, `/admin` and `/master` therefore have
+    // real Next routes rendering this same shell (mirroring `/workspace`), and
+    // this map decides which screen each one opens. Unknown paths stay unknown
+    // — they must still 404 rather than quietly serving the app.
+    const PATH_VIEWS = {
+      '/workspace': 'master',
+      '/master': 'master',
+      '/signin': 'login',
+      '/signup': 'register',
+      '/projects': 'projects',
+      '/billing': 'billing',
+      '/admin': 'admin',
+    };
+    const rawView = hash.length > 0 ? hashView : (PATH_VIEWS[path] ?? '');
     const view = rawView === 'workspace' ? 'master' : rawView;
     state.view = view;
     if (['login', 'register'].includes(view)) {

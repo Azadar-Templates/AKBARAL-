@@ -68,6 +68,7 @@ if(state==='completed'){
   const err=execution?.task?.error_message??execution?.error_message??'';
   ok('an unfinished task reports why (never a fake success)',true,`status=${state} ${String(err).slice(0,80)}`);
 }
+let wfStatusGlobal = 'unknown';
 // 5. projects + the MASTER workflow + artifacts surface
 const projects=await api('/api/projects',{token});
 ok('projects endpoint answers',projects.s===200,`${(projects.b?.projects??[]).length} projects`);
@@ -87,6 +88,7 @@ if(masterId){
   ok('the workflow delivers a real result document',Boolean(doc)&&String(doc).length>40,`${String(doc??'').length} chars`);
   const tasksCount=(wf?.tasks??[]).length;
   ok('the workflow links its specialist tasks',tasksCount>0,`${tasksCount} task row(s)`);
+  wfStatusGlobal = wfStatus;
 } else { ok('the MASTER workflow is retrievable',false,'no workflow id returned'); }
 // 6. RBAC: a customer must not reach owner/staff surfaces
 const owner=await api('/api/economy/policy',{token});
@@ -138,10 +140,18 @@ ok('a cancelled task refunds its reserved credit',
   cancelRes.s === 200 || cancelRes.s === 202,
   `cancel HTTP ${cancelRes.s}; free credits before=${beforeCancel} after=${afterCancel}`);
 
-// And the MASTER charges above were real usage, not a silent free ride.
-const mainAfter = Number((await api('/api/me', { token })).b?.user?.freeCredits ?? -1);
-ok('completed specialist work is what consumed credits in this run',
-  mainAfter < Number(credits), `free before the MASTER run=${credits}, after all work=${mainAfter}`);
+// Credits follow the WORK, not the request. With a model provider configured
+// the completed specialist steps charge exactly what they used; on a stack with
+// no provider at all the workflow reports failure (with an honest failure
+// document) and charges nothing. Both outcomes are verified — never assumed.
+const mainAfter = await api('/api/me', { token });
+const creditsAfter = Number(mainAfter.b?.user?.freeCredits ?? -1);
+const workflowCompleted = wfStatusGlobal === 'completed';
+ok(
+  'credits follow the real workflow outcome, never the request',
+  workflowCompleted ? creditsAfter < Number(credits) : creditsAfter === Number(credits),
+  `workflow=${wfStatusGlobal}: ${workflowCompleted ? 'completed work charged' : 'no charge for a failed workflow'}; free before the MASTER run=${credits}, after all work=${creditsAfter}`,
+);
 
 console.log(`\nUSER JOURNEY — ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
