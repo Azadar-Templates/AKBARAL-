@@ -1,26 +1,28 @@
 name: production-verify
 
 # REAL production verification of the AKBARAL! MASTER flow through the live
-# deployment, including the real Gemini provider path (GOOGLE_API_KEY lives
-# only in the host's secret store — never in this repository or these logs).
+# deployment, including the real provider paths (Gemini, search, payments,
+# SMTP). Provider credentials live only in this repository's secret store —
+# never in the code, never in these logs.
 #
-# Target resolution order: the base_url workflow input → the
-# PRODUCTION_BASE_URL repository secret → the legacy Modal URL. Production
-# currently lives on the Zeabur free plan (deploy/free-zeabur/README.md).
-#
-# This exercises PRODUCTION: it registers a throwaway verification account
-# and consumes exactly one of its free credits. The Arena dev sandbox has no
-# egress to production hosts, so this workflow is the agent-executable
-# evidence channel for production behavior.
-#
-# Triggers: on pushes to the working branch that touch the verification
-# tooling (workflow_dispatch is reserved for when this file reaches the
-# default branch — GitHub only registers dispatchable workflows there).
+# WHY THIS WORKFLOW IS THE EVIDENCE CHANNEL: the Arena dev sandbox has no
+# network egress to provider APIs (verified: only api.github.com answers), so
+# every provider verification impossible in the sandbox runs HERE, on a runner
+# with real internet access, against the REAL provider APIs. Nothing in this
+# workflow simulates a provider: a credential that is absent is reported as
+# NOT CONFIGURED with the exact secret to add, and a credential that is present
+# is exercised with a live call whose result decides the verdict.
 #
 # Evidence rules (mirrored from the runbook):
-#   - fixture/mock success never counts as production evidence; the script
-#     itself rejects the fixture's canned answer in this mode
-#   - no secrets are needed or printed: registration is a public API
+#   - fixture/mock success never counts as production evidence; the scripts
+#     themselves reject canned answers in production mode
+#   - no secret VALUE is ever printed: presence is reported as a boolean and
+#     credentials appear only as a SHA-256 prefix (never a character of them)
+#   - a check that cannot run (missing credential, unreachable host) reports
+#     that it could not run — it never reports success
+#
+# Triggers: pushes to any arena working branch that touch the verification
+# tooling, plus manual dispatch once this file reaches the default branch.
 
 on:
   workflow_dispatch:
@@ -28,55 +30,141 @@ on:
       base_url:
         description: 'Production base URL to verify'
         required: false
-        default: 'https://azadar-templates--akbaral.modal.run'
+        default: ''
   push:
-    branches: [arena/01a085d2-akbaral]
+    branches: ['arena/**']
     paths:
       - 'scripts/verify-production-e2e.mjs'
       - 'scripts/verify-gemini-direct.ts'
+      - 'scripts/launch-check.ts'
+      - 'src/launch/checks.ts'
       - '.github/workflows/production-verify.yml'
 
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  # ── PHASE 0: which credentials actually exist? (booleans only) ────────────
+  # GitHub does not expose a "list secrets" API to workflows, so presence is
+  # probed through the environment. This job publishes NO secret material: it
+  # prints one line per credential saying configured or not, plus the resolved
+  # production URL when one is configured.
+  provider-inventory:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      has_production_url: ${{ steps.scan.outputs.has_production_url }}
+      has_google_key: ${{ steps.scan.outputs.has_google_key }}
+      has_search_key: ${{ steps.scan.outputs.has_search_key }}
+      has_stripe_key: ${{ steps.scan.outputs.has_stripe_key }}
+      has_smtp: ${{ steps.scan.outputs.has_smtp }}
+      production_url: ${{ steps.scan.outputs.production_url }}
+    steps:
+      - name: Report credential presence (never values)
+        id: scan
+        env:
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          SECRET_PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          AKBARAL_SITE_URL: ${{ secrets.AKBARAL_SITE_URL }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          present() { if [ -n "$2" ]; then echo "$1: CONFIGURED"; else echo "$1: not configured"; fi; }
+          url="${INPUT_BASE_URL:-${SECRET_PRODUCTION_BASE_URL:-${AKBARAL_SITE_URL:-}}}"
+          present "production base URL (PRODUCTION_BASE_URL)" "${SECRET_PRODUCTION_BASE_URL:-}"
+          present "public site URL (AKBARAL_SITE_URL)" "${AKBARAL_SITE_URL:-}"
+          present "GOOGLE_API_KEY (MASTER / model-backed agents)" "$GOOGLE_API_KEY"
+          present "search provider (TAVILY/BRAVE/SERPER)" "${TAVILY_API_KEY}${BRAVE_SEARCH_API_KEY}${SERPER_API_KEY}"
+          present "STRIPE_SECRET_KEY (payments)" "$STRIPE_SECRET_KEY"
+          present "STRIPE_WEBHOOK_SECRET (payment webhooks)" "$STRIPE_WEBHOOK_SECRET"
+          present "SMTP_HOST/SMTP_USER/SMTP_PASSWORD (transactional email)" "${SMTP_HOST}${SMTP_USER}${SMTP_PASSWORD}"
+          echo "has_production_url=$([ -n "$url" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_google_key=$([ -n "$GOOGLE_API_KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_search_key=$([ -n "${TAVILY_API_KEY}${BRAVE_SEARCH_API_KEY}${SERPER_API_KEY}" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_stripe_key=$([ -n "$STRIPE_SECRET_KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_smtp=$([ -n "${SMTP_HOST}${SMTP_USER}${SMTP_PASSWORD}" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "production_url=$url" >> "$GITHUB_OUTPUT"
+
+  # ── PHASE 1: live provider verification (real APIs, real calls) ───────────
+  # Every credential present in the secret store is exercised against its real
+  # provider: Gemini model listing + a real generateContent call, a real search
+  # query, a real Stripe /v1/balance call, a real SMTP connection. Absent
+  # credentials are reported as NOT CONFIGURED with the exact secret to add.
+  real-providers:
+    needs: provider-inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Run the REAL production E2E (MASTER flow via Gemini)
-        run: node scripts/verify-production-e2e.mjs
-        env:
-          # Priority: workflow input → repository secret → the legacy Modal
-          # URL (kept only as the historical default; production now lives
-          # wherever PRODUCTION_BASE_URL points — see deploy/free-zeabur/).
-          AKBARAL_BASE_URL: ${{ inputs.base_url || secrets.PRODUCTION_BASE_URL || 'https://azadar-templates--akbaral.modal.run' }}
-
-  # ── PHASE 1: real Gemini DIRECT verification (code path of this commit) ──
-  # The Arena sandbox has no egress; this runner does. If GOOGLE_API_KEY is
-  # present as a repository secret, the real provider path (request/response,
-  # streaming, credential-failure and unconfigured classification, usage
-  # accounting) is verified against the REAL Google API. The key is only ever
-  # passed via env and headers — never printed, never echoed.
-  secret-gate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    outputs:
-      has_google_key: ${{ steps.check.outputs.has_google_key }}
-    steps:
-      - name: Detect whether GOOGLE_API_KEY is configured (presence only)
-        id: check
+          cache: npm
+      - run: npm ci
+      # Scoped deliberately to the provider checks: this job answers "which
+      # provider dependency is real right now and which is still missing", not
+      # "what is the launch readiness of a CI checkout".
+      - name: Verify every configured provider with a LIVE call
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          GOOGLE_CSE_API_KEY: ${{ secrets.GOOGLE_CSE_API_KEY }}
+          GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          BILLING_WEBHOOK_SECRET: ${{ secrets.BILLING_WEBHOOK_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
         run: |
-          if [ -n "$GOOGLE_API_KEY" ]; then echo "has_google_key=true" >> "$GITHUB_OUTPUT"; else echo "has_google_key=false" >> "$GITHUB_OUTPUT"; fi
+          npx tsx scripts/launch-check.ts --json --report provider-verification.md \
+            --only provider.gemini --only provider.search --only provider.payments --only provider.email \
+            > provider-verification.json
+          cat provider-verification.md
+      # A verdict that matters: a provider credential that EXISTS but is
+      # rejected must fail this job (that is a real breakage). An unconfigured
+      # provider is an honest, named gap — it fails nothing.
+      - name: Fail only when a configured provider rejected its credential
+        if: always()
+        run: |
+          rejected=$(jq -r '[.checks[] | select(.status=="failed")] | length' provider-verification.json 2>/dev/null || echo 0)
+          unreachable=$(jq -r '[.checks[] | select(.status=="unreachable")] | length' provider-verification.json 2>/dev/null || echo 0)
+          echo "rejected=$rejected unreachable=$unreachable"
+          if [ "${rejected:-0}" != "0" ]; then
+            echo "::error::a configured provider rejected its credential — see the report"
+            exit 1
+          fi
+      - name: Publish the verification report
+        if: always()
+        run: |
+          if [ -f provider-verification.md ]; then
+            cat provider-verification.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'The verification report was not produced.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep the machine-readable report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-verification
+          path: provider-verification.md
+          if-no-files-found: warn
 
+  # ── PHASE 2: the real Gemini provider path, direct (no mocks) ─────────────
   real-gemini-direct:
-    needs: secret-gate
-    if: needs.secret-gate.outputs.has_google_key == 'true'
+    needs: provider-inventory
+    if: needs.provider-inventory.outputs.has_google_key == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -88,3 +176,21 @@ jobs:
         run: npx tsx scripts/verify-gemini-direct.ts
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
+  # ── PHASE 3: the deployed product, end to end ────────────────────────────
+  # Runs only when a production host is configured. A missing production URL is
+  # reported as such (the deployment step is an owner action), never as a pass.
+  production-e2e:
+    needs: provider-inventory
+    if: needs.provider-inventory.outputs.has_production_url == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run the REAL production E2E (MASTER flow through the deployed stack)
+        run: node scripts/verify-production-e2e.mjs
+        env:
+          AKBARAL_BASE_URL: ${{ needs.provider-inventory.outputs.production_url }}

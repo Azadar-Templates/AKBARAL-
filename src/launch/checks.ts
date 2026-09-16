@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 /**
@@ -129,9 +130,20 @@ function isProduction(env: Record<string, string | undefined>): boolean {
 }
 
 /** Never print a secret: report at most its length and last four characters. */
+/**
+ * A non-reversible identifier for a credential.
+ *
+ * This USED to print the last four characters of the secret. That is not safe
+ * anywhere the report can be read by someone other than the credential's
+ * owner — and this report is published: CI is a public repository, and the
+ * markdown report is attached to a job summary. A short SHA-256 prefix keeps
+ * the useful property (you can still tell whether the deployed key is the
+ * same one as last run, and which of several candidate env vars supplied it)
+ * while disclosing no character of the credential itself.
+ */
 function fingerprint(secret: string): string {
-  if (secret.length <= 4) return `length ${secret.length}`;
-  return `${secret.length} chars, ends …${secret.slice(-4)}`;
+  const digest = createHash('sha256').update(secret, 'utf8').digest('hex').slice(0, 8);
+  return `sha256:${digest} (${secret.length} chars)`;
 }
 
 function configOnly(result: CheckBase, status: CheckStatus): LaunchCheckResult {
