@@ -100,7 +100,16 @@ async function terminalWorkflow(workflowId, token, timeoutMs = 150_000) {
 /* ────────────────────────────── A. identity ─────────────────────────────── */
 
 const owner = readOwnerCredentials();
-check('the configured owner credentials are available', owner.email !== '' && owner.password.length >= 12, owner.email ? `${owner.email.slice(0, 3)}… / secret ${owner.password.length} chars` : 'missing');
+if (owner.email === '' || owner.password.length < 12 || !fs.existsSync(DB_PATH)) {
+  const missing = [
+    owner.email === '' || owner.password.length < 12 ? 'owner credentials (AKBARAL_OWNER_EMAIL/AKBARAL_OWNER_PASSWORD or .platform-owner-credentials.txt)' : '',
+    fs.existsSync(DB_PATH) ? '' : `database (${DB_PATH})`,
+  ].filter(Boolean);
+  console.log(`COULD NOT RUN — missing ${missing.join(' and ')}; this battery needs the owner's own credentials and a readable copy of the deployment database.`);
+  process.exit(2);
+}
+check('the configured owner credentials are available', true, `${owner.email.slice(0, 3)}… / secret ${owner.password.length} chars`);
+check('the deployment database is readable from this runner', true, DB_PATH);
 
 const ownerAuth = await authenticate(owner.email, owner.password, 'AKBARAL Owner');
 const ownerMe = await call('/api/me', { token: ownerAuth.token });

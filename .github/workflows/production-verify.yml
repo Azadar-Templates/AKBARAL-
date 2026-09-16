@@ -455,3 +455,24 @@ jobs:
         run: node scripts/verify-production-e2e.mjs
         env:
           AKBARAL_BASE_URL: ${{ needs.deployment-reachability.outputs.live_url }}
+      # Owner identity + unlimited entitlement (blockers #6/#7) against the
+      # deployed stack. This needs the owner's own credentials and a readable
+      # copy of the deployment database; when either is absent the script
+      # reports "could not run" (exit 2) and this step says so — it never
+      # reports an unverified success.
+      - name: Owner identity + unlimited entitlement on the deployed stack
+        run: |
+          set +e
+          node scripts/verify-owner-entitlement.mjs
+          code=$?
+          set -e
+          if [ "$code" = "2" ]; then
+            echo "::notice title=owner-plane::could not run — owner credentials or deployment database absent on this runner"
+            exit 0
+          fi
+          exit "$code"
+        env:
+          API_BASE: ${{ needs.deployment-reachability.outputs.live_url }}
+          AKBARAL_OWNER_EMAIL: ${{ secrets.AKBARAL_OWNER_EMAIL }}
+          AKBARAL_OWNER_PASSWORD: ${{ secrets.AKBARAL_OWNER_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
