@@ -3934,3 +3934,17 @@ pre, code, .chat-msg .cm-body, .console-line, .result-block { overflow-wrap: any
 .btn[aria-disabled="true"], .btn:disabled { opacity: 0.6; box-shadow: none; transform: none; }
 .oauth-btn[aria-disabled="true"] { opacity: 1; }
 :where(button, [role="button"]):disabled:active, :where(button, [role="button"])[aria-disabled="true"]:active { transform: none; }
+
+/* ---------- 12.11 · a control that floats over content reserves its lane ---------- */
+/* The close control is a 44px icon button 16px in from the edge, so the
+   first lines of the sheet reserve 68px rather than sit under it. */
+.modal-card > .eyebrow,
+.modal-card > h2,
+.modal-card > #legal-title { padding-right: 68px; }
+.modal-card .legal-body > h3 { padding-right: 8px; }
+@media (max-width: 560px) {
+  /* the close button grows to a 40px target and sits 8px in — reserve both */
+  .modal-card > .eyebrow,
+  .modal-card > h2,
+  .modal-card > #legal-title { padding-right: 56px; }
+}

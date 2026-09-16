@@ -166,16 +166,32 @@ describe('final UI/UX pass contract', () => {
     assert.match(appJs, /event\.shiftKey && document\.activeElement === first/, 'shift+tab wraps backwards');
   });
 
+  it('a control that floats over content reserves its lane', () => {
+    const auth = authSlice();
+    // The reveal control is positioned over the input: the class must be a real
+    // class (a stray JSX prop silently disables the padding and text runs under it).
+    assert.match(auth, /<label className="auth-field has-reveal">/, 'the reveal field carries a real class, not a stray attribute');
+    assert.match(css, /\.auth-field\.has-reveal input \{ padding-right: 54px; \}/, 'desktop reserves a lane for the reveal control');
+    assert.match(css, /\.auth-field\.has-reveal input \{ padding-right: 58px; \}/, 'touch devices reserve a wider lane');
+    // The modal close button floats over the heading band.
+    assert.match(css, /\.modal-card > \.eyebrow,\s*\.modal-card > h2,\s*\.modal-card > #legal-title \{ padding-right: 68px; \}/, 'modal headings clear the 44px close control (16px inset + 44px wide)');
+    assert.match(css, /\.modal-card > \.eyebrow,\s*\.modal-card > h2,\s*\.modal-card > #legal-title \{ padding-right: 56px; \}/, 'and they clear the larger touch target');
+    assert.match(css, /\.modal-close \{ position: absolute; top: 16px; right: 16px; \}/, 'the close control is the floating one');
+    assert.match(css, /\.skip-link/, 'the skip link is the only other floating control');
+  });
+
   it('the responsive audit gate is part of the repository', () => {
     const auditPath = join(root, 'scripts', 'responsive-audit.mjs');
     assert.ok(existsSync(auditPath), 'responsive-audit.mjs exists');
     const audit = readFileSync(auditPath, 'utf8');
-    for (const kind of ['overflow', 'tiny-text', 'clipped', 'small-target', 'grid-guard', 'contrast', 'anchored-overflow']) {
+    for (const kind of ['overflow', 'tiny-text', 'clipped', 'small-target', 'grid-guard', 'contrast', 'anchored-overflow', 'control-clearance', 'hover-only']) {
       assert.ok(audit.includes(`'${kind}'`), `the audit reports ${kind}`);
     }
     assert.match(audit, /AUDIT_BASE/, 'the audit can target a served build');
     assert.match(audit, /--widths=/, 'the audit is width-parameterised');
     assert.match(audit, /--selftest/, 'the audit can prove it is able to fail');
     assert.match(audit, /every dialog surface/, 'modal surfaces are audited too');
+    assert.match(audit, /parked off-canvas until focused/, 'controls parked off-canvas are recognised, not misreported');
+    assert.match(audit, /--clearance/, 'a review report lists every floating control and its lane');
   });
 });

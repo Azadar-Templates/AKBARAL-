@@ -38,6 +38,9 @@
     "smoke:task3": "node scripts/live-smoke-task3.mjs",
     "smoke:shell": "node scripts/live-shell-smoke.mjs",
     "smoke:artifacts": "node scripts/live-artifact-smoke.mjs",
+    "audit:responsive": "node scripts/responsive-audit.mjs",
+    "audit:responsive:selftest": "node scripts/responsive-audit.mjs --selftest --widths=320",
+    "audit:routes": "node scripts/rendered-route-audit.mjs",
     "fixture:model": "tsx scripts/local-model-fixture.ts"
   },
   "dependencies": {

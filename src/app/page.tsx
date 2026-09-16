@@ -307,7 +307,7 @@ export default function Home() {
                 <span>Email</span>
                 <input type="email" id="auth-email" autoComplete="email" placeholder="you@company.com" required />
               </label>
-              <label className="auth-field" has-reveal>
+              <label className="auth-field has-reveal">
                 <span>Password</span>
                 <input type="password" id="auth-password" minLength={8} autoComplete="current-password" placeholder="Your password" required /><button type="button" className="auth-reveal" id="auth-reveal" data-password-reveal="auth-password" aria-pressed="false" aria-label="Show password" title="Show password"><svg className="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12S6 5.6 12 5.6 21.8 12 21.8 12 18 18.4 12 18.4 2.2 12 2.2 12Z" /><circle cx="12" cy="12" r="3.1" /></svg><svg className="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3.5 3.5 17 17" /><path d="M10.6 6.2A9.9 9.9 0 0 1 12 6.1c6 0 9.8 6 9.8 6a17.4 17.4 0 0 1-3.3 3.9" /><path d="M6.4 7.9A16.7 16.7 0 0 0 2.2 12s3.8 6.4 9.8 6.4c1.5 0 2.9-.2 4.1-.7" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg></button>
               </label>

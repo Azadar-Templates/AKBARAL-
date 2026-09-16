@@ -497,10 +497,30 @@ if (SELFTEST) {
       }
     }
 
-    // 7 · a control anchored outside the box it is anchored to
+    // 7 · a control nobody can see until they hover it (dead on touch + keyboard)
+    if (el.matches('button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])')) {
+      const op = winning(el, 'opacity', rules, width);
+      const vis = winning(el, 'visibility', rules, width);
+      const opacity = op && /^[\d.]+$/.test(op.value.trim()) ? Number(op.value.trim()) : 1;
+      const hiddenVis = vis && vis.value.trim() === 'hidden';
+      const caretReveal = el.closest('label') && /(clip-path|sr-only|visually-hidden)/.test(el.parentElement?.className || '');
+      if ((opacity < 0.1 || hiddenVis) && !caretReveal) {
+        findings.push({
+          width, kind: 'hover-only', el: path(el),
+          detail: `focusable control renders ${hiddenVis ? 'visibility:hidden' : `opacity ${opacity}`} in its resting state`,
+          rule: (op || vis)?.sel,
+        });
+      }
+    }
+
+    // 8 · a control anchored outside the box it is anchored to
     const position = winning(el, 'position', rules, width)?.value?.trim();
     if (position === 'absolute' || position === 'fixed') {
-      const box = position === 'fixed' ? null : el.offsetParent || el.parentElement;
+      let box = position === 'fixed' ? null : el.parentElement;
+      for (let n = el.parentElement; n && n.nodeType === 1 && position !== 'fixed'; n = n.parentElement) {
+        const pos = winning(n, 'position', rules, width)?.value?.trim();
+        if (pos && pos !== 'static') { box = n; break; }
+      }
       const left = resolveLength(winning(el, 'left', rules, width)?.value, el, width);
       const right = resolveLength(winning(el, 'right', rules, width)?.value, el, width);
       const w = resolveLength(winning(el, 'width', rules, width)?.value, el, width)
@@ -516,10 +536,38 @@ if (SELFTEST) {
         if (leftEdge !== null && leftEdge < -2) {
           findings.push({ width, kind: 'anchored-overflow', el: path(el), detail: `starts ${Math.round(leftEdge)}px outside its ${Math.round(containerW)}px box`, rule: winning(el, 'right', rules, width)?.sel });
         }
+
+        // …and the flow it floats over must reserve a lane for it, or a centred
+        // value slides underneath the control (see the password reveal control).
+        const anchorSide = right !== null ? 'right' : left !== null ? 'left' : null;
+        const offset = right !== null ? right : left;
+        const topOffset = resolveLength(winning(el, 'top', rules, width)?.value, el, width);
+        const sizeOnAxis = resolveLength(winning(el, 'width', rules, width)?.value, el, width);
+        const parked = anchorSide !== null && offset !== null && offset < -500;
+        if (anchorSide && offset !== null && sizeOnAxis !== null && !parked) {
+          const need = offset + sizeOnAxis;
+          const flow = el.parentElement;
+          const siblings = flow ? [...flow.children].filter((n) => n !== el && !n.contains(el) && !el.contains(n)) : [];
+          const band = topOffset !== null && topOffset < 40 ? siblings.slice(0, 2) : siblings.slice(-1);
+          for (const node of band.flatMap((n) => [n, ...n.querySelectorAll('input, textarea, select, h1, h2, h3, p')])) {
+            if (!node.matches('input, textarea, select, h1, h2, h3, p')) continue;
+            const textish = node.matches('input, textarea, select')
+              || [...node.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+            if (!textish) continue;
+            const pad = resolveLength(winning(node, `padding-${anchorSide}`, rules, width)?.value, node, width) ?? 0;
+            if (pad + 0.5 < need) {
+              const label = node.tagName.toLowerCase() + (node.id ? '#' + node.id : '');
+              findings.push({
+                width, kind: 'control-clearance', el: path(el),
+                detail: `floats ${Math.round(need)}px in from the ${anchorSide} edge; ${label} keeps only ${Math.round(pad)}px padding there`,
+              });
+            }
+          }
+        }
       }
     }
 
-    // 8 · grid tracks without a min() guard
+    // 9 · grid tracks without a min() guard
     const gtc = winning(el, 'grid-template-columns', rules, width);
     if (gtc && /repeat\(auto-(fit|fill),\s*minmax\((?!min\()/.test(gtc.value)) {
       findings.push({ width, kind: 'grid-guard', el: path(el), detail: gtc.value.slice(0, 60), rule: gtc.sel });
@@ -530,6 +578,59 @@ if (SELFTEST) {
 }
 
 /* ---------- report ---------- */
+if (args.includes('--clearance')) {
+  const w = WIDTHS[0];
+  const num = (v) => (v === null || v === undefined ? null : Math.round(v));
+  console.log(`CLEARANCE REPORT @ ${w}px — floating controls and the lane reserved for them`);
+  for (const el of doc.querySelectorAll('*')) {
+    const position = winning(el, 'position', rules, w)?.value?.trim();
+    if (position !== 'absolute' && position !== 'fixed') continue;
+    if (!el.matches('button, a[href], input, select, textarea, [role="button"], [role="tab"]')) continue;
+    // The containing block is the nearest positioned ancestor (jsdom has no layout,
+    // so offsetParent is always null and would wrongly resolve to the document).
+    let box = el.parentElement;
+    for (let n = el.parentElement; n && n.nodeType === 1; n = n.parentElement) {
+      const pos = winning(n, 'position', rules, w)?.value?.trim();
+      if (pos && pos !== 'static') { box = n; break; }
+    }
+    if (!box) continue;
+    const right = resolveLength(winning(el, 'right', rules, w)?.value, el, w);
+    const left = resolveLength(winning(el, 'left', rules, w)?.value, el, w);
+    const top = resolveLength(winning(el, 'top', rules, w)?.value, el, w);
+    const width = resolveLength(winning(el, 'width', rules, w)?.value, el, w);
+    const height = resolveLength(winning(el, 'height', rules, w)?.value, el, w);
+    const anchorAxis = right !== null ? 'right' : left !== null ? 'left' : 'none';
+    const parked = left !== null && (left < -500 || left > width + 500);
+    const need = anchorAxis === 'right'
+      ? num((right ?? 0) + (width ?? 0))
+      : anchorAxis === 'left' ? num((left ?? 0) + (width ?? 0)) : null;
+    console.log(`  ${path(el)}  ${position}${parked ? '  (parked off-canvas until focused)' : ''}`);
+    console.log(`      in ${path(box)} · anchors: top=${num(top)} ${anchorAxis}=${num(right ?? left)}  size: ${num(width)}x${num(height)}`);
+    if (need === null || parked) continue;
+    // Only content sharing the control's band can collide with it: the first
+    // block for a top-anchored control, the last for a bottom-anchored one.
+    const flow = el.parentElement || box;
+    const candidates = [...flow.children].filter((n) => n !== el && !n.contains(el) && !el.contains(n));
+    const band = top !== null && top < 40 ? candidates.slice(0, 2) : candidates.slice(-1);
+    let warned = 0;
+    for (const n of band) {
+      for (const node of [n, ...n.querySelectorAll('h1, h2, h3, p, span, input, textarea, select')]) {
+        const isForm = node.matches('input, textarea, select');
+        const isText = !isForm && /^(H[1-6]|P|SPAN|B|SMALL|DIV)$/.test(node.tagName)
+          && [...node.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+        if (!isForm && !isText) continue;
+        const pad = resolveLength(winning(node, `padding-${anchorAxis}`, rules, w)?.value, node, w) ?? 0;
+        if (pad < need) {
+          console.log(`      ! ${node.tagName.toLowerCase()}${node.id ? '#' + node.id : ''} padding-${anchorAxis}=${num(pad)}px < needed ${need}px`);
+          warned += 1;
+        }
+      }
+    }
+    if (!warned) console.log(`      ok — ${need}px lane reserved on the ${anchorAxis} edge`);
+  }
+  process.exit(0);
+}
+
 if (WHY) {
   const [sel, prop = 'height'] = WHY.split('|');
   const w = WIDTHS[0];
