@@ -76,7 +76,18 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
-          present() { if [ -n "$2" ]; then echo "$1: CONFIGURED"; else echo "$1: not configured"; fi; }
+          # Each line is ALSO emitted as an annotation: annotations are readable
+          # through the checks API from environments that cannot download job
+          # logs or artifacts (the Arena sandbox reaches only api.github.com).
+          present() {
+            if [ -n "$2" ]; then
+              echo "$1: CONFIGURED"
+              echo "::notice title=presence::$1: CONFIGURED"
+            else
+              echo "$1: not configured"
+              echo "::notice title=presence::$1: not configured"
+            fi
+          }
           url="${INPUT_BASE_URL:-${SECRET_PRODUCTION_BASE_URL:-${AKBARAL_SITE_URL:-}}}"
           present "production base URL (PRODUCTION_BASE_URL)" "${SECRET_PRODUCTION_BASE_URL:-}"
           present "public site URL (AKBARAL_SITE_URL)" "${AKBARAL_SITE_URL:-}"
@@ -144,6 +155,22 @@ jobs:
           if [ "${rejected:-0}" != "0" ]; then
             echo "::error::a configured provider rejected its credential — see the report"
             exit 1
+          fi
+      - name: Publish the per-provider verdicts as annotations (readable where logs are not)
+        if: always()
+        run: |
+          if [ -f provider-verification.json ]; then
+            jq -r '.checks[] | "\(.id)\t\(.status)\t\(.evidence)"' provider-verification.json \
+              | while IFS="$(printf '\t')" read -r id status evidence; do
+                  clean=$(printf '%s' "$evidence" | tr '\n' ' ' | sed 's/::/:/g' | cut -c1-280)
+                  if [ "$status" = "failed" ]; then
+                    echo "::error title=$id::$status — $clean"
+                  else
+                    echo "::notice title=$id::$status — $clean"
+                  fi
+                done
+          else
+            echo "::warning title=provider-verification::no JSON report was produced"
           fi
       - name: Publish the verification report
         if: always()
