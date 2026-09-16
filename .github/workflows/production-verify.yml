@@ -42,6 +42,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   # ── PHASE 0: which credentials actually exist? (booleans only) ────────────
@@ -216,8 +217,15 @@ jobs:
           fail=0
           check() { # name, url, expected_code
             code=$(curl -sS -m 15 -o /tmp/body -w '%{http_code}' "$2" 2>/dev/null || true)
-            if [ "${code:-000}" = "$3" ]; then echo "PASS $1 ($code)"; else echo "FAIL $1 (got ${code:-000}, want $3)"; fail=1; fi
+            if [ "${code:-000}" = "$3" ]; then
+              echo "PASS $1 ($code)"
+            else
+              echo "FAIL $1 (got ${code:-000}, want $3)"
+              echo "::error title=image-e2e::$1 → got ${code:-000}, want $3"
+              fail=1
+            fi
           }
+          container_api() { curl -sS -m 15 "$@"; }
           check "/api/ready"          "http://127.0.0.1:3000/api/ready" 200
           check "/ (shell)"           "http://127.0.0.1:3000/" 200
           check "/signin (refresh OK)" "http://127.0.0.1:3000/signin" 200
@@ -226,11 +234,33 @@ jobs:
           check "/nonexistent (404 kept)" "http://127.0.0.1:3000/nonexistent-xyz" 404
           check "/mission (private, 404)" "http://127.0.0.1:3000/mission" 404
           check "anonymous /api/tasks refused" "http://127.0.0.1:4000/api/tasks" 401
-          plans=$(curl -sS -m 15 http://127.0.0.1:4000/api/billing/plans | jq -r '.plans | length' 2>/dev/null || echo 0)
-          agents=$(curl -sS -m 15 "http://127.0.0.1:4000/api/agents" | jq -r '.agents | length' 2>/dev/null || echo 0)
+          # The registry is account-scoped, so the check authenticates like a
+          # real user does (registration is a public API in the image).
+          email="image-e2e-$(date +%s)@akbaral.test"
+          container_api -X POST http://127.0.0.1:4000/api/auth/register -H 'content-type: application/json' \
+            -d "{\"email\":\"$email\",\"password\":\"image-e2e-password-1\",\"name\":\"Image E2E\"}" > /tmp/register.json
+          token=$(container_api -X POST http://127.0.0.1:4000/api/auth/login -H 'content-type: application/json' \
+            -d "{\"email\":\"$email\",\"password\":\"image-e2e-password-1\"}" | jq -r '.accessToken // empty' 2>/dev/null)
+          if [ -z "$token" ]; then
+            echo "FAIL could not obtain a session in the container"
+            echo "::error title=image-e2e::register/login failed inside the deployed image"
+            fail=1
+          else
+            echo "PASS session issued inside the container"
+          fi
+          plans=$(container_api http://127.0.0.1:4000/api/billing/plans | jq -r '.plans | length' 2>/dev/null || echo 0)
+          agents=$(container_api -H "authorization: Bearer $token" http://127.0.0.1:4000/api/agents | jq -r '.agents | length' 2>/dev/null || echo 0)
           echo "plans=$plans agents_on_first_page=$agents"
-          [ "${plans:-0}" -ge 1 ] || { echo "FAIL billing catalog empty"; fail=1; }
-          [ "${agents:-0}" -ge 1 ] || { echo "FAIL agent registry empty in the image"; fail=1; }
+          [ "${plans:-0}" -ge 1 ] || { echo "FAIL billing catalog empty"; echo "::error title=image-e2e::billing catalog is empty in the image"; fail=1; }
+          [ "${agents:-0}" -ge 1 ] || { echo "FAIL agent registry empty in the image"; echo "::error title=image-e2e::agent registry is empty in the image"; fail=1; }
+          # A paid plan must NOT be grantable for free inside the deployed image.
+          paid=$(container_api -X POST http://127.0.0.1:4000/api/billing/switch -H 'content-type: application/json' \
+            -H "authorization: Bearer $token" -d '{"plan_key":"pro"}' -o /tmp/switch.json -w '%{http_code}')
+          echo "paid-plan switch in the image → HTTP $paid: $(head -c 160 /tmp/switch.json)"
+          if [ "${paid:-000}" != "402" ]; then
+            echo "::error title=image-e2e::a paid plan was not refused without a payment provider (HTTP ${paid:-000})"
+            fail=1
+          fi
           exit $fail
       - name: Run the real journeys against the running container
         if: steps.pull.outputs.available == 'true'
@@ -240,9 +270,16 @@ jobs:
           AUDIT_BASE=http://127.0.0.1:3000 node scripts/verify-refresh-deeplinks.mjs
           echo "── customer journey (auth, MASTER, credits, RBAC) ──"
           API_BASE=http://127.0.0.1:4000 node scripts/verify-user-journey.mjs
-      - name: Container logs on failure
+      - name: Container diagnostics on failure (logs are not always reachable)
         if: failure()
-        run: docker logs --tail 200 akbaral-e2e 2>&1 || true
+        run: |
+          docker logs --tail 120 akbaral-e2e > /tmp/container.log 2>&1 || true
+          tail -60 /tmp/container.log || true
+          # Annotations are readable through the checks API even where job logs
+          # and artifacts are not, so the reason a deployment check failed is
+          # published here as well.
+          tail -12 /tmp/container.log | tr '\n' ' ' | sed 's/::/:/g' | cut -c1-900 | \
+            while read -r line; do echo "::error title=image-e2e container log::$line"; done
 
   # ── PHASE 1: live provider verification (real APIs, real calls) ───────────
   # Every credential present in the secret store is exercised against its real
