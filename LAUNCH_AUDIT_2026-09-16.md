@@ -34,7 +34,7 @@ Percentages are computed against *production-launchable functionality verified b
 3. **Search provider key** (Tavily/Brave/Serper) — research agents otherwise depend on keyless scraping that datacenter IPs usually block. (`launch:check` blocker 3)
 4. **Payment provider** (Stripe secret + webhook secret + `BILLING_WEBHOOK_SECRET`) — paid plans cannot be sold; credit purchases return `provider_not_configured`. (`launch:check` blockers 4–5)
 5. **`GET /api/billing/switch` allows any signed-in user to activate any paid plan for free** (verified live: enterprise → `status: active`, and it inflates the owner console's MRR to $400 with $0 collected). Revenue-integrity defect; must be fixed or the button removed before charging money.
-6. **GitHub connection is broken in this session** (`GH_TOKEN` invalid) — commits are local-only; CI, GHCR image publishing and the Modal deploy path all depend on it.
+6. ~~**GitHub connection is broken in this session**~~ — **resolved mid-audit**: authentication recovered and both commits were pushed (`516d06c..8b5c8bb`). **New blocker found instead:** the `docker-publish` workflow **fails at the "Build and push" step on every push** (3 consecutive runs, including this commit), so no GHCR image is published and the documented Modal deployment path cannot start. Root cause UNVERIFIED — the Actions log archive could not be downloaded from the sandbox and there is no Docker daemon here to reproduce it.
 
 ### Non-blocking remaining work
 - Only `website` artifacts are produced (document/data/image kinds have viewers, versioning and download plumbing but no producer).
@@ -424,7 +424,7 @@ Minor: `POST /api/billing/switch` also reports success even when nothing was cha
 | 3b | **MEDIUM** | Credit consumption is **per specialist step** while the trial is marketed as "5 free tasks" and nothing warns the user how many credits a goal will cost before it runs (verified live: a 3-step goal consumed 3 of 5). Either disclose the step cost pre-run or price per goal |
 | 4 | **MEDIUM** | No email verification on signup — any address can be registered (rate-limited). Abuse risk: trial farming (5 free tasks per address) |
 | 5 | **MEDIUM** | No domain/TLS/public host configured; `AKBARAL_SITE_URL` unset affects robots/sitemap/checkout returns |
-| 6 | **MEDIUM** | GitHub connection broken in this session → cannot push, so CI/GHCR/Modal deploy cannot run |
+| 6 | **MEDIUM** | GitHub auth recovered mid-audit and both commits are pushed, **but `docker-publish` fails at "Build and push" on every push (3/3 runs)** → no GHCR image → the Modal deployment path cannot start. Root cause UNVERIFIED (no Actions log access, no Docker here) |
 | 7 | **MEDIUM** | Mobile dependency chain has 1 critical + 10 high advisories (build toolchain) |
 | 8 | **LOW** | `DELETE /api/auth/oauth/identities/facebook` 404s while Facebook is unconfigured (list omits `facebook`) |
 | 9 | **LOW** | Owner console "API cost" figures are computed from the model price catalog × recorded runs; with a stub/free provider they are estimates, not provider invoices (the code discloses externalProviderCosts as unknown) |
@@ -540,7 +540,7 @@ Probe artefacts (not committed): `/tmp/probe-api.mjs`, `/tmp/probe-iso2.mjs`, `/
 | Production image | 🟢 | `Dockerfile`: multi-stage Node 22, builds TS backend + Next, runs `scripts/entrypoint.sh`, `HEALTHCHECK` on `/api/ready`, `/data` volume, `GIT_SHA` build stamp in `/app/.image-version` |
 | Orchestration | 🟢 | `docker-compose.production.yml` (single node by design, memory limits, log rotation, restart policy) + `deploy/modal/akbaral_app.py` (Modal web service on a GHCR image with Neon, `modal.Volume`, schedule) |
 | Free-tier options | 🟢 | `deploy/free-oracle` (VM + Caddy + DuckDNS), `deploy/free-render`, `deploy/free-zeabur`, `deploy/free-clawcloud`, `deploy/free-snapdeploy` runbooks |
-| Modal | 🟡 | Wrapper + runbook exist; **not deployed** (needs Modal account/secrets + published GHCR image) |
+| Modal | 🟡 | Wrapper + runbook exist; **not deployed** — needs a Modal account/secrets *and* a published GHCR image, and GHCR publishing is currently failing |
 | Neon / PostgreSQL | 🟡 | Dual-engine DB layer + `npm run test:pg` (pglite) integration test + mission PG support; **no Neon database provisioned**, `DATABASE_URL` here is SQLite |
 | Secrets/config | 🟢 | `validateEnvironment()` refuses production without a strong `SESSION_SECRET`; 74 documented variables; provider credentials optional and reported as `not_configured` |
 | Domain / TLS | 🔴 | Not configured. Runbook (Caddy auto-TLS + DuckDNS) is written; nothing is live |
@@ -552,7 +552,7 @@ Probe artefacts (not committed): `/tmp/probe-api.mjs`, `/tmp/probe-iso2.mjs`, `/
 | Logging | 🟢 | No secrets logged; audit/security logs persisted; Docker log rotation configured |
 | Backups | 🟢 | Nightly **verified** snapshot at 01:17 UTC inside the volume, retention 30, `db:backup` / `db:restore` scripts, restore drill documented |
 | Rollback readiness | 🟡 | Image digests are pinnable (`AKBARAL_IMAGE=…@sha256:…`), `.image-version` proves the running commit, DB restore documented — but no automated rollback job and **no published image yet** (GitHub auth broken) |
-| CI | 🟡 | 3 workflows written (docker-publish to GHCR + image verification, keep-alive ping, production-verify E2E) — **cannot run right now** because the GitHub connection is invalid; nothing has been pushed since `516d06c` |
+| CI | 🔴 | GitHub auth recovered: pushes work and workflows now execute (`516d06c..8b5c8bb`). But **`docker-publish` fails at the "Build and push" step on every run** (3 consecutive failures incl. this commit) — no image reaches GHCR, which blocks the Modal path. `keep-alive` and `production-verify` are configured but idle (they need a real production URL) |
 
 ---
 
@@ -580,7 +580,7 @@ Probe artefacts (not committed): `/tmp/probe-api.mjs`, `/tmp/probe-iso2.mjs`, `/
 | Responsiveness (web) | 🟢 READY | responsive audit clean at 320–1920; 328/328 rendered-route assertions | none | — |
 | Mobile app | 🔴 BLOCKED | TS clean, 26/26 endpoints exist; never built/run; no icons/EAS/signing; default API host does not resolve | build pipeline + assets + real API URL + device QA | EAS build, icons, API base URL, Play/App Store accounts |
 | Deployment infra | 🟡 PARTIAL | Docker/Modal/free-tier runbooks, health/ready, migrations, backups all real; GHCR/CI blocked | GitHub auth invalid; no domain/TLS | restore GitHub, deploy, DNS + TLS |
-| CI/CD | 🔴 BLOCKED | 3 workflows written, none runnable | GitHub auth | reconnect GitHub |
+| CI/CD | 🔴 BLOCKED | workflows execute now that GitHub auth is restored; `docker-publish` fails at Build and push (3/3) | failing image build / unknown root cause | fix the GHCR build in Actions (or build the image by hand and push it) |
 | Observability | 🟡 PARTIAL | structured logs, metrics endpoint, audit logs, health/ready | no external alerting | add alerting post-launch |
 | Mobile deps security | 🟡 PARTIAL | 1 critical + 10 high in build toolchain | Expo SDK upgrade | schedule 51→56/57 upgrade post-launch |
 
@@ -593,7 +593,7 @@ Probe artefacts (not committed): `/tmp/probe-api.mjs`, `/tmp/probe-iso2.mjs`, `/
 2. **Set the AI provider key** (`GOOGLE_API_KEY`, or OpenAI/Anthropic) in the deployment secret store — without it no customer task can succeed.
 3. **Deploy to a real host with a domain + TLS** and set `AKBARAL_SITE_URL` (robots/sitemap/checkout return URLs depend on it).
 4. **Set `SESSION_SECRET` (≥32 random chars)** and `TRUST_PROXY=1` only behind exactly one trusted proxy.
-5. **Restore the GitHub connection** so the commit history and CI/GHCR can move (currently blocking push entirely).
+5. ~~Restore the GitHub connection~~ ✅ done mid-audit (pushed `516d06c..8b5c8bb`). **New:** fix the failing `docker-publish` job — without a published image the Modal path cannot run (a plain VM/compose host builds its own image, so this blocks only the Modal option).
 6. **Decide the payment story for launch day:** either (a) launch **free-trial only** with no paid buttons (remove/disable plan CTAs), or (b) configure Stripe/Razorpay + `BILLING_WEBHOOK_SECRET` and receive a real test-webhook end-to-end before taking money.
 
 ### B. SHOULD FIX BEFORE LAUNCH
@@ -660,6 +660,6 @@ The client code compiles and every API it calls exists, but it has never been bu
 
 **REMAINING** — Credit cost per goal is undisclosed (3-step goal = 3 credits); only `website` artifacts are produced (document/data/image have no producer); 11 of 18 tools unlinked and 0 tool credentials; no email (reset/verify) → honest 503; no verification gate on signup; marketing pages lack analytics; mobile needs icons/EAS/signing/device QA; Library empty until files are indexed.
 
-**BLOCKED** — No domain/TLS/public host; no AI provider key (no customer task can succeed); no search key; no payment provider (paid plans unsellable); **`POST /api/billing/switch` lets any user activate any paid plan for free and inflates owner MRR ($400 vs $0 collected — verified)**; GitHub auth invalid so the local commit `7987605` cannot be pushed and CI/GHCR/Modal cannot run; mobile app never built/run and `api.akbaral.ai` does not resolve.
+**BLOCKED** — No domain/TLS/public host; no AI provider key (no customer task can succeed); no search key; no payment provider (paid plans unsellable); **`POST /api/billing/switch` lets any user activate any paid plan for free and inflates owner MRR ($400 vs $0 collected — verified)**; GitHub auth recovered and both commits are pushed (`8b5c8bb`), but the `docker-publish` job fails at Build and push so no GHCR image exists (blocks the Modal path only); mobile app never built/run and `api.akbaral.ai` does not resolve.
 
-**TODAY'S REQUIRED ACTIONS** — (1) restore GitHub → push; (2) fix the billing-switch hole (or remove paid CTAs); (3) set `SESSION_SECRET`, `AKBARAL_SITE_URL`, AI key, search key on a real host with domain+TLS; (4) optionally SMTP; (5) run `launch:check` + smokes against the live URL until 0 blockers; (6) launch **free-trial only** today, sell paid plans only after a verified payment provider.
+**TODAY'S REQUIRED ACTIONS** — (1) ✅ GitHub restored and commits pushed — now fix the failing GHCR image build if you intend to use Modal; (2) fix the billing-switch hole (or remove paid CTAs); (3) set `SESSION_SECRET`, `AKBARAL_SITE_URL`, AI key, search key on a real host with domain+TLS; (4) optionally SMTP; (5) run `launch:check` + smokes against the live URL until 0 blockers; (6) launch **free-trial only** today, sell paid plans only after a verified payment provider.
