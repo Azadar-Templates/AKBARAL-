@@ -26,8 +26,14 @@ try {
     process.exit(0);
   }
   const result = restoreVerifiedBackup({ backupFile, safetyDir: process.argv[3] ?? 'backups/pre-restore' });
+  const safetyNote =
+    result.safetySnapshot === 'consistent'
+      ? `safety snapshot: ${result.safetyBackup}`
+      : result.safetySnapshot === 'preserved-corrupt'
+        ? `the previous database was unreadable; preserved verbatim for forensics at ${result.safetyBackup}`
+        : 'no previous database file existed to preserve';
   console.log(
-    `[akbaral] restore OK from ${result.restoredFrom} (safety snapshot: ${result.safetyBackup}; ` +
+    `[akbaral] restore OK from ${result.restoredFrom} (${safetyNote}; ` +
       `rows ${JSON.stringify(result.rowCounts)}). Restart the server now.`,
   );
   process.exit(0);

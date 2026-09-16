@@ -14,6 +14,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { db, Database } from '../db';
 import { createVerifiedPgBackup } from './backup-pg';
+import { resolveDatabasePath } from '../db/path';
 
 export interface BackupResult {
   file: string;
@@ -166,6 +167,7 @@ function hashFile(file: string): string {
 export function restoreVerifiedBackup(options: { backupFile: string; safetyDir: string }): {
   restoredFrom: string;
   safetyBackup: string;
+  safetySnapshot: 'consistent' | 'preserved-corrupt' | 'absent';
   rowCounts: Record<string, number>;
 } {
   const backupFile = path.resolve(options.backupFile);
@@ -177,15 +179,48 @@ export function restoreVerifiedBackup(options: { backupFile: string; safetyDir: 
   }
 
   // Safety snapshot of the current database before overwriting it.
+  //
+  // Resilient by design: a disaster may leave the live file unreadable or
+  // missing, and the restore must not depend on being able to read the very
+  // database it is recovering. When the online snapshot is impossible the
+  // unreadable file is preserved verbatim for forensics (never discarded) and
+  // the restore continues; a healthy database always gets a real snapshot.
   const safetyDir = path.resolve(options.safetyDir);
   fs.mkdirSync(safetyDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const safetyBackup = path.join(safetyDir, `pre-restore-${stamp}.db`);
-  db.exec(`VACUUM INTO ${sqliteStringLiteral(safetyBackup)}`);
+  const configuredFile = resolveDatabasePath();
+  let safetyBackup = path.join(safetyDir, `pre-restore-${stamp}.db`);
+  let safetySnapshot: 'consistent' | 'preserved-corrupt' | 'absent' = 'consistent';
+  try {
+    db.exec(`VACUUM INTO ${sqliteStringLiteral(safetyBackup)}`);
+  } catch {
+    safetySnapshot = 'preserved-corrupt';
+    try {
+      fs.rmSync(safetyBackup, { force: true });
+    } catch {
+      // nothing was written
+    }
+    if (configuredFile !== ':memory:' && fs.existsSync(configuredFile)) {
+      safetyBackup = path.join(safetyDir, `pre-restore-unreadable-${stamp}.db`);
+      fs.renameSync(configuredFile, safetyBackup);
+    } else {
+      safetySnapshot = 'absent';
+      safetyBackup = '';
+    }
+  }
 
-  // Resolve the live database file from the active connection's pragma.
-  const liveFileRow = db.get<{ file: string }>('PRAGMA database_list');
-  const liveFile = liveFileRow?.file;
+  // Resolve the live database file: the active connection's pragma when it can
+  // still be read, otherwise the configured path the restore is about to write.
+  let liveFile: string | null = null;
+  try {
+    const liveFileRow = db.get<{ file: string }>('PRAGMA database_list');
+    liveFile = liveFileRow?.file ?? null;
+  } catch {
+    liveFile = null;
+  }
+  if (!liveFile || !path.isAbsolute(liveFile)) {
+    liveFile = configuredFile === ':memory:' ? null : configuredFile;
+  }
   if (!liveFile || !path.isAbsolute(liveFile)) {
     throw new Error(`cannot resolve live database file (got ${String(liveFile)})`);
   }
@@ -206,7 +241,7 @@ export function restoreVerifiedBackup(options: { backupFile: string; safetyDir: 
     }
   }
 
-  return { restoredFrom: backupFile, safetyBackup, rowCounts: verification.rowCounts };
+  return { restoredFrom: backupFile, safetyBackup, safetySnapshot, rowCounts: verification.rowCounts };
 }
 
 // ---------------------------------------------------------------------------
