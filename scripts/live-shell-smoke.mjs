@@ -235,10 +235,10 @@ await tick(2500);
 check('selecting a project loads its real export control', /website|No website version yet/.test(q('#master-export-actions').textContent), q('#master-export-actions').textContent.trim().slice(0, 80));
 
 // 5 — a real MASTER run through the real pipeline (honest outcome).
-q('#master-goal').value = 'Build me a calculator';
+q('#master-goal').value = 'Build me a one-page website for a calculator';
 q('#master-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 await tick(1200);
-check('the goal opens as a real user turn', turns() >= 1 && q('#master-chat-log').innerHTML.includes('Build me a calculator'));
+check('the goal opens as a real user turn', turns() >= 1 && q('#master-chat-log').innerHTML.includes('Build me a one-page website for a calculator'));
 await tick(20000);
 const chip = q('#master-canvas-state');
 const canvasKind = chip?.dataset?.state ?? 'idle';
