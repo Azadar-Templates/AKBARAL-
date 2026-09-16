@@ -103,6 +103,48 @@ jobs:
           echo "has_smtp=$([ -n "${SMTP_HOST}${SMTP_USER}${SMTP_PASSWORD}" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "production_url=$url" >> "$GITHUB_OUTPUT"
 
+  # ── PHASE 0b: is a production host actually serving? (no credentials) ────
+  # The image publishes to GHCR on every push, but an image is not a running
+  # deployment. This job asks the only question that decides whether the
+  # deployed product exists: does a candidate host answer /api/ready? A host
+  # that is live and healthy is handed to the production E2E below, so the real
+  # product is verified automatically the moment a deployment exists.
+  deployment-reachability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      live_url: ${{ steps.probe.outputs.live_url }}
+    steps:
+      - name: Probe candidate production hosts
+        id: probe
+        env:
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          SECRET_PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          SITE_URL: ${{ secrets.AKBARAL_SITE_URL }}
+        run: |
+          live=""
+          for url in "$SECRET_PRODUCTION_BASE_URL" "$INPUT_BASE_URL" "$SITE_URL" "https://akbaral.duckdns.org" "https://azadar-templates--akbaral.modal.run"; do
+            if [ -z "$url" ]; then
+              continue
+            fi
+            url="${url%/}"
+            ready_code=$(curl -sS -m 15 -o /tmp/ready.json -w '%{http_code}' "$url/api/ready" 2>/dev/null || true)
+            ready_code=${ready_code:-000}
+            root_code=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$url/" 2>/dev/null || true)
+            root_code=${root_code:-000}
+            echo "$url → /api/ready=$ready_code /=$root_code"
+            if [ "$ready_code" = "200" ]; then
+              echo "::notice title=deployment::$url IS SERVING (api/ready 200, / $root_code) — $(head -c 260 /tmp/ready.json 2>/dev/null)"
+              if [ -z "$live" ]; then live="$url"; fi
+            else
+              echo "::notice title=deployment::$url is NOT serving (api/ready=$ready_code, /=$root_code)"
+            fi
+          done
+          echo "live_url=$live" >> "$GITHUB_OUTPUT"
+          if [ -z "$live" ]; then
+            echo "::warning title=deployment::no candidate production host is serving — the deploy step (run the published image on a host, point DNS/TLS) is the remaining owner action"
+          fi
+
   # ── PHASE 1: live provider verification (real APIs, real calls) ───────────
   # Every credential present in the secret store is exercised against its real
   # provider: Gemini model listing + a real generateContent call, a real search
@@ -208,8 +250,8 @@ jobs:
   # Runs only when a production host is configured. A missing production URL is
   # reported as such (the deployment step is an owner action), never as a pass.
   production-e2e:
-    needs: provider-inventory
-    if: needs.provider-inventory.outputs.has_production_url == 'true'
+    needs: [provider-inventory, deployment-reachability]
+    if: needs.deployment-reachability.outputs.live_url != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -220,4 +262,4 @@ jobs:
       - name: Run the REAL production E2E (MASTER flow through the deployed stack)
         run: node scripts/verify-production-e2e.mjs
         env:
-          AKBARAL_BASE_URL: ${{ needs.provider-inventory.outputs.production_url }}
+          AKBARAL_BASE_URL: ${{ needs.deployment-reachability.outputs.live_url }}
