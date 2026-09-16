@@ -116,6 +116,7 @@ jobs:
     outputs:
       live_url: ${{ steps.probe.outputs.live_url }}
     steps:
+      - uses: actions/checkout@v4
       - name: Probe candidate production hosts
         id: probe
         env:
@@ -123,8 +124,16 @@ jobs:
           SECRET_PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
           SITE_URL: ${{ secrets.AKBARAL_SITE_URL }}
         run: |
+          # Candidate hosts: configured secrets/inputs first, then the committed
+          # target list (so a workspace-hosted production runtime is verified
+          # from OUTSIDE, over the public internet, exactly like a real host).
+          file_targets=""
+          if [ -f .github/production-targets.json ]; then
+            file_targets=$(node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('.github/production-targets.json','utf8'));console.log((j.targets||[]).join(' '))" 2>/dev/null || true)
+          fi
+          # shellcheck disable=SC2086
           live=""
-          for url in "$SECRET_PRODUCTION_BASE_URL" "$INPUT_BASE_URL" "$SITE_URL" "https://akbaral.duckdns.org" "https://azadar-templates--akbaral.modal.run"; do
+          for url in "$SECRET_PRODUCTION_BASE_URL" "$INPUT_BASE_URL" "$SITE_URL" $file_targets "https://akbaral.duckdns.org" "https://azadar-templates--akbaral.modal.run"; do
             if [ -z "$url" ]; then
               continue
             fi

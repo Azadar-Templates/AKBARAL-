@@ -1,0 +1,8 @@
+{
+  "_comment": "Candidate production hosts probed by the production-verify workflow FROM A GITHUB RUNNER (outside any sandbox). A candidate that answers /api/ready with 200 is handed to the production E2E job. The e2b entry is the AKBARAL! production runtime served on the workspace host; its hostname changes when the workspace is recreated, so update it there. Permanent hosting (owner action) is what makes a stable entry supersede it.",
+  "targets": [
+    "https://3000-i32tynr9veyl7uq0oz1nb.e2b.app",
+    "https://akbaral.duckdns.org",
+    "https://azadar-templates--akbaral.modal.run"
+  ]
+}
