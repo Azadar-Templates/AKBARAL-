@@ -15,6 +15,12 @@ COPY tsconfig.json tsconfig.backend.json next.config.mjs ./
 COPY src ./src
 COPY db ./db
 COPY public ./public
+# scripts/ is NOT optional for the build: tsconfig.backend.json compiles
+# scripts/**/*.ts, and Next's type-check phase type-checks the test files that
+# import from scripts/ (src/security/scan-secrets.test.ts imports
+# ../../scripts/scan-secrets). Without it `npm run build` fails with
+# "Failed to type check" (TS2307) and the image is never produced.
+COPY scripts ./scripts
 RUN npm run build
 
 FROM node:22-slim AS runtime

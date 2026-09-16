@@ -669,7 +669,7 @@ describe('Milestone 8: trial/credits/billing', () => {
         body: JSON.stringify({ plan_key: paid!.key }),
       });
       assert.equal(response.status, 201);
-      const body = (await response.json()) as { status: string; provider: string; providerReference: string; checkoutUrl: string };
+      const body = (await response.json()) as { status: string; provider: string; providerReference: string; checkoutUrl: string; invoiceId: string };
       assert.equal(body.status, 'requires_external_payment');
       assert.equal(body.provider, 'stripe');
       assert.equal(body.providerReference, 'cs_test_m8fixture', 'real provider session id stored');
@@ -679,6 +679,29 @@ describe('Milestone 8: trial/credits/billing', () => {
       const account = await fetch(`${baseUrl}/api/billing/account`, { headers: authHeaders(token) });
       const accountBody = (await account.json()) as { subscription: { plan_key: string } | null };
       assert.notEqual(accountBody.subscription?.plan_key, paid!.key);
+
+      // The provider confirms the payment: THIS activates the plan.
+      const settled = await postWebhook({
+        event: 'invoice.paid',
+        event_id: `evt_m8_plan_${paid!.key}`,
+        invoice_id: body.invoiceId,
+        provider: 'stripe',
+      });
+      assert.equal(settled.status, 200);
+      const settledBody = (await settled.json()) as { effect: string };
+      assert.equal(settledBody.effect, 'settled');
+
+      const activated = await fetch(`${baseUrl}/api/billing/account`, { headers: authHeaders(token) });
+      const activatedBody = (await activated.json()) as { subscription: { plan_key: string; status: string } | null };
+      assert.equal(activatedBody.subscription?.plan_key, paid!.key, 'the paid plan is active after the provider confirms');
+      assert.equal(activatedBody.subscription?.status, 'active');
+
+      // Re-delivering the same settlement must not create a second subscription.
+      const subscriptions = db.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM subscriptions WHERE user_id = ? AND status = 'active'",
+        [userId],
+      );
+      assert.equal(subscriptions?.count, 1, 'exactly one live subscription per account');
     } finally {
       delete process.env.STRIPE_SECRET_KEY;
       delete process.env.STRIPE_BASE_URL;

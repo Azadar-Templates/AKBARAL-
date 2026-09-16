@@ -130,8 +130,8 @@ export class BillingService {
       amountCents,
       currency: plan.currency,
       provider,
-      lineItems: [{ description: `${plan.name} plan (${plan.billing_interval})`, amountCents }],
-      status: 'pending',
+      lineItems: [{ description: `${plan.name} plan (${plan.billing_interval})`, amountCents, planKey: plan.key }],
+      status: 'due',
     });
     const returnUrls = resolveCheckoutUrls(input);
     const session = provider === 'stripe'
@@ -268,7 +268,7 @@ export class BillingService {
    * Idempotent: a paid invoice is never re-settled, so credits cannot be
    * granted twice for the same invoice.
    */
-  settleInvoicePayment(invoiceId: string): { settled: boolean; credits: number; effect: 'settled' | 'already_paid' | 'already_refunded' | 'not_payable' } {
+  settleInvoicePayment(invoiceId: string): { settled: boolean; credits: number; planKey: string | null; effect: 'settled' | 'already_paid' | 'already_refunded' | 'not_payable' } {
     const invoice = db.get<{ id: string; user_id: string; status: string; line_items: string; total_cents: number }>(
       'SELECT id, user_id, status, line_items, total_cents FROM invoices WHERE id = ?',
       [invoiceId],
@@ -277,16 +277,16 @@ export class BillingService {
       throw new HttpError(404, 'invoice not found', 'not_found');
     }
     if (invoice.status === 'paid') {
-      return { settled: false, credits: 0, effect: 'already_paid' };
+      return { settled: false, credits: 0, planKey: null, effect: 'already_paid' };
     }
     // A refunded invoice had its credits reversed; re-settling it would
     // re-grant them (double grant after refund). Cancelled/void invoices are
     // equally not payable. Only due/open invoices can transition to paid.
     if (invoice.status === 'refunded') {
-      return { settled: false, credits: 0, effect: 'already_refunded' };
+      return { settled: false, credits: 0, planKey: null, effect: 'already_refunded' };
     }
     if (invoice.status !== 'due' && invoice.status !== 'open') {
-      return { settled: false, credits: 0, effect: 'not_payable' };
+      return { settled: false, credits: 0, planKey: null, effect: 'not_payable' };
     }
     markInvoicePaid(invoiceId, new Date().toISOString());
     db.run(`UPDATE payments SET status = 'succeeded', processed_at = ? WHERE invoice_id = ? AND status = 'pending'`, [
@@ -313,12 +313,32 @@ export class BillingService {
       });
       ensureEntitlement(String(invoice.user_id), 'custom_credits', 'true');
     }
+    // A subscription invoice carries the plan it pays for. The provider just
+    // confirmed the money, so THIS — and only this — is what activates a paid
+    // plan. Cancelling the previous live row keeps one auditable subscription.
+    let planKey: string | null = null;
+    try {
+      const items = JSON.parse(String(invoice.line_items ?? '[]')) as Array<{ planKey?: string }>;
+      const paidPlanKey = items.find((item) => typeof item?.planKey === 'string')?.planKey;
+      if (paidPlanKey && getPlanByKey(paidPlanKey)) {
+        cancelActiveSubscriptions(String(invoice.user_id));
+        createSubscription({ userId: String(invoice.user_id), planKey: paidPlanKey, status: 'active' });
+        planKey = paidPlanKey;
+        recordBillingEvent({
+          userId: String(invoice.user_id),
+          eventType: 'plan.activated',
+          payload: { invoiceId, planKey: paidPlanKey, amountCents: invoice.total_cents },
+        });
+      }
+    } catch {
+      planKey = null;
+    }
     recordBillingEvent({
       userId: String(invoice.user_id),
       eventType: 'credit_purchase.settled',
-      payload: { invoiceId, credits, amountCents: invoice.total_cents },
+      payload: { invoiceId, credits, amountCents: invoice.total_cents, planKey },
     });
-    return { settled: true, credits, effect: 'settled' as const };
+    return { settled: true, credits, planKey, effect: 'settled' as const };
   }
 
   /**

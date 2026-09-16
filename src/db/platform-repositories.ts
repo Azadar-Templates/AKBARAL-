@@ -481,7 +481,7 @@ export function createInvoice(input: {
   amountCents: number;
   currency?: string;
   provider?: string;
-  lineItems?: Array<{ description: string; amountCents: number }>;
+  lineItems?: Array<{ description: string; amountCents: number; planKey?: string; credits?: number }>;
   status?: string;
   dueAt?: string | null;
 }): { id: string; number: string } {
