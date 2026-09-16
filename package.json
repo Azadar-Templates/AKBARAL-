@@ -2,7 +2,7 @@
   "name": "akbaral-master-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "AKBARAL! / MASTER AI \u2014 Master AI operating platform (User Goal -> AI Core -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result).",
+  "description": "AKBARAL! / MASTER AI — Master AI operating platform (User Goal -> AI Core -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result).",
   "type": "commonjs",
   "engines": {
     "node": ">=22.5"
@@ -41,7 +41,8 @@
     "audit:responsive": "node scripts/responsive-audit.mjs",
     "audit:responsive:selftest": "node scripts/responsive-audit.mjs --selftest --widths=320",
     "audit:routes": "node scripts/rendered-route-audit.mjs",
-    "fixture:model": "tsx scripts/local-model-fixture.ts"
+    "fixture:model": "tsx scripts/local-model-fixture.ts",
+    "verify:user-journey": "node scripts/verify-user-journey.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
