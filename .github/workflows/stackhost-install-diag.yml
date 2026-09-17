@@ -187,3 +187,77 @@ jobs:
           name: stackhost-install-diag-${{ github.run_id }}
           path: diag-artifacts
           if-no-files-found: warn
+
+      - name: "Publish key signals as annotations (readable where logs and artifacts are not)"
+        if: always()
+        run: |
+          set +e
+          emit() {
+            # $1 = title, $2 = severity (notice|warning|error), $3 = body
+            safe=$(printf '%s' "$3" | tr '\n' ' ' | tr '::' ': :' | cut -c1-900)
+            echo "::$2 title=$1::${safe}"
+          }
+          cwd="$GITHUB_WORKSPACE"
+          cd "$cwd"
+
+          # Node / npm versions
+          nv=$(node --version 2>/dev/null)
+          npmv=$(npm --version 2>/dev/null)
+          emit "diag.node" notice "node=$nv npm=$npmv"
+
+          # engines declared vs running (drift = install would fail with engine-strict=true)
+          engines=$(node -e "const p=require('./package.json');console.log(JSON.stringify(p.engines||{}))" 2>/dev/null)
+          emit "diag.engines" notice "package.json engines=$engines vs runtime=node $nv"
+
+          # lockfile version
+          lkv=$(node -e "const l=require('./package-lock.json');console.log('lockfileVersion='+l.lockfileVersion+' requires='+JSON.stringify(l.requires||{}))" 2>/dev/null)
+          emit "diag.lockfile" notice "$lkv"
+
+          # Total RAM + cgroup memory.max on the runner (substitute for StackHost free-tier)
+          ram=$(free -m | awk '/^Mem:/{printf "%.0f MB",$2}')
+          cg=$(cat /sys/fs/cgroup/memory.max 2>/dev/null | awk '{ if($1=="max") print "max(unlimited)"; else printf "%.0f MB", $1/1024/1024 }')
+          emit "diag.memory" notice "host RAM=$ram cgroup memory.max=$cg — StackHost free-tier is reportedly ~512MB; this runner had no platform-imposed cap"
+
+          # .npmrc content (verbatim)
+          npmrc=$(cat .npmrc 2>/dev/null | tr '\n' '|' | cut -c1-300)
+          emit "diag.npmrc" notice ".npmrc=$npmrc"
+
+          # Re-run npm ci to capture exit code as annotation (this step runs even
+          # if the earlier one had non-zero; we only need a yes/no + last line)
+          rm -rf node_modules
+          ( npm ci --no-audit --no-fund ) > /tmp/np.stdout 2> /tmp/np.stderr
+          rc=$?
+          last_stderr=$(tail -1 /tmp/np.stderr 2>/dev/null | tr '\n' ' ' | cut -c1-300)
+          last_stdout=$(tail -1 /tmp/np.stdout 2>/dev/null | tr '\n' ' ' | cut -c1-300)
+          nm_size=$(du -sh node_modules 2>/dev/null | awk '{print $1}')
+          if [ "$rc" = "0" ]; then
+            emit "diag.npm-ci" notice "exit=OK (0)  last_stdout=$last_stdout  node_modules=$nm_size"
+          else
+            emit "diag.npm-ci" error "exit=FAIL ($rc)  last_stderr=$last_stderr  last_stdout=$last_stdout"
+          fi
+
+          # If npm ci succeeded, also annotate the build chain
+          if [ "$rc" = "0" ]; then
+            tsc_rc=0
+            ( npx --yes tsc -p tsconfig.backend.json ) > /tmp/tsc2.stdout 2> /tmp/tsc2.stderr
+            tsc_rc=$?
+            last_tsc_stderr=$(tail -1 /tmp/tsc2.stderr 2>/dev/null | tr '\n' ' ' | cut -c1-200)
+            if [ "$tsc_rc" != "0" ]; then
+              emit "diag.tsc" error "exit=FAIL ($tsc_rc)  last_stderr=$last_tsc_stderr"
+            else
+              emit "diag.tsc" notice "exit=OK (0)  dist/src/db/migrate.js present: $(test -f dist/src/db/migrate.js && echo yes || echo no)"
+
+              rm -rf .next
+              ( npx --yes next build --webpack ) > /tmp/next2.stdout 2> /tmp/next2.stderr
+              next_rc=$?
+              last_next_stderr=$(tail -1 /tmp/next2.stderr 2>/dev/null | tr '\n' ' ' | cut -c1-200)
+              if [ "$next_rc" != "0" ]; then
+                emit "diag.next-build" error "exit=FAIL ($next_rc)  last_stderr=$last_next_stderr"
+              else
+                emit "diag.next-build" notice "exit=OK (0)  .next/BUILD_ID=$(cat .next/BUILD_ID 2>/dev/null | head -c 30)"
+              fi
+            fi
+          fi
+
+          # Summary line we will grep for
+          emit "diag.summary" notice "summary: see diag.node diag.engines diag.lockfile diag.memory diag.npmrc diag.npm-ci diag.tsc diag.next-build"
