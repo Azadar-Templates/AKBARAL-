@@ -62,7 +62,9 @@ runtime:
 
 commands:
   package: ""
-  build: "npm ci --include=dev && npm run build"
+  build:
+    - "npm ci --include=dev"
+    - "npm run build"
   start: "sh scripts/entrypoint.sh"
 
 # Deploy target: the repository's `main` branch (it already contains the full

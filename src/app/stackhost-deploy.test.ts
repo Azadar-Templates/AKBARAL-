@@ -103,7 +103,17 @@ test('entrypoint no longer duplicates startup preconditions that start-prod.mjs 
 // --------------------------------------------------------------------------
 
 test('stackhost.yaml uses the documented build/start commands and preserves the injected PORT', () => {
-  assert.match(stackhostSource, /build:\s*"npm ci --include=dev && npm run build"/);
+  // StackHost requires `commands.build` to be a YAML list (array) — a single
+  // string with `&&` is a schema violation that causes the platform's build
+  // step to be skipped or to fail with no application logs (2-5s silent exit).
+  // The correct form is two separate list items exactly as the Dockerfile does.
+  assert.match(stackhostSource, /build:\s*\n\s*- "npm ci --include=dev"/);
+  assert.match(stackhostSource, /- "npm run build"/);
+  assert.doesNotMatch(
+    stackhostSource,
+    /build:\s*"npm ci --include=dev && npm run build"/,
+    'build must be a YAML list, not a single string with `&&` — StackHost treats a string as a schema error and the build never produces dist/.next/',
+  );
   assert.match(stackhostSource, /start:\s*"sh scripts\/entrypoint\.sh"/);
   assert.match(
     stackhostSource,
