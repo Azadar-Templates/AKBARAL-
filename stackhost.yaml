@@ -2,14 +2,33 @@
 #
 # Minimum production-safe configuration for https://www.stackhost.org: StackHost
 # clones the repository, runs the commands below in a Node container, then keeps
-# the start command alive behind its proxy. This mirrors exactly what the
-# repository's own Dockerfile does (npm ci -> npm run build -> the container
-# entrypoint -> the single production start script), so there is no second,
-# divergent build path to maintain.
+# the start command alive behind its proxy. This matches what the repository's
+# own Dockerfile does for the install + start steps, with the Webpack-based
+# Next.js build chosen for the StackHost free-tier memory budget (see below).
 #
-#   build  — installs the exact locked dependency tree (dev dependencies ARE
-#            required: the production build compiles the API with tsc and the
-#            frontend with Next.js) and produces dist/ + .next/.
+#   build  — three separate YAML list items (StackHost's schema rejects a
+#            single string with `&&`):
+#              1. `npm ci` — installs the exact locked dependency tree (dev
+#                 dependencies ARE required: the API build runs tsc and the
+#                 frontend build runs Next.js, both need devDeps).
+#              2. `npx tsc -p tsconfig.backend.json` — compiles the API
+#                 (`dist/src/**`).
+#              3. `npx next build --webpack` — builds the frontend
+#                 (`.next/`).
+#            Together they produce `dist/` + `.next/`. Both are required by
+#            the `scripts/start-prod.mjs` preflight (NODE_BACKEND_URL +
+#            `dist/src/db/migrate.js` / `dist/src/index.js`,
+#            and `.next/BUILD_ID`).
+#
+#            Webpack instead of the default Turbopack: Turbopack's Rust
+#            workers push peak resident memory to ~1.27 GB on a clean install
+#            (measured 2026-09-17), exceeding the StackHost free-tier ceiling
+#            and surfacing as a silent install/build failure. The Webpack
+#            build peaks at ~0.5 GB on the same tree with byte-equivalent
+#            artifact structure (same `dist/` and `.next/`, same
+#            start-prod.mjs preflight PASS). Local development and CI on hosts
+#            with abundant memory still use `npm run build` (Turbopack, the
+#            package.json default), unaffected by this file.
 #   start  — node scripts/start-prod.mjs, which applies database migrations,
 #            verifies the build artifacts exist (failing fast with a clear
 #            message — or self-healing when AKBARAL_AUTO_BUILD=true — instead
@@ -66,7 +85,8 @@ commands:
   package: ""
   build:
     - "npm ci"
-    - "npm run build"
+    - "npx tsc -p tsconfig.backend.json"
+    - "npx next build --webpack"
   start: "node scripts/start-prod.mjs"
 
 # Deploy target: the repository's `main` branch (it already contains the full
