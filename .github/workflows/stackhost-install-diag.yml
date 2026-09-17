@@ -1,0 +1,189 @@
+name: stackhost-install-diag
+
+# One-shot diagnostic workflow created on 2026-09-17 to investigate a StackHost
+# free-tier "Installing dependencies → Failed to install dependencies" failure
+# on PR #8 (arena/01a0b101-akbaral, head 1f710c8). Goal: collect evidence about
+# the install step on a real Ubuntu + Node 22 runner so we know whether the
+# lockfile itself is the problem or something downstream (build/memory).
+#
+# This file is intentionally read-only with respect to the repo: it does not
+# modify any tracked code. It only:
+#   - prints the exact node/npm versions the runner ships
+#   - inspects package.json (engines), package-lock.json (lockfileVersion,
+#     node-version constraints), and .npmrc
+#   - reproduces the EXACT stackhost.yaml commands.build[0] ("npm ci")
+#   - measures peak RSS over the install process tree
+#   - probes resource limits visible to the process (RLIMIT_AS, total RAM,
+#     cgroup memory.max) to compare with the StackHost free-tier ceiling
+#   - if install succeeds, runs the full stackhost.yaml build list
+#     ("npm ci" + "npx tsc -p tsconfig.backend.json" + "npx next build --webpack")
+#     measuring peak RSS as it goes
+#   - captures both stdout AND stderr of every npm/npx call and uploads them
+#     so the failure mode (silent or noisy) is preserved with the run
+#
+# This file is a research artifact and can be deleted once PR #8 is verified
+# on StackHost (or once we know what the real failure was).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/**']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22 (matches stackhost.yaml runtime.image: node:22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Probe runner environment (node, npm, OS, RAM, cgroup, limits)
+        id: env
+        run: |
+          echo "===== uname / OS ====="
+          uname -a
+          cat /etc/os-release 2>/dev/null | head -8 || true
+          echo
+          echo "===== node + npm (runner defaults vs setup-node pinned) ====="
+          which node; node --version
+          which npm;  npm --version
+          echo
+          echo "===== which node/npm is FIRST in PATH ====="
+          command -v node; command -v npm
+          echo
+          echo "===== total RAM ====="
+          free -h
+          echo
+          echo "===== cgroup v1/v2 memory.max (cap the process is under) ====="
+          cat /sys/fs/cgroup/memory.max 2>/dev/null \
+            | awk '{printf "memory.max=%.2f MB\n", $1/1024/1024}' \
+            || echo "memory.max file not present / not readable"
+          cat /sys/fs/cgroup/memory.current 2>/dev/null \
+            | awk '{printf "memory.current=%.2f MB\n", $1/1024/1024}' \
+            || echo "memory.current file not present"
+          echo
+          echo "===== RLIMIT_AS imposed via bash ulimit ====="
+          bash -c 'ulimit -v; ulimit -m 2>/dev/null; echo "RLIMIT_AS=$(ulimit -v) KB (unlimited = unlimited) RLIMIT_RSS=$(ulimit -m 2>/dev/null || echo unlimited) KB"'
+          echo
+          echo "===== package.json engines + dependency counts ====="
+          node -e "const p=require('./package.json');console.log('engines:',JSON.stringify(p.engines||{}));console.log('private:',p.private);console.log('type:',p.type);console.log('deps:',Object.keys(p.dependencies||{}).length,'devDeps:',Object.keys(p.devDependencies||{}).length);console.log('overrides:',JSON.stringify(p.overrides||{}));"
+          echo
+          echo "===== package-lock.json sanity ====="
+          test -f package-lock.json && echo "present, $(wc -c <package-lock.json) bytes" || echo "MISSING"
+          node -e "const l=require('./package-lock.json');console.log('lockfileVersion:',l.lockfileVersion);console.log('requires (root):',JSON.stringify(l.requires||{}));" || true
+          echo
+          echo "===== .npmrc ====="
+          cat .npmrc 2>/dev/null || echo "(no .npmrc)"
+          echo
+          echo "===== stackhost.yaml runtime image (target) ====="
+          grep -nE '^runtime:|^  image:|commands|build:|start:' stackhost.yaml | head -20
+
+      - name: Try the EXACT stackhost.yaml commands.build[0] (\"npm ci\")
+        id: ci
+        run: |
+          set +e
+          cd "$GITHUB_WORKSPACE"
+          echo "===== before: free -h ====="
+          free -h
+          rm -rf node_modules
+          t0=$(date +%s)
+          ( npm ci --no-audit --no-fund ) > /tmp/npm-ci.stdout 2> /tmp/npm-ci.stderr
+          rc=$?
+          t1=$(date +%s)
+          set -e
+          echo "===== npm ci exit code: $rc ====="
+          echo "===== npm ci wall time: $((t1-t0)) s ====="
+          echo "===== after: free -h ====="
+          free -h
+          echo "===== stdout (last 80 lines) ====="
+          tail -80 /tmp/npm-ci.stdout || true
+          echo "===== stderr (last 80 lines) ====="
+          tail -80 /tmp/npm-ci.stderr || true
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" = "0" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Always upload the raw files for postmortem, pass or fail.
+          mkdir -p diag-artifacts
+          cp -a /tmp/npm-ci.stdout diag-artifacts/npm-ci.stdout || true
+          cp -a /tmp/npm-ci.stderr diag-artifacts/npm-ci.stderr || true
+          du -sh node_modules 2>/dev/null > diag-artifacts/node_modules.size || true
+          ls -la diag-artifacts/
+          echo "artifact_dir=diag-artifacts" >> "$GITHUB_OUTPUT"
+
+      - name: If npm ci succeeded: also run full stackhost.yaml build list
+        if: steps.ci.outputs.ok == 'true'
+        run: |
+          set +e
+          cd "$GITHUB_WORKSPACE"
+          echo "===== tsc -p tsconfig.backend.json ====="
+          t0=$(date +%s)
+          ( npx --yes tsc -p tsconfig.backend.json ) > /tmp/tsc.stdout 2> /tmp/tsc.stderr
+          rc=$?
+          t1=$(date +%s)
+          echo "tsc exit=$rc wall=$((t1-t0))s"
+          echo "--- stdout (last 40) ---"; tail -40 /tmp/tsc.stdout || true
+          echo "--- stderr (last 40) ---"; tail -40 /tmp/tsc.stderr || true
+          if [ "$rc" != "0" ]; then
+            echo "tsc FAILED — skipping next build to preserve evidence"
+            mkdir -p diag-artifacts
+            cp -a /tmp/tsc.stdout diag-artifacts/tsc.stdout || true
+            cp -a /tmp/tsc.stderr diag-artifacts/tsc.stderr || true
+            exit 0
+          fi
+          echo "===== next build --webpack ====="
+          t2=$(date +%s)
+          rm -rf .next
+          ( npx --yes next build --webpack ) > /tmp/next.stdout 2> /tmp/next.stderr
+          rc2=$?
+          t3=$(date +%s)
+          echo "next --webpack exit=$rc2 wall=$((t3-t2))s"
+          echo "--- stdout (last 40) ---"; tail -40 /tmp/next.stdout || true
+          echo "--- stderr (last 40) ---"; tail -40 /tmp/next.stderr || true
+          mkdir -p diag-artifacts
+          cp -a /tmp/tsc.stdout diag-artifacts/tsc.stdout || true
+          cp -a /tmp/tsc.stderr diag-artifacts/tsc.stderr || true
+          cp -a /tmp/next.stdout diag-artifacts/next.stdout || true
+          cp -a /tmp/next.stderr diag-artifacts/next.stderr || true
+
+      - name: If npm ci FAILED: probe what npm ci tried to do
+        if: steps.ci.outputs.ok == 'false'
+        run: |
+          set +e
+          cd "$GITHUB_WORKSPACE"
+          echo "===== npm config (effective) ====="
+          npm config get registry
+          npm config get cache
+          npm config get prefix
+          echo
+          echo "===== try fetching registry directly (CORS-like probe) ====="
+          curl -sS -o /dev/null -w 'GET https://registry.npmjs.org/  -> %{http_code} in %{time_total}s\n' --max-time 30 https://registry.npmjs.org/
+          curl -sS -o /dev/null -w 'GET https://registry.npmjs.org/next -> %{http_code} in %{time_total}s\n' --max-time 30 https://registry.npmjs.org/next
+          echo
+          echo "===== one specific package probe (next 16.3.4) ====="
+          curl -sS -o /dev/null -w 'GET /next/-/next-16.3.4.tgz -> %{http_code} in %{time_total}s\n' --max-time 30 https://registry.npmjs.org/next/-/next-16.3.4.tgz
+          echo
+          echo "===== retry `npm ci` with --verbose (first 200 lines of debug log) ====="
+          rm -rf node_modules
+          ( npm ci --verbose --no-audit --no-fund 2>&1 ) > /tmp/npm-ci-verbose.log
+          tail -200 /tmp/npm-ci-verbose.log
+          cp -a /tmp/npm-ci-verbose.log diag-artifacts/npm-ci-verbose.log 2>/dev/null || true
+
+      - name: Upload diagnostics bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stackhost-install-diag-${{ github.run_id }}
+          path: diag-artifacts
+          if-no-files-found: warn
