@@ -1,0 +1,61 @@
+# AKBARAL! — StackHost deployment configuration.
+#
+# Minimum production-safe configuration for https://www.stackhost.org: StackHost
+# clones the repository, runs the commands below in a Node container, then keeps
+# the start command alive behind its proxy. This mirrors exactly what the
+# repository's own Dockerfile does (npm ci -> npm run build -> the container
+# entrypoint -> the single production start script), so there is no second,
+# divergent build path to maintain.
+#
+#   build  — installs the exact locked dependency tree (dev dependencies ARE
+#            required: the production build compiles the API with tsc and the
+#            frontend with Next.js) and produces dist/ + .next/.
+#   start  — scripts/entrypoint.sh applies the database migrations, optionally
+#            seeds, starts the verified nightly backup, then execs
+#            scripts/start-prod.mjs (API + web tiers).
+#
+# Ports: StackHost injects the public port it routes traffic to as PORT. The
+# public entry point is the Next.js tier (it serves the app and rewrites
+# /api, /uploads and /ws to the API tier), so scripts/start-prod.mjs binds the
+# web tier to PORT and keeps the API on its own internal port. Nothing to
+# configure here; if StackHost's dashboard shows a port field, any value it
+# provides works because the app follows PORT (default 8080/3000 both fine).
+#
+# Everything secret or environment-specific belongs in StackHost's
+# "Environment Variables" settings — NEVER in this file (it is committed):
+#
+#   SESSION_SECRET              REQUIRED in production: >= 32 random chars.
+#                               Without it the API refuses to start (by design).
+#   AKBARAL_OWNER_EMAIL         the owner identity (owner/admin + unlimited usage)
+#   AKBARAL_SITE_URL            the public https URL, once the domain is live
+#   DATABASE_URL                optional; set a Neon/Postgres URL for durable
+#                               data. Unset = SQLite inside the container, which
+#                               is lost when the container is rebuilt.
+#   AKBARAL_REALTIME_TRANSPORT  sse on hosts that do not proxy WebSockets
+#   TRUST_PROXY=1               behind the platform's proxy
+#   DISABLE_BACKUP_CRON=1       only if the host provides no persistent volume
+#   SEED_DATABASE=true          first boot only, if you want the explicit seed;
+#                               the API also self-heals a fresh database
+#   GOOGLE_API_KEY, TAVILY_API_KEY (or BRAVE/SERPER), STRIPE_SECRET_KEY,
+#   STRIPE_WEBHOOK_SECRET, SMTP_*   — the provider credentials; each stays
+#                               honestly "not configured" until it is set.
+
+runtime:
+  image: node:22
+
+commands:
+  package: ""
+  build:
+    - "npm ci --include=dev"
+    - "npm run build"
+  start: "sh scripts/entrypoint.sh"
+
+# Deploy target: the repository's `main` branch.
+#
+# IMPORTANT: `main` currently contains only the repository README — the
+# application lives on the working branch `arena/01a0a045-akbaral`. Merge that
+# branch into `main` before the first deploy, or point StackHost's branch
+# selector at `arena/01a0a045-akbaral` until the merge happens.
+repository:
+  branch: main
+  auto_deploy: true

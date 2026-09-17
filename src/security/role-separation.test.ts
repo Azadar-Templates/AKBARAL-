@@ -288,8 +288,34 @@ describe('private data never appears on public surfaces', () => {
   });
 
   it('public pages and docs never mention the private mission identifier', async () => {
-    const home = await fetch(`${platformBase}/`);
-    const text = await home.text();
-    assert.ok(!/ZA141251SA/i.test(text), 'the public document must not reference the private mission');
+    // GET / on the API redirects to the configured public web origin
+    // (AKBARAL_PUBLIC_WEB_URL), so a rendered-document fetch would need that
+    // tier to be running — which a unit test must not depend on, and which
+    // failed spuriously whenever nothing listened on the default :3000. The
+    // guarantee is therefore asserted against everything that can produce a
+    // public document: the redirect target, the static shell this server
+    // actually serves, and the public page sources.
+    const home = await fetch(`${platformBase}/`, { redirect: 'manual' });
+    assert.ok([301, 302, 307, 308].includes(home.status), `GET / must redirect to the public web tier (got ${home.status})`);
+    const location = home.headers.get('location') ?? '';
+    assert.ok(!/ZA141251SA/i.test(location), 'the public redirect must not carry the private mission identifier');
+
+    for (const route of ['/app.js', '/styles.css', '/tokens.css']) {
+      const response = await fetch(`${platformBase}${route}`);
+      assert.equal(response.status, 200, `${route} is a real public asset`);
+      assert.ok(!/ZA141251SA/i.test(await response.text()), `${route} must not reference the private mission`);
+    }
+
+    const files: string[] = [];
+    for (const root of ['public', 'src/app']) {
+      const found = fs.existsSync(root)
+        ? fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((entry) => /\.(tsx|ts|html|js|css)$/.test(entry) && !entry.endsWith('.test.ts'))
+        : [];
+      for (const entry of found) files.push(path.join(root, entry));
+    }
+    assert.ok(files.length > 10, `expected the public surface to be scanned (found ${files.length} files)`);
+    for (const file of files) {
+      assert.ok(!/ZA141251SA/i.test(fs.readFileSync(file, 'utf8')), `${file} is public and must not reference the private mission`);
+    }
   });
 });

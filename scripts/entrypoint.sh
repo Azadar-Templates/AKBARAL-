@@ -36,5 +36,5 @@ if [ "${DISABLE_BACKUP_CRON:-false}" != "true" ]; then
   ) &
 fi
 
-echo "[akbaral] starting production stack (API :4000, web :3000)"
+echo "[akbaral] starting production stack (next logs name the bound ports)"
 exec node scripts/start-prod.mjs
