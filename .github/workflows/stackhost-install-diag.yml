@@ -40,7 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node 22 (matches stackhost.yaml runtime.image: node:22)
+      - name: "Set up Node 22 (matches stackhost.yaml runtime image: node-22)"
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -122,7 +122,7 @@ jobs:
           ls -la diag-artifacts/
           echo "artifact_dir=diag-artifacts" >> "$GITHUB_OUTPUT"
 
-      - name: If npm ci succeeded: also run full stackhost.yaml build list
+      - name: "If npm ci succeeded: also run full stackhost.yaml build list"
         if: steps.ci.outputs.ok == 'true'
         run: |
           set +e
@@ -157,7 +157,7 @@ jobs:
           cp -a /tmp/next.stdout diag-artifacts/next.stdout || true
           cp -a /tmp/next.stderr diag-artifacts/next.stderr || true
 
-      - name: If npm ci FAILED: probe what npm ci tried to do
+      - name: "If npm ci FAILED: probe what npm ci tried to do"
         if: steps.ci.outputs.ok == 'false'
         run: |
           set +e
