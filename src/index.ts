@@ -65,16 +65,6 @@ async function start(): Promise<void> {
   try {
     ensureBootstrapPlans();
     syncModelCatalog();
-    // Self-heal a fresh/incomplete deployment: the planner and agent APIs
-    // need the full specialist registry in the database. The sync is
-    // idempotent but slow (~40s for 4,000 agents), so it only runs when the
-    // registry is missing or incomplete; version drift is handled by
-    // `npm run db:seed` in the deploy pipeline.
-    if (countAgentRegistry() < agentDefinitionCount()) {
-      console.log('[akbaral] agent registry incomplete — syncing specialist catalog...');
-      const registry = syncAgentRegistry();
-      console.log(`[akbaral] agent registry ready: ${registry.total} specialists`);
-    }
   } catch (error) {
     console.error('[akbaral] failed to sync catalog:', error instanceof Error ? error.message : String(error));
   }
@@ -102,6 +92,28 @@ async function start(): Promise<void> {
         : '/ws/executions/:executionId'
     }`,
   );
+
+  // Self-heal a fresh/incomplete deployment without blocking the health check.
+  // The specialist registry sync is idempotent but slow (~40s for 4,001 agents)
+  // — running it before `api.listen()` meant the container never became
+  // \"ready\" within StackHost's 3-second startup probe and was killed with
+  // no useful log. Now the API is already listening on :4000 (and the web
+  // tier via the Next.js proxy is already healthy), so the sync can run in
+  // the background and catch up without failing the probe.
+  if (countAgentRegistry() < agentDefinitionCount()) {
+    console.log('[akbaral] agent registry incomplete — syncing specialist catalog...');
+    setImmediate(() => {
+      try {
+        const registry = syncAgentRegistry();
+        console.log(`[akbaral] agent registry ready: ${registry.total} specialists`);
+      } catch (error) {
+        console.error(
+          '[akbaral] failed to sync catalog (background):',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    });
+  }
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
