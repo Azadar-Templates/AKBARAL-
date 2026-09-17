@@ -114,7 +114,10 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
   // string with `&&` is a schema violation that causes the platform's build
   // step to be skipped or to fail with no application logs (2-5s silent exit).
   // The correct form is two separate list items exactly as the Dockerfile does.
-  assert.match(stackhostSource, /build:\s*\n\s*- "npm ci --include=dev"/);
+  // Minimal fix 2026-09-17 for “FAILED TO INSTALL DEPENDENCIES”: `npm ci`
+  // (without `--include=dev`) is the Dockerfile-faithful form and avoids the
+  // platform-specific install failure observed with `--include=dev` on free-tier.
+  assert.match(stackhostSource, /build:\s*\n\s*- "npm ci"/);
   assert.match(stackhostSource, /- "npm run build"/);
   assert.doesNotMatch(
     stackhostSource,
