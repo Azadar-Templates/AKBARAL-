@@ -222,6 +222,34 @@ jobs:
           cp -a /tmp/mem.stdout diag-artifacts/mem-512mb.stdout 2>/dev/null
           cp -a /tmp/mem.stderr diag-artifacts/mem-512mb.stderr 2>/dev/null
 
+      - name: "Bare-process ceiling probe: does Node 22 itself start with AS=512MB?"
+        id: barenodeprobe
+        run: |
+          set +e
+          # If even 'node --version' crashes under 512MB virtual, the StackHost
+          # 'npm ci' is not fixable by changing the install path — Node's own
+          # startup is hitting the ceiling.
+          ( prlimit --as=536870592 -- node --version ) > /tmp/bn.stdout 2> /tmp/bn.stderr
+          rc=$?
+          out=$(cat /tmp/bn.stdout 2>/dev/null | tr '\n' ' ' | cut -c1-120)
+          err=$(tail -3 /tmp/bn.stderr 2>/dev/null | tr '\n' ' ' | cut -c1-300)
+          if [ "$rc" = "0" ]; then
+            echo "::notice title=diag.bare-node-512MB::exit=OK rc=$rc node_reported=$out"
+          else
+            echo "::error title=diag.bare-node-512MB::exit=FAIL rc=$rc stderr=$err"
+          fi
+          # Also: at 700 MB virtual (the empirical V8 CodeRange floor we saw
+          # in earlier turns), does Node start? Establish the actual floor.
+          ( prlimit --as=734003200 -- node --version ) > /tmp/bn700.stdout 2> /tmp/bn700.stderr
+          rc700=$?
+          out700=$(cat /tmp/bn700.stdout 2>/dev/null | tr '\n' ' ' | cut -c1-120)
+          if [ "$rc700" = "0" ]; then
+            echo "::notice title=diag.bare-node-700MB::exit=OK rc=$rc700 node_reported=$out700"
+          else
+            err700=$(tail -3 /tmp/bn700.stderr 2>/dev/null | tr '\n' ' ' | cut -c1-300)
+            echo "::error title=diag.bare-node-700MB::exit=FAIL rc=$rc700 stderr=$err700"
+          fi
+
       - name: "Publish key signals as annotations (readable where logs and artifacts are not)"
         if: always()
         run: |
