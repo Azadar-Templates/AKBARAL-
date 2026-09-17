@@ -1,0 +1,74 @@
+# AKBARAL! — zero-cost launch stack (Oracle Cloud Always Free VM).
+#
+# Same production image as docker-compose.production.yml, plus Caddy for
+# free automatic HTTPS (Let's Encrypt) on a free DuckDNS subdomain.
+#
+# Start:   docker compose -f deploy/free-oracle/docker-compose.free.yml \
+#            --env-file .env up -d --build
+# Verify:  curl -f https://YOURNAME.duckdns.org/api/health
+#
+# First boot of an EMPTY volume: set SEED_DATABASE=true in .env for the
+# first `up`, then set it back to false. Migration runs on every boot.
+#
+# Architecture is unchanged from the paid runbook: single container,
+# SQLite on the akbaral_data volume, nightly verified backups inside the
+# volume, /api/ready healthcheck. Caddy only terminates TLS and proxies.
+
+services:
+  akbaral:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: akbaral-master-ai:production
+    restart: unless-stopped
+    expose:
+      - "3000"
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      DATABASE_URL: file:/data/akbaral.db
+      AKBARAL_UPLOAD_DIR: /data/uploads
+      SEED_DATABASE: "${SEED_DATABASE:-false}"
+      DISABLE_BACKUP_CRON: "false"
+      BACKUP_KEEP: "30"
+    volumes:
+      - akbaral_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+        reservations:
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # Must match the subdomain created at duckdns.org
+      AKBARAL_DOMAIN: "${AKBARAL_DOMAIN:?set AKBARAL_DOMAIN=yourname.duckdns.org in .env}"
+    depends_on:
+      - akbaral
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  akbaral_data:
+  caddy_data:
+  caddy_config:

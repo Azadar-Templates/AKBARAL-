@@ -1,0 +1,122 @@
+/* ============================================================
+   AKBARAL! Design System — generated design tokens (web).
+   DO NOT EDIT BY HAND — edit design-system/tokens.json and run:
+     node design-system/build.mjs
+   Identity: obsidian foundation · emerald atmosphere ·
+   glass surfaces · cinematic lighting · technical elegance.
+   Version 5.0.0
+   ============================================================ */
+
+:root {
+  --bg-deep: #040705;
+  --bg: #070a08;
+  --bg-2: #0b100d;
+  --bg-3: #101713;
+  --surface: rgba(226,240,232,0.05);
+  --surface-2: rgba(226,240,232,0.08);
+  --surface-strong: #16201a;
+  --glass: rgba(8,14,11,0.62);
+  --line: rgba(226,240,232,0.08);
+  --line-strong: rgba(226,240,232,0.16);
+  --line-faint: rgba(226,240,232,0.045);
+  --line-accent: rgba(47,131,72,0.42);
+  --text: #eef4f0;
+  --text-2: #b6c3bb;
+  --text-dim: #93a29a;
+  --text-faint: #7c8d84;
+  --accent: #2f8348;
+  --accent-2: #246a3a;
+  --accent-bright: #57b378;
+  --accent-soft: rgba(47,131,72,0.14);
+  --indigo-soft: rgba(47,131,72,0.16);
+  --on-accent: #f4fbf6;
+  --ivory: #eef4f0;
+  --on-ivory: #08120c;
+  --telemetry: #6fb59a;
+  --telemetry-soft: rgba(111,181,154,0.12);
+  --green: #7fc9a4;
+  --green-soft: rgba(127,201,164,0.12);
+  --red: #e58a97;
+  --red-soft: rgba(229,138,151,0.12);
+  --amber: #dcb26a;
+  --amber-soft: rgba(220,178,106,0.12);
+  --blue: #9db1e0;
+  --blue-soft: rgba(157,177,224,0.12);
+}
+
+:root {
+  /* Typography (families resolved per-platform; scale semantics in tokens.json) */
+  --font-sans: "Inter", "SF Pro Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  --font-display: "Sora", "Inter", "SF Pro Display", system-ui, sans-serif;
+  --font-mono: "Space Grotesk Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* Type scale (from typography.scale) — --fs-micro is the legibility floor */
+  --fs-micro: 0.71875rem;
+  --fs-micro-phone: 0.75rem;
+  --fs-floor: 0.72rem;
+  --fs-xs: 0.8125rem;
+  --fs-body: 0.9375rem;
+  --fs-heading: 1.1875rem;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
+
+  /* Shadows & glows */
+  --shadow: 0 30px 80px rgba(0,0,0,0.5);
+  --shadow-soft: 0 12px 36px rgba(0,0,0,0.32);
+  --glow-accent: 0 0 0 1px rgba(47,131,72,0.30), 0 10px 30px rgba(36,106,58,0.20);
+  --glow-telemetry: 0 0 0 1px rgba(111,181,154,0.22), 0 10px 28px rgba(111,181,154,0.12);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22,0.61,0.36,1);
+  --ease-soft: cubic-bezier(0.33,1,0.68,1);
+  --dur-fast: 200ms;
+  --dur-base: 320ms;
+  --dur-slow: 560ms;
+  --dur-cinematic: 900ms;
+
+  /* Layout */
+  --header-h: 64px;
+  --content-max: 1200px;
+  --nav-gap: 4px;
+
+  /* Glass material system (3 levels of depth) */
+  --glass-1-fill: rgba(226,240,232,0.045);
+  --glass-1-fallback: #0d1310;
+  --glass-1-border: rgba(226,240,232,0.10);
+  --glass-1-blur: 14px;
+  --glass-1-highlight: rgba(255,255,255,0.06);
+  --glass-1-shadow: 0 10px 30px rgba(0,0,0,0.22);
+  --glass-2-fill: rgba(10,16,13,0.55);
+  --glass-2-fallback: #101812;
+  --glass-2-border: rgba(226,240,232,0.13);
+  --glass-2-blur: 22px;
+  --glass-2-highlight: rgba(255,255,255,0.075);
+  --glass-2-shadow: 0 18px 48px rgba(0,0,0,0.34);
+  --glass-3-fill: rgba(14,22,18,0.74);
+  --glass-3-fallback: #16201a;
+  --glass-3-border: rgba(226,240,232,0.17);
+  --glass-3-blur: 30px;
+  --glass-3-highlight: rgba(255,255,255,0.09);
+  --glass-3-shadow: 0 30px 80px rgba(0,0,0,0.5);
+
+  /* Component tokens (three-layer architecture: primitive → semantic → component) */
+  --btn-h-sm: 40px;
+  --btn-h-md: 44px;
+  --btn-h-lg: 52px;
+  --btn-tracking: 0.13em;
+  --panel-pad: 26px;
+  --panel-pad-m: 20px;
+  --focus-ring: 0 0 0 3px rgba(47,131,72,0.32);
+  --chip-h: 40px;
+
+  /* Atmosphere (layered background fields) */
+  --atmo-base: #050806;
+  --atmo-base-high: #0a100c;
+  --atmo-indigo: rgba(47,131,72,0.13);
+  --atmo-violet: rgba(87,179,120,0.09);
+  --atmo-cyan: rgba(111,181,154,0.05);
+  --atmo-charcoal: rgba(30,42,36,0.30);
+}

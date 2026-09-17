@@ -1,0 +1,54 @@
+# AKBARAL! / MASTER AI — single-node production deployment (Milestone 10).
+#
+# Prerequisites:
+#   cp .env.example .env.production   # fill real secrets (SESSION_SECRET required)
+#
+# Start:   docker compose -f docker-compose.production.yml --env-file .env.production up -d
+# Verify:  curl -f http://localhost:3000/api/ready
+# Backups: verified snapshots land in the akbaral_data volume
+#          (/data/backups, nightly cron inside the container, 30 kept);
+#          restore drill: see docs/DEPLOYMENT.md.
+#
+# This is a single-node deployment on purpose: the SQLite database and the
+# execution queue live in one container. Horizontal scaling is a documented
+# POST-LAUNCH item (PostgreSQL migration), not something this file fakes.
+
+services:
+  akbaral:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: akbaral-master-ai:production
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      DATABASE_URL: file:/data/akbaral.db
+      AKBARAL_UPLOAD_DIR: /data/uploads
+      # Set to "true" only on the very first boot of an empty volume.
+      SEED_DATABASE: "false"
+      DISABLE_BACKUP_CRON: "false"
+      BACKUP_KEEP: "30"
+    volumes:
+      - akbaral_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    # Orchestrators that understand healthchecks gate traffic on /api/ready
+    # (DB + migrations + uploads + queue worker). Docker restarts on
+    # unhealthy after the retries configured in the image.
+
+volumes:
+  akbaral_data:

@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+.env.local
+.env.*.local
+node_modules
+dist
+data
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.log
+mobile/node_modules
+mobile/.expo

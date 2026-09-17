@@ -1,0 +1,489 @@
+/**
+ * Agent #001 — Web Research Agent.
+ *
+ * Real implementation, not a mock:
+ *   - searchWeb(query)         Real search through the configured production
+ *                              provider: a commercial search API key
+ *                              (TAVILY_API_KEY / BRAVE_SEARCH_API_KEY /
+ *                              SERPER_API_KEY / GOOGLE_CSE_API_KEY) selected
+ *                              automatically, an explicit
+ *                              AKBARAL_SEARCH_ENDPOINT (proxy or JSON API), or
+ *                              the keyless DuckDuckGo HTML default. Resolution
+ *                              and transports live in ./search-providers.
+ *   - fetchPage(url)           HTTP GET the source URL (or a configured proxy).
+ *   - extractText(html)        Transforms HTML into readable text.
+ *   - createResearchReport()   Builds a structured research result with the
+ *                              query, sources, facts, and verification notes.
+ *
+ * If the network is unavailable or a source refuses the request, the agent
+ * records a real error instead of returning invented data; the orchestrator
+ * then fails the task and refunds the credit.
+ */
+
+export interface SourceResult {
+  title: string;
+  url: string;
+  description: string | null;
+  fetchedAt: string;
+}
+
+export interface ResearchFact {
+  text: string;
+  sourceUrl: string | null;
+}
+
+export interface ResearchReport {
+  query: string;
+  summary: string;
+  facts: ResearchFact[];
+  sources: SourceResult[];
+  verifiedSources: number;
+  generatedAt: string;
+  durationMs: number;
+  provider: string;
+}
+
+import { assertProviderHttpUrl, assertAllowedSourceUrl } from '../security/ssrf';
+import { resolveSearchProvider, runProviderSearch } from './search-providers';
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  description: string;
+}
+
+const DEFAULT_SEARCH_ENDPOINT = 'https://html.duckduckgo.com/html/';
+const DEFAULT_USER_AGENT =
+  'Mozilla/5.0 (compatible; AKBARALMasterAI/1.0; +https://akbaral.ai)';
+
+// ── PHASE 2 hardening: query sanitization, controlled retries, rate limit ────
+
+const MAX_QUERY_CHARS = 400;
+const SEARCH_ATTEMPTS = 2; // 1 attempt + 1 controlled retry
+const SEARCH_RETRY_BACKOFF_MS = 250;
+const SEARCH_RATE_WINDOW_MS = 60_000;
+const DEFAULT_SEARCH_RATE_LIMIT = 60;
+const searchRateHits: number[] = [];
+
+/**
+ * Sanitize a search query before it reaches the provider: collapse
+ * whitespace, strip control characters, cap length. Never mutates the
+ * semantic content beyond whitespace/control cleanup.
+ */
+export function sanitizeQuery(raw: string): string {
+  return raw
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_QUERY_CHARS);
+}
+
+/** Test-only: clear the in-process search rate-limit window. */
+export function __resetSearchRateLimitForTests(): void {
+  searchRateHits.length = 0;
+}
+
+/** In-process sliding-window rate limit for outbound search calls. */
+function applySearchRateLimit(): void {
+  const rawLimit = Number(process.env.AKBARAL_SEARCH_RATE_LIMIT);
+  const max =
+    Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.floor(rawLimit) : DEFAULT_SEARCH_RATE_LIMIT;
+  const now = Date.now();
+  while (searchRateHits.length > 0 && now - searchRateHits[0] >= SEARCH_RATE_WINDOW_MS) {
+    searchRateHits.shift();
+  }
+  if (searchRateHits.length >= max) {
+    throw new Error(`search rate limit reached (${max}/${SEARCH_RATE_WINDOW_MS / 1000}s); retry shortly`);
+  }
+  searchRateHits.push(now);
+}
+
+/**
+ * Retry only transient provider failures: network-level errors, 5xx and 429.
+ * Client errors (other 4xx) and parse errors fail immediately — retrying a
+ * malformed request can never help.
+ */
+function isRetryableSearchFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /status (5\d\d|429)\b|aborted|network|fetch failed|econn|etimedout|enotfound|too many redirects/i.test(
+    error.message,
+  );
+}
+
+/**
+ * Production transport policy: the search endpoint must speak HTTPS unless the
+ * operator explicitly trusted an internal (private) provider. Prevents a
+ * cleartext search configuration from silently shipping in production.
+ */
+function assertSearchEndpointTransport(url: URL): void {
+  if (
+    url.protocol !== 'https:' &&
+    process.env.NODE_ENV === 'production' &&
+    process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER !== '1'
+  ) {
+    throw new Error(
+      'search endpoint must use HTTPS in production (set AKBARAL_SEARCH_ENDPOINT to an https:// URL, or set AKBARAL_ALLOW_PRIVATE_PROVIDER=1 only for a trusted internal provider)',
+    );
+  }
+}
+
+
+function searchEndpoint(): string {
+  return process.env.AKBARAL_SEARCH_ENDPOINT || DEFAULT_SEARCH_ENDPOINT;
+}
+
+function pageFetchBase(): string | undefined {
+  return process.env.AKBARAL_PAGE_FETCH_ENDPOINT || undefined;
+}
+
+/**
+ * Fetch HTTP text without blindly following redirects. Each hop passes through
+ * the supplied URL validator so a public source cannot redirect into a private
+ * network (or off a trusted provider host). This is the SSRF-safe fetch used by
+ * both the search endpoint and page-fetch path.
+ */
+async function httpText(
+  url: string,
+  timeoutMs = 15_000,
+  validate: (candidate: string) => string = (candidate) => candidate,
+): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let current = validate(url);
+  try {
+    for (let hop = 0; hop <= 5; hop += 1) {
+      const response = await fetch(current, {
+        headers: {
+          'User-Agent': DEFAULT_USER_AGENT,
+          Accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
+        },
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) {
+          throw new Error('request failed: redirect without location');
+        }
+        current = validate(new URL(location, current).toString());
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`request failed with status ${response.status}`);
+      }
+      return await response.text();
+    }
+    throw new Error('request failed: too many redirects');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+function normalizeWhitespace(value: string): string {
+  return decodeHtmlEntities(value).replace(/\s+/g, ' ').trim();
+}
+
+export function extractText(html: string): string {
+  const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/gi, ' ');
+  const withoutStyles = withoutScripts.replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  const withoutTags = withoutStyles
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<\/div>/gi, ' ')
+    .replace(/<\/li>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return normalizeWhitespace(withoutTags);
+}
+
+/**
+ * The provider label that will serve searches for this process — the honest
+ * value reported in research reports and operator status payloads.
+ */
+export function activeSearchProviderLabel(): string {
+  try {
+    const provider = resolveSearchProvider();
+    if (provider.kind === 'endpoint') {
+      return searchEndpoint();
+    }
+    return provider.label;
+  } catch (error) {
+    return `misconfigured search provider (${error instanceof Error ? error.message : String(error)})`;
+  }
+}
+
+/**
+ * Search DuckDuckGo HTML (or a JSON-returning search endpoint) for results.
+ * The endpoint is configurable so production can use a private search API or a
+ * compliant proxy without changing the agent code.
+ */
+export async function searchWeb(query: string, limit = 5): Promise<WebSearchResult[]> {
+  // PHASE 2 hardening, in order: sanitize the query, enforce the outbound
+  // rate limit, validate the endpoint (SSRF + production HTTPS policy), then
+  // fetch with a strict timeout and at most one controlled retry.
+  const sanitized = sanitizeQuery(query);
+  if (!sanitized) {
+    throw new Error('search query must not be empty');
+  }
+  applySearchRateLimit();
+
+  // Commercial search APIs are used through their own documented transports.
+  const provider = resolveSearchProvider();
+  if (provider.kind !== 'endpoint' && provider.kind !== 'duckduckgo') {
+    return runProviderSearch(provider, sanitized, limit, {
+      attempts: SEARCH_ATTEMPTS,
+      backoffMs: SEARCH_RETRY_BACKOFF_MS,
+    });
+  }
+
+  const endpoint = assertProviderHttpUrl(searchEndpoint());
+  const url = new URL(endpoint);
+  assertSearchEndpointTransport(url);
+  url.searchParams.set('q', sanitized);
+
+  let body: string | null = null;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= SEARCH_ATTEMPTS; attempt += 1) {
+    try {
+      body = await httpText(url.toString(), 15_000, assertProviderHttpUrl);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt < SEARCH_ATTEMPTS && isRetryableSearchFailure(error)) {
+        await new Promise((resolve) => setTimeout(resolve, SEARCH_RETRY_BACKOFF_MS));
+        continue;
+      }
+      break;
+    }
+  }
+  if (body === null) {
+    // Name the search endpoint host (never a credential) so the failure is
+    // actionable: unreachable endpoints are an operator configuration issue.
+    const reason = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(
+      `search endpoint ${url.host} unreachable (${reason}); configure a production search provider ` +
+        '(TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or SERPER_API_KEY) or set AKBARAL_SEARCH_ENDPOINT to a reachable search API',
+    );
+  }
+  const contentType = body.trimStart().startsWith('{') ? 'json' : 'html';
+  const results = contentType === 'json' ? parseJsonResults(body, limit) : parseHtmlResults(body, limit);
+  if (results.length === 0) {
+    // Never report an empty-but-successful search: an empty result set here
+    // almost always means the provider answered with a block/consent page
+    // (common for keyless scraping from datacenter IPs). Name the fix.
+    throw new Error(
+      `search provider ${url.host} returned no usable results; configure a production search provider ` +
+        '(TAVILY_API_KEY, BRAVE_SEARCH_API_KEY, SERPER_API_KEY or GOOGLE_CSE_API_KEY/GOOGLE_CSE_ID) ' +
+        'or set AKBARAL_SEARCH_ENDPOINT to a reachable search API',
+    );
+  }
+  return results;
+}
+
+function parseHtmlResults(html: string, limit: number): WebSearchResult[] {
+  const results: WebSearchResult[] = [];
+  const resultBlocks = html.split(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*>/gi);
+  // The first segment is the prelude and is not a result.
+  for (const block of resultBlocks.slice(1)) {
+    if (results.length >= limit) {
+      break;
+    }
+    const match = block.match(
+      /<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
+    );
+    const urlMatch = match ? match[1] : '';
+    const titleMatch = match ? match[2] : '';
+    if (!urlMatch || !titleMatch) {
+      continue;
+    }
+    const descriptionMatch = block.match(
+      /<a[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
+    );
+    const normalizedUrl = normalizeSearchUrl(urlMatch);
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      continue; // non-http(s) results (e.g. javascript: or relative) are dropped
+    }
+    results.push({
+      title: extractText(titleMatch),
+      url: normalizedUrl,
+      description: descriptionMatch ? extractText(descriptionMatch[1]) : '',
+    });
+  }
+  return results;
+}
+
+function normalizeSearchUrl(raw: string): string {
+  const value = decodeHtmlEntities(raw);
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return value;
+  }
+  // DuckDuckGo redirect URLs look like /l/?uddg=encoded&rut=...
+  const marker = 'uddg=';
+  const index = value.indexOf(marker);
+  if (index >= 0) {
+    const after = value.slice(index + marker.length);
+    const ampersand = after.indexOf('&');
+    const encoded = ampersand >= 0 ? after.slice(0, ampersand) : after;
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return value;
+}
+
+function parseJsonResults(body: string, limit: number): WebSearchResult[] {
+  const parsed = JSON.parse(body) as unknown;
+  const items = Array.isArray(parsed) ? parsed : (parsed as { results?: unknown[] }).results ?? [];
+  return items
+    .slice(0, limit)
+    .map((item) => {
+      const record = item as { title?: string; url?: string; description?: string };
+      const title = record.title ?? '';
+      const url = record.url ?? '';
+      const description = record.description ?? '';
+      return {
+        title: typeof title === 'string' ? title : String(title),
+        url: typeof url === 'string' ? url : String(url),
+        description: typeof description === 'string' ? description : String(description),
+      };
+    })
+    .filter((item) => item.title.length > 0 && /^https?:\/\//i.test(item.url));
+}
+
+/**
+ * Fetch and extract the readable content of a source page.
+ * Set AKBARAL_PAGE_FETCH_ENDPOINT to route through a compliant URL-fetch proxy.
+ */
+export async function fetchPage(sourceUrl: string): Promise<{ title: string; text: string }> {
+  const base = pageFetchBase();
+  // The source URL is always validated. The provider flag may only relax access
+  // to a source on the SAME host as the trusted internal search/fetch provider;
+  // it never turns arbitrary private URLs into allowed targets.
+  const safeSourceUrl = assertAllowedSourceUrl(sourceUrl, base);
+  const target = base
+    ? new URL(assertProviderHttpUrl(base))
+    : new URL(safeSourceUrl);
+  if (base) {
+    target.searchParams.set('url', safeSourceUrl);
+  }
+
+  const html = await httpText(target.toString(), 20_000, (candidate) => assertAllowedSourceUrl(candidate, base));
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return {
+    title: titleMatch ? extractText(titleMatch[1]) : '',
+    text: extractText(html),
+  };
+}
+
+export async function createResearchReport(
+  query: string,
+  maxSources = 5,
+  maxFetches = 3,
+): Promise<ResearchReport> {
+  const startedAt = Date.now();
+
+  const sourcesList = await searchWeb(query, maxSources);
+  if (sourcesList.length === 0) {
+    throw new Error(`no search results found for query "${query}"`);
+  }
+
+  const facts: ResearchFact[] = [];
+  const fetchedSources: SourceResult[] = [];
+
+  for (const source of sourcesList) {
+    if (fetchedSources.length >= maxFetches) {
+      break;
+    }
+    try {
+      const page = await fetchPage(source.url);
+      if (source.description) {
+        facts.push({ text: source.description, sourceUrl: source.url });
+      }
+      const sentences = extractSentences(page.text).slice(0, 20);
+      if (sentences.length > 0) {
+        facts.push({ text: sentences.join(' '), sourceUrl: source.url });
+      }
+      fetchedSources.push({
+        title: page.title || source.title,
+        url: source.url,
+        description: source.description || null,
+        fetchedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Record attempted-but-unreachable sources as verification notes, not facts.
+      fetchedSources.push({
+        title: source.title,
+        url: source.url,
+        description: `source not reachable in this environment (${message})`,
+        fetchedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (fetchedSources.filter((source) => !source.description?.startsWith('source not reachable')).length === 0) {
+    throw new Error(
+      `could not fetch any source for "${query}"; network access to research providers may be unavailable`,
+    );
+  }
+
+  const verifiedSources = fetchedSources.filter(
+    (source) => !source.description?.startsWith('source not reachable'),
+  ).length;
+
+  const summary = summarize(query, facts, fetchedSources);
+
+  return {
+    query,
+    summary,
+    facts,
+    sources: fetchedSources,
+    verifiedSources,
+    generatedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAt,
+    provider: activeSearchProviderLabel(),
+  };
+}
+
+function extractSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 40 && sentence.length <= 600);
+}
+
+function summarize(query: string, facts: ResearchFact[], sources: SourceResult[]): string {
+  const meaningful = facts
+    .map((fact) => fact.text)
+    .filter((text) => text.length > 0)
+    .slice(0, 8);
+
+  const sourceNames = sources
+    .slice(0, 5)
+    .map((source) => source.title)
+    .filter(Boolean);
+
+  const summaryFragments = [
+    `Research summary for "${query}":`,
+    '',
+    ...(meaningful.length > 0 ? meaningful.map((fact) => `- ${fact}`) : ['- No extractable snippets were found.']),
+    '',
+    `Verified with ${sources.filter((source) => !source.description?.startsWith('source not reachable')).length} source(s) from ${sourceNames.length ? sourceNames.join(', ') : 'the search index'}.`,
+  ];
+
+  return summaryFragments.join('\n');
+}

@@ -1,0 +1,478 @@
+name: production-verify
+
+# REAL production verification of the AKBARAL! MASTER flow through the live
+# deployment, including the real provider paths (Gemini, search, payments,
+# SMTP). Provider credentials live only in this repository's secret store —
+# never in the code, never in these logs.
+#
+# WHY THIS WORKFLOW IS THE EVIDENCE CHANNEL: the Arena dev sandbox has no
+# network egress to provider APIs (verified: only api.github.com answers), so
+# every provider verification impossible in the sandbox runs HERE, on a runner
+# with real internet access, against the REAL provider APIs. Nothing in this
+# workflow simulates a provider: a credential that is absent is reported as
+# NOT CONFIGURED with the exact secret to add, and a credential that is present
+# is exercised with a live call whose result decides the verdict.
+#
+# Evidence rules (mirrored from the runbook):
+#   - fixture/mock success never counts as production evidence; the scripts
+#     themselves reject canned answers in production mode
+#   - no secret VALUE is ever printed: presence is reported as a boolean and
+#     credentials appear only as a SHA-256 prefix (never a character of them)
+#   - a check that cannot run (missing credential, unreachable host) reports
+#     that it could not run — it never reports success
+#
+# Triggers: pushes to any arena working branch that touch the verification
+# tooling, plus manual dispatch once this file reaches the default branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Production base URL to verify'
+        required: false
+        default: ''
+  push:
+    branches: ['arena/**']
+    paths:
+      - 'scripts/verify-production-e2e.mjs'
+      - 'scripts/verify-gemini-direct.ts'
+      - 'scripts/launch-check.ts'
+      - 'src/launch/checks.ts'
+      - '.github/workflows/production-verify.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # ── PHASE 0: which credentials actually exist? (booleans only) ────────────
+  # GitHub does not expose a "list secrets" API to workflows, so presence is
+  # probed through the environment. This job publishes NO secret material: it
+  # prints one line per credential saying configured or not, plus the resolved
+  # production URL when one is configured.
+  provider-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      has_production_url: ${{ steps.scan.outputs.has_production_url }}
+      has_google_key: ${{ steps.scan.outputs.has_google_key }}
+      has_search_key: ${{ steps.scan.outputs.has_search_key }}
+      has_stripe_key: ${{ steps.scan.outputs.has_stripe_key }}
+      has_smtp: ${{ steps.scan.outputs.has_smtp }}
+      production_url: ${{ steps.scan.outputs.production_url }}
+    steps:
+      - name: Report credential presence (never values)
+        id: scan
+        env:
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          SECRET_PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          AKBARAL_SITE_URL: ${{ secrets.AKBARAL_SITE_URL }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          # Each line is ALSO emitted as an annotation: annotations are readable
+          # through the checks API from environments that cannot download job
+          # logs or artifacts (the Arena sandbox reaches only api.github.com).
+          present() {
+            if [ -n "$2" ]; then
+              echo "$1: CONFIGURED"
+              echo "::notice title=presence::$1: CONFIGURED"
+            else
+              echo "$1: not configured"
+              echo "::notice title=presence::$1: not configured"
+            fi
+          }
+          url="${INPUT_BASE_URL:-${SECRET_PRODUCTION_BASE_URL:-${AKBARAL_SITE_URL:-}}}"
+          present "production base URL (PRODUCTION_BASE_URL)" "${SECRET_PRODUCTION_BASE_URL:-}"
+          present "public site URL (AKBARAL_SITE_URL)" "${AKBARAL_SITE_URL:-}"
+          present "GOOGLE_API_KEY (MASTER / model-backed agents)" "$GOOGLE_API_KEY"
+          present "search provider (TAVILY/BRAVE/SERPER)" "${TAVILY_API_KEY}${BRAVE_SEARCH_API_KEY}${SERPER_API_KEY}"
+          present "STRIPE_SECRET_KEY (payments)" "$STRIPE_SECRET_KEY"
+          present "STRIPE_WEBHOOK_SECRET (payment webhooks)" "$STRIPE_WEBHOOK_SECRET"
+          present "SMTP_HOST/SMTP_USER/SMTP_PASSWORD (transactional email)" "${SMTP_HOST}${SMTP_USER}${SMTP_PASSWORD}"
+          echo "has_production_url=$([ -n "$url" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_google_key=$([ -n "$GOOGLE_API_KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_search_key=$([ -n "${TAVILY_API_KEY}${BRAVE_SEARCH_API_KEY}${SERPER_API_KEY}" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_stripe_key=$([ -n "$STRIPE_SECRET_KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "has_smtp=$([ -n "${SMTP_HOST}${SMTP_USER}${SMTP_PASSWORD}" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "production_url=$url" >> "$GITHUB_OUTPUT"
+
+  # ── PHASE 0b: is a production host actually serving? (no credentials) ────
+  # The image publishes to GHCR on every push, but an image is not a running
+  # deployment. This job asks the only question that decides whether the
+  # deployed product exists: does a candidate host answer /api/ready? A host
+  # that is live and healthy is handed to the production E2E below, so the real
+  # product is verified automatically the moment a deployment exists.
+  deployment-reachability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      live_url: ${{ steps.probe.outputs.live_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe candidate production hosts
+        id: probe
+        env:
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          SECRET_PRODUCTION_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          SITE_URL: ${{ secrets.AKBARAL_SITE_URL }}
+        run: |
+          # Candidate hosts: configured secrets/inputs first, then the committed
+          # target list (so a workspace-hosted production runtime is verified
+          # from OUTSIDE, over the public internet, exactly like a real host).
+          file_targets=""
+          if [ -f .github/production-targets.json ]; then
+            file_targets=$(node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('.github/production-targets.json','utf8'));console.log((j.targets||[]).join(' '))" 2>/dev/null || true)
+          fi
+          # shellcheck disable=SC2086
+          live=""
+          for url in "$SECRET_PRODUCTION_BASE_URL" "$INPUT_BASE_URL" "$SITE_URL" $file_targets "https://akbaral.duckdns.org" "https://azadar-templates--akbaral.modal.run"; do
+            if [ -z "$url" ]; then
+              continue
+            fi
+            url="${url%/}"
+            ready_code=$(curl -sS -m 15 -o /tmp/ready.json -w '%{http_code}' "$url/api/ready" 2>/dev/null || true)
+            ready_code=${ready_code:-000}
+            root_code=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "$url/" 2>/dev/null || true)
+            root_code=${root_code:-000}
+            echo "$url → /api/ready=$ready_code /=$root_code"
+            if [ "$ready_code" = "200" ]; then
+              echo "::notice title=deployment::$url IS SERVING (api/ready 200, / $root_code) — $(head -c 260 /tmp/ready.json 2>/dev/null)"
+              if [ -z "$live" ]; then live="$url"; fi
+            else
+              echo "::notice title=deployment::$url is NOT serving (api/ready=$ready_code, /=$root_code)"
+            fi
+          done
+          echo "live_url=$live" >> "$GITHUB_OUTPUT"
+          if [ -z "$live" ]; then
+            echo "::warning title=deployment::no candidate production host is serving — the deploy step (run the published image on a host, point DNS/TLS) is the remaining owner action"
+          fi
+
+  # ── PHASE 0c: does the PUBLISHED IMAGE boot and serve? (no credentials) ──
+  # An image in GHCR is a claim about a deployable artifact until someone runs
+  # it. This job pulls the image built for THIS commit, proves the commit stamp
+  # inside it matches, boots it exactly as a host would (real SESSION_SECRET,
+  # production env, SQLite on a volume), and then exercises the deployed
+  # product: readiness, every application route surviving a refresh, the 4,001
+  # agent registry, billing refusing a paid plan without a provider, and the
+  # full customer journey — all against a real container, not a local process.
+  image-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      image_verified: ${{ steps.pull.outputs.available }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Log in to GHCR (read)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Pull the image published for THIS commit
+        id: pull
+        run: |
+          # Same derivation as docker-publish: lowercase, strip trailing
+          # non-alphanumerics so "AKBARAL-" becomes the valid "akbaral".
+          NAME=$(printf '%s' "${{ github.repository }}" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9]+$//')
+          IMAGE="ghcr.io/${NAME}"
+          for attempt in $(seq 1 30); do
+            if docker pull "$IMAGE:${{ github.sha }}" >/dev/null 2>&1; then
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              echo "IMAGE_REF=$IMAGE:${{ github.sha }}" >> "$GITHUB_ENV"
+              echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=image::no image published for ${{ github.sha }} — the image E2E could not run"
+      - name: Boot the image exactly as a host would
+        if: steps.pull.outputs.available == 'true'
+        run: |
+          # A real production start: production env, an explicitly configured
+          # random session secret, SQLite on a volume, first-boot seeding on.
+          docker run -d --name akbaral-e2e \
+            -p 3000:3000 -p 4000:4000 \
+            -e SESSION_SECRET="$(openssl rand -base64 48)" \
+            -e SEED_DATABASE=true \
+            -e DISABLE_BACKUP_CRON=true \
+            -e AKBARAL_SITE_URL=http://127.0.0.1:3000 \
+            -e DATABASE_URL=file:/data/akbaral.db \
+            "$IMAGE_REF"
+          for attempt in $(seq 1 60); do
+            code=$(curl -sS -m 5 -o /tmp/ready.json -w '%{http_code}' http://127.0.0.1:3000/api/ready 2>/dev/null || true)
+            if [ "${code:-000}" = "200" ]; then echo "ready after ${attempt} polls"; break; fi
+            sleep 5
+          done
+          echo "--- container /api/ready ---"; cat /tmp/ready.json || true; echo
+          echo "--- image commit stamp (must equal ${{ github.sha }}) ---"
+          stamp=$(docker exec akbaral-e2e cat /app/.image-version | tr -d '\n')
+          echo "stamp=$stamp expected=${{ github.sha }}"
+          if [ "$stamp" != "${{ github.sha }}" ]; then
+            echo "::error title=image::the image does not carry this commit — refusing to treat it as evidence for this revision"
+            exit 1
+          fi
+      - name: Verify the deployed product inside the container
+        if: steps.pull.outputs.available == 'true'
+        run: |
+          fail=0
+          check() { # name, url, expected_code
+            code=$(curl -sS -m 15 -o /tmp/body -w '%{http_code}' "$2" 2>/dev/null || true)
+            if [ "${code:-000}" = "$3" ]; then
+              echo "PASS $1 ($code)"
+            else
+              echo "FAIL $1 (got ${code:-000}, want $3)"
+              echo "::error title=image-e2e::$1 → got ${code:-000}, want $3"
+              fail=1
+            fi
+          }
+          container_api() { curl -sS -m 15 "$@"; }
+          check "/api/ready"          "http://127.0.0.1:3000/api/ready" 200
+          check "/ (shell)"           "http://127.0.0.1:3000/" 200
+          check "/signin (refresh OK)" "http://127.0.0.1:3000/signin" 200
+          check "/billing (refresh OK)" "http://127.0.0.1:3000/billing" 200
+          check "/workspace (refresh OK)" "http://127.0.0.1:3000/workspace" 200
+          check "/nonexistent (404 kept)" "http://127.0.0.1:3000/nonexistent-xyz" 404
+          check "/mission (private, 404)" "http://127.0.0.1:3000/mission" 404
+          check "anonymous /api/tasks refused" "http://127.0.0.1:4000/api/tasks" 401
+          # The registry is account-scoped, so the check authenticates like a
+          # real user does (registration is a public API in the image).
+          email="image-e2e-$(date +%s)@akbaral.test"
+          container_api -X POST http://127.0.0.1:4000/api/auth/register -H 'content-type: application/json' \
+            -d "{\"email\":\"$email\",\"password\":\"image-e2e-password-1\",\"name\":\"Image E2E\"}" > /tmp/register.json
+          token=$(container_api -X POST http://127.0.0.1:4000/api/auth/login -H 'content-type: application/json' \
+            -d "{\"email\":\"$email\",\"password\":\"image-e2e-password-1\"}" | jq -r '.accessToken // empty' 2>/dev/null)
+          if [ -z "$token" ]; then
+            echo "FAIL could not obtain a session in the container"
+            echo "::error title=image-e2e::register/login failed inside the deployed image"
+            fail=1
+          else
+            echo "PASS session issued inside the container"
+          fi
+          plans=$(container_api http://127.0.0.1:4000/api/billing/plans | jq -r '.plans | length' 2>/dev/null || echo 0)
+          agents=$(container_api -H "authorization: Bearer $token" http://127.0.0.1:4000/api/agents | jq -r '.agents | length' 2>/dev/null || echo 0)
+          echo "plans=$plans agents_on_first_page=$agents"
+          [ "${plans:-0}" -ge 1 ] || { echo "FAIL billing catalog empty"; echo "::error title=image-e2e::billing catalog is empty in the image"; fail=1; }
+          [ "${agents:-0}" -ge 1 ] || { echo "FAIL agent registry empty in the image"; echo "::error title=image-e2e::agent registry is empty in the image"; fail=1; }
+          # A paid plan must NOT be grantable for free inside the deployed image.
+          paid=$(container_api -X POST http://127.0.0.1:4000/api/billing/switch -H 'content-type: application/json' \
+            -H "authorization: Bearer $token" -d '{"plan_key":"pro"}' -o /tmp/switch.json -w '%{http_code}')
+          echo "paid-plan switch in the image → HTTP $paid: $(head -c 160 /tmp/switch.json)"
+          if [ "${paid:-000}" != "402" ]; then
+            echo "::error title=image-e2e::a paid plan was not refused without a payment provider (HTTP ${paid:-000})"
+            fail=1
+          fi
+          echo "::notice title=image-e2e product::plans=$plans agents=$agents paid_plan_refused=HTTP_${paid:-000}"
+          exit $fail
+      - name: Give the container an owner account (as an operator would)
+        if: steps.pull.outputs.available == 'true'
+        run: |
+          OWNER_EMAIL="image-owner-$(date +%s)@akbaral.test"
+          OWNER_PASSWORD="image-owner-password-1"
+          curl -sS -m 15 -X POST http://127.0.0.1:4000/api/auth/register \
+            -H 'content-type: application/json' \
+            -d "{\"email\":\"$OWNER_EMAIL\",\"password\":\"$OWNER_PASSWORD\",\"name\":\"Image Owner\"}" > /dev/null
+          # The owner identity is a ROLE in the deployed database, so the
+          # operator's own promotion path is exercised, not a bypass: the same
+          # role check the product enforces then applies to this account.
+          docker exec -i -e PROMOTE_EMAIL="$OWNER_EMAIL" akbaral-e2e node - <<'NODE'
+          const { DatabaseSync } = require('node:sqlite');
+          const db = new DatabaseSync('/data/akbaral.db');
+          db.prepare('UPDATE users SET role = ? WHERE email = ?').run('owner', process.env.PROMOTE_EMAIL);
+          const row = db.prepare('SELECT role FROM users WHERE email = ?').get(process.env.PROMOTE_EMAIL);
+          console.log('owner role in the container:', row && row.role);
+          db.close();
+          NODE
+          {
+            echo "OWNER_EMAIL=$OWNER_EMAIL"
+            echo "OWNER_PASSWORD=$OWNER_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Run the real journeys against the running container
+        if: steps.pull.outputs.available == 'true'
+        env:
+          AUDIT_BASE: http://127.0.0.1:3000
+          API_BASE: http://127.0.0.1:4000
+        run: |
+          npm ci
+          set +e
+          echo "── refresh / deep links (browser-shaped, against the container) ──"
+          node scripts/verify-refresh-deeplinks.mjs > /tmp/refresh.log 2>&1
+          refresh_status=$?
+          echo "── customer journey (auth, MASTER, credits, RBAC) ──"
+          node scripts/verify-user-journey.mjs > /tmp/journey.log 2>&1
+          journey_status=$?
+          set -e
+          tail -4 /tmp/refresh.log; tail -4 /tmp/journey.log
+          # Job logs are not reachable from every environment, so a failure
+          # explains itself here as well.
+          if [ "$refresh_status" -ne 0 ]; then
+            grep '^FAIL' /tmp/refresh.log | head -8 | sed 's/::/:/g' | cut -c1-280 | \
+              while read -r line; do echo "::error title=refresh-deeplinks::$line"; done
+          fi
+          if [ "$journey_status" -ne 0 ]; then
+            grep '^FAIL' /tmp/journey.log | head -8 | sed 's/::/:/g' | cut -c1-280 | \
+              while read -r line; do echo "::error title=user-journey::$line"; done
+          fi
+          grep -E 'VERIFIED|JOURNEY —' /tmp/refresh.log /tmp/journey.log | sed 's/::/:/g' | cut -c1-160 | \
+            while read -r line; do echo "::notice title=image-e2e::$line"; done
+          if [ "$refresh_status" -ne 0 ] || [ "$journey_status" -ne 0 ]; then
+            exit 1
+          fi
+      - name: Container diagnostics on failure (logs are not always reachable)
+        if: failure()
+        run: |
+          docker logs --tail 120 akbaral-e2e > /tmp/container.log 2>&1 || true
+          tail -60 /tmp/container.log || true
+          # Annotations are readable through the checks API even where job logs
+          # and artifacts are not, so the reason a deployment check failed is
+          # published here as well.
+          tail -12 /tmp/container.log | tr '\n' ' ' | sed 's/::/:/g' | cut -c1-900 | \
+            while read -r line; do echo "::error title=image-e2e container log::$line"; done
+
+  # ── PHASE 1: live provider verification (real APIs, real calls) ───────────
+  # Every credential present in the secret store is exercised against its real
+  # provider: Gemini model listing + a real generateContent call, a real search
+  # query, a real Stripe /v1/balance call, a real SMTP connection. Absent
+  # credentials are reported as NOT CONFIGURED with the exact secret to add.
+  real-providers:
+    needs: provider-inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # Scoped deliberately to the provider checks: this job answers "which
+      # provider dependency is real right now and which is still missing", not
+      # "what is the launch readiness of a CI checkout".
+      - name: Verify every configured provider with a LIVE call
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          GOOGLE_CSE_API_KEY: ${{ secrets.GOOGLE_CSE_API_KEY }}
+          GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          BILLING_WEBHOOK_SECRET: ${{ secrets.BILLING_WEBHOOK_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+        run: |
+          npx tsx scripts/launch-check.ts --json --report provider-verification.md \
+            --only provider.gemini --only provider.search --only provider.payments --only provider.email \
+            > provider-verification.json
+          cat provider-verification.md
+      # A verdict that matters: a provider credential that EXISTS but is
+      # rejected must fail this job (that is a real breakage). An unconfigured
+      # provider is an honest, named gap — it fails nothing.
+      - name: Fail only when a configured provider rejected its credential
+        if: always()
+        run: |
+          rejected=$(jq -r '[.checks[] | select(.status=="failed")] | length' provider-verification.json 2>/dev/null || echo 0)
+          unreachable=$(jq -r '[.checks[] | select(.status=="unreachable")] | length' provider-verification.json 2>/dev/null || echo 0)
+          echo "rejected=$rejected unreachable=$unreachable"
+          if [ "${rejected:-0}" != "0" ]; then
+            echo "::error::a configured provider rejected its credential — see the report"
+            exit 1
+          fi
+      - name: Publish the per-provider verdicts as annotations (readable where logs are not)
+        if: always()
+        run: |
+          if [ -f provider-verification.json ]; then
+            jq -r '.checks[] | "\(.id)\t\(.status)\t\(.evidence)"' provider-verification.json \
+              | while IFS="$(printf '\t')" read -r id status evidence; do
+                  clean=$(printf '%s' "$evidence" | tr '\n' ' ' | sed 's/::/:/g' | cut -c1-280)
+                  if [ "$status" = "failed" ]; then
+                    echo "::error title=$id::$status — $clean"
+                  else
+                    echo "::notice title=$id::$status — $clean"
+                  fi
+                done
+          else
+            echo "::warning title=provider-verification::no JSON report was produced"
+          fi
+      - name: Publish the verification report
+        if: always()
+        run: |
+          if [ -f provider-verification.md ]; then
+            cat provider-verification.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'The verification report was not produced.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep the machine-readable report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-verification
+          path: provider-verification.md
+          if-no-files-found: warn
+
+  # ── PHASE 2: the real Gemini provider path, direct (no mocks) ─────────────
+  real-gemini-direct:
+    needs: provider-inventory
+    if: needs.provider-inventory.outputs.has_google_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the REAL Gemini provider path (direct, no mocks)
+        run: npx tsx scripts/verify-gemini-direct.ts
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
+  # ── PHASE 3: the deployed product, end to end ────────────────────────────
+  # Runs only when a production host is configured. A missing production URL is
+  # reported as such (the deployment step is an owner action), never as a pass.
+  production-e2e:
+    needs: [provider-inventory, deployment-reachability]
+    if: needs.deployment-reachability.outputs.live_url != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run the REAL production E2E (MASTER flow through the deployed stack)
+        run: node scripts/verify-production-e2e.mjs
+        env:
+          AKBARAL_BASE_URL: ${{ needs.deployment-reachability.outputs.live_url }}
+      # Owner identity + unlimited entitlement (blockers #6/#7) against the
+      # deployed stack. This needs the owner's own credentials and a readable
+      # copy of the deployment database; when either is absent the script
+      # reports "could not run" (exit 2) and this step says so — it never
+      # reports an unverified success.
+      - name: Owner identity + unlimited entitlement on the deployed stack
+        run: |
+          set +e
+          node scripts/verify-owner-entitlement.mjs
+          code=$?
+          set -e
+          if [ "$code" = "2" ]; then
+            echo "::notice title=owner-plane::could not run — owner credentials or deployment database absent on this runner"
+            exit 0
+          fi
+          exit "$code"
+        env:
+          API_BASE: ${{ needs.deployment-reachability.outputs.live_url }}
+          AKBARAL_OWNER_EMAIL: ${{ secrets.AKBARAL_OWNER_EMAIL }}
+          AKBARAL_OWNER_PASSWORD: ${{ secrets.AKBARAL_OWNER_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

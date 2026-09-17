@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local database files. Schema lives in db/migrations; runtime data is ignored.
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Environment files (commit only .env.example; real .env stays local)
+.env
+.env.local
+.env.*.local
+.env.test
+.env.production
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Next.js
+.next/
+
+# Local PostgreSQL test harness data (PGlite)
+.pglite-test/
+.pglite-mission-test/
+
+# Python deploy-tooling cache
+**/__pycache__/
+
+# Local deployment secret copies (value lives only in the workspace file — never committed)
+SESSION_SECRET.txt
+.platform-owner-credentials.txt
+
+# ZA141251SA mission runtime: local databases and generated preview access links.
+mission.db
+mission.db-*
+mission-preview-access.txt
+.mission-secrets.env
+.platform-owner.env
+.mission-owner-credentials.txt

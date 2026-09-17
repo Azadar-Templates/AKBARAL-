@@ -1,0 +1,225 @@
+import { Router } from 'express';
+import { agentFactory } from '../orchestrator/agent-factory';
+import { findAgentBySlug } from '../db';
+import { listCategories } from '../agents/registry';
+import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
+import { requireRole } from '../server/middleware/rbac';
+import { HttpError, asyncRoute, businessErrorToHttp } from '../server/http';
+import { getBody, optionalString, requireString } from '../server/middleware/validation';
+
+/**
+ * Run a factory operation and map its typed failures to honest HTTP statuses:
+ * 400 invalid input, 403 not the owner, 404 unknown agent/version. Without this
+ * a validation failure reached the client as a generic 500 internal error.
+ */
+function factoryCall<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    throw businessErrorToHttp(error);
+  }
+}
+
+export function createFactoryRouter(): Router {
+  const router = Router();
+  router.use(requireAuth);
+
+  router.get('/categories', (_req, res) => {
+    res.status(200).json({ categories: listCategories() });
+  });
+
+  // ---- Template derivation from the 4,000-agent matrix (Milestone 6) ------
+
+  router.get('/templates', (req: AuthenticatedRequest, res) => {
+    const templates = agentFactory.listTemplates({
+      q: typeof req.query.q === 'string' ? req.query.q : undefined,
+      category: typeof req.query.category === 'string' ? req.query.category : undefined,
+      limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
+    });
+    res.status(200).json({ templates });
+  });
+
+  router.get('/templates/:slug', (req: AuthenticatedRequest, res) => {
+    try {
+      res.status(200).json({ template: agentFactory.deriveTemplate(req.params.slug) });
+    } catch (error) {
+      throw businessErrorToHttp(error, 404, 'template_not_found');
+    }
+  });
+
+  router.post('/agents/from-template', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const templateSlug = requireString(body, 'template_slug', 'template_slug');
+    try {
+      const created = agentFactory.createFromTemplate({
+        userId: req.auth!.userId,
+        templateSlug,
+        overrides: {
+          name: optionalString(body, 'name'),
+          slug: optionalString(body, 'slug'),
+          description: optionalString(body, 'description'),
+          systemInstructions: optionalString(body, 'system_instructions'),
+          capabilities: asStringArray(body.capabilities),
+          toolPermissions: asStringArray(body.tool_permissions),
+          verificationRules: asStringArray(body.verification_rules),
+          priceCents: Number(body.price_cents ?? 0) || 0,
+        },
+        projectId: optionalString(body, 'project_id') ?? null,
+      });
+      res.status(201).json({ agent: created });
+    } catch (error) {
+      throw businessErrorToHttp(error, 400, 'agent_creation_failed');
+    }
+  });
+
+  // Real benchmark run: executes the agent against up to 5 goals through the
+  // verified pipeline (sandboxed: type=test tasks never consume credits).
+  router.post(
+    '/agents/:slug/benchmark',
+    asyncRoute(async (req: AuthenticatedRequest, res) => {
+      const agent = assertManageable(req, req.params.slug);
+      const body = getBody(req);
+      const goals = Array.isArray(body.goals)
+        ? body.goals.filter((goal): goal is string => typeof goal === 'string')
+        : [];
+      try {
+        const benchmark = await agentFactory.runBenchmark({ userId: req.auth!.userId, slug: agent.slug, goals });
+        res.status(200).json({ benchmark, slug: agent.slug });
+      } catch (error) {
+        throw businessErrorToHttp(error, 400, 'benchmark_failed');
+      }
+    }),
+  );
+
+  router.post('/agents', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const name = requireString(body, 'name', 'name');
+    const specialization = requireString(body, 'specialization', 'specialization');
+    const description = requireString(body, 'description', 'description');
+    const systemInstructions = requireString(body, 'system_instructions', 'system_instructions');
+    const created = factoryCall(() => agentFactory.create({
+      userId: req.auth!.userId,
+      name,
+      specialization,
+      description,
+      systemInstructions,
+      slug: optionalString(body, 'slug') ?? undefined,
+      capabilities: asStringArray(body.capabilities),
+      inputs: asStringArray(body.inputs),
+      outputs: asStringArray(body.outputs),
+      modelRequirements: asStringArray(body.model_requirements),
+      toolPermissions: asStringArray(body.tool_permissions),
+      workflow: asStringArray(body.workflow),
+      verificationRules: asStringArray(body.verification_rules),
+      securityPermissions: asStringArray(body.security_permissions),
+      priceCents: Number(body.price_cents ?? 0) || 0,
+      categoryId: optionalString(body, 'category_id') ?? null,
+      projectId: optionalString(body, 'project_id') ?? null,
+    }));
+    res.status(201).json({ agent: created });
+  });
+
+  router.post(
+    '/agents/:slug/test',
+    asyncRoute(async (req: AuthenticatedRequest, res) => {
+      const agent = assertManageable(req, req.params.slug);
+      const body = getBody(req);
+      const goal = requireString(body, 'goal', 'goal');
+      try {
+        const test = await agentFactory.test({ userId: req.auth!.userId, slug: agent.slug, goal });
+        res.status(200).json(test);
+      } catch (error) {
+        throw businessErrorToHttp(error);
+      }
+    }),
+  );
+
+  router.get('/agents/:slug/security', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    res.status(200).json({ findings: factoryCall(() => agentFactory.securityReview(agent.slug)), slug: agent.slug });
+  });
+
+  router.get('/agents/:slug/benchmark', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    res.status(200).json({ benchmark: factoryCall(() => agentFactory.benchmark(agent.slug)), slug: agent.slug });
+  });
+
+  router.get('/agents/:slug/versions', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    res.status(200).json({ versions: factoryCall(() => agentFactory.listVersions(agent.slug)) });
+  });
+
+  router.post('/agents/:slug/version', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    const body = getBody(req);
+    const version = factoryCall(() => agentFactory.version({
+      userId: req.auth!.userId,
+      slug: agent.slug,
+      changelog: optionalString(body, 'changelog') ?? undefined,
+    }));
+    res.status(200).json({ version });
+  });
+
+  router.patch('/agents/:slug', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    const body = getBody(req);
+    const config = {
+      name: optionalString(body, 'name') ?? undefined,
+      specialization: optionalString(body, 'specialization') ?? undefined,
+      description: optionalString(body, 'description') ?? undefined,
+      systemInstructions: optionalString(body, 'system_instructions') ?? undefined,
+      capabilities: asStringArray(body.capabilities),
+      inputs: asStringArray(body.inputs),
+      outputs: asStringArray(body.outputs),
+      modelRequirements: asStringArray(body.model_requirements),
+      toolPermissions: asStringArray(body.tool_permissions),
+      workflow: asStringArray(body.workflow),
+      verificationRules: asStringArray(body.verification_rules),
+      securityPermissions: asStringArray(body.security_permissions),
+    };
+    const updated = factoryCall(() => agentFactory.update({ userId: req.auth!.userId, slug: agent.slug, config }));
+    res.status(200).json({ agent: updated });
+  });
+
+  router.post('/agents/:slug/status', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    const body = getBody(req);
+    const status = requireString(body, 'status', 'status');
+    const updated = factoryCall(() => agentFactory.setStatus({ userId: req.auth!.userId, slug: agent.slug, status }));
+    res.status(200).json({ agent: updated });
+  });
+
+  router.post('/agents/:slug/rollback', (req: AuthenticatedRequest, res) => {
+    const agent = assertManageable(req, req.params.slug);
+    const body = getBody(req);
+    const version = requireString(body, 'version', 'version');
+    const updated = factoryCall(() => agentFactory.rollback({ userId: req.auth!.userId, slug: agent.slug, version }));
+    res.status(200).json({ agent: updated });
+  });
+
+  router.get(
+    '/audit',
+    requireRole('admin', 'super_admin'),
+    (req: AuthenticatedRequest, res) => {
+      res.status(200).json({ logs: agentFactory.audit(req.auth!.userId) });
+    },
+  );
+
+  return router;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function assertManageable(req: AuthenticatedRequest, slug: string) {
+  const agent = findAgentBySlug(slug);
+  if (!agent) {
+    throw new HttpError(404, 'agent not found', 'not_found');
+  }
+  const isAdmin = ['admin', 'super_admin'].includes(req.auth!.role);
+  if (!isAdmin && (!agent.owner_id || String(agent.owner_id) !== req.auth!.userId)) {
+    throw new HttpError(403, 'only the owner can manage this agent', 'forbidden');
+  }
+  return agent;
+}
