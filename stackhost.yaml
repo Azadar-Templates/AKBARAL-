@@ -10,9 +10,19 @@
 #   build  — installs the exact locked dependency tree (dev dependencies ARE
 #            required: the production build compiles the API with tsc and the
 #            frontend with Next.js) and produces dist/ + .next/.
-#   start  — scripts/entrypoint.sh applies the database migrations, optionally
-#            seeds, starts the verified nightly backup, then execs
-#            scripts/start-prod.mjs (API + web tiers).
+#   start  — scripts/entrypoint.sh execs scripts/start-prod.mjs, which applies
+#            database migrations, verifies the build artifacts exist (failing
+#            fast with a clear message — or self-healing when
+#            AKBARAL_AUTO_BUILD=true — instead of the previous silent exit a
+#            few seconds into boot), generates and persists a SESSION_SECRET
+#            when one is not explicitly configured, then starts the API + web
+#            tiers. The nightly verified backup loop runs alongside it.
+#
+# StackHost startup fix (2026-09-17): deployments were dying 2-3 seconds after
+# start with no application logs — root cause was `set -e` aborting the shell
+# before Node ever printed a line whenever a build artifact or SESSION_SECRET
+# was missing. scripts/start-prod.mjs now owns every startup precondition and
+# always logs a specific, actionable reason before it exits non-zero.
 #
 # Ports: StackHost injects the public port it routes traffic to as PORT. The
 # public entry point is the Next.js tier (it serves the app and rewrites
@@ -24,8 +34,15 @@
 # Everything secret or environment-specific belongs in StackHost's
 # "Environment Variables" settings — NEVER in this file (it is committed):
 #
-#   SESSION_SECRET              REQUIRED in production: >= 32 random chars.
-#                               Without it the API refuses to start (by design).
+#   SESSION_SECRET              STRONGLY RECOMMENDED: >= 32 random chars. If
+#                               unset, scripts/start-prod.mjs generates one
+#                               automatically and persists it (0600) inside the
+#                               container's writable volume so restarts of the
+#                               same volume keep sessions valid — but that
+#                               generated secret does NOT survive a rebuilt /
+#                               replaced container or a stateless filesystem.
+#                               Set this explicitly for stable sessions across
+#                               redeploys.
 #   AKBARAL_OWNER_EMAIL         the owner identity (owner/admin + unlimited usage)
 #   AKBARAL_SITE_URL            the public https URL, once the domain is live
 #   DATABASE_URL                optional; set a Neon/Postgres URL for durable
@@ -45,17 +62,12 @@ runtime:
 
 commands:
   package: ""
-  build:
-    - "npm ci --include=dev"
-    - "npm run build"
+  build: "npm ci --include=dev && npm run build"
   start: "sh scripts/entrypoint.sh"
 
-# Deploy target: the repository's `main` branch.
-#
-# IMPORTANT: `main` currently contains only the repository README — the
-# application lives on the working branch `arena/01a0a045-akbaral`. Merge that
-# branch into `main` before the first deploy, or point StackHost's branch
-# selector at `arena/01a0a045-akbaral` until the merge happens.
+# Deploy target: the repository's `main` branch (it already contains the full
+# application — the earlier note about `main` being README-only predates the
+# merge that landed it there).
 repository:
   branch: main
   auto_deploy: true
