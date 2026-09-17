@@ -255,6 +255,63 @@ if (missing.length > 0) {
   log('startup preflight: all required build artifacts are present.');
 }
 
+/* ----------------------------------------------------- backup scheduler
+ * Nightly verified database backup inside the volume (01:17 UTC). The shell
+ * entrypoint used to own this loop; StackHost now disallows `sh` in
+ * stackhost.yaml (`Disallowed start command: sh`), so the Node wrapper must
+ * own it directly. This is intentionally backgrounded and never allowed to
+ * fail the container: a backup-cron bug must not take production down.
+ * Disable with DISABLE_BACKUP_CRON=1 when the host or an external scheduler
+ * owns backups. Docker/Modal still use scripts/entrypoint.sh which simply
+ * execs this wrapper, so they also get the scheduler via this path.
+ */
+function scheduleBackup() {
+  if (String(process.env.DISABLE_BACKUP_CRON ?? 'false').toLowerCase() === 'true') {
+    log('backup scheduler disabled via DISABLE_BACKUP_CRON=1');
+    return;
+  }
+  const backupDir = process.env.BACKUP_DIR ?? '/data/backups';
+  const keepRaw = String(process.env.BACKUP_KEEP ?? '30').trim();
+  const keep = /^\d+$/.test(keepRaw) ? Number(keepRaw) : 30;
+  log(`backup scheduler enabled — daily 01:17 UTC to ${backupDir} (keep ${keep})`);
+  const scheduleNext = () => {
+    const now = new Date();
+    const nowSec = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds();
+    const targetSec = 1 * 3600 + 17 * 60;
+    let waitSec;
+    if (nowSec >= targetSec) {
+      waitSec = 86400 - nowSec + targetSec;
+    } else {
+      waitSec = targetSec - nowSec;
+    }
+    const waitMs = waitSec * 1000 - now.getUTCMilliseconds();
+    const timer = setTimeout(() => {
+      log('scheduled backup starting');
+      try {
+        const result = spawnSync('node', ['dist/src/scripts/backup-db.js', backupDir, String(keep)], {
+          stdio: 'inherit',
+          env: process.env,
+          timeout: 10 * 60 * 1000,
+        });
+        if (result.error) {
+          console.error(`[akbaral] scheduled backup FAILED (${result.error.message})`);
+        } else if (typeof result.status === 'number' && result.status !== 0) {
+          console.error(`[akbaral] scheduled backup FAILED (exit ${result.status})`);
+        } else if (result.signal) {
+          console.error(`[akbaral] scheduled backup FAILED (signal ${result.signal})`);
+        } else {
+          log('scheduled backup OK');
+        }
+      } catch (error) {
+        console.error(`[akbaral] scheduled backup FAILED (${error instanceof Error ? error.message : String(error)})`);
+      }
+      scheduleNext();
+    }, Math.max(0, waitMs));
+    if (typeof timer.unref === 'function') timer.unref();
+  };
+  scheduleNext();
+}
+
 /* ----------------------------------------------------- database migrations
  * Applied here — not only in scripts/entrypoint.sh — so this script is a
  * complete, self-sufficient startup contract on its own (the same guarantee
@@ -269,6 +326,11 @@ if (ROLES !== 'web') {
     runStep('seeding registry + plans (SEED_DATABASE=true)', 'node', [DIST_SEED_ENTRY]);
   }
 }
+
+// Backup scheduler must be started before the tiers so StackHost's direct
+// `node scripts/start-prod.mjs` still gets nightly backups without the shell
+// entrypoint. It is backgrounded (unref'd timer) and never blocks startup.
+scheduleBackup();
 
 if (ROLES !== 'api') {
   const web = launch('web', 'node_modules/.bin/next', ['start', '-p', String(webPort), '-H', '0.0.0.0'], { NODE_ENV: 'production' });

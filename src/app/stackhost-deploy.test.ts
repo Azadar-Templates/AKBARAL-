@@ -81,10 +81,17 @@ test('entrypoint execs the startup wrapper as its final statement (no silent exi
 
 test('entrypoint keeps the optional nightly backup loop from ever aborting startup', () => {
   assert.match(entrypointSource, /set -eu/, 'the script should still fail fast on its own unexpected errors');
-  assert.match(entrypointSource, /DISABLE_BACKUP_CRON/, 'the backup loop must remain opt-out via DISABLE_BACKUP_CRON');
-  // The backup loop is backgrounded (`&`) so a bug in it cannot block or
+  // Backup scheduling now lives in scripts/start-prod.mjs (StackHost disallows `sh`
+  // in stackhost.yaml), so entrypoint.sh must be a minimal exec wrapper.
+  // The Node wrapper must own the backup loop and remain opt-out via DISABLE_BACKUP_CRON.
+  assert.match(startProdSource, /DISABLE_BACKUP_CRON/, 'the backup loop must remain opt-out via DISABLE_BACKUP_CRON');
+  assert.match(startProdSource, /scheduleBackup/, 'start-prod.mjs must own the backup scheduler');
+  // The backup loop is backgrounded (unref'd timer) so a bug in it cannot block or
   // kill the foreground startup path.
-  assert.match(entrypointSource, /\)\s*&\s*\n\s*fi/, 'the backup loop must run in the background, never inline');
+  assert.match(startProdSource, /timer\.unref/, 'the backup loop must run in the background, never inline');
+  // Entrypoint must NOT duplicate the backup loop — it delegates to start-prod.mjs.
+  assert.doesNotMatch(entrypointSource, /BACKUP_KEEP/, 'entrypoint.sh must delegate backup scheduling to scripts/start-prod.mjs');
+  assert.doesNotMatch(entrypointSource, /\)\s*&\s*\n\s*fi/, 'entrypoint backup loop must not remain in shell (now in Node)');
 });
 
 test('entrypoint no longer duplicates startup preconditions that start-prod.mjs now owns', () => {
@@ -114,7 +121,20 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
     /build:\s*"npm ci --include=dev && npm run build"/,
     'build must be a YAML list, not a single string with `&&` — StackHost treats a string as a schema error and the build never produces dist/.next/',
   );
-  assert.match(stackhostSource, /start:\s*"sh scripts\/entrypoint\.sh"/);
+  // StackHost explicitly rejects `sh` in start (Disallowed start command: sh) — must be direct Node.
+  assert.match(stackhostSource, /start:\s*"node scripts\/start-prod\.mjs"/);
+  assert.doesNotMatch(
+    stackhostSource,
+    /start:\s*"sh /,
+    'StackHost disallows `sh` in commands.start — must be `node scripts/start-prod.mjs` directly',
+  );
+  // The start command itself must not reference entrypoint.sh (comments may still mention it for Docker parity).
+  const startLine = stackhostSource.split('\n').find((l) => l.trim().startsWith('start:')) ?? '';
+  assert.doesNotMatch(
+    startLine,
+    /entrypoint\.sh/,
+    'stackhost.yaml start must not reference scripts/entrypoint.sh — StackHost start must be `node scripts/start-prod.mjs`',
+  );
   assert.match(
     stackhostSource,
     /StackHost injects the public port it routes traffic to as PORT/,
