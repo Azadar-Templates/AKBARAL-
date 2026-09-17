@@ -65,7 +65,7 @@ runtime:
 commands:
   package: ""
   build:
-    - "npm ci --include=dev"
+    - "npm ci"
     - "npm run build"
   start: "node scripts/start-prod.mjs"
 
