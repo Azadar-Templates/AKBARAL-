@@ -1,19 +1,30 @@
 #!/usr/bin/env sh
-# AKBARAL! / MASTER AI — container entrypoint (Milestone 10).
+# AKBARAL! / MASTER AI — container entrypoint (Milestone 10; StackHost
+# startup fix, 2026-09-17).
+#
+# `set -e` used to mean that ANY early step failing (a partial build, a
+# missing dependency, migrations run before the build even produced
+# dist/src/db/migrate.js) killed the shell immediately — and because that
+# happened 2-3 seconds after the container started, before Node had printed
+# a single line, the platform saw a silent exit with no application logs.
+#
+# The corrected contract:
+#   - migrations, the optional seed step and the build preflight all live in
+#     scripts/start-prod.mjs now, so there is exactly one place that decides
+#     "are we ready to start" and it always prints WHY before it gives up.
+#   - this script's only two jobs are (1) the nightly backup scheduler loop,
+#     which is genuinely optional and must never abort startup, and (2)
+#     `exec`-ing the startup wrapper as the FINAL statement, so the wrapper
+#     replaces this shell (correct signal handling) and its exit code is the
+#     container's exit code — it can never "silently exit" underneath it.
 set -eu
-
-echo "[akbaral] applying database migrations"
-node dist/src/db/migrate.js
-
-if [ "${SEED_DATABASE:-false}" = "true" ]; then
-  echo "[akbaral] seeding registry + plans"
-  node dist/src/db/seed.js
-fi
 
 # Nightly verified database backup inside the volume (01:17 UTC, after the
 # daily traffic trough starts; verified snapshot + retention, see
 # src/scripts/backup-db.ts). Disable with DISABLE_BACKUP_CRON=1 when the
-# host or an external scheduler owns backups.
+# host or an external scheduler owns backups. This loop is intentionally
+# backgrounded and never allowed to fail the container: a backup-cron bug
+# must not take production down.
 if [ "${DISABLE_BACKUP_CRON:-false}" != "true" ]; then
   (
     while true; do
@@ -36,5 +47,10 @@ if [ "${DISABLE_BACKUP_CRON:-false}" != "true" ]; then
   ) &
 fi
 
-echo "[akbaral] starting production stack (next logs name the bound ports)"
+echo "[akbaral] starting production stack (scripts/start-prod.mjs applies migrations,"
+echo "[akbaral] verifies build artifacts, then starts the API + web tiers; the"
+echo "[akbaral] next logs come from that wrapper)"
+# `exec` replaces this shell with the Node process: the startup wrapper is the
+# real PID 1 payload, so a crash there is a container exit with a real log
+# trail — not a shell falling off the end silently.
 exec node scripts/start-prod.mjs
