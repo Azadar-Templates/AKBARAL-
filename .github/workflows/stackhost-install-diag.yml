@@ -188,6 +188,40 @@ jobs:
           path: diag-artifacts
           if-no-files-found: warn
 
+      - name: "Memory ceiling probe: cap AS=512MB during npm ci via prlimit"
+        id: memprobe
+        run: |
+          set +e
+          cd "$GITHUB_WORKSPACE"
+          rm -rf node_modules
+          # Check if prlimit is installed; on Ubuntu it ships in util-linux so it
+          # should be there. If missing, fall back to ulimit -v (same kernel
+          # knob). RLIMIT_AS (address space) is the only RLIMIT the kernel
+          # actually enforces against mmap; this is what 'all memory usage'
+          # looks like for Node because Node mmaps large ranges.
+          t0=$(date +%s)
+          if command -v prlimit >/dev/null 2>&1; then
+            ( prlimit --as=536870592 -- python3 -c 'import subprocess; rc=subprocess.call("npm ci --no-audit --no-fund", shell=True); raise SystemExit(rc)' ) > /tmp/mem.stdout 2> /tmp/mem.stderr
+            rc=$?
+          else
+            ( bash -c 'ulimit -v 524288; npm ci --no-audit --no-fund' ) > /tmp/mem.stdout 2> /tmp/mem.stderr
+            rc=$?
+          fi
+          t1=$(date +%s)
+          echo "===== AS=512MB run: exit=$rc wall=$((t1-t0))s ====="
+          echo "--- stdout (last 60 lines) ---"; tail -60 /tmp/mem.stdout || true
+          echo "--- stderr (last 60 lines) ---"; tail -60 /tmp/mem.stderr || true
+          last_err=$(tail -3 /tmp/mem.stderr 2>/dev/null | tr '\n' ' ' | cut -c1-300)
+          last_out=$(tail -3 /tmp/mem.stdout 2>/dev/null | tr '\n' ' ' | cut -c1-300)
+          if [ "$rc" = "0" ]; then
+            echo "::notice title=diag.mem-cap-512MB::exit=OK rc=$rc wall=$((t1-t0))s  last_stdout=$last_out"
+          else
+            echo "::error title=diag.mem-cap-512MB::exit=FAIL rc=$rc wall=$((t1-t0))s  last_stderr=$last_err"
+          fi
+          mkdir -p diag-artifacts
+          cp -a /tmp/mem.stdout diag-artifacts/mem-512mb.stdout 2>/dev/null
+          cp -a /tmp/mem.stderr diag-artifacts/mem-512mb.stderr 2>/dev/null
+
       - name: "Publish key signals as annotations (readable where logs and artifacts are not)"
         if: always()
         run: |
