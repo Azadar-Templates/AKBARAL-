@@ -117,8 +117,20 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
   // Minimal fix 2026-09-17 for “FAILED TO INSTALL DEPENDENCIES”: `npm ci`
   // (without `--include=dev`) is the Dockerfile-faithful form and avoids the
   // platform-specific install failure observed with `--include=dev` on free-tier.
+  //
+  // Free-tier memory fix 2026-09-17 (follow-up): the production build step is
+  // `npx next build --webpack` instead of `npm run build`. Turbopack (the Next
+  // 16 default) peaked at ~1.27 GB RSS during a cold build on this lockfile
+  // and exceeded the StackHost free-tier memory ceiling, surfacing as a silent
+  // install/build failure. The Webpack bundler peaks at ~0.5 GB on the same
+  // tree with byte-identical `dist/` + `.next/` artifacts that the
+  // start-prod.mjs preflight accepts. Local development and CI on hosts with
+  // abundant memory are unaffected (`npm run build` continues to use the
+  // Turbopack default).
   assert.match(stackhostSource, /build:\s*\n\s*- "npm ci"/);
-  assert.match(stackhostSource, /- "npm run build"/);
+  assert.match(stackhostSource, /- "npx next build --webpack"/);
+  assert.doesNotMatch(stackhostSource, /- "npm run build"/,
+    'stackhost.yaml must NOT use "npm run build" — it pulls Turbopack, which overshoots the free-tier memory ceiling. Use "npx next build --webpack" instead.');
   assert.doesNotMatch(
     stackhostSource,
     /build:\s*"npm ci --include=dev && npm run build"/,
