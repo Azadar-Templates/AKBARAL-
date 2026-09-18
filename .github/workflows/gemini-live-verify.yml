@@ -137,15 +137,18 @@ jobs:
           }
           if (execs.length === 0) err('ev3.verification', 'FAIL - no agent executions recorded');
 
-          // EV4 - credit consumed on success, no refund
-          const tx = db.prepare("SELECT type, amount, balance_after, reason, task_id FROM credit_transactions ORDER BY created_at").all();
+          // EV4 - credit consumed on success, no refund (for the TEST user specifically)
+          const testUser = db.prepare("SELECT id FROM users WHERE email = 'gemini-verify@akbaral.test'").get();
+          const uid = (testUser as any)?.id ?? '';
+          const tx = db.prepare('SELECT type, amount, balance_after, reason, task_id FROM credit_transactions WHERE user_id = ? ORDER BY created_at').all(uid);
           const consumed = tx.filter((t) => t.type === 'consume_task');
           const refunded = tx.filter((t) => t.type === 'refund_task');
-          const acct = db.prepare('SELECT free_credits, free_credits_used FROM credit_accounts LIMIT 1').get();
+          const acct = db.prepare('SELECT free_credits, free_credits_used FROM credit_accounts WHERE user_id = ?').get(uid);
+          const tasksDone = db.prepare("SELECT COUNT(*) c FROM tasks WHERE status = 'completed'").get() as any;
           if (wstatus === 'completed' && consumed.length >= 1 && refunded.length === 0 && Number(acct?.free_credits_used ?? 0) >= 1) {
-            notice('ev4.credits', `PASS consume_task rows=${consumed.length} (amount=${consumed[0].amount}, balance_after=${consumed[0].balance_after}), refund_task rows=0, free_credits_used=${acct?.free_credits_used}`);
+            notice('ev4.credits', `PASS test-user consume_task rows=${consumed.length} (first amount=${consumed[0].amount} balance_after=${consumed[0].balance_after}), refund_task rows=0, free_credits_used=${(acct as any)?.free_credits_used}, completed_tasks=${tasksDone?.c}`);
           } else {
-            err('ev4.credits', `FAIL workflow=${wstatus} consume_rows=${consumed.length} refund_rows=${refunded.length} free_credits_used=${acct?.free_credits_used}`);
+            err('ev4.credits', `FAIL workflow=${wstatus} consume_rows=${consumed.length} refund_rows=${refunded.length} free_credits_used=${(acct as any)?.free_credits_used} completed_tasks=${tasksDone?.c} tx=${JSON.stringify(tx).slice(0,300)}`);
           }
 
           // EV5 - task.completed audit entry
