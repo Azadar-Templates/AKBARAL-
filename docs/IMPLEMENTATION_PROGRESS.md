@@ -185,3 +185,9 @@ Added mission-only migration `0011_resource_calls.sql` and an internal worker qu
 First deterministic SQLite batch: **11/11 resource-call regressions**; typecheck, secret scan and backend build pass. Tests cover replay/operation binding, quota limits, audit rollback, credential rotation/assignment/kill-switch rechecks, conservative timeout handling, settlement replay, overages, result withholding and unchanged money. An initial TypeScript nullable-credential diagnostic was fixed before this checkpoint. Fixtures use synthetic metadata and local adapter callbacks, not real provider credentials or completions.
 
 Next exact task: validate the new migration and quota tests on PostgreSQL, exercise independent-process reservation contention, and run the existing mission regressions in small batches, committing/pushing each completed batch. Provider-specific worker integration and evidence-backed renewal remain separate scope.
+
+### Quota batch 2 — independent-process contention
+
+**13/13 SQLite quota tests pass**, including two new synchronized, independent-process races: competing reservations cannot exceed remaining quota, and competing workers cannot dispatch one reservation twice. Both races also verify the audit chain. Types and secret scan pass. The synthetic racer has a bounded watchdog and never runs in application runtime.
+
+The mission PostgreSQL check command now includes the engine-neutral quota suite. The two process races intentionally run only on SQLite: the embedded PGlite harness is not independent PostgreSQL-session concurrency proof. Next batch: apply migration 0011 through the PostgreSQL bridge and run its engine-neutral tests without resetting any prior fixture database.

@@ -1,5 +1,6 @@
 import { after, before, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -185,3 +186,55 @@ it('provider-declared failure records usage without returning an apparent succes
   assert.equal(calls(resourceId)[0].status, 'failed');
   assert.deepEqual(usage(resourceId), { requests: 1, tokens: 5 });
 });
+
+// PGlite uses a single embedded backend, so it is not independent-session
+// concurrency evidence. These races intentionally exercise SQLite processes.
+if (!process.env.PG_TEST_DATABASE_URL) {
+  async function race(inputs: Array<ReturnType<typeof fixture>['input'] & { callId?: string }>) {
+    type Result = { phase: string; ok: boolean; code?: string; error?: string };
+    const workers = inputs.map(input => fork(path.resolve('scripts/testing/resource-call-racer.ts'), [], {
+      execArgv: ['--import', 'tsx'], stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined, QUOTA_RACE_FIXTURE: JSON.stringify(input) },
+    }));
+    const ready: Array<Promise<void>> = [];
+    const results: Array<Promise<Result>> = [];
+    for (const worker of workers) {
+      ready.push(new Promise<void>((resolve, reject) => {
+        worker.on('message', (message: { phase: string }) => { if (message.phase === 'ready') resolve(); });
+        worker.once('error', reject);
+        worker.once('exit', () => reject(new Error('quota fixture exited before ready')));
+      }));
+      results.push(new Promise<Result>((resolve, reject) => {
+        worker.on('message', (message: Result) => { if (message.phase === 'result') resolve(message); });
+        worker.once('error', reject);
+        worker.once('exit', () => reject(new Error('quota fixture exited without a result')));
+      }));
+    }
+    // Attach rejection handlers before waiting for the readiness barrier.
+    const completed = Promise.all(results);
+    void completed.catch(() => {});
+    try {
+      await Promise.all(ready);
+      for (const worker of workers) worker.send('go');
+      return await completed;
+    } finally { for (const worker of workers) if (worker.exitCode === null) worker.kill(); }
+  }
+  it('two independent SQLite processes cannot over-reserve the same remaining quota', { timeout: 15000 }, async () => {
+    const { input, resourceId } = fixture({ requests: 1, tokens: 10 });
+    const outcomes = await race([input, { ...input, idempotencyKey: randomUUID() }]);
+    assert.equal(outcomes.filter(result => result.ok).length, 1, JSON.stringify(outcomes));
+    assert.ok(['resource_unavailable', 'quota_exhausted'].includes(outcomes.find(result => !result.ok)!.code!));
+    assert.equal(calls(resourceId).length, 1);
+    assert.equal(pendingResourceUsage(resourceId).requests, 1);
+    assert.equal(verifyMissionAudit().ok, true);
+  });
+  it('two independent SQLite workers cannot dispatch the same reservation twice', { timeout: 15000 }, async () => {
+    const { input, resourceId } = fixture();
+    const row = reserveResourceCall(input);
+    const outcomes = await race([{ ...input, callId: String(row.id) }, { ...input, callId: String(row.id) }]);
+    assert.equal(outcomes.filter(result => result.ok).length, 1, JSON.stringify(outcomes));
+    assert.equal(outcomes.find(result => !result.ok)!.code, 'conflict');
+    assert.equal(calls(resourceId)[0].status, 'dispatched');
+    assert.equal(verifyMissionAudit().ok, true);
+  });
+}
