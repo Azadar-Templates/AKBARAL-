@@ -9,7 +9,7 @@ process.env.ZA141251SA_DATABASE_URL = process.env.PG_TEST_DATABASE_URL || `file:
 const { applyMissionMigrations, missionDb, verifyMissionAudit } = require('./database') as typeof import('./database');
 const { currentPolicy, updatePolicy, setKillSwitch } = require('./policy') as typeof import('./policy');
 const { requestResource, provisionResource, recordResourceUsage, resourceReadiness, pendingResourceUsage } = require('./self-management') as typeof import('./self-management');
-const { reserveResourceCall, claimResourceCall, cancelResourceCall, markResourceCallUncertain, settleResourceCall, runResourceCall } = require('./resource-calls') as typeof import('./resource-calls');
+const { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall, reserveResourceCall, claimResourceCall, cancelResourceCall, markResourceCallUncertain, settleResourceCall, runResourceCall } = require('./resource-calls') as typeof import('./resource-calls');
 const owner = { actorType: 'owner' as const, actorId: `synthetic-owner-${randomUUID()}` };
 const agentId = `synthetic-agent-${randomUUID()}`;
 const agent = { actorType: 'agent' as const, actorId: agentId };
@@ -300,3 +300,57 @@ if (!process.env.PG_TEST_DATABASE_URL) {
     assert.equal(verifyMissionAudit().ok, true);
   });
 }
+
+it('owner review is bounded, cursor-paginated, scoped and strips internal authorization metadata', () => {
+  const { input, resourceId } = fixture();
+  const ids = Array.from({ length: 3 }, () => String(reserveResourceCall({ ...input, idempotencyKey: randomUUID() }).id));
+  assert.throws(() => listOwnerResourceCalls(resourceId, agent), /trusted owner/);
+  assert.throws(() => listOwnerResourceCalls(resourceId, owner, { limit: 0 }), /limit/);
+  const first = listOwnerResourceCalls(resourceId, owner, { limit: 2 });
+  assert.equal(first.calls.length, 2);
+  assert.ok(first.nextCursor);
+  const last = listOwnerResourceCalls(resourceId, owner, { before: first.nextCursor!, limit: 2 });
+  assert.deepEqual([...first.calls, ...last.calls].map(row => row.id).sort(), ids.sort());
+  assert.equal(last.nextCursor, null);
+  const other = fixture();
+  const foreign = reserveResourceCall(other.input);
+  assert.throws(() => listOwnerResourceCalls(resourceId, owner, { before: String(foreign.id) }), /another resource/);
+  assert.ok(!/binding_snapshot|credentialId|operation_fingerprint|idempotency_key|ciphertext/.test(JSON.stringify(first)));
+});
+
+it('owner controls reject cross-resource and agent mutations; cancelling never clears a dispatched hold', () => {
+  const a = fixture(), b = fixture();
+  const row = reserveResourceCall(a.input);
+  assert.throws(() => cancelOwnerResourceCall(a.resourceId, String(row.id), agent), /trusted owner/);
+  assert.throws(() => cancelOwnerResourceCall(b.resourceId, String(row.id), owner), /does not belong/);
+  const before = counts();
+  failAfter('INSERT INTO mission_audit', () => cancelOwnerResourceCall(a.resourceId, String(row.id), owner));
+  assert.deepEqual(counts(), before);
+  assert.equal(calls(a.resourceId)[0].status, 'reserved');
+  assert.equal(cancelOwnerResourceCall(a.resourceId, String(row.id), owner).status, 'cancelled');
+  const started = reserveResourceCall({ ...a.input, idempotencyKey: randomUUID() });
+  claimResourceCall(String(started.id), agent);
+  assert.throws(() => cancelOwnerResourceCall(a.resourceId, String(started.id), owner), /reconcile dispatched/);
+});
+
+it('owner reconciliation keeps evidence immutable and atomically rolls back without money movements', () => {
+  const a = fixture(), b = fixture();
+  const row = reserveResourceCall(a.input);
+  claimResourceCall(String(row.id), agent);
+  markResourceCallUncertain(String(row.id), agent);
+  const proof = receipt();
+  assert.throws(() => reconcileOwnerResourceCall(a.resourceId, String(row.id), agent, proof), /trusted owner/);
+  assert.throws(() => reconcileOwnerResourceCall(b.resourceId, String(row.id), owner, proof), /does not belong/);
+  const before = counts();
+  failAfter('INSERT INTO mission_audit', () => reconcileOwnerResourceCall(a.resourceId, String(row.id), owner, proof));
+  assert.deepEqual(counts(), before);
+  assert.deepEqual(usage(a.resourceId), { requests: 0, tokens: 0 });
+  assert.equal(calls(a.resourceId)[0].status, 'uncertain');
+  const settled = reconcileOwnerResourceCall(a.resourceId, String(row.id), owner, proof);
+  assert.equal(settled.moneyMoved, false);
+  assert.equal(settled.providerVerified, false);
+  assert.equal(settled.call.status, 'succeeded');
+  reconcileOwnerResourceCall(a.resourceId, String(row.id), owner, proof);
+  assert.equal(counts()[0], before[0]);
+  assert.throws(() => reconcileOwnerResourceCall(a.resourceId, String(row.id), owner, { ...proof, evidence: 'Changed synthetic evidence cannot replace the original receipt.' }), /cannot be changed/);
+});

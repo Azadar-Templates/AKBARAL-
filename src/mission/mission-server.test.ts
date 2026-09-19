@@ -650,6 +650,50 @@ test('only an owner can bind a stored credential and the response claims no prov
   assert.ok(!JSON.stringify(result.body).includes('synthetic-credential-value-not-real'));
 });
 
+test('owner call review and reconciliation are private, resource-scoped and never execute payments', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const operations = require('./resource-calls') as typeof import('./resource-calls');
+  const credential = await owner('/api/credentials', { method: 'POST', body: JSON.stringify({ provider: 'synthetic-call-review', label: 'Synthetic review fixture', secret: 'synthetic-credential-value-not-real' }) });
+  const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-call-review', kind: 'api', credentialId: credential.body.credential.id, limits: { requests: 3 } });
+  const id = String(resource.id);
+  management.provisionResource({ id, actualCostCents: 0, providerRef: 'synthetic-call-review-invoice', evidence: 'Synthetic fixture only; no real purchase.', actorId: 'owner' });
+  management.recordResourceUsage({ id, usage: { requests: 0 }, actorType: 'owner', actorId: 'owner' });
+  const input = { resourceId: id, agentId: 'agt_link_a', actorType: 'agent' as const, actorId: 'agt_link_a', operationFingerprint: 'a'.repeat(64), units: { requests: 1 } };
+  const held = operations.reserveResourceCall({ ...input, idempotencyKey: 'synthetic-review-hold' });
+  const uncertain = operations.reserveResourceCall({ ...input, idempotencyKey: 'synthetic-review-unknown' });
+  operations.claimResourceCall(String(uncertain.id), input);
+  operations.markResourceCallUncertain(String(uncertain.id), input);
+  const before = Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n);
+  const base = `/api/resources/${id}/calls`;
+  const proof = { outcome: 'succeeded', actualUsage: { requests: 1 }, providerRef: 'synthetic-call-receipt', evidence: 'Synthetic owner receipt, not external provider proof.' };
+  for (const scope of ['agent:self', 'dashboard:read'] as const) {
+    const link = createAccessLink({ label: 'call review denied fixture', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
+    const headers = { 'x-mission-link': link.token };
+    assert.equal((await api(base, { headers })).status, 401);
+    assert.equal((await api(`${base}/${held.id}/cancel`, { method: 'POST', headers, body: '{}' })).status, 401);
+    assert.equal((await api(`${base}/${uncertain.id}/reconcile`, { method: 'POST', headers, body: JSON.stringify(proof) })).status, 401);
+  }
+  assert.equal((await api(base)).status, 401);
+  const page = await owner(`${base}?limit=1`);
+  assert.equal(page.body.calls.length, 1);
+  assert.ok(page.body.nextCursor);
+  assert.equal((await owner(`${base}?limit=1&before=${page.body.nextCursor}`)).body.calls.length, 1);
+  assert.ok(!JSON.stringify(page.body).includes('binding_snapshot'));
+  assert.equal((await owner(`${base}?limit=101`)).status, 400);
+  assert.equal((await owner(`${base}/${uncertain.id}/cancel`, { method: 'POST', body: '{}' })).status, 409);
+  assert.equal((await owner(`${base}/${held.id}/cancel`, { method: 'POST', body: '{}' })).body.call.status, 'cancelled');
+  assert.equal((await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify({ ...proof, outcome: 'unknown' }) })).status, 400);
+  assert.equal((await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify({ ...proof, actualUsage: {} }) })).status, 400);
+  const other = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-call-review', kind: 'api' });
+  assert.equal((await owner(`/api/resources/${other.id}/calls/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify(proof) })).status, 404);
+  const settled = await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify(proof) });
+  assert.equal(settled.status, 200);
+  assert.equal(settled.body.moneyMoved, false);
+  assert.equal(settled.body.providerVerified, false);
+  assert.equal((await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify(proof) })).status, 200);
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), before);
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

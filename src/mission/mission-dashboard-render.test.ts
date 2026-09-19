@@ -16,6 +16,7 @@ function consoleFixture() {
     '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
     '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
     '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'synthetic-provider', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
+    '/api/resources/resource-fixture/calls?limit=50': { calls: [{ id: 'held-fixture', status: 'reserved', reservedUsage: { requests: 1 }, actualUsage: null }, { id: 'uncertain-fixture', status: 'uncertain', reservedUsage: { requests: 1 }, actualUsage: null, evidence: '<img src=x> Synthetic evidence text' }], nextCursor: null },
     '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
     '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
   };
@@ -27,7 +28,7 @@ function consoleFixture() {
     }
     return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls };`);
   dom.window.fixture.state.token = 'synthetic-dom-session';
   return { dom, win: dom.window, requests, resource };
 }
@@ -160,5 +161,34 @@ it('owner credential binding selects same-provider metadata and submits no plain
     win.fixture.state.token = '';
     await win.fixture.loadTools();
     assert.equal(win.document.querySelectorAll('[data-bind-credential]').length, 0);
+  } finally { dom.window.close(); }
+});
+
+it('owner quota-call controls submit actual evidence, never guessed zero, and render text safely', async () => {
+  const { dom, win, requests, resource } = consoleFixture();
+  try {
+    await win.fixture.loadTools();
+    assert.equal(win.document.querySelectorAll('[data-resource-calls]').length, 1);
+    await win.fixture.renderResourceCalls(resource);
+    const host = win.document.querySelector('#resource-calls');
+    assert.equal(host.querySelector('img'), null);
+    assert.match(host.textContent, /Unknown \/ not reconciled/);
+    host.querySelector('[data-reconcile-call]').click();
+    const form = host.querySelector('form');
+    assert.equal(form.querySelector('input[type="number"]').value, '', 'usage is never prefilled with guessed zero');
+    form.elements.outcome.value = 'succeeded';
+    form.querySelector('input[type="number"]').value = '1';
+    form.elements.providerRef.value = 'synthetic-owner-receipt';
+    form.elements.evidence.value = 'Synthetic owner usage evidence, not a real provider receipt.';
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/calls/uncertain-fixture/reconcile', body: { outcome: 'succeeded', actualUsage: { requests: 1 }, providerRef: 'synthetic-owner-receipt', evidence: 'Synthetic owner usage evidence, not a real provider receipt.' } });
+    assert.match(host.textContent, /No provider verification, payment or refund/);
+    host.querySelector('[data-cancel-call]').click();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests[1].url, '/api/resources/resource-fixture/calls/held-fixture/cancel');
+    win.fixture.state.token = '';
+    await win.fixture.loadTools();
+    assert.equal(win.document.querySelectorAll('[data-resource-calls], [data-reconcile-call], [data-cancel-call]').length, 0);
   } finally { dom.window.close(); }
 });

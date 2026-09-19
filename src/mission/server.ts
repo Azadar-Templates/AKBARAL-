@@ -1,3 +1,4 @@
+import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
 import http from 'node:http';
@@ -674,6 +675,24 @@ async function handleApi(
     // ── Resources ───────────────────────────────────────────────────────────
     case 'resources': {
       requireRead(context);
+      if (rest[1] === 'calls') {
+        const session = requireOwner(context, method !== 'GET');
+        const actor = { actorType: 'owner' as const, actorId: session.owner.id };
+        if (method === 'GET' && rest.length === 2) {
+          json(res, 200, listOwnerResourceCalls(rest[0], actor, { before: url.searchParams.get('before') ?? undefined, limit: Number(url.searchParams.get('limit') ?? 50) }));
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'cancel') {
+          json(res, 200, { call: cancelOwnerResourceCall(rest[0], rest[2], actor), moneyMoved: false, providerCalled: false });
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'reconcile') {
+          if (body.outcome !== 'succeeded' && body.outcome !== 'failed') throw new HttpProblem(400, 'choose the actual provider outcome', 'validation_error');
+          json(res, 200, reconcileOwnerResourceCall(rest[0], rest[2], actor, { outcome: body.outcome, actualUsage: body.actualUsage as Record<string, number>, providerRef: param('providerRef', '')!, evidence: param('evidence', '')! }));
+          return true;
+        }
+        throw new HttpProblem(404, 'resource call route not found', 'not_found');
+      }
       if (method === 'GET') {
         const expiring = url.searchParams.get('expiring');
         json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined).map(row => ({ ...row, readiness: resourceReadiness(String(row.id)) })), expiring: expiring === '1' });

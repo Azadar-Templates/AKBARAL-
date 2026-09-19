@@ -216,3 +216,53 @@ export async function runResourceCall<T>(input: ReserveResourceCall, invoke: (pe
   if (outcome.outcome === 'failed') fail('provider reported failure; usage recorded and result withheld', 'provider_failed');
   return { call: settled.call, value: outcome.value };
 }
+
+export interface ResourceCallPublic {
+  id: string; resourceId: string; agentId: string; status: string;
+  reservedUsage: Record<string, number>; actualUsage: Record<string, number> | null;
+  providerRef: string | null; evidence: string | null;
+  createdAt: string; deadlineAt: string | null; resolvedAt: string | null;
+}
+function publicCall(row: Row): ResourceCallPublic {
+  return {
+    id: String(row.id), resourceId: String(row.resource_id), agentId: String(row.agent_id), status: String(row.status),
+    reservedUsage: resourceCounters(JSON.parse(String(row.reserved_usage)), 'reserved usage'),
+    actualUsage: row.actual_usage ? resourceCounters(JSON.parse(String(row.actual_usage)), 'actual usage') : null,
+    providerRef: row.provider_ref ? String(row.provider_ref) : null, evidence: row.evidence ? String(row.evidence) : null,
+    createdAt: String(row.created_at), deadlineAt: row.deadline_at ? String(row.deadline_at) : null, resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
+  };
+}
+function ownerCallAccess(resourceId: string, actor: ResourceCallActor, callId?: string): void {
+  if (actor.actorType !== 'owner' || !actor.actorId?.trim()) fail('resource-call review requires a trusted owner', 'forbidden', 403);
+  getResource(resourceId);
+  if (callId && getCall(callId).resource_id !== resourceId) fail('call does not belong to this resource', 'not_found', 404);
+}
+
+/** Owner-only view; never expose encrypted credentials or internal binding/key data. */
+export function listOwnerResourceCalls(resourceId: string, actor: ResourceCallActor, options: { before?: string; limit?: number } = {}): { calls: ResourceCallPublic[]; nextCursor: string | null } {
+  ownerCallAccess(resourceId, actor);
+  const limit = options.limit ?? 50;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('call page limit must be 1–100', 'validation_error', 400);
+  let rows: Row[];
+  if (options.before) {
+    const anchor = getCall(options.before);
+    if (anchor.resource_id !== resourceId) fail('cursor belongs to another resource', 'validation_error', 400);
+    rows = missionDb.all<Row>('SELECT * FROM mission_resource_calls WHERE resource_id = ? AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?', [resourceId, anchor.created_at, anchor.created_at, anchor.id, limit + 1]);
+  } else rows = missionDb.all<Row>('SELECT * FROM mission_resource_calls WHERE resource_id = ? ORDER BY created_at DESC, id DESC LIMIT ?', [resourceId, limit + 1]);
+  const page = rows.slice(0, limit);
+  return { calls: page.map(publicCall), nextCursor: rows.length > limit ? String(page.at(-1)!.id) : null };
+}
+
+export function cancelOwnerResourceCall(resourceId: string, callId: string, actor: ResourceCallActor): ResourceCallPublic {
+  return missionDb.transaction(() => {
+    ownerCallAccess(resourceId, actor, callId);
+    return publicCall(cancelResourceCall(callId, actor));
+  });
+}
+export function reconcileOwnerResourceCall(resourceId: string, callId: string, actor: ResourceCallActor, receipt: ResourceCallReceipt): { call: ResourceCallPublic; authorizationChanged: boolean; providerVerified: false; moneyMoved: false } {
+  return missionDb.transaction(() => {
+    ownerCallAccess(resourceId, actor, callId);
+    const settled = settleResourceCall(callId, actor, receipt);
+    return { call: publicCall(settled.call), authorizationChanged: settled.authorizationChanged, providerVerified: false, moneyMoved: false };
+  });
+}

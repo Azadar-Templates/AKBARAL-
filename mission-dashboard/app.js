@@ -972,6 +972,7 @@ async function loadApprovals() {
 }
 
 async function loadTools() {
+  if (!canMutate()) replace('#resource-calls', el('p', { text: 'Owner sign-in is required to review resource calls.' }));
   const [tools, credentials, resources, services] = await Promise.all([
     api('/tools'), api('/credentials'), api('/resources'), api('/services'),
   ]);
@@ -1056,9 +1057,14 @@ async function loadTools() {
     { label: 'Expires', render: (row) => when(row.expires_at) },
     { label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
     { label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
+    { label: 'Quota calls', render: row => canMutate() ? el('button', { class: 'small', text: 'Review calls', 'data-resource-calls': row.id }) : 'Owner-only' },
     { label: 'Credential binding', render: row => canMutate() && row.status !== 'retired' ? el('button', { class: 'small', text: 'Bind credential', 'data-bind-credential': row.id }) : (row.credential_id || 'Not bound') },
     { label: 'Action', render: (row) => canMutate() && ['approved', 'needs_verification'].includes(row.status) ? el('button', { class: 'small', text: 'Record provisioning', 'data-provision': row.id }) : '—' },
   ], resources.resources, 'No resources requested.'));
+  $$('#resources button[data-resource-calls]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourceCalls(resources.resources.find(row => row.id === button.getAttribute('data-resource-calls'))); } catch (error) { banner(error.message, 'error'); }
+  }));
   $$('#resources button[data-bind-credential]').forEach(button => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
     try { await renderResourceCredentialBinding(resources.resources.find(row => row.id === button.getAttribute('data-bind-credential'))); } catch (error) { banner(error.message, 'error'); }
@@ -1075,6 +1081,90 @@ async function loadTools() {
     { label: 'Source', render: (row) => row.health_source || '—' },
     { label: 'Checked', render: (row) => when(row.last_checked_at) },
   ], services.services, 'No services registered.'));
+}
+
+async function renderResourceCalls(resource) {
+  if (!resource || !canMutate()) return;
+  const host = $('#resource-calls');
+  const transcript = el('div', { class: 'table-wrap' });
+  const editor = el('div');
+  const next = el('button', { type: 'button', text: 'Load older calls', hidden: true });
+  const refresh = el('button', { type: 'button', text: 'Refresh calls' });
+  host.replaceChildren(el('h3', { text: `Resource calls — ${resource.provider}` }), el('p', { class: 'muted small', text: 'Cancel only unstarted reservations. Reconcile unknown outcomes using actual provider usage evidence, never guessed zero usage. These controls do not call a provider, move money or issue refunds.' }), transcript, next, refresh, editor);
+  let rows = [], cursor = null, loading = null;
+  const load = async (reset = false) => {
+    if (loading) { await loading; return load(reset); }
+    next.disabled = true; refresh.disabled = true;
+    loading = (async () => {
+    try {
+      const payload = await api(`/resources/${encodeURIComponent(resource.id)}/calls?limit=50${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`);
+      if (reset) rows = [];
+      const seen = new Set(rows.map(row => row.id));
+      rows.push(...payload.calls.filter(row => !seen.has(row.id)));
+      cursor = payload.nextCursor;
+      transcript.replaceChildren(table([
+        { label: 'Call', key: 'id', wrap: true }, { label: 'State', key: 'status' },
+        { label: 'Reserved quota', render: row => JSON.stringify(row.reservedUsage) },
+        { label: 'Actual usage', render: row => row.actualUsage ? JSON.stringify(row.actualUsage) : 'Unknown / not reconciled' },
+        { label: 'Deadline', render: row => when(row.deadlineAt) },
+        { label: 'Provider reference', render: row => row.providerRef || 'No receipt' },
+        { label: 'Evidence', key: 'evidence', wrap: true },
+        { label: 'Owner action', render: row => {
+          if (row.status === 'reserved') {
+            const button = el('button', { type: 'button', class: 'small', text: 'Cancel unstarted', 'data-cancel-call': row.id });
+            button.addEventListener('click', async () => {
+              if (!guardMutation() || button.disabled) return;
+              button.disabled = true;
+              try { await api(`/resources/${resource.id}/calls/${row.id}/cancel`, { method: 'POST', body: {} }); await load(true); banner('Unstarted quota hold cancelled. No provider call or money movement.', 'ok'); }
+              catch (error) { banner(error.message, 'error'); }
+              finally { button.disabled = false; }
+            });
+            return button;
+          }
+          if (['dispatched', 'uncertain'].includes(row.status)) {
+            const button = el('button', { type: 'button', class: 'small', text: 'Reconcile usage', 'data-reconcile-call': row.id });
+            button.addEventListener('click', () => editReceipt(row));
+            return button;
+          }
+          return 'Final record';
+        } },
+      ], rows, 'No provider-call reservations recorded.'));
+      next.hidden = !cursor;
+    } finally { loading = null; next.disabled = false; refresh.disabled = false; }
+    })();
+    return loading;
+  };
+  const editReceipt = call => {
+    if (!guardMutation()) return;
+    const form = el('form', { class: 'stack-form' });
+    form.appendChild(el('h4', { text: `Actual usage receipt — ${call.id}` }));
+    const outcome = el('select', { name: 'outcome', required: '', 'aria-label': 'Actual provider outcome' }, [el('option', { value: '', text: 'Choose evidenced outcome' }), el('option', { value: 'succeeded', text: 'Provider operation succeeded' }), el('option', { value: 'failed', text: 'Provider operation failed (usage may still be incurred)' })]);
+    form.appendChild(outcome);
+    const counters = Object.keys(call.reservedUsage).sort().map(key => {
+      const input = el('input', { type: 'number', min: 0, step: 'any', required: '', 'aria-label': `Actual ${key}` });
+      form.appendChild(el('label', {}, [`Actual ${key} (from provider evidence)`, input]));
+      return { key, input };
+    });
+    form.append(el('input', { name: 'providerRef', required: '', minlength: 4, maxlength: 200, 'aria-label': 'Provider usage reference' }), el('textarea', { name: 'evidence', required: '', minlength: 12, maxlength: 2000, 'aria-label': 'Usage evidence without secrets' }), el('button', { type: 'submit', text: 'Record actual usage evidence' }));
+    let saving = false;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (saving || !guardMutation()) return;
+      if (!form.reportValidity()) return;
+      saving = true; form.querySelector('button').disabled = true;
+      try {
+        const actualUsage = Object.fromEntries(counters.map(({ key, input }) => [key, Number(input.value)]));
+        await api(`/resources/${resource.id}/calls/${call.id}/reconcile`, { method: 'POST', body: { outcome: outcome.value, actualUsage, providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value } });
+        editor.replaceChildren(el('p', { text: 'Usage evidence recorded. No provider verification, payment or refund was performed.' }));
+        await load(true);
+      } catch (error) { banner(error.message, 'error'); }
+      finally { saving = false; form.querySelector('button').disabled = false; }
+    });
+    editor.replaceChildren(form);
+  };
+  next.addEventListener('click', () => { void load().catch(error => banner(error.message, 'error')); });
+  refresh.addEventListener('click', () => { void load(true).catch(error => banner(error.message, 'error')); });
+  await load(true);
 }
 
 async function renderResourceCredentialBinding(resource) {
