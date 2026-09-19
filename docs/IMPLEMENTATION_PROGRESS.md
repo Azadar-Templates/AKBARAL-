@@ -195,3 +195,7 @@ The mission PostgreSQL check command now includes the engine-neutral quota suite
 ### Quota batch 3 — PostgreSQL parity
 
 The isolated retained `.pglite-mission-test/quota-reservations` fixture applied **11 mission migrations** and passed **10 existing mission checks**, **23/23 financial/messaging/resource regressions**, and **11/11 engine-neutral quota regressions**, with zero test failures/skips. Evidence: `logs/continuation/quota-batch-03-pg.log`. The SQLite-only independent-process races are not included in these PostgreSQL counts. No prior test database was reset, and no provider/payment was contacted. Next batch: existing mission SQLite tests, followed by a current-source integrated run only if needed; completed historical source fingerprints remain untouched.
+
+### Quota batch 4 — existing mission SQLite, first five files
+
+**60/60 tests pass** across mission core, executed-client dashboard, financial atomicity, identity lock and payout verification. Evidence: `logs/continuation/quota-batch-04-sqlite.log`. This is a focused current-source batch, not a rerun or relabelling of the completed historical full suite. Next batch: reinvestment, HTTP server, social and treasury tests.
