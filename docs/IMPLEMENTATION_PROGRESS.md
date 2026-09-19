@@ -231,3 +231,9 @@ The sweep still expires and audits historical evidence, but pauses a slot only w
 ### Quota batch 10 — retained PostgreSQL validation completed
 
 The same retained quota database now passes the entire interrupted batch: **10 mission checks**, **24/24 financial/resource regressions**, and **15/15 engine-neutral quota/deadline regressions**, zero failures/skips. All **12 migrations** remained applied; **zero** were reapplied/reset. This validates both the bridge wake-up fix and historical-attestation sweep fix through the actual HTTP probe and PostgreSQL driver. Evidence: `logs/continuation/quota-batch-10-pg-final.log`; both earlier failed logs/databases remain retained. Next batch: platform PostgreSQL parity and compiled-worker validation for the shared-driver change.
+
+### Quota/bridge batch 11 — platform parity and production artifact
+
+The isolated platform PostgreSQL fixture passed **37/37 tests** (22 integration, eight workforce parity, seven financial atomicity), zero failures/skips. Production Webpack/backend build passed with **27 routes** and copied worker assets. The compiled PostgreSQL worker then reported **21 platform migrations applied, none pending** against that same fixture. Evidence: `quota-batch-11-platform-pg.log`, `quota-batch-11-build.log`, `quota-batch-11-compiled-pg.log` under `logs/continuation/`.
+
+No customer or mission runtime database was reset. These checks validate the shared driver and artifact locally, not a hosted deployment or real provider/payment operation. Next exact task: finish small current-source SQLite validation batches (mission and driver regressions), commit/push each, and record the next provider-integration boundary honestly.
