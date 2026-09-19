@@ -109,3 +109,18 @@ No real secret exposure was asserted, no credential was rotated or logged, and n
 ## Final compiled-code checkpoint
 
 After `3ca0c23`, backend compilation/runtime assets pass. Compiled retained PG platform reports 21 migrations, migration check true, stopped queue not ready, positive measured database size and no credentials in its display target. Compiled mission works with customer storage unavailable and reports 15 migrations/zero new/audit true/ledger true/redacted target. Both harnesses exit 0 (`final-compiled-{platform,mission}.log`). Next is a guarded operational refresh of the idle existing preview, preserving its DB and session configuration; the older-runtime observations above remain historical until fresh post-refresh evidence is recorded.
+
+## Current runtime — supersedes the initial stale-process observations
+
+At **19:09:27 UTC**, performed a guarded process refresh, not a project/data reset. Verified the original supervisor identity, zero active/pending jobs, and an unchanged persisted 0600 session secret. Created a SQLite online backup, verified its `PRAGMA quick_check`, gracefully stopped the old supervisor, and launched the verified artifacts with the original environment/database/session configuration. Seeding was disabled; migration startup reported already up to date. No Next rebuild or data reset was needed.
+
+- Managed process: `akbaral-public-platform-36076c94`.
+- New supervisor **114491**, Next **114505** on **0.0.0.0:3000**, API **114506** on **0.0.0.0:4000**.
+- Deployed tree **729822765c2c35ab89ee130904d71279c7beea29** (code checkpoint `3ca0c23`; subsequent changes were documentation). Artifact checksums are retained in `preview-refresh.json`.
+- **36/36 live local HTTP checks pass**: 22 page shells, robots/sitemap, health/readiness, six protected API mounts rejecting anonymous callers, three intentional 404s, and API-root redirect to the actual current preview (never browser localhost).
+- New readiness detail is **`started=true, activeWorkers=0`**, confirming the new monitoring implementation is loaded. This remains operational readiness, not provider/launch readiness.
+- **Ten financial tables' row counts and content hashes are exactly unchanged** across the refresh. Existing three users, 4,001 agents and persisted sessions were preserved. An initial read-only comparison hit a transient SQLite lock; repeating with the normal busy timeout completed the comparison, without resetting anything.
+- Actual refreshed API environment still reports **the same seven launch blockers**, exit 1. Backup scheduling is disabled in this preview; a one-off verified backup is not a deployed retention/restore policy.
+- Standalone mission still has no persistent listener, and anonymous external E2B requests still require the platform traffic token. Nothing here establishes a permanent production deployment.
+
+Evidence: `preview-refresh.json`, `preview-after.json`, `preview-financial-after.json`, `runtime-launch-after.json`; backup path is recorded in the refresh manifest. Initial route/old-process evidence remains above rather than being discarded. Next: the final focused private-server HTTP regression after the shared-driver changes, then final exact remote/CI report.
