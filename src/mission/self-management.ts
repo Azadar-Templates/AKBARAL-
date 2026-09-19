@@ -396,7 +396,7 @@ export function sweepCredentialStatus(): { updated: number; expired: number } {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Bounded cumulative counters only; never truncate JSON into an invalid value. */
-function resourceCounters(value: unknown, label: string): Record<string, number> {
+export function resourceCounters(value: unknown, label: string): Record<string, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MissionSelfServiceError(400, `${label} must be a counter object`, 'validation_error');
   const entries = Object.entries(value);
   if (entries.length > 64) throw new MissionSelfServiceError(400, `${label} has too many counters`, 'validation_error');
@@ -781,7 +781,7 @@ export function bindResourceCredential(input: { id: string; credentialId: string
 }
 
 /** Live readiness, independent of sweeps; never exposes credential plaintext. */
-export function resourceReadiness(id: string): { usable: boolean; blockers: string[] } {
+export function resourceReadiness(id: string, excludeCallId?: string): { usable: boolean; blockers: string[] } {
   const resource = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [id]);
   if (!resource) return { usable: false, blockers: ['resource_not_found'] };
   const blockers: string[] = [];
@@ -798,10 +798,25 @@ export function resourceReadiness(id: string): { usable: boolean; blockers: stri
   try {
     const limits = resourceCounters(JSON.parse(String(resource.limits ?? '{}')), 'resource limits');
     const usage = resourceCounters(JSON.parse(String(resource.usage ?? '{}')), 'resource usage');
+    const held = pendingResourceUsage(id, excludeCallId);
     for (const [key, cap] of Object.entries(limits)) {
       if (usage[key] === undefined) blockers.push(`quota_usage_unreported:${key}`);
       else if (usage[key] >= cap) blockers.push(`quota_exhausted:${key}`);
+      else if (usage[key] + (held[key] ?? 0) >= cap) blockers.push(`quota_reserved:${key}`);
     }
   } catch { blockers.push('invalid_usage_or_limits'); }
   return { usable: blockers.length === 0, blockers };
+}
+
+/** Only unfinished calls hold capacity. There is intentionally no timeout-based
+ * release for dispatched calls: a lost response does not prove zero usage. */
+export function pendingResourceUsage(resourceId: string, excludeCallId?: string): Record<string, number> {
+  const rows = missionDb.all<Row>("SELECT id, reserved_usage FROM mission_resource_calls WHERE resource_id = ? AND status IN ('reserved', 'dispatched', 'uncertain')", [resourceId]);
+  const held: Record<string, number> = Object.create(null);
+  for (const row of rows) {
+    if (row.id === excludeCallId) continue;
+    const counters = resourceCounters(JSON.parse(String(row.reserved_usage)), 'reserved usage');
+    for (const [key, value] of Object.entries(counters)) held[key] = (held[key] ?? 0) + value;
+  }
+  return resourceCounters(held, 'total reserved usage');
 }
