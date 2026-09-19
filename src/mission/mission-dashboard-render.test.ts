@@ -287,3 +287,16 @@ it('credential creation requires explicit local model permission and blocks dupl
     win.fixture.state.token = ''; await win.fixture.loadTools(); assert.equal(form.hidden, true);
   } finally { dom.window.close(); }
 });
+
+it('hidden owner forms remain visually hidden when their layout class declares display grid', async () => {
+  const { dom, win } = consoleFixture();
+  try {
+    const style = win.document.createElement('style');
+    style.textContent = fs.readFileSync(path.resolve('mission-dashboard/styles.css'), 'utf8');
+    win.document.head.appendChild(style);
+    win.fixture.state.token = ''; await win.fixture.loadTools();
+    const form = win.document.querySelector('#credential-form');
+    assert.equal(form.hidden, true);
+    assert.equal(win.getComputedStyle(form).display, 'none');
+  } finally { dom.window.close(); }
+});

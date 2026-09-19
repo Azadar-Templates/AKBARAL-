@@ -38,7 +38,7 @@ function fixture(label: string, ownerId: string) {
   const agentId = `browser-${label}-${randomUUID()}`;
   missionDb.run("INSERT INTO mission_agents (id, slug, name, role_key, depth, generation, status, mission_role, origin_platform) VALUES (?, ?, ?, 'specialist', 0, 'custom', 'active', 'worker', 'mission')", [agentId, agentId, `Synthetic ${label} browser agent`]);
   const credential = storeCredential({ provider: 'google', label: 'Synthetic browser credential, not usable', secret: `synthetic-${randomUUID()}`, scope: ['model.call'], actorId: ownerId });
-  const resource = requestResource({ agentId, provider: 'google', kind: 'api', credentialId: credential.id, limits: { requests: 5, tokens: 100000 } });
+  const resource = requestResource({ agentId, provider: 'google', kind: 'api', credentialId: credential.id, expiresAt: new Date(Date.now() + 86400000).toISOString(), limits: { requests: 5, tokens: 100000 } });
   const resourceId = String(resource.id);
   provisionResource({ id: resourceId, actualCostCents: 0, providerRef: `synthetic-${label}-provisioning`, evidence: 'Synthetic browser fixture only; no real resource activation.', actorId: ownerId });
   recordResourceUsage({ id: resourceId, usage: { requests: 0, tokens: 0 }, actorType: 'owner', actorId: ownerId });
@@ -49,6 +49,8 @@ function fixture(label: string, ownerId: string) {
   const held = reserveResourceCall({ ...input, idempotencyKey: randomUUID() });
   const uncertain = reserveResourceCall({ ...input, idempotencyKey: randomUUID(), budget: { walletId: wallet.id, maxCostCents: 40 } });
   claimResourceCall(String(uncertain.id), actor); markResourceCallUncertain(String(uncertain.id), actor);
+  // Synthetic time-lapse: outstanding calls must be reconciled before renewal.
+  missionDb.run('UPDATE mission_resources SET expires_at = ? WHERE id = ?', [new Date(Date.now() - 3600000).toISOString(), resourceId]);
   return { agentId, resourceId, walletId: wallet.id, held: String(held.id), uncertain: String(uncertain.id) };
 }
 async function launch(): Promise<Browser> {
@@ -87,6 +89,25 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(page.locator('#identity')).toContainText('signed in as');
     checkpoint(name, 'real owner sign-in');
     await page.locator('[data-tab="tools"]').click();
+    const credentialForm = page.locator('#credential-form');
+    await expect(credentialForm.locator('[name="scope"]')).toHaveValue('');
+    const credentialLabel = `Synthetic ${name} scoped UI credential`;
+    await credentialForm.locator('[name="provider"]').fill('google');
+    await credentialForm.locator('[name="label"]').fill(credentialLabel);
+    await credentialForm.locator('[name="secret"]').fill(`synthetic-ui-${randomUUID()}`);
+    await credentialForm.locator('[name="scope"]').selectOption('model.call');
+    await credentialForm.getByRole('button', { name: 'Store encrypted' }).click();
+    await expect(page.locator('#banner')).toContainText('Local permission does not activate or verify a provider');
+    await expect(credentialForm.locator('[name="secret"]')).toHaveValue('');
+    const stored = missionDb.get<{ id: string; scope: string }>('SELECT id, scope FROM mission_credentials WHERE label = ?', [credentialLabel])!;
+    assert.equal(stored.scope, '["model.call"]');
+    await page.locator(`[data-bind-credential="${f.resourceId}"]`).click();
+    const binding = page.locator('#resource-credential');
+    await binding.getByLabel('Stored provider credential').selectOption(stored.id);
+    await binding.getByLabel('Binding reason without secrets').fill('Synthetic owner-approved locally scoped credential binding.');
+    await binding.getByRole('button', { name: 'Record credential binding' }).click();
+    await expect(binding).toContainText('not provider verification or a purchase');
+    checkpoint(name, 'explicit scoped credential creation and owner binding; secret cleared');
     await page.locator(`[data-resource-calls="${f.resourceId}"]`).click();
     const calls = page.locator('#resource-calls');
     await calls.locator(`[data-reconcile-call="${f.uncertain}"]`).click();
@@ -118,6 +139,25 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(page.locator('#banner')).toContainText('Unstarted quota hold cancelled');
     await expect(calls.locator(`[data-cancel-call="${f.held}"]`)).toHaveCount(0);
     checkpoint(name, 'separate charge accounting and unstarted cancellation');
+    await page.locator(`[data-resource-periods="${f.resourceId}"]`).click();
+    const periods = page.locator('#resource-periods');
+    await expect(periods.getByLabel('Actual renewal charge in minor units')).toHaveValue('');
+    await expect(periods.getByLabel('Starting requests usage')).toHaveValue('');
+    const start = new Date(Date.now() - 60000).toISOString().slice(0, 16);
+    const end = new Date(Date.now() + 86400000).toISOString().slice(0, 16);
+    await periods.getByLabel('Provider period start', { exact: true }).fill(start);
+    await periods.getByLabel('Provider period end', { exact: true }).fill(end);
+    await periods.getByLabel('Actual renewal charge in minor units').fill('0');
+    await periods.getByLabel('Starting requests usage').fill('0');
+    await periods.getByLabel('Starting tokens usage').fill('0');
+    await periods.getByLabel('Renewal charge reference').fill(`synthetic-${name}-renewal`);
+    await periods.getByLabel('Provider period evidence without secrets').fill('Synthetic free renewed period; no provider or payment was contacted.');
+    await periods.getByRole('button', { name: 'Record evidenced renewal — no purchase' }).click();
+    await expect(periods).toContainText('No purchase or external payment executed');
+    await expect(periods).toContainText('{"requests":1,"tokens":5}');
+    assert.equal(missionDb.get<{ usage: string }>('SELECT usage FROM mission_resources WHERE id = ?', [f.resourceId])!.usage, '{"requests":0,"tokens":0}');
+    assert.equal(getWallet(f.walletId)!.balanceCents, 75, 'explicit free period creates no additional charge');
+    checkpoint(name, 'evidenced renewal preserves prior usage and starts explicit new counters');
     await page.screenshot({ path: path.join(evidenceDir, `${name}-resource-calls.png`), fullPage: true });
     await page.locator('[data-tab="agents"]').click();
     await page.locator('#agent-list tr').filter({ hasText: f.agentId }).getByRole('button', { name: 'Open report' }).click();
@@ -153,7 +193,8 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(readPage.locator('#identity')).toContainText('read-only access link');
     assert.equal(new URL(readPage.url()).hash, '');
     await readPage.locator('[data-tab="tools"]').click();
-    await expect(readPage.locator('[data-resource-calls], [data-bind-credential]')).toHaveCount(0);
+    await expect(readPage.locator('[data-resource-calls], [data-bind-credential], [data-resource-periods]')).toHaveCount(0);
+    await expect(readPage.locator('#credential-form')).toBeHidden();
     assert.equal(await readPage.evaluate(async resourceId => (await fetch(`/api/resources/${resourceId}/calls`)).status, f.resourceId), 401);
     assert.equal(await readPage.evaluate(async ({ resourceId, token }) => (await fetch(`/api/resources/${resourceId}/calls`, { headers: { 'x-mission-link': token } })).status, { resourceId: f.resourceId, token: link.token }), 401);
     assert.equal(errors.length, 0, errors.join('\n'));
