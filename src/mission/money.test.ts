@@ -264,3 +264,21 @@ it('legacy owner accounting never supplies verified cash, even when labelled rec
   assert.equal(m.cashAccount(a).available_cents,0);assert.equal(m.ensureCashAccount().available_cents,0);
   assert.equal(m.verifyCashLedger().rows,0);assert.throws(()=>request(),/insufficient_real_funds/);
 });
+it('unfreeze checks provider liabilities inside the same locked transaction',()=>{
+  m.freezeCash(owner,a,true);
+  const transact=db.transaction.bind(db);let armed=true;
+  db.transaction=((fn)=>{
+    if(armed){armed=false;transact(()=>db.run('INSERT INTO mission_cash_liabilities VALUES (?,?,?)',[provider.id,'synthetic-concurrent-reversal',100]));}
+    return transact(fn);
+  }) as typeof db.transaction;
+  try{assert.throws(()=>m.freezeCash(owner,a,false),/unresolved_provider_liability/);}finally{db.transaction=transact;}
+  assert.equal(m.cashAccount(a).frozen,1);
+});
+it('an unresolved provider deficit blocks spending even if freeze flags became stale',async()=>{
+  await earn(100,'deficit-income');m.allocateCash(owner,a,100,'deficit-funding');const op=request();
+  receipt={externalId:'deficit-reversal',kind:'reversal',amountCents:100,currency:'USD',originalExternalId:'deficit-income'};
+  await m.verifyMoneyReceipt(owner,provider,receipt.externalId);m.cancelMoney(owner,String(op.id));
+  // Simulate stale administrative state from an older process; debt remains authoritative.
+  db.run('UPDATE mission_cash_accounts SET frozen=0');setKillSwitch(false,owner.id);
+  assert.throws(()=>request(),/unresolved_provider_liability/);assert.equal(m.verifyCashLedger().ok,true);
+});

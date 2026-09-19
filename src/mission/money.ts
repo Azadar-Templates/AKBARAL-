@@ -25,6 +25,7 @@ export function assertMoneyOwner(actor: MoneyActor): void {
   if (!owner || !isIdentityPermitted(String(owner.email))) deny('owner_required');
 }
 function running() { if (currentPolicy().killSwitch) deny('kill_switch_engaged'); }
+function solvent() {if(Number(db.get<Row>('SELECT COALESCE(SUM(remaining_cents),0) AS n FROM mission_cash_liabilities')?.n))deny('unresolved_provider_liability');}
 export function cashAccount(id: string): Row {
   const account = db.get<Row>('SELECT * FROM mission_cash_accounts WHERE id = ?', [id]);
   if (!account) deny('cash_account_missing');
@@ -160,7 +161,7 @@ export function allocateCash(actor:MoneyActor, agentId:string, amount:number, ke
     const fp=sha256(JSON.stringify([agentId,amount]));
     const old=db.get<Row>('SELECT fingerprint FROM mission_money_transfers WHERE idempotency_key=?',[key]);
     if(old) { if(old.fingerprint!==fp) deny('idempotency_conflict'); return cashAccount(agentId); }
-    running(); grant(agentId); const source=ensureCashAccount(), target=ensureCashAccount(agentId);
+    running(); solvent(); grant(agentId); const source=ensureCashAccount(), target=ensureCashAccount(agentId);
     if(Number(source.frozen)||Number(target.frozen)||source.currency!==target.currency) deny('cash_account_unavailable');
     entry('treasury','available',-amount,`allocation:${key}`); entry(agentId,'available',amount,`allocation:${key}`);
     db.run('INSERT INTO mission_money_transfers VALUES (?,?,?)',[key,fp,nowIso()]);
@@ -169,8 +170,7 @@ export function allocateCash(actor:MoneyActor, agentId:string, amount:number, ke
 }
 export function freezeCash(actor:MoneyActor,id:string,frozen:boolean) {
   assertMoneyOwner(actor);
-  if (!frozen && Number(db.get<Row>('SELECT COALESCE(SUM(remaining_cents),0) AS n FROM mission_cash_liabilities')?.n)) deny('unresolved_provider_liability');
-  return db.transaction(()=> {cashAccount(id);db.run('UPDATE mission_cash_accounts SET frozen=? WHERE id=?',[frozen?1:0,id]); audit('freeze_changed',actor,id,{frozen});});
+  return db.transaction(()=> {if(!frozen)solvent();cashAccount(id);db.run('UPDATE mission_cash_accounts SET frozen=? WHERE id=?',[frozen?1:0,id]); audit('freeze_changed',actor,id,{frozen});});
 }
 export interface CashReceipt { externalId:string; amountCents:number; currency:string; kind:'earning'|'refund'|'reversal'; agentId?:string; operationId?:string; originalExternalId?:string; availableBalanceCents?:number }
 export interface PaymentResult { state:'pending'|'completed'|'failed'; providerRef:string; actualCents?:number }
@@ -251,6 +251,7 @@ export function moneyOperation(id:string):Row {
 }
 const categories=['api','tool','hosting','storage','account','property','upgrade'];
 function capacity(op:Row,excludeId?:string) {
+  solvent();
   if(!verifyCashLedger().ok) deny('cash_integrity_failed');
   if(op.kind==='withdrawal') {
     const slot=db.get<Row>('SELECT * FROM mission_payout_slots WHERE provider_ref=?',[String(op.destination)]);

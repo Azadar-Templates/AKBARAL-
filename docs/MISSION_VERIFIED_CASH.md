@@ -282,3 +282,13 @@ Container execution remains CI evidence, not a claim of a running deployment.
 No live keys, opportunities, confirmations or financial balances were inserted by
 these changes. Production registry import/bootstrap and real-provider activation
 remain owner operations against real configured services, not test side effects.
+
+### Deficit race closure
+
+An additional fault-injection regression demonstrated a check-before-lock race in
+unfreezing: a concurrently committed reversal could arrive after the old liability
+check. The solvency check now runs inside the same financial transaction as the
+unfreeze. Allocation and payment capacity also independently reject every
+unresolved provider deficit, so stale freeze/kill-switch flags cannot authorize
+spending. Both negative cases failed before the fix and pass with it; no live
+provider or customer data is involved.
