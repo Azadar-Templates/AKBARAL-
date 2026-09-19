@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { digest, runBatch, summarize } from './lib/test-checkpoint.mjs';
+import { failureDiagnostic } from './lib/test-diagnostics.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -48,7 +49,9 @@ if (args.includes('--status')) {
     console.log(JSON.stringify(result, null, 2));
     if (!result.complete) console.log('Batch saved. Run the same command again to continue; this is not a full-suite pass.');
   } catch (error) {
-    console.error(error.message);
+    const diagnostic = failureDiagnostic(directory, error.message);
+    console.error(diagnostic.summary);
+    if (process.env.GITHUB_ACTIONS === 'true') console.error(diagnostic.annotation);
     console.error('Completed checkpoints are preserved. Rerun the same command to retry only the unfinished file.');
     process.exitCode = 1;
   }

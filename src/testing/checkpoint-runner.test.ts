@@ -116,3 +116,18 @@ it('SIGKILL recovery retains completed files and terminates only its expired orp
     assert.equal(f.state().attempts.length, 4);
   } finally { if (runner.exitCode === null && runner.signalCode === null) runner.kill('SIGKILL'); }
 });
+
+it('failure annotations preserve resume location without allowing multiline workflow command injection', () => {
+  const { failureDiagnostic } = require('../../scripts/lib/test-diagnostics.mjs') as typeof import('../../scripts/lib/test-diagnostics.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'checkpoint-diagnostic-'));
+  const log = path.join(root, 'failed.tap');
+  fs.writeFileSync(log, 'not ok 1 - synthetic failure\nerror: synthetic 10% failure\n::warning::not a real command\n');
+  fs.writeFileSync(path.join(root, 'checkpoint.json'), JSON.stringify({ files: ['a.ts', 'b.ts'], attempts: [{ status: 'passed', file: 'a.ts' }, { status: 'failed', file: 'b.ts', log, error: 'synthetic failed attempt' }] }));
+  const result = failureDiagnostic(root, 'fallback');
+  assert.match(result.summary, /1\/2 files checkpointed/);
+  assert.match(result.summary, /Failed file: b.ts/);
+  assert.match(result.annotation, /10%25/);
+  assert.equal(result.annotation.includes('\n'), false);
+  assert.equal(result.annotation.includes('::warning::'), false);
+  assert.match(failureDiagnostic(path.join(root, 'missing'), 'synthetic fallback').annotation, /synthetic fallback/);
+});
