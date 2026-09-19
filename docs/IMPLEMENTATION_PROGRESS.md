@@ -102,3 +102,7 @@ Validation: **107/107 mission SQLite/DOM tests**, including HTTP identity/replay
 Seed import now accepts only explicit `verified` or `candidate` statuses. Unknown/missing/rejected statuses, null rows and non-string names cannot silently become earning candidates. Non-array catalogs fail validation before database writes. The isolated regression passes; the real inventory remains unchanged (194 evidence rows: six verified terms, 179 candidates, nine rejected). These are platform catalog entries, not one million paid opportunities.
 
 GitHub authentication expired after the Phase 6 local commit: `git push` failed and `gh auth status` confirmed the configured token is no longer valid. Phase 5 (`a910aa4`) remains the last successfully pushed phase. New commits are preserved locally pending reconnection in Arena; no credentials are requested or recorded.
+
+### Conversation hardening follow-up
+
+Overlapping transcript refreshes are now coalesced and sequence-deduplicated. Submissions are locked while pending, reuse the same key when retrying unchanged content after an uncertain response, and obtain a new key for intentionally edited content. Added HTTP regressions for cross-agent writes/replies, read-only access, actor spoofing, paused-agent writes, body limits and cursor validation, plus executed-client concurrency/retry tests. **110/110 mission tests** and typecheck pass. GitHub push remains blocked by the expired connection.

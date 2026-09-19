@@ -585,6 +585,34 @@ test('private agent messages are durable, replay-safe, scoped and never execute 
   assert.equal(anonymous.status, 401);
 });
 
+test('message mutations reject cross-agent, read-only, paused and invalid requests', async () => {
+  const bound = createAccessLink({ label: 'negative message fixture', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+  const read = createAccessLink({ label: 'non-private read fixture', scope: 'dashboard:read', expiresInHours: 1, createdBy: 'owner' });
+  const payload = { message: 'Synthetic authorization regression message', idempotencyKey: 'negative-message-fixture', actorType: 'owner', actorId: 'spoofed-owner' };
+  const headers = { 'x-mission-link': bound.token };
+  assert.equal((await api('/api/agents/link-agent-b/messages', { method: 'POST', headers, body: JSON.stringify(payload) })).status, 403);
+  for (const method of ['GET', 'POST']) {
+    assert.equal((await api('/api/agents/link-agent-a/messages', { method, headers: { 'x-mission-link': read.token }, ...(method === 'POST' ? { body: JSON.stringify(payload) } : {}) })).status, 403);
+  }
+  const trusted = await api('/api/agents/link-agent-a/messages', { method: 'POST', headers, body: JSON.stringify(payload) });
+  assert.equal(trusted.status, 201);
+  assert.equal(trusted.body.message.actor_type, 'agent');
+  assert.equal(trusted.body.message.actor_id, 'agt_link_a');
+  const crossReply = await owner('/api/agents/link-agent-b/messages', { method: 'POST', body: JSON.stringify({ ...payload, replyTo: trusted.body.message.id }) });
+  assert.equal(crossReply.status, 409);
+  for (const message of ['', 'x'.repeat(12001)]) {
+    assert.equal((await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify({ ...payload, message }) })).status, 400);
+  }
+  for (const query of ['after=-1', 'after=NaN', 'limit=0', 'limit=101']) {
+    assert.equal((await owner(`/api/agents/link-agent-a/messages?${query}`)).status, 400);
+  }
+  missionDb.run("UPDATE mission_agents SET status = 'paused' WHERE id = ?", ['agt_link_a']);
+  try {
+    assert.equal((await api('/api/agents/link-agent-a/messages', { headers })).status, 200);
+    assert.equal((await api('/api/agents/link-agent-a/messages', { method: 'POST', headers, body: JSON.stringify(payload) })).status, 409);
+  } finally { missionDb.run("UPDATE mission_agents SET status = 'active' WHERE id = ?", ['agt_link_a']); }
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

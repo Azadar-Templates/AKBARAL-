@@ -85,3 +85,60 @@ it('owner messaging renders actual stored text safely and never fabricates an ag
     assert.match(host.textContent, /not simulated agent replies/);
   } finally { dom.window.close(); }
 });
+
+it('overlapping transcript refreshes are coalesced without duplicate messages', async () => {
+  const { dom, win } = consoleFixture();
+  try {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let calls = 0;
+    win.fetch = async () => {
+      calls++;
+      await gate;
+      return new Response(JSON.stringify({ messages: [{ id: 'synthetic-one', seq: 1, actor_type: 'owner', body: 'Synthetic single message' }], nextCursor: 1, hasMore: false }));
+    };
+    const host = win.document.createElement('section');
+    win.document.body.appendChild(host);
+    const rendering = win.fixture.renderAgentMessages(host, 'agent-fixture');
+    host.querySelector('button').dispatchEvent(new win.Event('click'));
+    host.querySelector('button').dispatchEvent(new win.Event('click'));
+    assert.equal(calls, 1);
+    release();
+    await rendering;
+    assert.equal(host.querySelectorAll('tbody tr').length, 1);
+    assert.equal(host.querySelector('button').disabled, false);
+  } finally { dom.window.close(); }
+});
+
+it('message submission rejects double clicks, reuses uncertain retry keys and rotates keys for edited content', async () => {
+  const { dom, win } = consoleFixture();
+  try {
+    const attempts: Array<{ message: string; idempotencyKey: string }> = [];
+    win.fetch = async (_url: string, init: RequestInit) => {
+      if (init.method === 'POST') {
+        attempts.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ error: { message: 'Synthetic uncertain response; retry permitted.' } }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ messages: [], nextCursor: 0, hasMore: false }));
+    };
+    const host = win.document.createElement('section');
+    win.document.body.appendChild(host);
+    await win.fixture.renderAgentMessages(host, 'agent-fixture');
+    const form = host.querySelector('form');
+    const submit = () => form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    form.elements.message.value = 'Synthetic initial message';
+    submit(); submit();
+    assert.equal(attempts.length, 1);
+    await new Promise(resolve => setImmediate(resolve));
+    submit();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[0].idempotencyKey, attempts[1].idempotencyKey);
+    form.elements.message.value = 'Synthetic revised message';
+    submit();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(attempts.length, 3);
+    assert.notEqual(attempts[1].idempotencyKey, attempts[2].idempotencyKey);
+    assert.equal(form.elements.message.readOnly, false);
+  } finally { dom.window.close(); }
+});

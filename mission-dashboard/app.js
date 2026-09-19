@@ -404,18 +404,27 @@ async function renderAgentMessages(host, slug) {
   const messages = [];
   let cursor = 0;
   const refresh = el('button', { type: 'button', class: 'small', text: 'Refresh / load next messages' });
+  let loading = null;
   const load = async () => {
-    try {
-      const result = await api(`/agents/${encodeURIComponent(slug)}/messages?after=${cursor}`);
-      messages.push(...result.messages);
-      cursor = result.nextCursor;
-      transcript.replaceChildren(table([
-        { label: 'When', render: row => when(row.created_at) },
-        { label: 'From', key: 'actor_type' },
-        { label: 'Message', key: 'body', wrap: true },
-      ], messages, 'No messages yet. No agent response is fabricated.'));
-      refresh.textContent = result.hasMore ? 'Load next page' : 'Refresh messages';
-    } catch (error) { transcript.textContent = error.message; }
+    if (loading) return loading;
+    refresh.disabled = true;
+    loading = (async () => {
+      try {
+        const result = await api(`/agents/${encodeURIComponent(slug)}/messages?after=${cursor}`);
+        const seen = new Set(messages.map(message => message.seq));
+        for (const message of result.messages) {
+          if (!seen.has(message.seq)) { messages.push(message); seen.add(message.seq); }
+        }
+        cursor = result.nextCursor;
+        transcript.replaceChildren(table([
+          { label: 'When', render: row => when(row.created_at) },
+          { label: 'From', key: 'actor_type' },
+          { label: 'Message', key: 'body', wrap: true },
+        ], messages, 'No messages yet. No agent response is fabricated.'));
+        refresh.textContent = result.hasMore ? 'Load next page' : 'Refresh messages';
+      } catch (error) { banner(error.message, 'error'); }
+    })();
+    try { await loading; } finally { loading = null; refresh.disabled = false; }
   };
   refresh.addEventListener('click', load);
   host.appendChild(refresh);
@@ -423,17 +432,24 @@ async function renderAgentMessages(host, slug) {
     const form = el('form', { class: 'stack-form' });
     const input = el('textarea', { name: 'message', maxlength: 12000, required: '', 'aria-label': 'Message to this agent', placeholder: 'Send a private message. Never paste credentials.' });
     form.append(input, el('button', { type: 'submit', text: 'Send owner message' }));
-    let key = crypto.randomUUID();
+    let attempt = null;
+    let sending = false;
     form.addEventListener('submit', async event => {
       event.preventDefault();
-      if (!guardMutation()) return;
+      if (sending || !guardMutation()) return;
+      if (!attempt || attempt.message !== input.value) attempt = { message: input.value, idempotencyKey: crypto.randomUUID() };
+      sending = true;
+      input.readOnly = true;
+      form.querySelector('button').disabled = true;
       try {
-        await api(`/agents/${encodeURIComponent(slug)}/messages`, { method: 'POST', body: { message: input.value, idempotencyKey: key } });
+        await api(`/agents/${encodeURIComponent(slug)}/messages`, { method: 'POST', body: attempt });
         input.value = '';
-        key = crypto.randomUUID();
+        attempt = null;
+        if (loading) await loading;
         await load();
         banner('Owner message stored. Await an actual agent reply; no command was executed.', 'ok');
       } catch (error) { banner(error.message, 'error'); }
+      finally { sending = false; input.readOnly = false; form.querySelector('button').disabled = false; }
     });
     host.appendChild(form);
   }
