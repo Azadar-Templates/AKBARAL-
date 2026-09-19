@@ -1,3 +1,4 @@
+import { PAYOUT_VERIFICATION_CHECKS } from './payout-verification';
 /**
  * ZA141251SA — private mission application tests (HTTP surface + reporting).
  *
@@ -305,7 +306,10 @@ test('the payout surface requires owner authority and verified destinations', as
   const early = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 1_000, idempotencyKey: 'srv-pay-1' }) });
   assert.equal(early.status, 409, 'payouts are refused until the destination is verified');
 
-  await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({}) });
+  const emptyVerification = await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(emptyVerification.status, 400, 'status-only activation cannot bypass documentary verification');
+  const verified = await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({ checks: Object.fromEntries(PAYOUT_VERIFICATION_CHECKS.map(check => [check.key, true])), attestation: 'Synthetic owner attestation for HTTP tests only; no actual payment destination.' }) });
+  assert.equal(verified.status, 200);
   const missionWallet = listWallets('mission')[0];
   assert.ok(missionWallet, 'a mission treasury wallet exists');
   const request = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 2_000, idempotencyKey: 'srv-pay-2', memo: 'provider fee coverage' }) });
@@ -523,6 +527,32 @@ test('the agent report lists the delegation children with their state', async ()
   const children = report.body.agent.children;
   assert.ok(children.some((entry: any) => entry.slug === child.body.agent.slug && entry.status === 'active'));
   assert.equal(report.body.agent.childCount, children.length);
+});
+
+test('the approval queue atomically executes payouts and rolls back refused decisions', async () => {
+  const request = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 1000, idempotencyKey: 'queue-payout-atomic' }) });
+  assert.equal(request.status, 201);
+  const approval = request.body.payout.approval_id;
+  await owner('/api/kill-switch', { method: 'POST', body: JSON.stringify({ engage: true }) });
+  const refused = await owner(`/api/approvals/${approval}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
+  assert.equal(refused.status, 409);
+  assert.equal(missionDb.get<Row>('SELECT status FROM mission_approvals WHERE id = ?', [approval])!.status, 'pending', 'a failed payment cannot strand an approved queue row');
+  await owner('/api/kill-switch', { method: 'POST', body: JSON.stringify({ engage: false }) });
+  const approved = await owner(`/api/approvals/${approval}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.payout.status, 'approved');
+});
+
+test('rejecting an expense from the approval queue rejects both records without spending', async () => {
+  const policy = (await owner('/api/policy')).body.policy;
+  await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: 100000 }) });
+  const expense = await owner('/api/expenses', { method: 'POST', body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'fixture', description: 'synthetic queue rejection', amountCents: policy.requireApprovalAboveCents + 1, idempotencyKey: 'queue-expense-reject' }) });
+  assert.equal(expense.status, 201);
+  const before = missionDb.get<Row>('SELECT balance_cents FROM mission_wallets WHERE id = ?', [rootWalletId])!.balance_cents;
+  const rejected = await owner(`/api/approvals/${expense.body.approvalId}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'rejected' }) });
+  assert.equal(rejected.status, 200);
+  assert.equal(rejected.body.expense.status, 'rejected');
+  assert.equal(missionDb.get<Row>('SELECT balance_cents FROM mission_wallets WHERE id = ?', [rootWalletId])!.balance_cents, before);
 });
 
 test.after(async () => {

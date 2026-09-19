@@ -1,3 +1,4 @@
+import { confirmPayoutVerification, PAYOUT_VERIFICATION_CHECKS } from './payout-verification';
 /**
  * ZA141251SA — treasury, revenue-honesty, payout and self-management tests.
  *
@@ -282,6 +283,8 @@ test('payout slots are exactly four, configurable without handing over credentia
 
   const verified = verifyPayoutSlot(1, OWNER);
   assert.equal(String(verified.status), 'active', 'owner verification activates the slot');
+  assert.throws(() => requestPayout({ slot: 1, amountCents: 1000, idempotencyKey: 'status-only-denied' }), /not verified/);
+  confirmPayoutVerification({ slot: 1, ownerId: OWNER, checks: Object.fromEntries(PAYOUT_VERIFICATION_CHECKS.map(check => [check.key, true])), attestation: 'Synthetic owner confirmation for unit tests only; no actual payment destination.' });
   assert.equal(String(listPayoutSlots().find((slot) => Number(slot.slot) === 2)?.status), 'pending_verification', 'slot 2 was configured but not verified');
   assert.equal(String(listPayoutSlots().find((slot) => Number(slot.slot) === 4)?.status), 'unconfigured', 'slot 4 is untouched');
 });

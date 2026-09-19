@@ -186,74 +186,80 @@ export function currentPolicy(currency = 'USD'): MissionPolicy {
 }
 
 export function updatePolicy(patch: Partial<MissionPolicy>, actorId: string): MissionPolicy {
-  const row = ensurePolicy('USD');
-  const fields: string[] = [];
-  const values: Array<string | number> = [];
-  const setNumber = (column: string, value: number | undefined, min: number, max: number) => {
-    if (value === undefined) return;
-    fields.push(`${column} = ?`);
-    values.push(Math.min(max, Math.max(min, Math.round(value))));
-  };
-  const setFlag = (column: string, value: boolean | undefined) => {
-    if (value === undefined) return;
-    fields.push(`${column} = ?`);
-    values.push(value ? 1 : 0);
-  };
-  setFlag('autonomous_enabled', patch.autonomousEnabled);
-  setFlag('allow_agent_creation', patch.allowAgentCreation);
-  setFlag('require_owner_for_payout', patch.requireOwnerForPayout);
-  setNumber('max_depth', patch.maxDepth, 0, 8);
-  setNumber('max_children_per_agent', patch.maxChildrenPerAgent, 0, 64);
-  setNumber('max_agents', patch.maxAgents, 1, 100_000);
-  setNumber('max_daily_spend_cents', patch.maxDailySpendCents, 0, 100_000_000);
-  setNumber('max_expense_cents', patch.maxExpenseCents, 0, 100_000_000);
-  setNumber('max_payout_cents', patch.maxPayoutCents, 0, 1_000_000_000);
-  setNumber('require_approval_above_cents', patch.requireApprovalAboveCents, 0, 1_000_000_000);
-  setNumber('reinvest_share_bps', patch.reinvestShareBps, 0, 10_000);
-  setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 1_000_000_000);
-  if (patch.currency) {
-    fields.push('currency = ?');
-    values.push(String(patch.currency).slice(0, 8));
-  }
-  if (patch.allowedActivities) {
-    const filtered = patch.allowedActivities.filter((key) => (ALLOWED_ACTIVITY_KEYS as readonly string[]).includes(key));
-    fields.push('allowed_activities = ?');
-    values.push(JSON.stringify(filtered));
-  }
-  if (patch.providerActivation) {
-    fields.push('provider_activation = ?');
-    values.push(JSON.stringify(patch.providerActivation).slice(0, 40_000));
-  }
-  if (fields.length === 0) {
+  return missionDb.transaction(() => {
+    const row = ensurePolicy('USD');
+    const fields: string[] = [];
+    const values: Array<string | number> = [];
+    const setNumber = (column: string, value: number | undefined, min: number, max: number) => {
+      if (value === undefined) return;
+      fields.push(`${column} = ?`);
+      values.push(Math.min(max, Math.max(min, Math.round(value))));
+    };
+    const setFlag = (column: string, value: boolean | undefined) => {
+      if (value === undefined) return;
+      fields.push(`${column} = ?`);
+      values.push(value ? 1 : 0);
+    };
+    setFlag('autonomous_enabled', patch.autonomousEnabled);
+    setFlag('allow_agent_creation', patch.allowAgentCreation);
+    setFlag('require_owner_for_payout', patch.requireOwnerForPayout);
+    setNumber('max_depth', patch.maxDepth, 0, 8);
+    setNumber('max_children_per_agent', patch.maxChildrenPerAgent, 0, 64);
+    setNumber('max_agents', patch.maxAgents, 1, 100_000);
+    setNumber('max_daily_spend_cents', patch.maxDailySpendCents, 0, 100_000_000);
+    setNumber('max_expense_cents', patch.maxExpenseCents, 0, 100_000_000);
+    setNumber('max_payout_cents', patch.maxPayoutCents, 0, 1_000_000_000);
+    setNumber('require_approval_above_cents', patch.requireApprovalAboveCents, 0, 1_000_000_000);
+    setNumber('reinvest_share_bps', patch.reinvestShareBps, 0, 10_000);
+    setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 1_000_000_000);
+    if (patch.currency) {
+      fields.push('currency = ?');
+      values.push(String(patch.currency).slice(0, 8));
+    }
+    if (patch.allowedActivities) {
+      const filtered = patch.allowedActivities.filter((key) => (ALLOWED_ACTIVITY_KEYS as readonly string[]).includes(key));
+      fields.push('allowed_activities = ?');
+      values.push(JSON.stringify(filtered));
+    }
+    if (patch.providerActivation) {
+      fields.push('provider_activation = ?');
+      values.push(JSON.stringify(patch.providerActivation).slice(0, 40_000));
+    }
+    if (fields.length === 0) {
+      return currentPolicy(row.currency);
+    }
+    fields.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+    missionDb.run(`UPDATE mission_policy SET ${fields.join(', ')} WHERE id = 'global'`, values);
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId,
+      action: 'policy.update',
+      subjectType: 'policy',
+      subjectId: 'global',
+      detail: patch as Record<string, unknown>,
+    });
     return currentPolicy(row.currency);
-  }
-  fields.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
-  missionDb.run(`UPDATE mission_policy SET ${fields.join(', ')} WHERE id = 'global'`, values);
-  appendMissionAudit({
-    actorType: 'owner',
-    actorId,
-    action: 'policy.update',
-    subjectType: 'policy',
-    subjectId: 'global',
-    detail: patch as Record<string, unknown>,
+
   });
-  return currentPolicy(row.currency);
 }
 
 export function setKillSwitch(engaged: boolean, actorId: string): boolean {
-  ensurePolicy('USD');
-  missionDb.run(
-    `UPDATE mission_policy SET kill_switch = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = 'global'`,
-    [engaged ? 1 : 0],
-  );
-  appendMissionAudit({
-    actorType: 'owner',
-    actorId,
-    action: engaged ? 'kill_switch.engaged' : 'kill_switch.released',
-    subjectType: 'policy',
-    subjectId: 'global',
+  return missionDb.transaction(() => {
+    ensurePolicy('USD');
+    missionDb.run(
+      `UPDATE mission_policy SET kill_switch = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = 'global'`,
+      [engaged ? 1 : 0],
+    );
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId,
+      action: engaged ? 'kill_switch.engaged' : 'kill_switch.released',
+      subjectType: 'policy',
+      subjectId: 'global',
+    });
+    return engaged;
+
   });
-  return engaged;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -324,8 +330,8 @@ interface WalletRow extends Row {
  */
 export function canAgentSpend(request: SpendRequest, policy: MissionPolicy, dailySpentCents: number): SpendDecision {
   const reasons: string[] = [];
-  const amount = Math.round(Number(request.amountCents) || 0);
-  if (amount <= 0) return { allowed: false, requiresApproval: false, reasons: ['amount_must_be_positive'], dailySpentCents, policyRemainingCents: policy.maxDailySpendCents - dailySpentCents };
+  const amount = request.amountCents;
+  if (!Number.isSafeInteger(amount) || amount <= 0) return { allowed: false, requiresApproval: false, reasons: ['amount_must_be_positive'], dailySpentCents, policyRemainingCents: policy.maxDailySpendCents - dailySpentCents };
 
   const wallet = missionDb.get<WalletRow>('SELECT * FROM mission_wallets WHERE id = ?', [request.walletId]);
   if (!wallet) return { allowed: false, requiresApproval: false, reasons: ['wallet_not_found'], dailySpentCents, policyRemainingCents: policy.maxDailySpendCents - dailySpentCents };
@@ -373,21 +379,24 @@ export function requestApproval(input: {
   requestedBy?: string | null;
   note?: string | null;
 }): string {
-  const id = missionId('apr');
-  missionDb.run(
-    `INSERT INTO mission_approvals (id, subject_type, subject_id, action, amount_cents, requested_by, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.subjectType, input.subjectId, input.action, Math.round(input.amountCents ?? 0), input.requestedBy ?? null, input.note ?? null],
-  );
-  appendMissionAudit({
-    actorType: input.requestedBy ? 'agent' : 'system',
-    actorId: input.requestedBy ?? null,
-    action: 'approval.requested',
-    subjectType: input.subjectType,
-    subjectId: input.subjectId,
-    detail: { action: input.action, amountCents: input.amountCents ?? 0 },
+  return missionDb.transaction(() => {
+    const id = missionId('apr');
+    missionDb.run(
+      `INSERT INTO mission_approvals (id, subject_type, subject_id, action, amount_cents, requested_by, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.subjectType, input.subjectId, input.action, Math.round(input.amountCents ?? 0), input.requestedBy ?? null, input.note ?? null],
+    );
+    appendMissionAudit({
+      actorType: input.requestedBy ? 'agent' : 'system',
+      actorId: input.requestedBy ?? null,
+      action: 'approval.requested',
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      detail: { action: input.action, amountCents: input.amountCents ?? 0 },
+    });
+    return id;
+
   });
-  return id;
 }
 
 export function decideApproval(input: {
@@ -403,25 +412,28 @@ export function decideApproval(input: {
   approval?: Row;
   reason?: string;
 } {
-  if (input.actorType === 'agent') {
-    return { ok: false, status: 'forbidden', reason: 'an agent cannot decide an approval — this belongs to the mission owner' };
-  }
-  const approval = missionDb.get<Row>('SELECT * FROM mission_approvals WHERE id = ?', [input.id]);
-  if (!approval) return { ok: false, status: 'not_found', reason: 'approval not found' };
-  if (String(approval.status) !== 'pending') {
-    return { ok: false, status: 'conflict', reason: `approval already ${approval.status}` };
-  }
-  missionDb.run(
-    `UPDATE mission_approvals SET status = ?, decided_by = ?, decided_at = ?, note = COALESCE(?, note) WHERE id = ?`,
-    [input.decision, input.decidedBy, nowIso(), input.note ?? null, input.id],
-  );
-  appendMissionAudit({
-    actorType: 'owner',
-    actorId: input.decidedBy,
-    action: `approval.${input.decision}`,
-    subjectType: String(approval.subject_type),
-    subjectId: String(approval.subject_id),
-    detail: { approvalId: input.id, note: input.note ?? null },
+  return missionDb.transaction(() => {
+    if (input.actorType === 'agent') {
+      return { ok: false, status: 'forbidden', reason: 'an agent cannot decide an approval — this belongs to the mission owner' };
+    }
+    const approval = missionDb.get<Row>('SELECT * FROM mission_approvals WHERE id = ?', [input.id]);
+    if (!approval) return { ok: false, status: 'not_found', reason: 'approval not found' };
+    if (String(approval.status) !== 'pending') {
+      return { ok: false, status: 'conflict', reason: `approval already ${approval.status}` };
+    }
+    missionDb.run(
+      `UPDATE mission_approvals SET status = ?, decided_by = ?, decided_at = ?, note = COALESCE(?, note) WHERE id = ?`,
+      [input.decision, input.decidedBy, nowIso(), input.note ?? null, input.id],
+    );
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId: input.decidedBy,
+      action: `approval.${input.decision}`,
+      subjectType: String(approval.subject_type),
+      subjectId: String(approval.subject_id),
+      detail: { approvalId: input.id, note: input.note ?? null },
+    });
+    return { ok: true, status: input.decision, approval: missionDb.get<Row>('SELECT * FROM mission_approvals WHERE id = ?', [input.id]) };
+
   });
-  return { ok: true, status: input.decision, approval: missionDb.get<Row>('SELECT * FROM mission_approvals WHERE id = ?', [input.id]) };
 }

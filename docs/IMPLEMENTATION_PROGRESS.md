@@ -33,3 +33,20 @@ Testing notes: initial direct economy-suite attempts lacked its seeded-registry 
 7. External account enrollment, provider credentials, domain/deployment configuration and actual payment-provider actions remain operator-dependent. Local tests cannot prove those actions occurred.
 
 **Fund separation is unchanged:** no customer wallet/credit balance is used to fund private economy or standalone mission work. There is no claim of 4,001 live workers, one million verified opportunities, actual income, or completed withdrawals.
+
+## Phase 2 — standalone mission finance and payout evidence (2026-09-19)
+
+Implemented and locally tested:
+- Mission transactions take the mission-only PostgreSQL advisory lock at their outer boundary; wallet/ledger/audit, revenue sweeps, reserve allocations, expenses, payout reservations/refunds and destination verification changes are atomic. Nested operations retain savepoint behavior.
+- Safe-integer minor units, overflow checks, replay-payload validation, typed ledger replay results, duplicate source receipt rejection and explicit currency matching. Internal reinvestment transfers no longer inflate operating-spend counters; allocation requires its original received-revenue record.
+- Agent expense requests cannot select the treasury/reserve or another agent's wallet. Approval rechecks current spend policy; wallet freezes also block direct debits.
+- Append-only migration `0008_payout_binding.sql` binds payouts to their source wallet, destination fingerprint and masked/provider-reference snapshot. Failed reservations refund their actual ledger source, exactly once, rather than whichever treasury sorts first.
+- Payout approval checks current kill switch/caps, source currency, unchanged destination and nonexpired documentary verification. Runtime gates no longer rely on the verification sweeper or dashboard status. Empty HTTP verification is refused; existing valid-flow tests now submit explicit synthetic control-check attestations instead of the insecure status-only shortcut.
+- Settlement records require nonblank provider references; sent references cannot change and cannot be reused for another payout. Failure/refund requires failure evidence. These remain owner-recorded evidence, **not an implemented bank/payment-provider execution adapter**.
+- Approval-queue expense and payout decisions now execute their associated financial operation in the same transaction. Failed payment approval leaves the queue pending; rejected expenses synchronize both records without spending.
+
+Validation: **99/99 mission SQLite tests**, including **13 new financial regressions** and **2 additional HTTP queue regressions**; **13/13 financial PostgreSQL regressions**; existing mission PostgreSQL check **10/10** with **8 migrations**. Typecheck, backend compilation/runtime-asset copy and secret scan pass. All funds, destinations and receipts in these checks are labelled synthetic fixtures.
+
+Upgrade safety: old migrations are untouched. Legacy pending payouts without destination bindings must be rejected and re-requested; legacy reservations are refundable only when an unambiguous matching ledger debit exists. Destination fingerprints now include currency, so historical attestations may require owner re-verification. No verification or missing payment evidence is manufactured during migration.
+
+Remaining work above is not globally complete: assignment/runtime enforcement, delivery verification, resource lifecycle/UI coverage and final integrated checks continue after this phase. External production activation remains unproven.

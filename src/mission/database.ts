@@ -1,3 +1,4 @@
+import { financialTransaction } from '../db/financial-transaction';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -172,7 +173,7 @@ class MissionDatabase {
     }
     this.depth = 1;
     try {
-      return db.transaction(() => fn());
+      return financialTransaction(db, 'mission', fn);
     } finally {
       this.depth = 0;
     }

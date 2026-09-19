@@ -64,7 +64,6 @@ import {
   setPayoutSlotStatus,
   settlePayout,
   treasurySummary,
-  verifyPayoutSlot,
   verifyLedger,
   type Wallet,
   getWallet,
@@ -411,18 +410,18 @@ async function handleApi(
       if (method === 'POST' && rest[0] && rest[1] === 'decide') {
         const session = requireOwner(context, true);
         const decision = param('decision', '') === 'approved' ? 'approved' : 'rejected';
-        const result = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
-        if (!result.ok) throw new HttpProblem(result.status === 'not_found' ? 404 : 409, result.reason ?? 'approval not actionable', result.status === 'not_found' ? 'not_found' : 'conflict');
-        // Approving an EXPENSE approval must pay the expense: the queue is a
-        // real control surface, not a status toggle that strands the request.
-        const subject = result.approval
-          ? { type: String(result.approval.subject_type), id: String(result.approval.subject_id) }
-          : null;
-        if (subject?.type === 'expense') {
-          const expense = decideExpense({ id: subject.id, decision , actorId: session.owner.id, note: param('note'), actorType: 'owner' });
-          json(res, 200, { ...result, expense });
-          return true;
-        }
+        const result = missionDb.transaction(() => {
+          const decisionResult = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
+          if (!decisionResult.ok) throw new HttpProblem(decisionResult.status === 'not_found' ? 404 : 409, decisionResult.reason ?? 'approval not actionable', decisionResult.status === 'not_found' ? 'not_found' : 'conflict');
+          const subject = decisionResult.approval;
+          if (subject?.subject_type === 'expense') {
+            return { ...decisionResult, expense: decideExpense({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
+          }
+          if (subject?.subject_type === 'payout') {
+            return { ...decisionResult, payout: decidePayout({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
+          }
+          return decisionResult;
+        });
         json(res, 200, result);
         return true;
       }
@@ -992,8 +991,7 @@ async function handleApi(
           json(res, 200, { slot: confirmed.slot, verification: confirmed.verification, status: payoutSlotVerificationStatus(slotNumber) });
           return true;
         }
-        json(res, 200, { slot: verifyPayoutSlot(slotNumber, session.owner.id), warning: 'this activation path records no evidence — use the verification flow to confirm the control checks and attestation' });
-        return true;
+        throw new HttpProblem(400, 'destination verification requires control checks and a signed attestation', 'verification_required');
       }
       if (rest[1] === 'verification' && rest[2] === 'start' && method === 'POST') {
         json(res, 200, {
