@@ -191,3 +191,7 @@ Next exact task: validate the new migration and quota tests on PostgreSQL, exerc
 **13/13 SQLite quota tests pass**, including two new synchronized, independent-process races: competing reservations cannot exceed remaining quota, and competing workers cannot dispatch one reservation twice. Both races also verify the audit chain. Types and secret scan pass. The synthetic racer has a bounded watchdog and never runs in application runtime.
 
 The mission PostgreSQL check command now includes the engine-neutral quota suite. The two process races intentionally run only on SQLite: the embedded PGlite harness is not independent PostgreSQL-session concurrency proof. Next batch: apply migration 0011 through the PostgreSQL bridge and run its engine-neutral tests without resetting any prior fixture database.
+
+### Quota batch 3 — PostgreSQL parity
+
+The isolated retained `.pglite-mission-test/quota-reservations` fixture applied **11 mission migrations** and passed **10 existing mission checks**, **23/23 financial/messaging/resource regressions**, and **11/11 engine-neutral quota regressions**, with zero test failures/skips. Evidence: `logs/continuation/quota-batch-03-pg.log`. The SQLite-only independent-process races are not included in these PostgreSQL counts. No prior test database was reset, and no provider/payment was contacted. Next batch: existing mission SQLite tests, followed by a current-source integrated run only if needed; completed historical source fingerprints remain untouched.
