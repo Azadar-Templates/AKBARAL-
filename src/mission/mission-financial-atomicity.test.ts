@@ -326,3 +326,37 @@ it('resource readiness checks actual credential expiry, revocation, provider bin
   try { assert.ok(management.resourceReadiness(id).blockers.includes('resource_agent_inactive_or_missing')); }
   finally { missionDb.run("UPDATE mission_agents SET status = 'active' WHERE id = ?", [agent]); }
 });
+
+it('owner credential rebinding is provider/expiry guarded, optimistic, atomic and never spends or resets quotas', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const makeCredential = (provider: string) => {
+    const id = `synthetic-binding-${randomUUID()}`;
+    missionDb.run("INSERT INTO mission_credentials (id, provider, label, kind, masked_hint, ciphertext, iv, tag, status) VALUES (?, ?, 'Synthetic metadata only', 'api_key', 'fixture', 'fixture', 'fixture', 'fixture', 'active')", [id, provider]);
+    return id;
+  };
+  const first = makeCredential('synthetic-provider'), second = makeCredential('synthetic-provider'), other = makeCredential('different-synthetic-provider');
+  const resource = management.requestResource({ agentId: agent, provider: 'synthetic-provider', kind: 'api', limits: { requests: 1 } });
+  const id = String(resource.id);
+  management.recordResourceUsage({ id, usage: { requests: 1 }, actorType: 'owner', actorId: owner });
+  const input = { id, credentialId: first, expectedCredentialId: null, reason: 'Synthetic owner replacement review; no external activation.', actorId: owner, actorType: 'owner' as const };
+  assert.throws(() => management.bindResourceCredential({ ...input, actorType: 'agent' }), /cannot bind/);
+  assert.throws(() => management.bindResourceCredential({ ...input, credentialId: other }), /another provider/);
+  missionDb.run("UPDATE mission_credentials SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?", [first]);
+  assert.throws(() => management.bindResourceCredential(input), /expired/);
+  missionDb.run('UPDATE mission_credentials SET expires_at = NULL WHERE id = ?', [first]);
+  const before = snapshot();
+  failAfter('INSERT INTO mission_audit', () => management.bindResourceCredential(input));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(missionDb.get<{ credential_id: string | null }>('SELECT credential_id FROM mission_resources WHERE id = ?', [id])!.credential_id, null);
+  const bound = management.bindResourceCredential(input);
+  assert.equal(bound.credential_id, first);
+  assert.equal(bound.status, 'approved', 'binding is not provisioning');
+  assert.equal(JSON.parse(String(bound.usage)).requests, 1);
+  const afterBinding = snapshot();
+  management.bindResourceCredential(input);
+  assert.deepEqual(snapshot(), afterBinding, 'repeating the same binding adds no audit or money movement');
+  assert.deepEqual(afterBinding.wallets, before.wallets);
+  assert.throws(() => management.bindResourceCredential({ ...input, credentialId: second }), /binding changed/);
+  assert.equal(management.bindResourceCredential({ ...input, credentialId: second, expectedCredentialId: first }).credential_id, second);
+  assert.ok(management.resourceReadiness(id).blockers.includes('quota_exhausted:requests'));
+});

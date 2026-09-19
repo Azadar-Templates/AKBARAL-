@@ -1,3 +1,4 @@
+import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -708,6 +709,12 @@ async function handleApi(
       if (rest[1] === 'provision' && method === 'POST') {
         const session = requireOwner(context, true);
         json(res, 200, { resource: provisionResource({ id: rest[0], walletId: param('walletId') ?? undefined, actualCostCents: num('actualCostCents'), providerRef: param('providerRef', '')!, evidence: param('evidence', '')!, actorId: session.owner.id }) });
+        return true;
+      }
+      if (rest[1] === 'credential' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const resource = bindResourceCredential({ id: rest[0], credentialId: param('credentialId', '')!, expectedCredentialId: param('expectedCredentialId') ?? null, reason: param('reason', '')!, actorId: session.owner.id, actorType: 'owner' });
+        json(res, 200, { resource, readiness: resourceReadiness(String(resource.id)), providerVerified: false });
         return true;
       }
       if (rest[1] === 'retire' && method === 'POST') {

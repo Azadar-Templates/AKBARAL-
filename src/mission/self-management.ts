@@ -759,6 +759,27 @@ export function provisionResource(input: { id: string; walletId?: string; actual
   });
 }
 
+/** Owner-controlled metadata binding; no plaintext, purchase or activation. */
+export function bindResourceCredential(input: { id: string; credentialId: string; expectedCredentialId: string | null; reason: string; actorId: string; actorType?: SelfServiceActor }): Row {
+  return missionDb.transaction(() => {
+    assertOwnerAction(input.actorType, 'bind a resource credential');
+    const resource = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
+    if (!resource) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
+    if (resource.status === 'retired') throw new MissionSelfServiceError(409, 'a retired resource cannot be rebound', 'conflict');
+    const reason = input.reason.trim();
+    if (reason.length < 12 || reason.length > 1000 || looksLikeInstrumentCredential(reason).unsafe) throw new MissionSelfServiceError(400, 'provide a 12–1000 character reason without credentials or payment instruments', 'validation_error');
+    const credential = getCredentialPublic(input.credentialId);
+    if (!credential || !['active', 'expiring'].includes(credential.status) || (credential.expiresAt && (!Number.isFinite(Date.parse(credential.expiresAt)) || Date.parse(credential.expiresAt) <= Date.now()))) throw new MissionSelfServiceError(409, 'replacement credential is unavailable or expired', 'credential_unavailable');
+    if (credential.provider !== String(resource.provider)) throw new MissionSelfServiceError(409, 'replacement credential belongs to another provider', 'credential_provider_mismatch');
+    const previous = resource.credential_id ? String(resource.credential_id) : null;
+    if (previous === credential.id) return resource;
+    if (previous !== input.expectedCredentialId) throw new MissionSelfServiceError(409, 'resource credential binding changed; refresh before retrying', 'conflict');
+    missionDb.run('UPDATE mission_resources SET credential_id = ?, updated_at = ? WHERE id = ?', [credential.id, nowIso(), input.id]);
+    appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: 'resource.credential_bound', subjectType: 'resource', subjectId: input.id, detail: { previousCredentialId: previous, credentialId: credential.id, reason, providerVerified: false } });
+    return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id])!;
+  });
+}
+
 /** Live readiness, independent of sweeps; never exposes credential plaintext. */
 export function resourceReadiness(id: string): { usable: boolean; blockers: string[] } {
   const resource = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [id]);

@@ -15,7 +15,7 @@ function consoleFixture() {
     '/api/treasury': { treasury: { currency: 'USD', totals: { totalBalanceCents: 1000 }, daily: {} } },
     '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
     '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
-    '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [] },
+    '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'synthetic-provider', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
     '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
     '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
   };
@@ -27,7 +27,7 @@ function consoleFixture() {
     }
     return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding };`);
   dom.window.fixture.state.token = 'synthetic-dom-session';
   return { dom, win: dom.window, requests, resource };
 }
@@ -140,5 +140,25 @@ it('message submission rejects double clicks, reuses uncertain retry keys and ro
     assert.equal(attempts.length, 3);
     assert.notEqual(attempts[1].idempotencyKey, attempts[2].idempotencyKey);
     assert.equal(form.elements.message.readOnly, false);
+  } finally { dom.window.close(); }
+});
+
+it('owner credential binding selects same-provider metadata and submits no plaintext secrets', async () => {
+  const { dom, win, requests, resource } = consoleFixture();
+  try {
+    await win.fixture.loadTools();
+    assert.equal(win.document.querySelectorAll('[data-bind-credential]').length, 1);
+    await win.fixture.renderResourceCredentialBinding(resource);
+    const form = win.document.querySelector('#resource-credential form');
+    assert.equal(form.elements.credentialId.options.length, 2);
+    form.elements.credentialId.value = 'credential-fixture';
+    form.elements.reason.value = 'Synthetic owner review of replacement binding.';
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/credential', body: { credentialId: 'credential-fixture', expectedCredentialId: null, reason: 'Synthetic owner review of replacement binding.' } });
+    assert.match(win.document.querySelector('#resource-credential').textContent, /not provider verification/);
+    win.fixture.state.token = '';
+    await win.fixture.loadTools();
+    assert.equal(win.document.querySelectorAll('[data-bind-credential]').length, 0);
   } finally { dom.window.close(); }
 });

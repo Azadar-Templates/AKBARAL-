@@ -632,6 +632,24 @@ test('generic approval dispatch completes resource, upgrade and tool subjects wi
   assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), ledgerBefore);
 });
 
+test('only an owner can bind a stored credential and the response claims no provider verification', async () => {
+  const credential = await owner('/api/credentials', { method: 'POST', body: JSON.stringify({ provider: 'synthetic-binding-provider', label: 'Synthetic API fixture', secret: 'synthetic-credential-value-not-real' }) });
+  assert.equal(credential.status, 201);
+  const created = await owner('/api/resources', { method: 'POST', body: JSON.stringify({ agentSlug: 'link-agent-a', kind: 'api', provider: 'synthetic-binding-provider', monthlyCostCents: 0 }) });
+  assert.equal(created.status, 201);
+  const url = `/api/resources/${created.body.resource.id}/credential`;
+  const payload = { credentialId: credential.body.credential.id, expectedCredentialId: null, reason: 'Synthetic owner-approved binding, not a real integration.' };
+  const link = createAccessLink({ label: 'credential binding denial fixture', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+  assert.equal((await api(url, { method: 'POST', headers: { 'x-mission-link': link.token }, body: JSON.stringify(payload) })).status, 401, 'a scoped agent link is not an owner session');
+  const result = await owner(url, { method: 'POST', body: JSON.stringify(payload) });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.resource.credential_id, payload.credentialId);
+  assert.equal(result.body.resource.status, 'approved');
+  assert.equal(result.body.providerVerified, false);
+  assert.equal(result.body.readiness.usable, false);
+  assert.ok(!JSON.stringify(result.body).includes('synthetic-credential-value-not-real'));
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

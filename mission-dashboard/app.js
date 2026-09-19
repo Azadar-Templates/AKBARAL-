@@ -1056,8 +1056,13 @@ async function loadTools() {
     { label: 'Expires', render: (row) => when(row.expires_at) },
     { label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
     { label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
+    { label: 'Credential binding', render: row => canMutate() && row.status !== 'retired' ? el('button', { class: 'small', text: 'Bind credential', 'data-bind-credential': row.id }) : (row.credential_id || 'Not bound') },
     { label: 'Action', render: (row) => canMutate() && ['approved', 'needs_verification'].includes(row.status) ? el('button', { class: 'small', text: 'Record provisioning', 'data-provision': row.id }) : '—' },
   ], resources.resources, 'No resources requested.'));
+  $$('#resources button[data-bind-credential]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourceCredentialBinding(resources.resources.find(row => row.id === button.getAttribute('data-bind-credential'))); } catch (error) { banner(error.message, 'error'); }
+  }));
   $$('#resources button[data-provision]').forEach(button => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
     try { await renderResourceProvision(resources.resources.find(row => row.id === button.getAttribute('data-provision'))); } catch (error) { banner(error.message, 'error'); }
@@ -1070,6 +1075,34 @@ async function loadTools() {
     { label: 'Source', render: (row) => row.health_source || '—' },
     { label: 'Checked', render: (row) => when(row.last_checked_at) },
   ], services.services, 'No services registered.'));
+}
+
+async function renderResourceCredentialBinding(resource) {
+  if (!resource || !canMutate()) return;
+  const credentials = (await api('/credentials')).credentials;
+  const form = el('form', { class: 'stack-form' });
+  form.appendChild(el('h3', { text: `Bind stored credential — ${resource.provider}` }));
+  form.appendChild(el('p', { class: 'muted small', text: 'Select a credential already stored in the vault. This changes only its resource binding, not provider verification, provisioning or quota usage. Never paste a secret into the reason.' }));
+  const select = el('select', { name: 'credentialId', required: '', 'aria-label': 'Stored provider credential' }, [el('option', { value: '', text: 'Choose a current same-provider credential' })]);
+  for (const credential of credentials.filter(row => row.provider === resource.provider && ['active', 'expiring'].includes(row.status) && (!row.expiresAt || Date.parse(row.expiresAt) > Date.now()))) {
+    select.appendChild(el('option', { value: credential.id, text: `${credential.label} · ${credential.status}` }));
+  }
+  form.append(select, el('textarea', { name: 'reason', minlength: 12, maxlength: 1000, required: '', 'aria-label': 'Binding reason without secrets' }), el('button', { type: 'submit', text: 'Record credential binding' }));
+  let saving = false;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !guardMutation()) return;
+    saving = true;
+    form.querySelector('button').disabled = true;
+    try {
+      const body = { ...Object.fromEntries(new FormData(form)), expectedCredentialId: resource.credential_id || null };
+      await api(`/resources/${resource.id}/credential`, { method: 'POST', body });
+      replace('#resource-credential', el('p', { text: 'Credential binding recorded. This is not provider verification or a purchase.' }));
+      await loadTools();
+    } catch (error) { banner(error.message, 'error'); }
+    finally { saving = false; form.querySelector('button').disabled = false; }
+  });
+  replace('#resource-credential', form);
 }
 
 async function renderResourceProvision(resource) {
