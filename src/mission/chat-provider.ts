@@ -45,3 +45,10 @@ export async function invokeGoogleChat(permit: ResourceCallPermit, signal: Abort
   const accepted = payload.candidates?.length === 1 && candidate?.finishReason === 'STOP' && Boolean(text) && text.length <= 12000;
   return { outcome: accepted ? 'succeeded' : 'failed', actualUsage: { requests: 1, tokens: usage.totalTokenCount }, providerRef: `google:${payload.responseId}`, evidence: 'Google generateContent response identity and reported totalTokenCount; financial charge not verified.', value: accepted ? text : '' };
 }
+
+/** Usage receipts and legacy reservations cannot prove payment or prepaid credit.
+ * Runtime chat dispatch stays closed until a real vendor billing adapter binds a
+ * verified cash operation to this resource. Transport fixtures remain testable. */
+export function assertVerifiedChatBillingConfigured(): void {
+  throw new MissionSelfServiceError(409, 'A verified vendor billing adapter is required before live chat dispatch.', 'verified_vendor_billing_not_configured');
+}

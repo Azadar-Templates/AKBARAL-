@@ -1,3 +1,4 @@
+import { revokeOpportunity, agentMoneyOverview, listMoneyOperations } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
 import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
@@ -354,9 +355,15 @@ async function handleApi(
 
   if (head === 'money') {
     if (method === 'GET') {
-      const session = requireOwner(context);
-      assertMoneyOwner({kind:'owner',id:session.owner.id});
-      json(res,200,rest[0]==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200))}:moneyOverview()); return true;
+      let agentId:string|undefined;
+      if(context.session){const session=requireOwner(context);assertMoneyOwner({kind:'owner',id:session.owner.id});}
+      else agentId=requireAgent(context,url.searchParams.get('agentId')).agentId;
+      const action=rest[0];
+      if(action&& !['ledger','operations'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
+      const data=action==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200),agentId)}:
+        action==='operations'?{operations:listMoneyOperations(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
+        agentId?agentMoneyOverview(agentId):moneyOverview();
+      json(res,200,data);return true;
     }
     let actor: MoneyActor;
     if (context.session) actor={kind:'owner',id:requireOwner(context,true).owner.id};
@@ -367,6 +374,7 @@ async function handleApi(
     try {
     if(action==='bootstrap')result=bootstrapMoneyAgents(actor);
     else if(action==='opportunities')result=approveOpportunity(actor,{title:param('title','')!,evidenceUrl:param('evidenceUrl','')!,activity:param('activity','')!,provider:param('provider','')!});
+    else if(action==='revoke-opportunity')result=revokeOpportunity(actor,param('id','')!);
     else if(action==='grants')result=setMoneyGrant(actor,param('agentId','')!,{spendLimitCents:num('spendLimitCents'),delegationCents:num('delegationCents'),canCreate:body.canCreate===true,expiresAt:param('expiresAt','')!,status:param('status')==='revoked'?'revoked':'active',opportunityId:param('opportunityId')??undefined,autoAllocateCents:num('autoAllocateCents')});
     else if(action==='allocate')result=allocateCash(actor,param('agentId','')!,num('amountCents'),param('idempotencyKey','')!);
     else if(action==='freeze')result=freezeCash(actor,param('accountId','')!,body.frozen!==false);

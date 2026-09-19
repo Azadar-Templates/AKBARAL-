@@ -2,7 +2,7 @@ import { missionDb, nowIso, appendMissionAudit, sha256, type Row } from './datab
 import { agentChatConfig, assertAgentChatReady, chatResourcePreflight, type AgentChatConfig } from './chat-state';
 import { appendAgentMessage } from './messaging';
 import { reserveResourceCall, cancelResourceCall, markResourceCallUncertain, runResourceCall, type ReserveResourceCall } from './resource-calls';
-import { chatTokenReservation, invokeGoogleChat, type ChatAdapter } from './chat-provider';
+import { chatTokenReservation, invokeGoogleChat, assertVerifiedChatBillingConfigured, type ChatAdapter } from './chat-provider';
 import { MissionSelfServiceError } from './self-management';
 
 function finishJob(job: Row, status: string, reason: string | null = null, replyId: string | null = null): void {
@@ -33,6 +33,7 @@ export async function runNextAgentChat(adapter: ChatAdapter = invokeGoogleChat, 
     const message = missionDb.get<Row>('SELECT * FROM mission_agent_messages WHERE id = ?', [job.message_id]);
     const actor = { actorType: 'agent' as const, actorId: String(job.agent_id) };
     try {
+      if(adapter===invokeGoogleChat)assertVerifiedChatBillingConfigured();
       if (!message || message.actor_type !== 'owner' || message.agent_id !== job.agent_id || sha256(String(message.body)) !== job.message_fingerprint || Buffer.byteLength(String(message.body), 'utf8') > config.maxInputBytes) throw new MissionSelfServiceError(409, 'message is unavailable or exceeds the configured byte bound', 'chat_message_unavailable');
       if (missionDb.get("SELECT id FROM mission_agent_messages WHERE reply_to = ? AND actor_type = 'agent'", [message.id])) { finishJob(job, 'superseded', 'agent_already_replied'); return { job }; }
       chatResourcePreflight(String(job.agent_id), config);

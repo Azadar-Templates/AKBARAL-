@@ -218,3 +218,9 @@ it('a scoped worker cannot consume another agent’s retained pending jobs', asy
   assert.equal((await runChat(other, async () => { throw new Error('must not invoke'); }))!.status, 'blocked');
   reconcile(f, job!);
 });
+it('default runtime cannot bill Google using legacy balance or usage evidence',async()=>{
+  const f=fixture();f.message();
+  const job=await runNextAgentChat(undefined,{agentId:f.agentId});
+  assert.equal(job!.status,'blocked');assert.equal(job!.reason,'verified_vendor_billing_not_configured');
+  assert.equal(job!.call_id,null);assert.equal(heldResourceBudget(f.walletId),0);
+});

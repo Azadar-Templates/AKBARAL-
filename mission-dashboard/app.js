@@ -1655,7 +1655,9 @@ async function loadVerifiedCash() {
     card('Held / uncertain', money(accounts.reduce((n,a) => n + Number(a.held_cents),0),currency)),
     card('Integrity', data.ledger.ok ? 'Verified' : 'FAILED'),
     card('Execution', data.killSwitch ? 'FROZEN' : 'Policy gated'),
+    card('Activation', 'NOT LIVE-VERIFIED'),
   );
+  target.append(el('p',{text:'Blocked until real payment connection testing, lawful earning connectors, vendor billing adapters and real opportunity assignments are complete. Legacy usage receipts do not prove cash payment.'}));
   $('#verified-cash-operations').replaceChildren(el('pre',{text:JSON.stringify(data.operations,null,2)}));
   $('#verified-cash-data').textContent=JSON.stringify(data,null,2);
 }

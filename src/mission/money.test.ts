@@ -183,3 +183,40 @@ it('provisioning inactive registry identities never reactivates their authority'
   const id=`inactive-${randomUUID()}`;addAgent(id);db.run("UPDATE mission_agents SET status='paused' WHERE id=?",[id]);
   m.provisionMoneyAgent(id,owner.id);assert.equal(m.cashAccount(id).available_cents,0);assert.throws(()=>m.grant(id),/authority_inactive/);
 });
+it('worker reconciles delivered earnings read-only during freeze and opportunity revocation',async()=>{
+  const job=m.queueEarning(owner,a,'awaiting');let sends=0,paid=false;
+  const earning={id:provider.id,execute:async()=>{sends++;return {paymentReference:'awaiting-proof'};},lookup:async()=>({paymentReference:'awaiting-proof'})};
+  const payments={...provider,verifyReceipt:async()=>{if(!paid)throw Error('not yet available');return {externalId:'awaiting-proof',amountCents:200,currency:'USD',kind:'earning' as const,agentId:a};}};
+  assert.equal((await m.runEarning(owner,earning,payments,String(job.id))).state,'awaiting_payment');
+  m.revokeOpportunity(owner,String(m.grant(a).opportunity_id));setKillSwitch(true,owner.id);paid=true;
+  await m.moneyWorkerTick(owner,[payments],[earning]);
+  assert.equal(db.get<Row>('SELECT state FROM mission_earning_jobs WHERE id=?',[job.id])!.state,'completed');assert.equal(sends,1);assert.equal(m.cashAccount('treasury').available_cents,200);
+});
+it('already received money can verify one earning job, never finance duplicate job completion',async()=>{
+  await earn(100,'already-credited');const job=m.queueEarning(owner,a,'receipt-bound-job');
+  const earning={id:provider.id,execute:async()=>({paymentReference:'already-credited'}),lookup:async()=>({paymentReference:'already-credited'})};
+  assert.equal((await m.runEarning(owner,earning,provider,String(job.id))).state,'completed');
+  const another=m.queueEarning(owner,a,'same-receipt-other-job');assert.equal((await m.runEarning(owner,earning,provider,String(another.id))).state,'awaiting_payment');
+  assert.equal(m.cashAccount('treasury').available_cents,100);
+});
+it('earning adapters get a final send gate and cannot dispatch after a kill switch',async()=>{
+  const job=m.queueEarning(owner,a,'freeze-before-work');let sent=0;
+  const earning={id:provider.id,execute:async(_job:Row,_opp:Row,_signal:AbortSignal,authorize:()=>void)=>{setKillSwitch(true,owner.id);authorize();sent++;return {paymentReference:'not-sent'};},lookup:async()=>{throw Error('no delivery');}};
+  assert.equal((await m.runEarning(owner,earning,provider,String(job.id))).state,'unknown');assert.equal(sent,0);
+});
+it('agent cash views and pagination cannot include another account',async()=>{
+  await earn();m.allocateCash(owner,a,100,'fund');request();
+  assert.equal(m.agentMoneyOverview(b).operations.length,0);assert.equal(m.listMoneyOperations('',1,b).length,0);
+  assert.equal(m.listMoneyOperations('',1,a).length,1);assert.equal(m.listCashEntries(0,100,b).length,0);
+  assert.throws(()=>m.listMoneyOperations('',1001),/pagination/);
+});
+it('bounded scheduler rotates unsupported jobs instead of starving a configured agent',async()=>{
+  const unsupported=m.approveOpportunity(owner,{title:'Synthetic unsupported job fixture',evidenceUrl:'https://example.test/unsupported',activity:'software_development',provider:'not-configured'});
+  grant(b,{opportunityId:String(unsupported.id)});
+  for(let n=0;n<21;n++)m.queueEarning(owner,b,`unsupported-${n}`);
+  const target=m.queueEarning(owner,a,'eligible-after-unsupported');let executed=0;
+  receipt={externalId:'eligible-payment',kind:'earning',currency:'USD',amountCents:100,agentId:a};
+  const earning={id:provider.id,execute:async()=>{executed++;return {paymentReference:receipt.externalId};},lookup:async()=>({paymentReference:receipt.externalId})};
+  await m.moneyWorkerTick(owner,[provider],[earning]);await m.moneyWorkerTick(owner,[provider],[earning]);
+  assert.equal(executed,1);assert.equal(db.get<Row>('SELECT state FROM mission_earning_jobs WHERE id=?',[target.id])!.state,'completed');
+});

@@ -729,3 +729,13 @@ test('new verified-cash requests reject fabricated funding and preserve zero bal
   const result=await owner('/api/money/request',{method:'POST',body:JSON.stringify({kind:'expense',agentId:agent.id,provider:'stripe-mission',destination:'vendor',category:'api',amountCents:10,maxCostCents:10,idempotencyKey:'unfunded-real-expense'})});
   assert.equal(result.status,409);assert.equal(result.body.error.code,'insufficient_real_funds');
 });
+test('agent cash read is scoped; ledger, operations and grants cannot leak fleet data',async()=>{
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents WHERE slug=?',[rootAgentSlug])!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Synthetic cash-read fixture'});
+  const headers={'x-mission-link':link.token};
+  const own=await api('/api/money',{headers});assert.equal(own.status,200);assert.equal(own.body.account.agent_id,agent.id);assert.equal(own.body.accounts,undefined);
+  assert.equal((await api('/api/money?agentId=another-agent',{headers})).status,403);
+  assert.equal((await api('/api/money/ledger?limit=10',{headers})).status,200);
+  assert.equal((await api('/api/money/operations?limit=10',{headers})).status,200);
+  const mutation=await api('/api/money/revoke-opportunity',{method:'POST',headers,body:JSON.stringify({id:'not-owned'})});assert.equal(mutation.status,409);assert.equal(mutation.body.error.code,'owner_required');
+});

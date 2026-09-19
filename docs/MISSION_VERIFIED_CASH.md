@@ -75,7 +75,9 @@ withdrawals always need approval and a verified configured payout destination.
 
 GET `/api/money` — owner cash accounts, pending/completed operations, grants,
 opportunities, liabilities, freeze and integrity. GET `/api/money/ledger` accepts
-`after` sequence and `limit` (1–1000), for complete ledger pagination.
+`after` sequence and `limit` (1–1000), for complete ledger pagination. GET `/api/money/operations` pages by opaque operation ID
+(`after`, `limit`). An authenticated `agent:self` link can read only its own cash
+account, grant, jobs, operations and ledger entries; it cannot read fleet state.
 
 POST `/api/money/{action}`:
 
@@ -83,6 +85,7 @@ POST `/api/money/{action}`:
 | --- | --- | --- |
 | bootstrap | none | Owner |
 | opportunities | title, evidenceUrl, activity, provider | Owner review |
+| revoke-opportunity | id | Owner; new execution stops, settlement remains reconcilable |
 | grants | agentId, spendLimitCents, delegationCents, canCreate, expiresAt, status, opportunityId, autoAllocateCents | Owner |
 | allocate | agentId, amountCents, idempotencyKey | Owner |
 | freeze | accountId, frozen | Owner |
@@ -96,7 +99,9 @@ POST `/api/money/{action}`:
 
 Expense categories: api, tool, hosting, storage, account, property, upgrade.
 Categories are accounting/authorization types, **not claims of vendor API support**.
-A spending request to an unsupported provider is not dispatched.
+A spending request to an unsupported provider is not dispatched. Bounded scheduler
+pages rotate blocked/uncertain records so one unsupported provider does not
+permanently prevent other eligible agents from being serviced.
 
 The Verified cash dashboard provides balances, holds, operation states, owner
 commands and full state inspection. Existing kill-switch controls remain effective.
@@ -105,7 +110,14 @@ commands and full state inspection. Existing kill-switch controls remain effecti
 
 `MoneyProvider` and `EarningProvider` are trusted code interfaces, not user-supplied
 URLs or runtime plugins. `runEarning` claims a durable job once, records delivery,
-waits for provider-verified available funds, then credits the treasury. Uncertain
+waits for provider-verified available funds, then credits the treasury. The worker
+reconciles delivered/unknown earnings through read-only lookup, including while
+frozen or after opportunity revocation; it never repeats delivery. Payment
+references bind durably to one earning job. Existing credited income can complete
+that job without a second credit. Adapters receive a final authorization callback
+and AbortSignal; they must check the callback immediately before external
+mutation and respect cancellation. The worker bounds its wait even if an adapter
+ignores cancellation, but cannot undo a provider side effect. Uncertain
 work is never replayed automatically. Confirmed cost operations can authorize the
 next earning job. `moneyWorkerTick` reconciles uncertain payments, applies standing
 allocations and executes eligible queued work/payment operations.
@@ -193,3 +205,33 @@ mobile-viewport checks passed, including zero-funded Verified cash UI and owner
 controls, with no external requests. A late failed-payout return is accepted only
 for its bound, previously completed operation and verified return transaction;
 this does not constitute general dispute/fee reconciliation coverage.
+
+### Legacy runtime spending boundary
+
+The legacy ledger/resource modules remain historical accounting and quota
+bookkeeping; their owner-reported costs are never imported into verified cash.
+Auditing runtime provider call sites found that the old Google chat worker could
+use those legacy budgets. Its production entry point and default dispatcher now
+**refuse live execution before reserving quota or contacting Google**, with
+`verified_vendor_billing_not_configured`. Enabling the chat-worker environment flag
+alone cannot bypass this. The Google response parser and explicit fixture adapters
+remain regression-tested; they are not evidence that paid Google billing works.
+A genuine vendor billing/prepaid-credit adapter must be implemented and connected
+before restoring live chat execution. Social OAuth exchanges handle authentication,
+not payments. Stripe is the only runtime financial adapter currently registered.
+
+The owner cash view explicitly reports NOT LIVE-VERIFIED and the missing earning
+and vendor billing connectors. These are release-level blockers, not credential
+presence checks masquerading as live-provider tests.
+
+### Follow-up verification checkpoint (2026-09-20)
+
+After scoped cash reads, earning reconciliation, opportunity revocation, scheduler
+fairness and the legacy chat billing guard: 236 mission tests passed on SQLite;
+30 cash-core tests passed on native PostgreSQL (one synthetic fleet test skipped).
+The four SQLite race tests were rechecked in the focused 35-test run. The last
+native PostgreSQL four-race run passed at the preceding checkpoint. Typecheck,
+secret scan, production webpack build, and Chromium desktop/mobile checks passed;
+subsequent scheduler-only edits were rechecked by typecheck and core tests on both
+engines. The enabled chat-worker entry point was also exercised and refused
+startup without contacting a provider. No deployment or real-money test occurred.
