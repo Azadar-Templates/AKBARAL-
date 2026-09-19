@@ -795,7 +795,11 @@ async function loadTreasury() {
       canMutate() && String(row.status) === 'pending_approval'
         ? el('button', { class: 'small', text: 'Reject', 'data-payout': String(row.id), 'data-decision': 'rejected' }) : null,
       canMutate() && ['approved', 'sent'].includes(String(row.status))
-        ? el('button', { class: 'small', text: 'Mark settled', 'data-settle': String(row.id) }) : null,
+        ? el('button', { class: 'small', text: 'Record settled', 'data-settle': String(row.id), 'data-state': 'settled' }) : null,
+      canMutate() && String(row.status) === 'approved'
+        ? el('button', { class: 'small', text: 'Record sent', 'data-settle': String(row.id), 'data-state': 'sent' }) : null,
+      canMutate() && ['approved', 'sent'].includes(String(row.status))
+        ? el('button', { class: 'small danger', text: 'Record failure / return reservation', 'data-settle': String(row.id), 'data-state': 'failed' }) : null,
     ]),
   }));
   replace('#payouts', table([
@@ -803,7 +807,9 @@ async function loadTreasury() {
     { label: 'Slot', key: 'slot' },
     { label: 'Amount', render: (row) => money(row.amount_cents, currency) },
     { label: 'Status', render: (row) => pill(String(row.status), row.status === 'settled' ? 'ok' : row.status === 'failed' ? 'bad' : 'warn') },
-    { label: 'Settlement ref', render: (row) => row.settlement_ref || '—' },
+    { label: 'Source wallet', render: (row) => row.source_wallet_id || 'Legacy: ledger reconciliation required' },
+    { label: 'Authorized destination', render: (row) => { try { const d = JSON.parse(row.destination_snapshot || '{}'); return [d.providerRef || d.maskedAccount || 'Unbound legacy request', d.currency || row.currency].join(' · '); } catch { return 'Invalid snapshot — review required'; } } },
+    { label: 'Settlement ref / failure evidence', render: (row) => row.settlement_ref || row.failure_reason || '—' },
     { label: 'Actions', render: (row) => row.actions },
   ], payoutRows, 'No payouts requested.'));
 
@@ -819,11 +825,12 @@ async function loadTreasury() {
   }));
   $$('#payouts button[data-settle]').forEach((button) => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
-    const reference = window.prompt('Provider settlement reference (required — never invent one):');
-    if (!reference) return;
+    const status = button.getAttribute('data-state');
+    const reference = window.prompt(status === 'failed' ? 'Provider failure evidence/reason (required). This returns only the internal reservation; it does not refund a bank transfer:' : 'Actual provider transfer reference (required). This records evidence only; it does not send money:');
+    if (!reference?.trim()) return;
     try {
-      await api(`/payouts/${button.getAttribute('data-settle')}/settle`, { method: 'POST', body: { status: 'settled', settlementRef: reference } });
-      banner('Payout settled against the provider reference.', 'ok');
+      await api(`/payouts/${button.getAttribute('data-settle')}/settle`, { method: 'POST', body: { status, ...(status === 'failed' ? { failureReason: reference.trim() } : { settlementRef: reference.trim() }) } });
+      banner(`Payout evidence recorded as ${status}. No external payment was initiated here.`, 'ok');
       await loadTreasury();
     } catch (error) { banner(error.message, 'error'); }
   }));
@@ -984,7 +991,14 @@ async function loadTools() {
     { label: 'Status', key: 'status' },
     { label: 'Renews', render: (row) => when(row.renews_at) },
     { label: 'Expires', render: (row) => when(row.expires_at) },
+    { label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
+    { label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
+    { label: 'Action', render: (row) => canMutate() && ['approved', 'needs_verification'].includes(row.status) ? el('button', { class: 'small', text: 'Record provisioning', 'data-provision': row.id }) : '—' },
   ], resources.resources, 'No resources requested.'));
+  $$('#resources button[data-provision]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourceProvision(resources.resources.find(row => row.id === button.getAttribute('data-provision'))); } catch (error) { banner(error.message, 'error'); }
+  }));
 
   replace('#services', table([
     { label: 'Service', key: 'name' },
@@ -993,6 +1007,35 @@ async function loadTools() {
     { label: 'Source', render: (row) => row.health_source || '—' },
     { label: 'Checked', render: (row) => when(row.last_checked_at) },
   ], services.services, 'No services registered.'));
+}
+
+async function renderResourceProvision(resource) {
+  if (!resource) return;
+  const wallets = (await api('/wallets')).wallets;
+  const form = el('form', { class: 'stack-form' });
+  form.appendChild(el('h3', { text: `Record provider provisioning — ${resource.provider}` }));
+  form.appendChild(el('p', { class: 'muted small', text: 'Record only an actual provider invoice/subscription and evidence. This posts the verified expense from a mission wallet; it does not purchase a resource or call a payment provider. Never enter credentials here.' }));
+  const select = el('select', { name: 'walletId', 'aria-label': 'Funding mission wallet' }, [el('option', { value: '', text: 'Choose funding wallet (required for paid resources)' })]);
+  for (const wallet of wallets) select.appendChild(el('option', { value: wallet.id, text: `${wallet.label} · ${money(wallet.balanceCents, wallet.currency)}` }));
+  form.appendChild(select);
+  form.appendChild(el('label', {}, ['Actual cost, in minor units', el('input', { name: 'actualCostCents', type: 'number', min: 0, max: resource.monthly_cost_cents, step: 1, value: resource.monthly_cost_cents, required: '' })]));
+  form.appendChild(el('label', {}, ['Provider invoice/subscription reference', el('input', { name: 'providerRef', minlength: 4, required: '', autocomplete: 'off' })]));
+  form.appendChild(el('label', {}, ['Provisioning evidence (no secrets)', el('textarea', { name: 'evidence', minlength: 12, required: '' })]));
+  form.appendChild(el('button', { type: 'submit', text: 'Record funded provisioning evidence' }));
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!guardMutation()) return;
+    const body = Object.fromEntries(new FormData(form));
+    body.actualCostCents = Number(body.actualCostCents);
+    if (!body.walletId) delete body.walletId;
+    try {
+      await api(`/resources/${resource.id}/provision`, { method: 'POST', body });
+      replace('#resource-provision', el('p', { class: 'muted small', text: 'Provisioning evidence and expense recorded. Credential/quota readiness is shown separately.' }));
+      await loadTools();
+      banner('Provisioning recorded; no external purchase was initiated.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+  });
+  replace('#resource-provision', form);
 }
 
 async function loadPolicy() {

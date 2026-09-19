@@ -77,6 +77,8 @@ import {
   MissionSelfServiceError,
   credentialRotations,
   decideResource,
+  provisionResource,
+  resourceReadiness,
   decideToolRequest,
   decideUpgrade,
   applyUpgrade,
@@ -420,6 +422,8 @@ async function handleApi(
           if (subject?.subject_type === 'payout') {
             return { ...decisionResult, payout: decidePayout({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
           }
+          if (subject?.subject_type === 'resource') return { ...decisionResult, resource: decideResource({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
+          if (subject?.subject_type === 'upgrade') return { ...decisionResult, upgrade: decideUpgrade({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
           return decisionResult;
         });
         json(res, 200, result);
@@ -655,7 +659,7 @@ async function handleApi(
       requireRead(context);
       if (method === 'GET') {
         const expiring = url.searchParams.get('expiring');
-        json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined), expiring: expiring === '1' });
+        json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined).map(row => ({ ...row, readiness: resourceReadiness(String(row.id)) })), expiring: expiring === '1' });
         return true;
       }
       if (rest.length === 0 && method === 'POST') {
@@ -676,13 +680,18 @@ async function handleApi(
         return true;
       }
       if (rest[1] === 'usage' && method === 'POST') {
-        requireAgent(context, param('agentSlug'));
-        json(res, 200, { resource: recordResourceUsage({ id: rest[0], usage: (body.usage as Record<string, unknown>) ?? {}, actorId: context.session?.owner.id ?? null }) });
+        const agent = requireAgent(context, param('agentSlug'));
+        json(res, 200, { resource: recordResourceUsage({ id: rest[0], usage: (body.usage as Record<string, unknown>) ?? {}, actorType: context.session ? 'owner' : 'agent', actorId: context.session?.owner.id ?? agent.agentId }) });
         return true;
       }
       if (rest[1] === 'decide' && method === 'POST') {
         const session = requireOwner(context, true);
         json(res, 200, { resource: decideResource({ id: rest[0], decision: param('decision') === 'approved' ? 'approved' : 'rejected', actorId: session.owner.id, note: param('note') }) });
+        return true;
+      }
+      if (rest[1] === 'provision' && method === 'POST') {
+        const session = requireOwner(context, true);
+        json(res, 200, { resource: provisionResource({ id: rest[0], walletId: param('walletId') ?? undefined, actualCostCents: num('actualCostCents'), providerRef: param('providerRef', '')!, evidence: param('evidence', '')!, actorId: session.owner.id }) });
         return true;
       }
       if (rest[1] === 'retire' && method === 'POST') {

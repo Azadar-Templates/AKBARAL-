@@ -162,3 +162,46 @@ it('refuses implicit currency conversion on revenue and payouts', () => {
   attest();
   assert.throws(() => payout(), /currency differs/);
 });
+
+it('resource approval is not provisioning, and funded evidence commits exactly once', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const resource = management.requestResource({ agentId: agent, kind: 'compute', provider: 'synthetic-provider', monthlyCostCents: 10, actorId: owner });
+  assert.equal(resource.status, 'approved');
+  assert.equal(management.resourceReadiness(String(resource.id)).usable, false);
+  const input = { id: String(resource.id), walletId: treasury, actualCostCents: 10, providerRef: `fixture-${randomUUID().replace(/[0-9]/g, 'x')}`, evidence: 'Synthetic provisioning fixture; no actual provider contacted.', actorId: owner };
+  assert.throws(() => management.provisionResource({ ...input, actualCostCents: 11 }), /approved quote/);
+  assert.throws(() => management.provisionResource({ ...input, evidence: '' }), /evidence/);
+  assert.throws(() => management.provisionResource({ ...input, providerRef: 'private_key=not-a-provider-reference' }), /instruments or credentials/);
+  const before = snapshot(), balance = getWallet(treasury)!.balanceCents;
+  failAfter('UPDATE mission_resources SET status', () => management.provisionResource(input));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(management.provisionResource(input).status, 'active');
+  assert.equal(getWallet(treasury)!.balanceCents, balance - 10);
+  assert.throws(() => management.provisionResource(input), /already provisioned/);
+  assert.equal(management.resourceReadiness(String(resource.id)).usable, true);
+  const another = management.requestResource({ agentId: agent, kind: 'compute', provider: 'synthetic-provider', monthlyCostCents: 10 });
+  assert.throws(() => management.provisionResource({ ...input, id: String(another.id) }), /already recorded/);
+});
+it('resource readiness checks credentials, quota and expiry live, without a sweep', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const resource = management.requestResource({ agentId: agent, kind: 'api', provider: 'fixture', monthlyCostCents: 0, limits: { requests: 2 } });
+  management.provisionResource({ id: String(resource.id), actualCostCents: 0, providerRef: `fixture-${randomUUID().replace(/[0-9]/g, 'x')}`, evidence: 'Synthetic API provisioning evidence; not a real account.', actorId: owner });
+  assert.ok(management.resourceReadiness(String(resource.id)).blockers.includes('credential_not_configured'));
+  assert.throws(() => management.recordResourceUsage({ id: String(resource.id), usage: { requests: 2 }, actorType: 'agent', actorId: 'wrong-agent' }), /another agent/);
+  management.recordResourceUsage({ id: String(resource.id), usage: { requests: 2 }, actorType: 'agent', actorId: agent });
+  assert.ok(management.resourceReadiness(String(resource.id)).blockers.includes('quota_exhausted:requests'));
+  missionDb.run("UPDATE mission_resources SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", [String(resource.id)]);
+  assert.ok(management.resourceReadiness(String(resource.id)).blockers.includes('resource_expired'));
+});
+it('an above-threshold owner-approved upgrade charges atomically and cannot apply without funds', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const row = management.requestUpgrade({ agentId: agent, walletId: wallet, capability: 'synthetic test capability', requestedCostCents: 100 }).upgrade;
+  const before = snapshot(), balance = getWallet(wallet)!.balanceCents;
+  failAfter('UPDATE mission_upgrades SET status', () => management.decideUpgrade({ id: String(row.id), decision: 'approved', actorId: owner }));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(management.decideUpgrade({ id: String(row.id), decision: 'approved', actorId: owner }).status, 'approved');
+  assert.equal(getWallet(wallet)!.balanceCents, balance - 100);
+  assert.throws(() => management.decideUpgrade({ id: String(row.id), decision: 'approved', actorId: owner }), /upgrade is approved/);
+  assert.equal(verifyLedger().ok, true);
+  assert.equal(verifyMissionAudit().ok, true);
+});
