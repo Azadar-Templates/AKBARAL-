@@ -96,3 +96,9 @@ Added private, durable owner/agent conversations backed by mission-only migratio
 The owner agent-detail view now includes the conversation alongside its existing explicit work, pause/resume, budget and wallet controls. Message text is rendered safely and does **not** execute commands, call tools, generate model replies or move money. Automatic model/worker replies are not claimed; a configured worker must submit its real response through the scoped API.
 
 Validation: **107/107 mission SQLite/DOM tests**, including HTTP identity/replay/money-isolation checks, rollback tests and an executed-client HTML-injection regression; **17/17 mission financial/messaging PostgreSQL tests** and **10 existing PostgreSQL mission checks**, with **10 private migrations**. Typecheck, secret scan and backend build pass. No real credential, provider completion or payment is implied by these synthetic checks.
+
+## Catalog import hardening (2026-09-19)
+
+Seed import now accepts only explicit `verified` or `candidate` statuses. Unknown/missing/rejected statuses, null rows and non-string names cannot silently become earning candidates. Non-array catalogs fail validation before database writes. The isolated regression passes; the real inventory remains unchanged (194 evidence rows: six verified terms, 179 candidates, nine rejected). These are platform catalog entries, not one million paid opportunities.
+
+GitHub authentication expired after the Phase 6 local commit: `git push` failed and `gh auth status` confirmed the configured token is no longer valid. Phase 5 (`a910aa4`) remains the last successfully pushed phase. New commits are preserved locally pending reconnection in Arena; no credentials are requested or recorded.

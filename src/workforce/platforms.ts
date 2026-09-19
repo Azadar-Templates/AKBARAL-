@@ -103,11 +103,12 @@ interface SeedRow {
 export function seedPlatforms(seedPath: string = PLATFORM_SEED_PATH): { seeded: number; skipped_rejected: number; total: number } {
   const raw = fs.readFileSync(seedPath, 'utf8');
   const rows = JSON.parse(raw) as SeedRow[];
+  if (!Array.isArray(rows)) throw new Error('platform catalog must be an array of reviewed rows');
   let seeded = 0;
   let skippedRejected = 0;
   for (const row of rows) {
-    const name = (row.name ?? '').trim();
-    if (!name || row.status === 'rejected') {
+    const name = typeof row?.name === 'string' ? row.name.trim() : '';
+    if (!name || !['verified', 'candidate'].includes(row.status ?? '')) {
       skippedRejected += 1;
       continue;
     }
