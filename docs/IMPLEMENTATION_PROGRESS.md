@@ -199,3 +199,7 @@ The isolated retained `.pglite-mission-test/quota-reservations` fixture applied 
 ### Quota batch 4 — existing mission SQLite, first five files
 
 **60/60 tests pass** across mission core, executed-client dashboard, financial atomicity, identity lock and payout verification. Evidence: `logs/continuation/quota-batch-04-sqlite.log`. This is a focused current-source batch, not a rerun or relabelling of the completed historical full suite. Next batch: reinvestment, HTTP server, social and treasury tests.
+
+### Quota batch 5 — remaining existing mission SQLite files
+
+**59/59 tests pass** across mission reinvestment, HTTP server, social and treasury. Together with batch 4, all **119 existing mission tests** pass on this frozen quota source; the new quota suite separately passed **13/13**, including the independent-process races. Evidence: `logs/continuation/quota-batch-05-sqlite.log`. Next exact task: review the new worker boundary for authority/reconciliation gaps and add any necessary regression before the next implementation checkpoint.
