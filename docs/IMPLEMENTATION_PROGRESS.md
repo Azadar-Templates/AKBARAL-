@@ -315,3 +315,7 @@ These are local synthetic browser checks, not physical-device/Safari testing, a 
 ### Oversized financial receipt preflight
 
 A new regression reproduced that an unfunded safe-integer cost reached a PostgreSQL `INTEGER` accounting write before the existing debit rejected it (**0/1 before**). Financial reconciliation now checks the original wallet's funding before that write, preserving the hold and refusing the charge without a possible SQL overflow/protocol error. This does not truncate overages, invent zero cost or move external money. **43/43 budget/HTTP tests** and types pass after the fix. Evidence: `oversized-cost-before.log` and `oversized-cost-after.log` under `logs/continuation/`. Next exact task: PostgreSQL validation of this guard, then evidence-backed resource-period renewal.
+
+### Oversized cost guard — PostgreSQL checkpoint
+
+**10/10 PostgreSQL budget tests pass**, with explicit **harness exit 0**, against the retained fixture. The first command showed ten passing TAP cases but returned an unexplained nonzero command status; its log is preserved, and a targeted one-test probe plus the final full budget confirmation both exited 0. Final evidence: `logs/continuation/oversized-cost-pg-confirmed.log`. No SQL overflow, lost hold or fixture reset. Next exact task: owner-evidenced resource renewal with immutable billing periods and pending-call protection.
