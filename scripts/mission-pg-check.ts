@@ -9,12 +9,13 @@
  * the HTTP surface — asserting after every step.
  *
  * It refuses to run on SQLite (that would prove nothing) and it needs a real
- * PostgreSQL connection in ZA141251SA_DATABASE_URL. Locally:
+ * PostgreSQL test connection in ZA141251SA_DATABASE_URL matching PG_TEST_DATABASE_URL. Locally:
  *
  *   node scripts/pg-test-server.mjs --run sh -c \
  *     'ZA141251SA_DATABASE_URL=$PG_TEST_DATABASE_URL npx tsx scripts/mission-pg-check.ts'
  */
 import assert from 'node:assert/strict';
+import { assertMissionProbeDatabase, missionProbeSpendPolicy } from './testing/mission-probe-policy';
 
 process.env.ZA141251SA_CREDENTIAL_KEY = process.env.ZA141251SA_CREDENTIAL_KEY ?? 'mission-pg-check-credential-key-32-chars+';
 process.env.ZA141251SA_SESSION_SECRET = process.env.ZA141251SA_SESSION_SECRET ?? 'mission-pg-check-session-secret-32-chars+';
@@ -28,12 +29,13 @@ function record(step: string, detail: string): void {
 async function main(): Promise<void> {
   const url = (process.env.ZA141251SA_DATABASE_URL ?? '').trim();
   if (!url) {
-    throw new Error('ZA141251SA_DATABASE_URL is not set — run this under scripts/pg-test-server.mjs or point it at a PostgreSQL database');
+    throw new Error('ZA141251SA_DATABASE_URL is not set — run this under scripts/pg-test-server.mjs with an explicit, matching PG_TEST_DATABASE_URL fixture');
   }
   if (!/^postgres(ql)?:\/\//i.test(url)) {
     throw new Error(`ZA141251SA_DATABASE_URL must be a PostgreSQL URL (got "${url.replace(/:\/\/.*@/, '://***@')}") — SQLite would prove nothing here`);
   }
 
+  assertMissionProbeDatabase(url, process.env.PG_TEST_DATABASE_URL);
   const mission = await import('../src/mission/database');
   const auth = await import('../src/mission/auth');
   const policyModule = await import('../src/mission/policy');
@@ -59,6 +61,9 @@ async function main(): Promise<void> {
 
   // ── Treasury: wallet, realized revenue, expense ───────────────────────────
   const policy = policyModule.currentPolicy();
+  const { heldResourceBudget } = await import('../src/mission/resource-budget-state');
+  try {
+  policyModule.updatePolicy(missionProbeSpendPolicy(policy, policyModule.dailySpendCents(mission.nowIso()), heldResourceBudget()), owner.id);
   // A synthetic mission agent to attribute fixture work and costs to.
   const agentId = mission.missionId('agt');
   mission.missionDb.run(
@@ -95,6 +100,7 @@ async function main(): Promise<void> {
     actorType: 'owner',
     actorId: owner.id,
   });
+  assert.equal(expense.expense.status, 'paid', 'synthetic expense actually exercises the private ledger');
   record('treasury', `wallet funded by verified revenue (${Number(revenue.revenue.amount_cents)} minor units, status ${String(revenue.revenue.status)}) and one expense recorded (${String(expense.expense.status)})`);
 
   // ── Ledger chain on PostgreSQL (the rowid → seq fix) ──────────────────────
@@ -185,7 +191,9 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(`\n  mission PostgreSQL check: ${results.length} steps verified, 0 failures\n\n`);
-  mission.missionDb.close();
+  } finally {
+    try { policyModule.updatePolicy(policy, owner.id); } finally { mission.missionDb.close(); }
+  }
 }
 
 main().catch((error) => {
