@@ -49,8 +49,12 @@ it('importing the private server and migrating never creates a customer database
 
 it('a private SQLite mission never starts a configured customer PostgreSQL worker', () => fixture(directory => {
   const result = child(directory, 'postgres://127.0.0.1:1/customer-unavailable', ['-e', `
+    const RealWorker = require('node:worker_threads').Worker;
     require('node:worker_threads').Worker = class {
-      constructor() { throw new Error('customer PostgreSQL worker was started'); }
+      constructor(workerPath, options) {
+        if (require('node:path').basename(String(workerPath)) === 'pg-worker.mjs') throw new Error('customer PostgreSQL worker was started');
+        return new RealWorker(workerPath, options);
+      }
     };
     require('./src/mission/server.ts');
     const { applyMissionMigrations, missionDb } = require('./src/mission/database.ts');

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Database, resolveDbEngine, type DbEngine } from '../db/driver';
+import { displayDatabaseTarget } from '../db/display-target';
 
 /**
  * PRIVATE MISSION DATABASE — its own file, its own schema, its own migrations.
@@ -86,7 +87,7 @@ class MissionDatabase {
 
   /** Connection target. PostgreSQL URLs are returned with credentials stripped. */
   path(): string {
-    if (this.engine === 'postgres') return this.target.replace(/\/\/[^@]*@/, '//***@');
+    if (this.engine === 'postgres') return displayDatabaseTarget(this.target);
     return this.target;
   }
 

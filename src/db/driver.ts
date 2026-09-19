@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { env } from '../config/env';
 import { resolveDatabasePath } from './path';
+import { displayDatabaseTarget } from './display-target';
 
 export interface RunResult {
   changes: number;
@@ -205,7 +206,7 @@ export class Database {
     this.engine = resolveDbEngine(databaseUrl);
 
     if (this.engine === 'postgres') {
-      this.filePath = databaseUrl.replace(/\/\/[^@]*@/, '//***@'); // never keep credentials
+      this.filePath = displayDatabaseTarget(databaseUrl); // diagnostics never retain URL credentials
       const sab = new SharedArrayBuffer(4 * 4);
       const reqSab = new SharedArrayBuffer(REQ_CAPACITY);
       const resSab = new SharedArrayBuffer(RES_CAPACITY);
