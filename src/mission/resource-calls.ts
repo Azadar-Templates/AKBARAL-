@@ -198,7 +198,10 @@ export async function runResourceCall<T>(input: ReserveResourceCall, invoke: (pe
         controller.abort(error);
       }, Math.max(1, Date.parse(permit.deadlineAt) - Date.now()));
     });
-    outcome = await Promise.race([Promise.resolve().then(() => invoke(permit, controller.signal)), timedOut]);
+    outcome = await Promise.race([Promise.resolve().then(() => {
+      if (Date.now() >= Date.parse(permit.deadlineAt)) fail('provider call deadline elapsed before invocation', 'provider_timeout', 504);
+      return invoke(permit, controller.signal);
+    }), timedOut]);
     // A blocking callback can delay timer delivery; the durable clock still wins.
     if (Date.now() >= Date.parse(permit.deadlineAt)) fail('provider response arrived after its deadline; quota retained', 'provider_timeout', 504);
   } catch (error) {

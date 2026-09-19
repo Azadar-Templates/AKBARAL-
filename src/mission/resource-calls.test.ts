@@ -222,7 +222,7 @@ it('worker deadline aborts cooperatively but retains quota when a provider ignor
   await assert.rejects(() => runResourceCall(input, async (_permit, receivedSignal) => {
     signal = receivedSignal;
     return new Promise<ReturnType<typeof receipt> & { value: string }>(resolve => { release = resolve; });
-  }, { timeoutMs: 100 }), /deadline/);
+  }, { timeoutMs: 500 }), /deadline/);
   assert.equal(signal?.aborted, true);
   assert.equal(calls(resourceId)[0].status, 'uncertain');
   assert.equal(pendingResourceUsage(resourceId).requests, 1);
@@ -231,6 +231,22 @@ it('worker deadline aborts cooperatively but retains quota when a provider ignor
   assert.deepEqual(usage(resourceId), { requests: 0, tokens: 0 });
   assert.equal(calls(resourceId)[0].status, 'uncertain');
   assert.ok(resourceReadiness(resourceId).blockers.includes('provider_outcome_uncertain'));
+});
+
+it('a deadline exhausted by claim persistence never starts the provider callback', async () => {
+  const { input, resourceId } = fixture();
+  const original = missionDb.run.bind(missionDb);
+  let invoked = false;
+  missionDb.run = ((sql, params) => {
+    const result = original(sql, params);
+    if (sql.includes("SET status = 'dispatched'")) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30);
+    return result;
+  }) as typeof missionDb.run;
+  try {
+    await assert.rejects(() => runResourceCall(input, async () => { invoked = true; return { ...receipt(), value: 'must not run' }; }, { timeoutMs: 1 }), /deadline/);
+    assert.equal(invoked, false);
+    assert.equal(calls(resourceId)[0].status, 'uncertain');
+  } finally { missionDb.run = original; }
 });
 
 // PGlite uses a single embedded backend, so it is not independent-session
