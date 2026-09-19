@@ -1,21 +1,26 @@
-import { before, describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { db } from '../db';
-import { applyMigrations } from '../db/migrate';
-import { syncAgentRegistry } from '../agents/registry';
-import { agentDefinitionCount } from '../agents/catalog';
-import { insertOpportunity, updateEconomyPolicy, upsertAgentProfile, postLedger } from '../db/economy-repositories';
-import { WORKFORCE_CATEGORIES, findWorkforceCategory } from './categories';
-import { deriveEligibility, ensureWorkforceProfiles, workforceAccountFor } from './wallets';
-import { integrationStatus, workforceReadiness } from './integrations';
-import { isSourceUsable, recordSourceOutcome, recordWorkflowOutcome, isWorkflowUsable, sourceKeyFor, setSourceStatus } from './repositories';
-import { requestComm, decideComm, CommsError } from './comms';
-import { delegateWork } from './delegation';
-import { runWorkforceExecution } from './execution';
-import { pickWorkforceAgent, workforceDiscovery } from './scheduler';
-import { buildWorkforceReport } from './report';
-import { startExecution } from '../economy/operations';
+// Keep persistent negative workflow fixtures from other suites isolated; never
+// reset production circuit breakers to make a positive fixture runnable.
+process.env.DATABASE_URL = `file:${require('node:path').join(require('node:os').tmpdir(), `workforce-${process.pid}.db`)}`;
+const { db } = require('../db') as typeof import('../db');
+const { applyMigrations } = require('../db/migrate') as typeof import('../db/migrate');
+const { syncAgentRegistry } = require('../agents/registry') as typeof import('../agents/registry');
+const { agentDefinitionCount } = require('../agents/catalog') as typeof import('../agents/catalog');
+const { insertOpportunity, updateEconomyPolicy, upsertAgentProfile, postLedger } = require('../db/economy-repositories') as typeof import('../db/economy-repositories');
+const { WORKFORCE_CATEGORIES, findWorkforceCategory } = require('./categories') as typeof import('./categories');
+const { deriveEligibility, ensureWorkforceProfiles, workforceAccountFor } = require('./wallets') as typeof import('./wallets');
+const { integrationStatus, workforceReadiness } = require('./integrations') as typeof import('./integrations');
+const { isSourceUsable, recordSourceOutcome, recordWorkflowOutcome, isWorkflowUsable, sourceKeyFor, setSourceStatus } = require('./repositories') as typeof import('./repositories');
+const { requestComm, decideComm, CommsError } = require('./comms') as typeof import('./comms');
+const { delegateWork } = require('./delegation') as typeof import('./delegation');
+const { runWorkforceExecution } = require('./execution') as typeof import('./execution');
+const { pickWorkforceAgent, workforceDiscovery } = require('./scheduler') as typeof import('./scheduler');
+const { buildWorkforceReport } = require('./report') as typeof import('./report');
+const { startExecution } = require('../economy/operations') as typeof import('../economy/operations');
+
+after(() => db.close());
 
 function startJsonServer(handler: (req: http.IncomingMessage, body: string) => unknown): Promise<{ url: string; close(): Promise<void> }> {
   return new Promise((resolve) => {

@@ -1,13 +1,18 @@
-import { before, describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { db } from '../db';
-import { applyMigrations } from '../db/migrate';
-import { syncAgentRegistry } from '../agents/registry';
-import { insertOpportunity, updateEconomyPolicy } from '../db/economy-repositories';
-import { modelRouter } from '../models/router';
-import { runExecution, startExecution } from '../economy/operations';
-import { runWorkforceExecution } from './execution';
+// Negative workflow tests deliberately trip persistent circuit breakers. Cost
+// fixtures need their own database, not permission to bypass those guards.
+process.env.DATABASE_URL = `file:${require('node:path').join(require('node:os').tmpdir(), `execution-cost-${process.pid}.db`)}`;
+const { db } = require('../db') as typeof import('../db');
+const { applyMigrations } = require('../db/migrate') as typeof import('../db/migrate');
+const { syncAgentRegistry } = require('../agents/registry') as typeof import('../agents/registry');
+const { insertOpportunity, updateEconomyPolicy } = require('../db/economy-repositories') as typeof import('../db/economy-repositories');
+const { modelRouter } = require('../models/router') as typeof import('../models/router');
+const { runExecution, startExecution } = require('../economy/operations') as typeof import('../economy/operations');
+const { runWorkforceExecution } = require('./execution') as typeof import('./execution');
+
+after(() => db.close());
 
 const PRICED_MODEL = 'd10-test-model';
 const FREE_MODEL = 'd10-free-model';

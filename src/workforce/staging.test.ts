@@ -1,17 +1,20 @@
-import { before, describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
-import { db } from '../db';
-import { applyMigrations } from '../db/migrate';
-import { syncAgentRegistry } from '../agents/registry';
-import { indexKnowledgeItem } from '../db/platform-repositories';
-import { insertOpportunity, updateEconomyPolicy } from '../db/economy-repositories';
-import { runTool } from '../tools';
-import { UPLOAD_DIR } from '../services/files';
-import { WORKFORCE_SERVICE_USER } from './identity';
-import {
+// Keep persistent negative workflow fixtures from other suites isolated; never
+// reset production circuit breakers to make a positive fixture runnable.
+process.env.DATABASE_URL = `file:${require('node:path').join(require('node:os').tmpdir(), `staging-${process.pid}.db`)}`;
+const { db } = require('../db') as typeof import('../db');
+const { applyMigrations } = require('../db/migrate') as typeof import('../db/migrate');
+const { syncAgentRegistry } = require('../agents/registry') as typeof import('../agents/registry');
+const { indexKnowledgeItem } = require('../db/platform-repositories') as typeof import('../db/platform-repositories');
+const { insertOpportunity, updateEconomyPolicy } = require('../db/economy-repositories') as typeof import('../db/economy-repositories');
+const { runTool } = require('../tools') as typeof import('../tools');
+const { UPLOAD_DIR } = require('../services/files') as typeof import('../services/files');
+const { WORKFORCE_SERVICE_USER } = require('./identity') as typeof import('./identity');
+const {
   StagingError,
   listStagedFiles,
   listStagedKnowledge,
@@ -21,9 +24,11 @@ import {
   stageKnowledgeItem,
   unstageFile,
   unstageKnowledgeItem,
-} from './staging';
-import { startExecution } from '../economy/operations';
-import { runWorkforceExecution } from './execution';
+} = require('./staging') as typeof import('./staging');
+const { startExecution } = require('../economy/operations') as typeof import('../economy/operations');
+const { runWorkforceExecution } = require('./execution') as typeof import('./execution');
+
+after(() => db.close());
 
 const SERVICE_CTX = { userId: WORKFORCE_SERVICE_USER, projectId: null, taskId: null, executionId: null };
 const EMPTY_CTX = { userId: '', projectId: null, taskId: null, executionId: null };

@@ -106,3 +106,7 @@ GitHub authentication expired after the Phase 6 local commit: `git push` failed 
 ### Conversation hardening follow-up
 
 Overlapping transcript refreshes are now coalesced and sequence-deduplicated. Submissions are locked while pending, reuse the same key when retrying unchanged content after an uncertain response, and obtain a new key for intentionally edited content. Added HTTP regressions for cross-agent writes/replies, read-only access, actor spoofing, paused-agent writes, body limits and cursor validation, plus executed-client concurrency/retry tests. **110/110 mission tests** and typecheck pass. GitHub push remains blocked by the expired connection.
+
+### Regression-fixture isolation
+
+The first final whole-suite attempt stopped at three cost-fixture failures: earlier negative economy tests had persistently marked the shared research workflow failed. The production circuit breaker correctly refused execution. Retained evidence: `logs/continuation/final-suite.log`; an additional retained tail check exposed the same issue in staging. Cost, staging and workforce success fixtures now select their own SQLite databases **before** loading database-dependent modules. No production guard is relaxed and no failed shared database is reset. The isolated fixtures pass **25/25** (four cost, six staging, fifteen workforce), with typecheck passing. A new frozen-source full run follows; these focused checks are not presented as a full-suite pass.
