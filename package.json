@@ -2,7 +2,7 @@
   "name": "akbaral-master-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "AKBARAL! / MASTER AI — Master AI operating platform (User Goal -> AI Core -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result).",
+  "description": "AKBARAL! / MASTER AI \u2014 Master AI operating platform (User Goal -> AI Core -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result).",
   "type": "commonjs",
   "engines": {
     "node": ">=22.5"
@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.backend.json && node scripts/copy-backend-runtime-assets.mjs && next build",
     "build:webpack": "tsc -p tsconfig.backend.json && node scripts/copy-backend-runtime-assets.mjs && next build --webpack",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "rm -f test.db && cross-env DATABASE_URL=file:./test.db npm run db:migrate && for f in $(find src -name \"*.test.ts\" | sort); do cross-env DATABASE_URL=file:./test.db tsx --test --test-concurrency=1 --test-force-exit \"$f\" || exit 1; done",
+    "test": "node scripts/test-resumable.mjs --all",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:migrate:dev": "tsx src/db/migrate.ts",
     "db:backup": "tsx src/scripts/backup-db.ts",
@@ -49,7 +49,9 @@
     "verify:mission-money": "node scripts/verify-mission-money.mjs",
     "verify:agent-fleet": "node scripts/verify-agent-fleet.mjs",
     "verify:recovery": "node scripts/verify-recovery.mjs",
-    "verify:owner-entitlement": "node scripts/verify-owner-entitlement.mjs"
+    "verify:owner-entitlement": "node scripts/verify-owner-entitlement.mjs",
+    "test:batch": "node scripts/test-resumable.mjs",
+    "test:status": "node scripts/test-resumable.mjs --status"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

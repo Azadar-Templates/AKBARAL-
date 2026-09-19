@@ -123,3 +123,11 @@ Also passed on the same source state:
 - typecheck, dashboard JavaScript syntax, secret scan and diff checks.
 
 These are local automated checks with synthetic provider/financial fixtures. They do not establish hosted production readiness, browser/mobile layout correctness, real transfers or real resource purchases. The current catalog/workforce counts are not fabricated upward. Full automatic chat-worker integration, comprehensive provider-call quota enforcement and other locally implementable remaining scope are **not declared complete**. Phase 5 remains the last successfully pushed phase until GitHub authentication is reconnected; subsequent source changes and this evidence are committed locally.
+
+## Durable interruption-safe test workflow
+
+Resumed from clean `43145c0`; verified `669dc60` and `2466a9d` are ancestors. There were no uncommitted execution-integrity changes and no running regression process: the retained canonical SQLite run already completed **845/845**. All five previously pending commits were successfully pushed after GitHub reconnection.
+
+Implemented `scripts/test-resumable.mjs` and the checkpoint engine. `npm test` now resumes the full ordered suite; `npm run test:batch` runs eight remaining files; `npm run test:status` reports progress. Checkpoints are durable workspace files, not preview state. Each test attempts a clone of the last successful immutable SQLite snapshot, so failed writes never pollute a retry. Fingerprints reject mixed-source results; checksums reject damaged evidence. Atomic/fsynced manifests and an OS-held SQLite mutex protect progress. Per-file deadlines, signal handling, persisted child identities/deadlines and expired-orphan recovery support process loss without rerunning completed files. CI retains checkpoint artifacts when its artifact step can execute.
+
+Focused validation: **5/5 checkpoint-engine regressions**, including real child timeouts and a real runner **SIGKILL**, unchanged-source resume, exact shared-fixture continuity, failed-write isolation, duplicate-run prevention, corruption rejection and source-change refusal. Types pass. The new runner's integrated batches follow; the earlier 845-pass evidence is retained rather than relabelled as a run of the new harness. See `docs/RESUMABLE_IMPLEMENTATION.md` for the exact continuation commands and limitations.

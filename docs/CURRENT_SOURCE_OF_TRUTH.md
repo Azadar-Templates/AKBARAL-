@@ -4,6 +4,10 @@
 
 **As of 2026-09-19 (UTC).** This document supersedes older reports **for current status**, without deleting their historical evidence. It distinguishes code, historical claims, current tests and production proof. Supporting appendices: [complete recovered commit chronology](PROJECT_HISTORY.md), [source inventory](SOURCE_INVENTORY.md).
 
+## Interruption-safe continuation
+
+Use [the resumable implementation procedure](RESUMABLE_IMPLEMENTATION.md) and `npm run test:status` before starting another full suite. The later integrated checkpoint at `43145c0` passed 845 tests and is recorded in the implementation progress document; the reconstruction-era counts below remain historical.
+
 ## 1. Recovery boundary and exact continuation point
 
 - Session branch: `arena/01a0ba0a-akbaral`. Initial HEAD: `a924e4a98cf16af439149bf0e29ca15fb6298fda` (PR #7 merge). Initial working tree: clean; no uncommitted changes to preserve.

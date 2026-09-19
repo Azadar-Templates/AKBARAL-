@@ -34,6 +34,17 @@ jobs:
           npm run scan:secrets
       - name: Full SQLite suite (includes mission, isolation, billing and workforce)
         run: npm test
+      - name: Preserve SQLite checkpoint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-checkpoints-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            logs/test-checkpoints/**/checkpoint.json
+            logs/test-checkpoints/**/output.tap
+            logs/test-checkpoints/**/passed.db
+          if-no-files-found: ignore
+          retention-days: 7
       - name: PostgreSQL platform and workforce parity
         run: npm run test:pg
       - name: Standalone mission PostgreSQL parity
