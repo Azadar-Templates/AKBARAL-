@@ -213,3 +213,11 @@ The worker wrapper now enforces a bounded deadline, passes an AbortSignal to its
 ### Quota batch 7 — pre-invocation deadline guard
 
 Added a final durable-clock check immediately before calling the trusted adapter: if claim persistence consumed the deadline, the provider is never invoked. The uncertain hold remains conservative instead of guessing provider usage. An injected delayed database write proves this case. **17/17 SQLite quota tests** and typecheck pass; the cooperative-abort fixture uses a larger bounded allowance to avoid conflating PostgreSQL persistence latency with its intended ignored-cancellation scenario. Next batch remains the retained PostgreSQL migration/deadline verification.
+
+### PostgreSQL interruption — reproduced bridge wake-up race and fixed it
+
+The retained upgrade applied migration 0012 successfully, but the subsequent HTTP smoke returned an immediate `postgres query timed out after 120000ms` while the entire command lasted only a few seconds. The failed batch log/database are preserved (`quota-batch-08-pg.log`); its financial/deadline test commands did not run and are not claimed passed.
+
+A deterministic bridge regression reproduced the same false-timeout path: a delayed notification from the previous reply wakes the main thread while the current request remains pending. The old driver treated that notification as a timeout. **4/4 new bridge tests failed before the fix and 4/4 pass afterward**. The bridge now waits against a monotonic deadline until response state actually changes, acknowledges copied responses so the worker can sleep, forwards the real connection-startup deadline, and closes a genuinely timed-out bridge rather than overwriting an uncertain request. Normal close terminates a blocked worker as well. Typecheck and secret scan pass.
+
+This is a concrete production-critical reliability fix discovered while continuing quota validation. Next exact task: rerun the failed PostgreSQL smoke against the same retained database, complete the not-yet-run financial/deadline tests, and verify platform PostgreSQL parity for the shared-driver change. No database reset or blind financial retry was added.

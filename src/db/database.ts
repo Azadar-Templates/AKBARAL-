@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
+import { performance } from 'node:perf_hooks';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { env } from '../config/env';
 import { resolveDatabasePath } from './path';
@@ -251,6 +252,11 @@ export class Database {
       throw new Error('postgres connection is closed');
     }
 
+    if (Atomics.load(this.state, 0) === 6) {
+      this.pgClosed = true;
+      this.worker.terminate().catch(() => {});
+      throw new Error('postgres worker failed before request dispatch');
+    }
     const payload = JSON.stringify({ sql, params: encodeParams(params) });
     const bytes = Buffer.from(payload, 'utf8');
     if (bytes.length > this.req.byteLength) {
@@ -263,10 +269,21 @@ export class Database {
     Atomics.notify(this.state, 0);
 
     const state = this.state;
-    const woke = Atomics.wait(state, 0, 1, timeoutMs);
-    const status = Atomics.load(state, 0);
-    if (woke === 'timed-out' || status === 1) {
-      throw new Error(`postgres query timed out after ${timeoutMs}ms`);
+    const deadline = performance.now() + timeoutMs;
+    let status = Atomics.load(state, 0);
+    while (status === 1) {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) {
+        // The request may already have executed. Do not overwrite/retry it or
+        // allow a late reply to be mistaken for the next query's response.
+        this.pgClosed = true;
+        this.worker.terminate().catch(() => {});
+        throw new Error(`postgres query timed out after ${timeoutMs}ms; connection closed, outcome may be uncertain`);
+      }
+      // An old response's notify can arrive after the next request is posted.
+      // Notification is not completion: wait for the protocol state to change.
+      Atomics.wait(state, 0, 1, remaining);
+      status = Atomics.load(state, 0);
     }
 
     const len = Atomics.load(this.state, 2);
@@ -275,6 +292,14 @@ export class Database {
       rowCount?: number;
       error?: string;
     };
+    if (status === 6) {
+      this.pgClosed = true;
+      this.worker.terminate().catch(() => {});
+    } else {
+      // We have copied/decoded the response. Let the worker sleep until the
+      // next request rather than spinning on a completed state.
+      Atomics.store(state, 0, 0);
+    }
     if (status === 6 || parsed.error) {
       throw new Error(parsed.error ?? 'postgres bridge failed');
     }
@@ -282,24 +307,14 @@ export class Database {
   }
 
   private pgConnect(timeoutMs: number): void {
-    // The worker connects on boot; a first trivial query doubles as the
-    // readiness handshake (it can only answer once the client is live).
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-      try {
-        this.pgBridge('SELECT 1 AS ready');
-        return;
-      } catch (error) {
-        const fatal = this.state ? Atomics.load(this.state, 0) === 6 : false;
-        if (fatal || Date.now() > deadline) {
-          this.worker?.terminate().catch(() => {});
-          throw new Error(
-            `postgres connection failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        const st = this.state!;
-        Atomics.wait(st, 0, 1, Math.min(250, Math.max(deadline - Date.now(), 1)));
-      }
+    // One request waits for connection startup within the caller's deadline.
+    // A failed handshake is never retried over a possibly pending request.
+    try {
+      this.pgBridge('SELECT 1 AS ready', [], timeoutMs);
+    } catch (error) {
+      this.pgClosed = true;
+      this.worker?.terminate().catch(() => {});
+      throw new Error(`postgres connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -409,6 +424,9 @@ export class Database {
         } catch {
           // Worker already gone.
         }
+        // The worker may be asleep in Atomics.wait, unable to service a
+        // parentPort callback. Termination also closes its PostgreSQL socket.
+        this.worker?.terminate().catch(() => {});
       }
       return;
     }
