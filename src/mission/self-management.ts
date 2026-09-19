@@ -395,6 +395,22 @@ export function sweepCredentialStatus(): { updated: number; expired: number } {
 // Resources (scoped infrastructure with expiry + usage + maintenance)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Bounded cumulative counters only; never truncate JSON into an invalid value. */
+function resourceCounters(value: unknown, label: string): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MissionSelfServiceError(400, `${label} must be a counter object`, 'validation_error');
+  const entries = Object.entries(value);
+  if (entries.length > 64) throw new MissionSelfServiceError(400, `${label} has too many counters`, 'validation_error');
+  const result: Record<string, number> = Object.create(null);
+  for (const [key, amount] of entries) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$/.test(key) || ['constructor', 'prototype'].includes(key) || typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > Number.MAX_SAFE_INTEGER) {
+      throw new MissionSelfServiceError(400, `${label} counters must have safe names and finite nonnegative values`, 'validation_error');
+    }
+    result[key] = amount;
+  }
+  if (JSON.stringify(result).length > 8000) throw new MissionSelfServiceError(400, `${label} exceeds the storage limit`, 'validation_error');
+  return result;
+}
+
 export function requestResource(input: {
   agentId: string;
   kind: string;
@@ -410,6 +426,7 @@ export function requestResource(input: {
   return missionDb.transaction(() => {
   const policy = currentPolicy();
   const monthly = input.monthlyCostCents ?? 0;
+  const limits = resourceCounters(input.limits ?? {}, 'resource limits');
   if (!Number.isSafeInteger(monthly) || monthly < 0) throw new MissionSelfServiceError(400, 'resource cost must be nonnegative integer cents', 'validation_error');
   if (input.expiresAt && !Number.isFinite(Date.parse(input.expiresAt))) throw new MissionSelfServiceError(400, 'invalid resource expiry', 'validation_error');
   const id = missionId('res');
@@ -417,7 +434,7 @@ export function requestResource(input: {
   missionDb.run(
     `INSERT INTO mission_resources (id, agent_id, kind, provider, plan, monthly_cost_cents, status, auto_renew, expires_at, limits, credential_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.agentId, input.kind.slice(0, 40), input.provider.slice(0, 80), input.plan ?? null, monthly, status, input.autoRenew ? 1 : 0, input.expiresAt ?? null, input.limits ? JSON.stringify(input.limits) : null, input.credentialId ?? null],
+    [id, input.agentId, input.kind.slice(0, 40), input.provider.slice(0, 80), input.plan ?? null, monthly, status, input.autoRenew ? 1 : 0, input.expiresAt ?? null, JSON.stringify(limits), input.credentialId ?? null],
   );
   if (status === 'requested') {
     requestApproval({ subjectType: 'resource', subjectId: id, action: 'resource.approve', amountCents: monthly, requestedBy: input.actorId ?? input.agentId, note: `${input.provider} ${input.kind}` });
@@ -459,7 +476,15 @@ export function recordResourceUsage(input: { id: string; usage: Record<string, u
   const row = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
   if (input.actorType === 'agent' && String(row.agent_id) !== input.actorId) throw new MissionSelfServiceError(403, 'resource belongs to another agent', 'forbidden');
-  missionDb.run('UPDATE mission_resources SET usage = ?, updated_at = ? WHERE id = ?', [JSON.stringify(input.usage).slice(0, 8000), nowIso(), input.id]);
+  const incoming = resourceCounters(input.usage, 'resource usage');
+  let previous: Record<string, number>;
+  try { previous = resourceCounters(JSON.parse(String(row.usage ?? '{}')), 'stored resource usage'); }
+  catch { throw new MissionSelfServiceError(409, 'stored resource usage is invalid; owner review is required', 'conflict'); }
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value < (previous[key] ?? 0)) throw new MissionSelfServiceError(409, 'cumulative resource usage cannot decrease or reset a quota', 'conflict');
+  }
+  const merged = resourceCounters({ ...previous, ...incoming }, 'resource usage');
+  missionDb.run('UPDATE mission_resources SET usage = ?, updated_at = ? WHERE id = ?', [JSON.stringify(merged), nowIso(), input.id]);
   appendMissionAudit({
     actorType: input.actorType ?? 'agent', actorId: input.actorId ?? null,
     action: 'resource.usage_recorded', subjectType: 'resource', subjectId: input.id,
@@ -740,6 +765,7 @@ export function resourceReadiness(id: string): { usable: boolean; blockers: stri
   if (!resource) return { usable: false, blockers: ['resource_not_found'] };
   const blockers: string[] = [];
   if (currentPolicy().killSwitch) blockers.push('kill_switch_engaged');
+  if (!resource.agent_id || missionDb.get<Row>('SELECT status FROM mission_agents WHERE id = ?', [String(resource.agent_id)])?.status !== 'active') blockers.push('resource_agent_inactive_or_missing');
   if (/api/i.test(String(resource.kind)) && !resource.credential_id) blockers.push('credential_not_configured');
   if (resource.status !== 'active' || !resource.provisioned_at) blockers.push('resource_not_provisioned');
   if (resource.expires_at && (!Number.isFinite(Date.parse(String(resource.expires_at))) || Date.parse(String(resource.expires_at)) <= Date.now())) blockers.push('resource_expired');
@@ -749,10 +775,11 @@ export function resourceReadiness(id: string): { usable: boolean; blockers: stri
     if (credential && credential.provider !== String(resource.provider)) blockers.push('credential_provider_mismatch');
   }
   try {
-    const limits = JSON.parse(String(resource.limits ?? '{}')) as Record<string, unknown>;
-    const usage = JSON.parse(String(resource.usage ?? '{}')) as Record<string, unknown>;
+    const limits = resourceCounters(JSON.parse(String(resource.limits ?? '{}')), 'resource limits');
+    const usage = resourceCounters(JSON.parse(String(resource.usage ?? '{}')), 'resource usage');
     for (const [key, cap] of Object.entries(limits)) {
-      if (typeof cap === 'number' && cap >= 0 && typeof usage[key] === 'number' && Number(usage[key]) >= cap) blockers.push(`quota_exhausted:${key}`);
+      if (usage[key] === undefined) blockers.push(`quota_usage_unreported:${key}`);
+      else if (usage[key] >= cap) blockers.push(`quota_exhausted:${key}`);
     }
   } catch { blockers.push('invalid_usage_or_limits'); }
   return { usable: blockers.length === 0, blockers };

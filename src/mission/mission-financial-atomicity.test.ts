@@ -281,3 +281,48 @@ it('tool decisions synchronize atomically and current blocks cannot be bypassed 
     assert.equal(queue().status, 'rejected');
   } finally { management.setToolStatus('gemini_api', 'approved', owner); }
 });
+
+it('resource counters cannot drop exhausted metrics, decrease usage or accept malformed quota values', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  for (const limits of [{ requests: -1 }, { requests: '2' }, [], { requests: NaN }]) {
+    assert.throws(() => management.requestResource({ agentId: agent, kind: 'storage', provider: 'synthetic-provider', limits: limits as Record<string, unknown> }), /counter/);
+  }
+  const resource = management.requestResource({ agentId: agent, kind: 'storage', provider: 'synthetic-provider', limits: { requests: 2 } });
+  const id = String(resource.id);
+  assert.ok(management.resourceReadiness(id).blockers.includes('quota_usage_unreported:requests'));
+  management.recordResourceUsage({ id, usage: { requests: 2 }, actorType: 'agent', actorId: agent });
+  const before = snapshot();
+  const previous = missionDb.get<{ usage: string }>('SELECT usage FROM mission_resources WHERE id = ?', [id])!.usage;
+  failAfter('INSERT INTO mission_audit', () => management.recordResourceUsage({ id, usage: { requests: 3 }, actorType: 'agent', actorId: agent }));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(missionDb.get<{ usage: string }>('SELECT usage FROM mission_resources WHERE id = ?', [id])!.usage, previous);
+  for (const usage of [{ requests: 0 }, { requests: -1 }, { requests: '0' }, [], { requests: Infinity }]) {
+    assert.throws(() => management.recordResourceUsage({ id, usage: usage as Record<string, unknown>, actorType: 'owner', actorId: owner }), /counter|cannot decrease/);
+  }
+  const merged = management.recordResourceUsage({ id, usage: { bytes: 10 }, actorType: 'owner', actorId: owner });
+  assert.equal(JSON.parse(String(merged.usage)).requests, 2, 'omitted counters cannot clear an exhausted quota');
+  assert.ok(management.resourceReadiness(id).blockers.includes('quota_exhausted:requests'));
+  missionDb.run('UPDATE mission_resources SET limits = ? WHERE id = ?', [JSON.stringify({ requests: 'unlimited' }), id]);
+  assert.ok(management.resourceReadiness(id).blockers.includes('invalid_usage_or_limits'));
+});
+
+it('resource readiness checks actual credential expiry, revocation, provider binding and agent state without a sweep', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const credentialId = `synthetic-metadata-${randomUUID()}`;
+  missionDb.run("INSERT INTO mission_credentials (id, provider, label, kind, masked_hint, ciphertext, iv, tag, status) VALUES (?, 'synthetic-provider', 'Synthetic metadata only, not a usable secret', 'api_key', 'fixture', 'fixture', 'fixture', 'fixture', 'active')", [credentialId]);
+  const resource = management.requestResource({ agentId: agent, kind: 'api', provider: 'synthetic-provider', credentialId, limits: { requests: 2 } });
+  const id = String(resource.id);
+  management.provisionResource({ id, actualCostCents: 0, providerRef: `synthetic-${randomUUID().replace(/[0-9]/g, 'x')}`, evidence: 'Synthetic readiness fixture only; no provider purchase.', actorId: owner });
+  management.recordResourceUsage({ id, usage: { requests: 0 }, actorType: 'owner', actorId: owner });
+  assert.equal(management.resourceReadiness(id).usable, true);
+  missionDb.run("UPDATE mission_credentials SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?", [credentialId]);
+  assert.ok(management.resourceReadiness(id).blockers.includes('credential_unavailable_or_expired'));
+  missionDb.run("UPDATE mission_credentials SET expires_at = NULL, status = 'revoked' WHERE id = ?", [credentialId]);
+  assert.equal(management.resourceReadiness(id).usable, false);
+  missionDb.run("UPDATE mission_credentials SET status = 'active', provider = 'other-synthetic-provider' WHERE id = ?", [credentialId]);
+  assert.ok(management.resourceReadiness(id).blockers.includes('credential_provider_mismatch'));
+  missionDb.run("UPDATE mission_credentials SET provider = 'synthetic-provider' WHERE id = ?", [credentialId]);
+  missionDb.run("UPDATE mission_agents SET status = 'paused' WHERE id = ?", [agent]);
+  try { assert.ok(management.resourceReadiness(id).blockers.includes('resource_agent_inactive_or_missing')); }
+  finally { missionDb.run("UPDATE mission_agents SET status = 'active' WHERE id = ?", [agent]); }
+});
