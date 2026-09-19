@@ -235,3 +235,12 @@ secret scan, production webpack build, and Chromium desktop/mobile checks passed
 subsequent scheduler-only edits were rechecked by typecheck and core tests on both
 engines. The enabled chat-worker entry point was also exercised and refused
 startup without contacting a provider. No deployment or real-money test occurred.
+
+### Demonstrated CI regression corrected
+
+Docker publish run 35470502749 built and published its image and verified its
+commit stamp, then failed the PostgreSQL JSON translation check. That check was
+still grepping the old `database.js` facade after translation moved to `driver.js`.
+It now executes assertions against the compiled driver's actual SQL translation;
+the same probe runs in Verify. The probe passed locally without opening a database.
+Container execution remains CI evidence, not a claim of a running deployment.

@@ -74,6 +74,8 @@ jobs:
           retention-days: 7
       - name: Production Webpack build with PostgreSQL runtime assets
         run: npm run build:webpack
+      - name: Verify compiled PostgreSQL JSON translation behavior
+        run: node scripts/verify-compiled-pg.mjs
       - name: Exercise the compiled PostgreSQL worker, not just TypeScript sources
         run: node scripts/pg-test-server.mjs --run node dist/src/db/migrate.js --status
 
