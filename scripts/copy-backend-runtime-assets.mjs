@@ -4,7 +4,7 @@
  *
  * `src/db/pg-worker.mjs` and `src/db/pg-connection.mjs` are plain ES modules
  * that live next to the TypeScript sources and are loaded by path at runtime
- * (`src/db/database.ts` spawns `path.join(__dirname, 'pg-worker.mjs')`). `tsc`
+ * (`src/db/driver.ts` spawns `path.join(__dirname, 'pg-worker.mjs')`). `tsc`
  * ignores .mjs inputs, so without this copy a compiled build is missing them
  * and any PostgreSQL deployment fails at the first worker spawn.
  *

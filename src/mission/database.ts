@@ -2,16 +2,16 @@ import { financialTransaction } from '../db/financial-transaction';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Database, resolveDbEngine, type DbEngine } from '../db/database';
+import { Database, resolveDbEngine, type DbEngine } from '../db/driver';
 
 /**
  * PRIVATE MISSION DATABASE — its own file, its own schema, its own migrations.
  *
  * ISOLATION IS BY CONNECTION AND SCHEMA, NOT BY DRIVER: the mission opens its
  * own connection to ZA141251SA_DATABASE_URL (default ./mission.db) and applies
- * only db/migrations-mission/, so a mission query can never reach a customer
- * table (and vice versa). The driver class itself is shared with the platform
- * (`src/db/database.ts`) purely so that both engines — SQLite for a single-box
+ * only db/migrations-mission/. Operators must configure a separate database
+ * target; sharing the driver does not open the platform default connection.
+ * The connection-free driver class (`src/db/driver.ts`) is shared purely so that both engines — SQLite for a single-box
  * deployment, PostgreSQL for a managed/serverless host — behave identically:
  * one bridge, one dialect translation, one transaction implementation.
  *
