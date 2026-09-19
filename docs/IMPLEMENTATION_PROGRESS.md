@@ -295,3 +295,7 @@ Message/job cursor parameters now explicitly cast to `BIGINT` on both engines. A
 ### Chat worker — PostgreSQL checkpoint completed
 
 Resuming only the unfinished suite against the same retained database now passes **14/14 PostgreSQL chat-worker tests**, zero failures/skips, including safe-integer cursors and agent-sharded isolation. The earlier completed **10/10 smoke checks** remain recorded separately; migrations 0013/0014 were not reset/reapplied. Evidence: `logs/continuation/chat-worker-pg-03.log`; both failed attempts remain retained. Next exact task: affected mission regression files and compiled-runtime validation, then real rendered browser/mobile-viewport checks where the sandbox supports them.
+
+### Provider/chat regression checkpoint
+
+**118/118 tests pass** in the remaining ten affected mission files: core, identity, payout verification, reinvestment, social, treasury, financial atomicity, quota calls, budget holds and probe-policy rules. Together with the separately recorded 32 HTTP, nine executed-dashboard and 14 chat tests on unchanged corresponding source, the mission surface has **173 focused passing tests**. This is not a newly completed whole-project suite. Evidence: `logs/continuation/provider-chat-mission-regression.log`. Next exact task: compiled backend/worker checks, then isolated real-browser desktop/mobile-viewport verification.
