@@ -333,3 +333,7 @@ Implemented rendered owner billing-history pagination and renewal receipt forms.
 Also closed a concrete chat setup gap: the credential creation form now offers an explicit, default-off local `model.call` permission and displays local scopes. The existing owner API already supported the metadata, but the old form could not submit it. Creation prevents duplicate secret submissions, clears the secret on success and does not claim provider activation.
 
 **11/11 executed-dashboard tests**, types, syntax and secret scan pass (`resource-period-ui.log`). Next exact task: retained PostgreSQL migration/period validation and real desktop/mobile browser checks of renewal and scoped credential setup.
+
+### Resource-period PostgreSQL checkpoint
+
+The retained mission database upgraded additively to migration 0015 and passes **8/8 period tests + 10/10 budget tests**, with the harness explicitly recording **exit 0**. Existing history and both financial receipt paths remain preserved; no fixture reset. Evidence: `logs/continuation/resource-period-pg.log`. Next exact task: extend the real Chromium desktop/mobile harness to record a renewal and create/bind a locally scoped credential through the actual UI, then validate the current compiled artifact.
