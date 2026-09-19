@@ -56,7 +56,7 @@ export function chatResourcePreflight(agentId: string, config: AgentChatConfig):
 
 export function listAgentChatJobs(agentId: string, beforeSeq = Number.MAX_SAFE_INTEGER, limit = 50): { jobs: Row[]; nextCursor: number | null } {
   if (!Number.isSafeInteger(beforeSeq) || beforeSeq < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('invalid chat job cursor or limit', 400);
-  const rows = missionDb.all<Row>('SELECT j.id, j.message_id, j.status, j.call_id, j.reply_message_id, j.reason, j.created_at, j.resolved_at, m.seq AS message_seq FROM mission_agent_chat_jobs j JOIN mission_agent_messages m ON m.id = j.message_id WHERE j.agent_id = ? AND m.seq < ? ORDER BY m.seq DESC LIMIT ?', [agentId, beforeSeq, limit + 1]);
+  const rows = missionDb.all<Row>('SELECT j.id, j.message_id, j.status, j.call_id, j.reply_message_id, j.reason, j.created_at, j.resolved_at, m.seq AS message_seq FROM mission_agent_chat_jobs j JOIN mission_agent_messages m ON m.id = j.message_id WHERE j.agent_id = ? AND m.seq < CAST(? AS BIGINT) ORDER BY m.seq DESC LIMIT ?', [agentId, beforeSeq, limit + 1]);
   const jobs = rows.slice(0, limit);
   return { jobs, nextCursor: rows.length > limit ? Number(jobs[jobs.length - 1].message_seq) : null };
 }

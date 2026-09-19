@@ -10,10 +10,10 @@ function finishJob(job: Row, status: string, reason: string | null = null, reply
   appendMissionAudit({ actorType: 'agent', actorId: String(job.agent_id), action: `agent.chat_${status}`, subjectType: 'agent', subjectId: String(job.agent_id), detail: { jobId: job.id, callId: job.call_id ?? null, reason, commandExecuted: false } });
 }
 /** Crash recovery never repeats an already-dispatched provider operation. */
-export function recoverAgentChatJobs(): number {
+export function recoverAgentChatJobs(agentId?: string): number {
   return missionDb.transaction(() => {
     const cutoff = new Date(Date.now() - 120000).toISOString();
-    const rows = missionDb.all<Row>("SELECT * FROM mission_agent_chat_jobs WHERE status = 'running' AND started_at < ? ORDER BY started_at LIMIT 100", [cutoff]);
+    const rows = missionDb.all<Row>(`SELECT * FROM mission_agent_chat_jobs WHERE status = 'running' AND started_at < ?${agentId ? ' AND agent_id = ?' : ''} ORDER BY started_at LIMIT 100`, [cutoff, ...(agentId ? [agentId] : [])]);
     for (const job of rows) {
       const call = missionDb.get<Row>('SELECT status FROM mission_resource_calls WHERE id = ?', [job.call_id!]);
       const actor = { actorType: 'agent' as const, actorId: String(job.agent_id) };
@@ -24,10 +24,10 @@ export function recoverAgentChatJobs(): number {
     return rows.length;
   });
 }
-export async function runNextAgentChat(adapter: ChatAdapter = invokeGoogleChat): Promise<Row | null> {
-  recoverAgentChatJobs();
+export async function runNextAgentChat(adapter: ChatAdapter = invokeGoogleChat, options: { agentId?: string } = {}): Promise<Row | null> {
+  recoverAgentChatJobs(options.agentId);
   const claimed = missionDb.transaction(() => {
-    const job = missionDb.get<Row>("SELECT * FROM mission_agent_chat_jobs WHERE status = 'queued' ORDER BY created_at, id LIMIT 1");
+    const job = missionDb.get<Row>(`SELECT * FROM mission_agent_chat_jobs WHERE status = 'queued'${options.agentId ? ' AND agent_id = ?' : ''} ORDER BY created_at, id LIMIT 1`, options.agentId ? [options.agentId] : []);
     if (!job) return null;
     const config = JSON.parse(String(job.config_snapshot)) as AgentChatConfig;
     const message = missionDb.get<Row>('SELECT * FROM mission_agent_messages WHERE id = ?', [job.message_id]);
