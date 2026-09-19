@@ -1,0 +1,48 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "arena/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+      - run: npm ci
+      - name: Types and secret-handling gate
+        run: |
+          npm run typecheck
+          npm run scan:secrets
+      - name: Full SQLite suite (includes mission, isolation, billing and workforce)
+        run: npm test
+      - name: PostgreSQL platform and workforce parity
+        run: npm run test:pg
+      - name: Standalone mission PostgreSQL parity
+        run: npm run mission:pg-check
+      - name: Production Webpack build with PostgreSQL runtime assets
+        run: npm run build:webpack
+      - name: Exercise the compiled PostgreSQL worker, not just TypeScript sources
+        run: node scripts/pg-test-server.mjs --run node dist/src/db/migrate.js --status
+
+# No production secrets, external model/payment calls, deploys, autonomy or
+# fabricated live proof. All databases and financial evidence above are test
+# fixtures on the runner; docker publication remains a separate workflow.

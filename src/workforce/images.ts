@@ -75,7 +75,7 @@ export function requestImage(input: { executionId?: string | null; opportunityId
  */
 export function ensureImageBrief(input: { executionId: string; opportunityId?: string | null; agentSlug: string; prompt: string }): ImageRequestRow {
   const existing = db.get<ImageRequestRow>(
-    `SELECT * FROM workforce_image_requests WHERE execution_id = ? AND status IN ('requested', 'approved') ORDER BY rowid ASC LIMIT 1`,
+    `SELECT * FROM workforce_image_requests WHERE execution_id = ? AND status IN ('requested', 'approved') ORDER BY created_at ASC, id ASC LIMIT 1`,
     [input.executionId],
   );
   if (existing) return existing;

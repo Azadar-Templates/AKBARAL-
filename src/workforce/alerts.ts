@@ -74,7 +74,7 @@ async function tryDeliver(alert: AlertRow): Promise<{ status: string; ref: strin
 function storeAlert(input: {
   condition: AlertCondition; severity: AlertSeverity; title: string; detail: string; dedupeKey: string;
 }): { alert: AlertRow; isNew: boolean } {
-  const open = db.get<AlertRow>('SELECT * FROM owner_alerts WHERE dedupe_key = ? AND status = ? ORDER BY rowid DESC LIMIT 1', [input.dedupeKey, 'open']);
+  const open = db.get<AlertRow>('SELECT * FROM owner_alerts WHERE dedupe_key = ? AND status = ? ORDER BY created_at DESC, id DESC LIMIT 1', [input.dedupeKey, 'open']);
   if (open) {
     db.run('UPDATE owner_alerts SET occurrences = occurrences + 1, detail = ?, updated_at = ? WHERE id = ?',
       [input.detail.slice(0, 4000), NOW(), open.id]);
