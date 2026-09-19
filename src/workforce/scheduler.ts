@@ -11,6 +11,7 @@ import { getAgentOverlay, isSourceUsable, sourceKeyFor } from './repositories';
 import { discoveryAlertKey, raiseAlert } from './alerts';
 import { WORKFORCE_CATEGORIES } from './categories';
 import { runWorkforceExecution } from './execution';
+import { countPlatforms, discoverPlatformOpportunities, seedPlatforms } from './platforms';
 
 /**
  * WORKFORCE SCHEDULER — continuous operation across ALL earning categories.
@@ -50,7 +51,7 @@ export interface WorkforceTickResult {
   notes: string[];
 }
 
-export async function workforceDiscovery(categoryKeys?: string[]): Promise<{ searched: string[]; discovered: number; duplicates: number; skippedBlocked: number; unavailable?: string }> {
+export async function workforceDiscovery(categoryKeys?: string[]): Promise<{ searched: string[]; discovered: number; duplicates: number; skippedBlocked: number; platformCreated: number; platformDuplicates: number; unavailable?: string }> {
   const policy = currentPolicy();
   const wanted = new Set(
     categoryKeys && categoryKeys.length > 0
@@ -81,7 +82,7 @@ export async function workforceDiscovery(categoryKeys?: string[]): Promise<{ sea
             dedupeKey: discoveryAlertKey(category.key),
           });
         } catch { /* alerting must never break discovery */ }
-        return { searched, discovered, duplicates, skippedBlocked, unavailable: message };
+        return { searched, discovered, duplicates, skippedBlocked, platformCreated: 0, platformDuplicates: 0, unavailable: message };
       }
       searched.push(category.key);
       for (const result of results) {
@@ -116,7 +117,26 @@ export async function workforceDiscovery(categoryKeys?: string[]): Promise<{ sea
       }
     }
   }
-  return { searched, discovered, duplicates, skippedBlocked };
+  // Platform catalog sweep (verified first, then candidates): the workforce
+  // can start from documented programs even when web search is unavailable.
+  // The catalog self-seeds on first use so a fresh database needs no manual
+  // step; a missing/corrupt seed file degrades to web-search-only discovery.
+  let platformCreated = 0;
+  let platformDuplicates = 0;
+  try {
+    if (countPlatforms() === 0) seedPlatforms();
+    const sweep = discoverPlatformOpportunities({ limit: 10 });
+    platformCreated = sweep.created;
+    platformDuplicates = sweep.duplicates;
+    discovered += sweep.created;
+    duplicates += sweep.duplicates;
+  } catch (error) {
+    recordEconomyEvent({
+      kind: 'discovery',
+      summary: `platform catalog sweep skipped: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+  return { searched, discovered, duplicates, skippedBlocked, platformCreated, platformDuplicates };
 }
 
 /**

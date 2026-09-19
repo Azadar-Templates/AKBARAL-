@@ -106,7 +106,7 @@ export function treasurySummary(): TreasurySummary {
   };
 }
 
-export function recordLedgerRevenue(input: { opportunityId?: string | null; agentSlug?: string | null; amountCents: number; evidence: string; externalRef?: string | null }): { posted: boolean } {
+export function recordLedgerRevenue(input: { opportunityId?: string | null; agentSlug?: string | null; amountCents: number; evidence: string; externalRef?: string | null }): { posted: boolean; revenueId: string } {
   if (input.amountCents <= 0) throw new Error('revenue amount must be positive');
   if (!input.evidence || input.evidence.trim().length < 4) throw new Error('revenue evidence is required — revenue is never claimed without evidence');
   const { revenue } = { revenue: null as unknown };
@@ -132,7 +132,7 @@ export function recordLedgerRevenue(input: { opportunityId?: string | null; agen
     summary: `RECEIVED revenue ${input.amountCents} cents`,
     details: { evidence: input.evidence.trim(), externalRef: input.externalRef ?? null },
   });
-  return { posted: !posted.duplicate };
+  return { posted: !posted.duplicate, revenueId: id };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -685,3 +685,182 @@ export function decideTreasuryTransfer(id: string, decision: 'approve' | 'reject
 }
 
 export { listTransfers };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Earning loop closer + approved reinvestment (workforce earning expansion)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class EarningError extends Error {
+  constructor(readonly statusCode: number, readonly code: string, message: string) {
+    super(message);
+    this.name = 'EarningError';
+  }
+}
+
+interface DeliveryRowLite {
+  id: string;
+  opportunity_id: string;
+  agent_slug: string;
+  verified: number;
+}
+
+/**
+ * Record an external payment against a VERIFIED delivery. This is the only
+ * path that turns delivered work into 'received' revenue: it requires the
+ * delivery's deterministic verification PLUS external payment evidence, and
+ * each delivery can be paid exactly once (UNIQUE delivery_id — a second
+ * claim for the same work is refused, never double-counted).
+ */
+export function recordDeliveryPayment(input: {
+  deliveryId: string; amountCents: number; evidence: string; externalRef?: string | null; recordedBy: string;
+}): { revenueId: string; posted: boolean } {
+  const delivery = db.get<DeliveryRowLite>('SELECT id, opportunity_id, agent_slug, verified FROM economy_deliveries WHERE id = ?', [input.deliveryId]);
+  if (!delivery) throw new EarningError(404, 'delivery_not_found', `delivery "${input.deliveryId}" does not exist`);
+  if (!delivery.verified) {
+    throw new EarningError(400, 'delivery_not_verified', `delivery "${input.deliveryId}" is not verified — payment cannot be recorded against unverified work`);
+  }
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+    throw new EarningError(400, 'invalid_request', 'payment amount must be a positive integer (cents)');
+  }
+  if (!input.evidence || input.evidence.trim().length < 4) {
+    throw new EarningError(400, 'invalid_request', 'payment evidence is required (payout reference, receipt, transaction id)');
+  }
+  const existing = db.get<{ delivery_id: string }>('SELECT delivery_id FROM economy_delivery_payments WHERE delivery_id = ?', [input.deliveryId]);
+  if (existing) {
+    throw new EarningError(400, 'already_recorded', `delivery "${input.deliveryId}" already has a recorded payment — each delivery pays exactly once`);
+  }
+  const revenue = recordLedgerRevenue({
+    opportunityId: delivery.opportunity_id,
+    agentSlug: delivery.agent_slug,
+    amountCents: input.amountCents,
+    evidence: input.evidence.trim(),
+    ...(input.externalRef ? { externalRef: input.externalRef } : {}),
+  });
+  db.run(
+    'INSERT INTO economy_delivery_payments (delivery_id, revenue_id, amount_cents, evidence, external_ref, recorded_by) VALUES (?, ?, ?, ?, ?, ?)',
+    [input.deliveryId, revenue.revenueId, input.amountCents, input.evidence.trim(), input.externalRef ?? null, input.recordedBy],
+  );
+  recordEconomyEvent({
+    kind: 'revenue', actor: input.recordedBy,
+    summary: `delivery payment recorded: ${input.amountCents}c for delivery ${input.deliveryId} (agent ${delivery.agent_slug})`,
+    details: { revenueId: revenue.revenueId, externalRef: input.externalRef ?? null },
+  });
+  return { revenueId: revenue.revenueId, posted: revenue.posted };
+}
+
+export interface ReinvestmentRow {
+  id: string;
+  agent_slug: string;
+  amount_cents: number;
+  purpose: string;
+  idempotency_key: string;
+  status: string;
+  proposed_by: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+}
+
+export function getReinvestment(id: string): ReinvestmentRow | undefined {
+  return db.get<ReinvestmentRow>('SELECT * FROM economy_reinvestments WHERE id = ?', [id]);
+}
+
+export function listReinvestments(limit = 100): ReinvestmentRow[] {
+  return db.all<ReinvestmentRow>('SELECT * FROM economy_reinvestments ORDER BY created_at DESC LIMIT ?', [Math.min(Math.max(limit, 1), 500)]);
+}
+
+/**
+ * Propose allocating an agent's REALIZED surplus back into growth (tools,
+ * inventory, ads, content). Funded from evidence-backed surplus only — the
+ * same rule as treasury transfers. Proposal never moves money.
+ */
+export function proposeReinvestment(input: {
+  agentSlug: string; amountCents: number; purpose: string; idempotencyKey: string; proposedBy: string;
+}): { reinvestment: ReinvestmentRow; idempotentReplay: boolean } {
+  if (!input.idempotencyKey || input.idempotencyKey.trim().length < 4) {
+    throw new EarningError(400, 'invalid_request', 'idempotency key must be at least 4 characters');
+  }
+  // A spending freeze stops new commitments outright (recorded as denied so
+  // the attempt stays visible).
+  assertSpendingAllowed('propose reinvestment');
+  const existing = db.get<ReinvestmentRow>('SELECT * FROM economy_reinvestments WHERE idempotency_key = ?', [input.idempotencyKey]);
+  if (existing) return { reinvestment: existing, idempotentReplay: true };
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+    throw new EarningError(400, 'invalid_request', 'reinvestment amount must be a positive integer (cents)');
+  }
+  if (!input.purpose || input.purpose.trim().length < 4) {
+    throw new EarningError(400, 'invalid_request', 'a reinvestment purpose is required');
+  }
+  const agent = getAgentBySlug(input.agentSlug);
+  if (!agent) throw new EarningError(404, 'agent_not_found', `agent "${input.agentSlug}" does not exist in the registry`);
+  const account = agentAccountFor(input.agentSlug);
+  if (account.availableCents < input.amountCents) {
+    throw new EarningError(
+      400, 'insufficient_realized_balance',
+      `agent "${input.agentSlug}" has ${account.availableCents}c of realized surplus available — reinvestment can never exceed evidence-backed net revenue (requested ${input.amountCents}c)`,
+    );
+  }
+  const id = createId('eco_riv');
+  db.run(
+    `INSERT INTO economy_reinvestments (id, agent_slug, amount_cents, purpose, idempotency_key, status, proposed_by)
+     VALUES (?, ?, ?, ?, ?, 'proposed', ?)`,
+    [id, input.agentSlug, input.amountCents, input.purpose.trim(), input.idempotencyKey, input.proposedBy],
+  );
+  const reinvestment = getReinvestment(id)!;
+  recordEconomyEvent({
+    kind: 'treasury', actor: input.proposedBy,
+    summary: `reinvestment proposed: ${input.amountCents}c of ${input.agentSlug} surplus → ${input.purpose.trim().slice(0, 120)}`,
+    details: { reinvestmentId: id },
+  });
+  return { reinvestment, idempotentReplay: false };
+}
+
+/** Owner decision on a proposed reinvestment. Approve executes it for real. */
+export function decideReinvestment(id: string, decision: 'approve' | 'reject', decidedBy: string): ReinvestmentRow {
+  const reinvestment = getReinvestment(id);
+  if (!reinvestment) throw new EarningError(404, 'not_found', 'reinvestment not found');
+  if (reinvestment.status !== 'proposed') {
+    if ((reinvestment.status === 'executed' && decision === 'approve') || (reinvestment.status === 'rejected' && decision === 'reject')) {
+      return reinvestment;
+    }
+    throw new EarningError(400, 'decision_final', `reinvestment ${id} is already ${reinvestment.status}; decisions are final (propose a new one if needed)`);
+  }
+  if (decision === 'reject') {
+    db.run("UPDATE economy_reinvestments SET status = 'rejected', decided_by = ?, decided_at = ? WHERE id = ?", [decidedBy, new Date().toISOString(), id]);
+    recordEconomyEvent({ kind: 'treasury', actor: decidedBy, summary: `reinvestment ${id} REJECTED` });
+    return getReinvestment(id)!;
+  }
+  assertSpendingAllowed(`approve reinvestment ${id}`);
+  const account = agentAccountFor(reinvestment.agent_slug);
+  if (account.availableCents < reinvestment.amount_cents) {
+    db.run("UPDATE economy_reinvestments SET status = 'rejected', decided_by = ?, decided_at = ? WHERE id = ?", [decidedBy, new Date().toISOString(), id]);
+    recordEconomyEvent({
+      kind: 'treasury', actor: decidedBy,
+      summary: `reinvestment ${id} REJECTED at approval: realized balance (${account.availableCents}c) no longer covers ${reinvestment.amount_cents}c`,
+    });
+    throw new EarningError(400, 'insufficient_realized_balance', `realized balance is now ${account.availableCents}c — the reinvestment was rejected instead of executed`);
+  }
+  postLedger({
+    agentSlug: reinvestment.agent_slug,
+    direction: 'debit',
+    category: 'reinvestment',
+    amountCents: reinvestment.amount_cents,
+    purpose: `approved reinvestment: ${reinvestment.purpose.slice(0, 160)}`,
+    refType: 'reinvestment',
+    refId: `reinvest:${id}`,
+    policyDecision: 'owner-approved',
+  });
+  db.run("UPDATE economy_reinvestments SET status = 'executed', decided_by = ?, decided_at = ? WHERE id = ?", [decidedBy, new Date().toISOString(), id]);
+  appendAuditLog({
+    actorId: decidedBy,
+    action: 'economy.treasury.reinvest.approved',
+    resourceType: 'economy_reinvestment',
+    resourceId: id,
+    description: `${reinvestment.amount_cents}c of ${reinvestment.agent_slug} surplus → ${reinvestment.purpose.slice(0, 120)}`,
+  });
+  recordEconomyEvent({
+    kind: 'treasury', actor: decidedBy,
+    summary: `reinvestment ${id} EXECUTED: ${reinvestment.amount_cents}c of ${reinvestment.agent_slug} surplus → ${reinvestment.purpose.slice(0, 120)}`,
+  });
+  return getReinvestment(id)!;
+}

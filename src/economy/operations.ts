@@ -1,4 +1,6 @@
 import { searchWeb } from '../agents/web-research';
+import { getAgentBySlug } from '../agents/registry';
+import { db } from '../db/database';
 import { modelRouter } from '../models/router';
 import { assertEmergencyStopDisabled } from '../orchestrator/executor';
 import {
@@ -257,6 +259,47 @@ export function startExecution(input: { opportunityId: string; agentSlug: string
     summary: `execution ${execution.id} authorized for opportunity ${input.opportunityId} (agent ${input.agentSlug})`,
   });
   return { executionId: execution.id, created: execution.created, reason: execution.created ? 'created' : 'resumed_existing' };
+}
+
+/**
+ * Reassign an AUTHORIZED (not yet running) execution to a different agent —
+ * the failure-recovery handoff: when an agent is paused, blocked, or its
+ * workflow failed, the owner (or policy) moves the remaining work to an
+ * eligible agent instead of letting it die. Terminal executions are never
+ * resurrected here (that would silently grant extra retry budget); a new
+ * authorization is required for those.
+ */
+export function reassignExecution(executionId: string, newAgentSlug: string, reason: string, actor: string): { reassigned: boolean } {
+  const execution = getExecution(executionId);
+  if (!execution) throw new Error('execution not found');
+  if (execution.status !== 'authorized') {
+    throw new Error(`execution is '${execution.status}' — only authorized (not yet running) executions can be reassigned`);
+  }
+  if (!reason || reason.trim().length < 4) throw new Error('a reassignment reason is required');
+  const agent = getAgentBySlug(newAgentSlug);
+  if (!agent) throw new Error(`agent "${newAgentSlug}" does not exist in the registry`);
+  assertAgentRunnable(newAgentSlug);
+  const opportunity = getOpportunity(execution.opportunity_id);
+  if (!opportunity) throw new Error('opportunity missing');
+  // Eligibility: the new agent must serve the opportunity's category (the
+  // flagship research agent stays eligible for research-shaped work).
+  let eligible = newAgentSlug === 'web-research-001';
+  if (!eligible) {
+    try {
+      const overlay = db.get<{ categories_json: string }>('SELECT categories_json FROM economy_agent_profiles WHERE agent_slug = ?', [newAgentSlug]);
+      eligible = (JSON.parse(overlay?.categories_json ?? '[]') as string[]).includes(opportunity.category);
+    } catch { eligible = false; }
+  }
+  if (!eligible) {
+    throw new Error(`agent "${newAgentSlug}" is not eligible for category '${opportunity.category}' — refusing a blind handoff`);
+  }
+  const previous = execution.agent_slug;
+  updateExecution(executionId, { agent_slug: newAgentSlug });
+  recordEconomyEvent({
+    kind: 'execution', actor,
+    summary: `execution ${executionId} REASSIGNED: ${previous} → ${newAgentSlug} — ${reason.trim().slice(0, 200)}`,
+  });
+  return { reassigned: true };
 }
 
 export interface ExecutionOutcome {
