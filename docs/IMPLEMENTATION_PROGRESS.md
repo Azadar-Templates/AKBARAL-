@@ -110,3 +110,16 @@ Overlapping transcript refreshes are now coalesced and sequence-deduplicated. Su
 ### Regression-fixture isolation
 
 The first final whole-suite attempt stopped at three cost-fixture failures: earlier negative economy tests had persistently marked the shared research workflow failed. The production circuit breaker correctly refused execution. Retained evidence: `logs/continuation/final-suite.log`; an additional retained tail check exposed the same issue in staging. Cost, staging and workforce success fixtures now select their own SQLite databases **before** loading database-dependent modules. No production guard is relaxed and no failed shared database is reset. The isolated fixtures pass **25/25** (four cost, six staging, fifteen workforce), with typecheck passing. A new frozen-source full run follows; these focused checks are not presented as a full-suite pass.
+
+## Frozen-source integrated validation through messaging hardening
+
+The final canonical rerun after fixture isolation passes **845/845 SQLite tests, 114 suites, 92 files, zero failures/cancellations/skips**. Sources were not edited during this run. Evidence is retained in `logs/continuation/canonical-suite.log` and `canonical-summary.json`; the earlier failed run and its database remain available, not overwritten.
+
+Also passed on the same source state:
+
+- **37/37 platform PostgreSQL tests** (22 integration, eight workforce parity, seven financial atomicity), zero skips;
+- **17/17 mission financial/messaging PostgreSQL tests**, plus **10/10 existing mission PostgreSQL checks**, with ten private migrations;
+- backend compilation/runtime-asset copy and production Webpack build, **27 routes**;
+- typecheck, dashboard JavaScript syntax, secret scan and diff checks.
+
+These are local automated checks with synthetic provider/financial fixtures. They do not establish hosted production readiness, browser/mobile layout correctness, real transfers or real resource purchases. The current catalog/workforce counts are not fabricated upward. Full automatic chat-worker integration, comprehensive provider-call quota enforcement and other locally implementable remaining scope are **not declared complete**. Phase 5 remains the last successfully pushed phase until GitHub authentication is reconnected; subsequent source changes and this evidence are committed locally.
