@@ -1,3 +1,4 @@
+import { appendAgentMessage, listAgentMessages } from './messaging';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -505,6 +506,20 @@ async function handleApi(
         return true;
       }
       const slug = rest[0];
+      if (rest[1] === 'messages') {
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (!context.session && (context.link?.link.scope !== 'agent:self' || context.link.agentId !== agent.id)) throw new HttpProblem(403, 'this conversation belongs to another agent', 'forbidden');
+        if (method === 'GET') {
+          json(res, 200, listAgentMessages(agent.id, Number(url.searchParams.get('after') ?? 0), Number(url.searchParams.get('limit') ?? 100)));
+          return true;
+        }
+        if (method === 'POST') {
+          const actor = context.session ? { actorType: 'owner' as const, actorId: requireOwner(context, true).owner.id } : requireAgent(context, slug);
+          json(res, 201, appendAgentMessage({ agentId: agent.id, actorType: actor.actorType, actorId: actor.actorId, body: param('message', '')!, idempotencyKey: param('idempotencyKey', '')!, replyTo: param('replyTo') }));
+          return true;
+        }
+      }
       if (rest[1] === undefined) {
         const agent = findAgentBySlug(slug);
         if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');

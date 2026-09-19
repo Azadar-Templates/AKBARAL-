@@ -14,15 +14,20 @@ function consoleFixture() {
   const payloads: Record<string, unknown> = {
     '/api/treasury': { treasury: { currency: 'USD', totals: { totalBalanceCents: 1000 }, daily: {} } },
     '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
+    '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
     '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [] },
     '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
     '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
   };
   dom.window.fetch = async (url: string, init: RequestInit = {}) => {
-    if (init.method === 'POST') requests.push({ url, body: JSON.parse(String(init.body)) });
+    if (init.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      requests.push({ url, body });
+      if (url.endsWith('/messages')) payloads['/api/agents/agent-fixture/messages?after=0'] = { messages: [{ seq: 1, actor_type: 'owner', body: body.message }], nextCursor: 1, hasMore: false };
+    }
     return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages };`);
   dom.window.fixture.state.token = 'synthetic-dom-session';
   return { dom, win: dom.window, requests, resource };
 }
@@ -60,5 +65,23 @@ it('owner provisioning form sends the selected mission wallet and evidence, not 
     assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/provision', body: { walletId: 'wallet-fixture', actualCostCents: 75, providerRef: 'synthetic-invoice', evidence: 'Synthetic provisioning proof, not a real purchase.' } });
     assert.match(win.document.querySelector('#resource-provision').textContent, /readiness is shown separately/);
     assert.equal(win.document.querySelector('#resource-provision input[type="password"]'), null);
+  } finally { dom.window.close(); }
+});
+
+it('owner messaging renders actual stored text safely and never fabricates an agent reply', async () => {
+  const { dom, win, requests } = consoleFixture();
+  try {
+    const host = win.document.createElement('section');
+    win.document.body.appendChild(host);
+    await win.fixture.renderAgentMessages(host, 'agent-fixture');
+    const form = host.querySelector('form');
+    form.elements.message.value = '<img src=x onerror=alert(1)> Synthetic owner message';
+    form.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests[0].url, '/api/agents/agent-fixture/messages');
+    assert.equal(typeof requests[0].body.idempotencyKey, 'string');
+    assert.equal(host.querySelector('img'), null, 'untrusted message text is never parsed as HTML');
+    assert.match(host.textContent, /Synthetic owner message/);
+    assert.match(host.textContent, /not simulated agent replies/);
   } finally { dom.window.close(); }
 });

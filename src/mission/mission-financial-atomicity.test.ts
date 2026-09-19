@@ -205,3 +205,22 @@ it('an above-threshold owner-approved upgrade charges atomically and cannot appl
   assert.equal(verifyLedger().ok, true);
   assert.equal(verifyMissionAudit().ok, true);
 });
+
+it('mission message and audit writes roll back together and paginated replies remain scoped', () => {
+  const messaging = require('./messaging') as typeof import('./messaging');
+  const input = { agentId: agent, actorType: 'owner' as const, actorId: owner, body: 'Synthetic owner message; no tools or payments may be executed from chat.', idempotencyKey: randomUUID() };
+  const before = snapshot();
+  failAfter('INSERT INTO mission_audit', () => messaging.appendAgentMessage(input));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(messaging.listAgentMessages(agent).messages.length, 0);
+  const first = messaging.appendAgentMessage(input);
+  assert.equal(messaging.appendAgentMessage(input).duplicate, true);
+  assert.throws(() => messaging.appendAgentMessage({ ...input, body: 'different message' }), /different content/);
+  assert.throws(() => messaging.appendAgentMessage({ ...input, actorType: 'agent', actorId: 'wrong-agent' }), /identity/);
+  assert.throws(() => messaging.appendAgentMessage({ ...input, idempotencyKey: randomUUID(), replyTo: 'other-thread-message' }), /reply target/);
+  const reply = messaging.appendAgentMessage({ ...input, actorType: 'agent', actorId: agent, body: 'Synthetic agent reply, not automatically generated.', replyTo: String(first.message.id), idempotencyKey: randomUUID() });
+  const page = messaging.listAgentMessages(agent, Number(first.message.seq));
+  assert.equal(page.messages.length, 1);
+  assert.equal(page.messages[0].id, reply.message.id);
+  assert.equal(page.automaticReplies, false);
+});

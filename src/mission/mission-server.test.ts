@@ -555,6 +555,36 @@ test('rejecting an expense from the approval queue rejects both records without 
   assert.equal(missionDb.get<Row>('SELECT balance_cents FROM mission_wallets WHERE id = ?', [rootWalletId])!.balance_cents, before);
 });
 
+test('private agent messages are durable, replay-safe, scoped and never execute money commands', async () => {
+  const before = Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n);
+  const input = { message: 'Synthetic owner message: do not execute any payment from this text.', idempotencyKey: 'owner-message-fixture' };
+  const stored = await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify(input) });
+  assert.equal(stored.status, 201);
+  assert.equal(stored.body.commandExecuted, false);
+  const replay = await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify(input) });
+  assert.equal(replay.body.duplicate, true);
+  assert.equal(replay.body.message.id, stored.body.message.id);
+  const changed = await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify({ ...input, message: 'changed content' }) });
+  assert.equal(changed.status, 409);
+  const link = createAccessLink({ label: 'message fixture', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+  const headers = { 'x-mission-link': link.token };
+  const own = await api('/api/agents/link-agent-a/messages', { headers });
+  assert.equal(own.status, 200);
+  assert.equal(own.body.automaticReplies, false);
+  assert.equal(own.body.messages.length, 1);
+  const forbidden = await api('/api/agents/link-agent-b/messages', { headers });
+  assert.equal(forbidden.status, 403);
+  const reply = await api('/api/agents/link-agent-a/messages', { method: 'POST', headers, body: JSON.stringify({ message: 'Synthetic bound-agent reply, actually submitted via its access link.', replyTo: stored.body.message.id, idempotencyKey: 'agent-message-fixture' }) });
+  assert.equal(reply.status, 201);
+  assert.equal(reply.body.message.actor_type, 'agent');
+  const page = await owner(`/api/agents/link-agent-a/messages?after=${stored.body.message.seq}`);
+  assert.equal(page.body.messages.length, 1);
+  assert.equal(page.body.messages[0].id, reply.body.message.id);
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), before);
+  const anonymous = await api('/api/agents/link-agent-a/messages');
+  assert.equal(anonymous.status, 401);
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

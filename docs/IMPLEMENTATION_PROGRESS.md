@@ -88,3 +88,11 @@ Measured checks: **6/6 isolated execution-integrity tests, 4/4 cost tests, 46/46
 Validation: **104/104 mission SQLite/DOM tests** (including **2 executed-client DOM tests**), **16/16 mission financial PostgreSQL tests**, existing mission PostgreSQL check **10/10 with 9 migrations**, types, JavaScript syntax, secret scan and backend build pass. DOM tests are not claimed as browser/mobile layout verification. All financial/provisioning evidence is synthetic in tests; no provider purchase or transfer was initiated.
 
 Still not globally complete: real-source opportunity expansion, full command/chat ownership surface, production browser/mobile checks and complete provider-call quota enforcement need further local work or configured external integrations. The million-opportunity target is not an achieved count. Existing reconstruction evidence and all prior work are retained.
+
+## Phase 6 — private owner/agent correspondence (2026-09-19)
+
+Added private, durable owner/agent conversations backed by mission-only migration `0010_agent_messages.sql`. Messages are scoped to an agent and actual authenticated actor, replay-safe by client key, bounded, cursor-paginated and atomic with their audit entry. A scoped agent link cannot read another conversation or impersonate another actor. Replies must be submitted by the actual bound agent identity; none are fabricated by the server.
+
+The owner agent-detail view now includes the conversation alongside its existing explicit work, pause/resume, budget and wallet controls. Message text is rendered safely and does **not** execute commands, call tools, generate model replies or move money. Automatic model/worker replies are not claimed; a configured worker must submit its real response through the scoped API.
+
+Validation: **107/107 mission SQLite/DOM tests**, including HTTP identity/replay/money-isolation checks, rollback tests and an executed-client HTML-injection regression; **17/17 mission financial/messaging PostgreSQL tests** and **10 existing PostgreSQL mission checks**, with **10 private migrations**. Typecheck, secret scan and backend build pass. No real credential, provider completion or payment is implied by these synthetic checks.

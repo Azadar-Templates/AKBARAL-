@@ -320,6 +320,10 @@ function renderAgentReport(report) {
     host.appendChild(renderAgentControls(report));
   }
 
+  const conversation = el('section', { class: 'control-block', 'aria-label': 'Private agent messages' });
+  host.appendChild(conversation);
+  void renderAgentMessages(conversation, report.agent.slug);
+
   host.appendChild(el('h3', { text: 'Children (delegation)' }));
   host.appendChild(table([
     { label: 'Slug', key: 'slug' },
@@ -391,6 +395,49 @@ function renderAgentReport(report) {
     { label: 'Cost', render: (row) => money(row.costCents, currency) },
     { label: 'Requested', render: (row) => when(row.createdAt) },
   ], report.upgrades, 'No upgrades requested.'));
+}
+
+async function renderAgentMessages(host, slug) {
+  host.replaceChildren(el('h3', { text: 'Owner / agent messages' }), el('p', { class: 'muted small', text: 'Stored private correspondence, not simulated agent replies. Text does not execute commands or move money. Use the explicit owner controls for actions.' }));
+  const transcript = el('div', { class: 'table-wrap', 'aria-live': 'polite' });
+  host.appendChild(transcript);
+  const messages = [];
+  let cursor = 0;
+  const refresh = el('button', { type: 'button', class: 'small', text: 'Refresh / load next messages' });
+  const load = async () => {
+    try {
+      const result = await api(`/agents/${encodeURIComponent(slug)}/messages?after=${cursor}`);
+      messages.push(...result.messages);
+      cursor = result.nextCursor;
+      transcript.replaceChildren(table([
+        { label: 'When', render: row => when(row.created_at) },
+        { label: 'From', key: 'actor_type' },
+        { label: 'Message', key: 'body', wrap: true },
+      ], messages, 'No messages yet. No agent response is fabricated.'));
+      refresh.textContent = result.hasMore ? 'Load next page' : 'Refresh messages';
+    } catch (error) { transcript.textContent = error.message; }
+  };
+  refresh.addEventListener('click', load);
+  host.appendChild(refresh);
+  if (canMutate()) {
+    const form = el('form', { class: 'stack-form' });
+    const input = el('textarea', { name: 'message', maxlength: 12000, required: '', 'aria-label': 'Message to this agent', placeholder: 'Send a private message. Never paste credentials.' });
+    form.append(input, el('button', { type: 'submit', text: 'Send owner message' }));
+    let key = crypto.randomUUID();
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!guardMutation()) return;
+      try {
+        await api(`/agents/${encodeURIComponent(slug)}/messages`, { method: 'POST', body: { message: input.value, idempotencyKey: key } });
+        input.value = '';
+        key = crypto.randomUUID();
+        await load();
+        banner('Owner message stored. Await an actual agent reply; no command was executed.', 'ok');
+      } catch (error) { banner(error.message, 'error'); }
+    });
+    host.appendChild(form);
+  }
+  await load();
 }
 
 async function loadTab(tab) {
