@@ -1,5 +1,6 @@
 import { db, type SqlValue } from '../db/database';
 import { createId } from '../db/id';
+import { raiseAlertSync, sourceBlockedAlertKey, workflowFailedAlertKey } from './alerts';
 
 /**
  * Workforce persistence — source health, deliveries, comms, workflow health,
@@ -68,6 +69,17 @@ export function recordSourceOutcome(input: {
       shouldBlock ? `auto-blocked after ${failures} consecutive failures: ${(input.error ?? 'unknown').slice(0, 200)}` : existing.blocked_reason,
       NOW(), key],
   );
+  if (shouldBlock) {
+    // D11: a source going dark is a silent stop — the owner must hear about it.
+    try {
+      raiseAlertSync({
+        condition: 'source-blocked', severity: 'warning',
+        title: `Source auto-blocked: ${key}`,
+        detail: `auto-blocked after ${failures} consecutive failures: ${(input.error ?? 'unknown').slice(0, 500)}`,
+        dedupeKey: sourceBlockedAlertKey(key),
+      });
+    } catch { /* alerting must never break health recording */ }
+  }
   return getSourceHealth(key)!;
 }
 
@@ -218,6 +230,17 @@ export function recordWorkflowOutcome(input: {
       `UPDATE economy_workflows SET failure_count = ?, success_count = success_count + ?, last_error = ?, status = ?, updated_at = ? WHERE agent_slug = ? AND category = ? AND workflow_key = ?`,
       [failures, input.ok ? 1 : 0, input.error ?? existing.last_error, failed ? 'failed' : existing.status, NOW(), input.agentSlug, input.category, input.workflowKey],
     );
+    if (failed) {
+      // D11: a dead workflow is a silent stop — the owner must hear about it.
+      try {
+        raiseAlertSync({
+          condition: 'workflow-failed', severity: 'warning',
+          title: `Workflow failed: ${input.agentSlug}/${input.category}/${input.workflowKey}`,
+          detail: `marked failed after ${failures} consecutive failures: ${(input.error ?? 'unknown').slice(0, 500)} — replace or retire it.`,
+          dedupeKey: workflowFailedAlertKey(input.agentSlug, input.category, input.workflowKey),
+        });
+      } catch { /* alerting must never break health recording */ }
+    }
   }
   return db.get<WorkflowRow>(
     'SELECT * FROM economy_workflows WHERE agent_slug = ? AND category = ? AND workflow_key = ?',

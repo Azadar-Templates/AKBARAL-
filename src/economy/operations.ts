@@ -28,11 +28,12 @@ import {
   currentPolicy,
   decideAuthorization,
   DISCOVERY_CATEGORIES,
-  findDiscoveryCategory,
+  findAnyDiscoveryCategory,
   scanExternalContent,
   type PolicySnapshot,
 } from './policy';
 import { proposeSettlement } from './treasury';
+import { discoveryAlertKey, raiseAlert, raiseAlertSync } from '../workforce/alerts';
 import { assertAgentRunnable } from './hierarchy';
 import { createHash } from 'node:crypto';
 
@@ -79,10 +80,13 @@ export interface DiscoveryRunResult {
 
 export async function runDiscovery(categoryKeys?: string[]): Promise<DiscoveryRunResult> {
   const policy = currentPolicy();
+  // D4: resolve explicit/policy keys against the full union (legacy + all 21
+  // workforce categories) so configured workforce keys are never silently
+  // dropped. The no-config default stays the legacy 13 (unchanged behavior).
   const categories = (categoryKeys && categoryKeys.length > 0
-    ? categoryKeys.map((key) => findDiscoveryCategory(key)).filter((c): c is NonNullable<typeof c> => Boolean(c))
+    ? categoryKeys.map((key) => findAnyDiscoveryCategory(key)).filter((c): c is NonNullable<typeof c> => Boolean(c))
     : (policy.discoveryCategories.length > 0
-      ? DISCOVERY_CATEGORIES.filter((c) => policy.discoveryCategories.includes(c.key))
+      ? policy.discoveryCategories.map((key) => findAnyDiscoveryCategory(key)).filter((c): c is NonNullable<typeof c> => Boolean(c))
       : DISCOVERY_CATEGORIES));
 
   let discovered = 0;
@@ -101,6 +105,15 @@ export async function runDiscovery(categoryKeys?: string[]): Promise<DiscoveryRu
           summary: `discovery unavailable for category '${category.key}': ${error instanceof Error ? error.message : String(error)}`,
           details: { query },
         });
+        try {
+          // D11: blind discovery is a silent stop — raise once per category.
+          await raiseAlert({
+            condition: 'discovery-unavailable', severity: 'warning',
+            title: `Discovery unavailable for '${category.key}'`,
+            detail: `${error instanceof Error ? error.message : String(error)} (query: ${query.slice(0, 200)}) — discovery will keep returning nothing until this is fixed.`,
+            dedupeKey: discoveryAlertKey(category.key),
+          });
+        } catch { /* alerting must never break discovery */ }
         return { searchedCategories: searched, discovered, duplicates, unavailable: error instanceof Error ? error.message : String(error) };
       }
       searched.push(category.key);
@@ -444,6 +457,17 @@ export function reconcileStaleExecutions(): ReconciliationResult {
   }
   if (timedOut > 0) {
     recordEconomyEvent({ kind: 'system', summary: `reconciled ${timedOut} stale execution(s): ${requeued} requeued, ${failed} failed after retry budget` });
+  }
+  if (failed > 0) {
+    // D11: executions dying silently after their retry budget is a silent stop.
+    try {
+      raiseAlertSync({
+        condition: 'stale-executions', severity: 'warning',
+        title: `${failed} stale execution(s) failed after retry budget`,
+        detail: `reconciliation: ${timedOut} timed out, ${requeued} requeued, ${failed} terminally failed. Inspect executions + workflows.`,
+        dedupeKey: 'stale-executions',
+      });
+    } catch { /* alerting must never break reconciliation */ }
   }
   return { timedOut, requeued, failed };
 }

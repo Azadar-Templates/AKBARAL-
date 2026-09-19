@@ -1,4 +1,5 @@
 import { createId, db } from '../db';
+import { raiseAlertSync } from '../workforce/alerts';
 import { findUserByEmail, createUser, appendAuditLog } from '../db';
 import { agentFactory } from '../orchestrator/agent-factory';
 import { getAgentBySlug } from '../agents/registry';
@@ -176,6 +177,16 @@ export function proposeSettlement(): SettlementOutcome {
     summary: `settlement proposed: ${distributable} cents to ${policy.settlementDestination} (pending external provider)`,
     details: { settlementId: settlement.id },
   });
+  try {
+    // D11: a proposed settlement sits until the owner transfers + confirms —
+    // info-level so it never sits unnoticed.
+    raiseAlertSync({
+      condition: 'settlement-awaiting-owner', severity: 'info',
+      title: `Settlement proposed: ${distributable}c to ${policy.settlementDestination}`,
+      detail: `settlement ${settlement.id}: transfer the funds manually, then confirm with evidence. Nothing moves on its own.`,
+      dedupeKey: `settlement-awaiting-owner:${settlement.id}`,
+    });
+  } catch { /* alerting must never break settlement */ }
   return { created: true, reason: 'created', settlementId: settlement.id, amountCents: distributable };
 }
 

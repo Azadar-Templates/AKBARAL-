@@ -10,6 +10,8 @@ import { currentPolicy } from '../economy/policy';
 import { assertAgentRunnable, assertProviderAccessAllowed, assertSpendingAllowed } from '../economy/hierarchy';
 import { assertEmergencyStopDisabled } from '../orchestrator/executor';
 import { findWorkforceCategory } from './categories';
+import { WORKFORCE_SERVICE_USER } from './identity';
+import { ensureImageBrief } from './images';
 import { insertDelivery, isSourceUsable, isWorkflowUsable, recordSourceOutcome, recordWorkflowOutcome, sourceKeyFor } from './repositories';
 import { setAgentOverlay } from './repositories';
 
@@ -126,7 +128,9 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
           : tool === 'maps_place' ? { query: goal }
           : tool === 'text_analyze' ? { text: `${opportunity.title}\n${opportunity.summary ?? ''}` }
           : { query: goal };
-        const result = await runTool(tool, input, { userId: '', projectId: null, taskId: null, executionId: execution.id });
+        // D5: tools run as the workforce service identity (owns nothing; sees
+        // only owner-staged knowledge/files) instead of an empty user id.
+        const result = await runTool(tool, input, { userId: WORKFORCE_SERVICE_USER, projectId: null, taskId: null, executionId: execution.id });
         toolsRan += 1;
         if (result.ok && result.content.trim().length > 0) {
           toolOutputs.push(`--- ${tool} (real) ---\n${result.content.slice(0, 2000)}`);
@@ -135,6 +139,23 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
         }
       } catch (error) {
         toolOutputs.push(`--- ${tool} (failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}) ---`);
+      }
+    }
+
+    // Governed image path: image_render is NEVER auto-run (paid tool), but an
+    // agent permitted to use it files a FREE brief for owner approval. Spend
+    // happens only via approve → fulfill, one item at a time.
+    if (agent.toolPermissions.includes('image_render')) {
+      try {
+        const brief = ensureImageBrief({
+          executionId: execution.id,
+          opportunityId: opportunity.id,
+          agentSlug: execution.agent_slug,
+          prompt: `Image for "${opportunity.title.slice(0, 200)}" [${opportunity.category}]: ${(opportunity.summary ?? '').slice(0, 600)}`,
+        });
+        toolOutputs.push(`--- image_render (brief ${brief.id} filed for owner approval; render only after approve → fulfill) ---`);
+      } catch (error) {
+        toolOutputs.push(`--- image_render (brief filing failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}) ---`);
       }
     }
 

@@ -53,7 +53,10 @@ export interface EconomyPolicyRow {
 export function getEconomyPolicy(): EconomyPolicyRow {
   const row = db.get<EconomyPolicyRow>("SELECT * FROM economy_policy WHERE id = 'global'");
   if (!row) {
-    db.run("INSERT OR IGNORE INTO economy_policy (id) VALUES ('global')");
+    // D9: fresh policy rows start at the 4,001-agent scale cap (existing rows
+    // still on the shipped default are moved by migration 0019; owner-tuned
+    // caps are never touched by either path).
+    db.run("INSERT OR IGNORE INTO economy_policy (id, max_economy_agents) VALUES ('global', 5000)");
     return db.get<EconomyPolicyRow>("SELECT * FROM economy_policy WHERE id = 'global'")!;
   }
   return row;

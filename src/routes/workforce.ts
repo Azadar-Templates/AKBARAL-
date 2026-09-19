@@ -9,6 +9,9 @@ import { integrationStatus, workforceReadiness } from '../workforce/integrations
 import { getComm, listComms, listDeliveries, listSourceHealth, listWorkflows, setSourceStatus, setWorkflowStatus } from '../workforce/repositories';
 import { COMMS_TEMPLATES, confirmCommSent, decideComm, requestComm, sendApprovedComm, CommsError } from '../workforce/comms';
 import { delegateWork, DelegationError } from '../workforce/delegation';
+import { StagingError, listStagedFiles, listStagedKnowledge, stageFile, stageKnowledgeItem, unstageFile, unstageKnowledgeItem } from '../workforce/staging';
+import { acknowledgeAlert, listAlerts } from '../workforce/alerts';
+import { ImageError, decideImageRequest, fulfillImageRequest, listImageRequests, requestImage } from '../workforce/images';
 import { runWorkforceExecution } from '../workforce/execution';
 import { pickWorkforceAgent, workforceDiscovery, workforceScheduler } from '../workforce/scheduler';
 import { buildWorkforceReport } from '../workforce/report';
@@ -239,6 +242,113 @@ export function createWorkforceRouter(): Router {
       }));
     } catch (error) {
       if (error instanceof DelegationError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  // ── Staging (D5: explicit per-item sharing with the workforce) ──
+  router.get('/staging/knowledge', (_req, res) => {
+    res.status(200).json({ staged: listStagedKnowledge() });
+  });
+
+  router.post('/staging/knowledge', (req: AuthenticatedRequest, res) => {
+    try {
+      const knowledgeItemId = String(req.body?.knowledge_item_id ?? '');
+      const result = stageKnowledgeItem({ knowledgeItemId, stagedBy: `owner:${req.auth!.userId}` });
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.staging.knowledge.add', resourceId: knowledgeItemId });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof StagingError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.delete('/staging/knowledge/:id', (req: AuthenticatedRequest, res) => {
+    const result = unstageKnowledgeItem(req.params.id);
+    appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.staging.knowledge.remove', resourceId: req.params.id });
+    res.status(200).json(result);
+  });
+
+  router.get('/staging/files', (_req, res) => {
+    res.status(200).json({ staged: listStagedFiles() });
+  });
+
+  router.post('/staging/files', (req: AuthenticatedRequest, res) => {
+    try {
+      const fileId = String(req.body?.file_id ?? '');
+      const result = stageFile({ fileId, stagedBy: `owner:${req.auth!.userId}` });
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.staging.file.add', resourceId: fileId });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof StagingError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.delete('/staging/files/:id', (req: AuthenticatedRequest, res) => {
+    const result = unstageFile(req.params.id);
+    appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.staging.file.remove', resourceId: req.params.id });
+    res.status(200).json(result);
+  });
+
+  // ── Alerts (D11: centralized silent-stop visibility) ──
+  router.get('/alerts', (req, res) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.status(200).json({ alerts: listAlerts(status, clampInt(req.query.limit, 1, 500, 100)) });
+  });
+
+  router.post('/alerts/:id/acknowledge', (req: AuthenticatedRequest, res) => {
+    try {
+      const alert = acknowledgeAlert(req.params.id, `owner:${req.auth!.userId}`);
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.alert.acknowledge', resourceId: req.params.id });
+      res.status(200).json({ alert });
+    } catch (error) {
+      throw new HttpError(404, error instanceof Error ? error.message : String(error), 'not_found');
+    }
+  });
+
+  // ── Images (governed paid-render path: request → approve → fulfill) ──
+  router.get('/images', (req, res) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.status(200).json({ images: listImageRequests(status, clampInt(req.query.limit, 1, 500, 100)) });
+  });
+
+  router.post('/images', (req: AuthenticatedRequest, res) => {
+    try {
+      const row = requestImage({
+        executionId: typeof req.body?.execution_id === 'string' ? req.body.execution_id : null,
+        opportunityId: typeof req.body?.opportunity_id === 'string' ? req.body.opportunity_id : null,
+        agentSlug: String(req.body?.agent_slug ?? ''),
+        prompt: String(req.body?.prompt ?? ''),
+      });
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.image.request', resourceId: row.id });
+      res.status(201).json(row);
+    } catch (error) {
+      if (error instanceof ImageError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.post('/images/:id/decide', (req: AuthenticatedRequest, res) => {
+    try {
+      const decision = req.body?.decision === 'approve' ? 'approve' : req.body?.decision === 'reject' ? 'reject' : null;
+      if (!decision) throw new HttpError(400, "decision must be 'approve' or 'reject'", 'validation_error');
+      const row = decideImageRequest(req.params.id, decision, `owner:${req.auth!.userId}`);
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.image.decide', resourceId: req.params.id, metadata: { decision } });
+      res.status(200).json(row);
+    } catch (error) {
+      if (error instanceof ImageError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.post('/images/:id/fulfill', async (req: AuthenticatedRequest, res) => {
+    try {
+      const row = await fulfillImageRequest(req.params.id);
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.image.fulfill', resourceId: req.params.id, metadata: { status: row.status } });
+      res.status(200).json(row);
+    } catch (error) {
+      if (error instanceof ImageError) throw new HttpError(error.statusCode, error.message, error.code);
       throw error;
     }
   });

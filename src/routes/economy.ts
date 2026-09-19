@@ -18,7 +18,7 @@ function toHttpError(error: unknown): unknown {
   }
   return error;
 }
-import { DISCOVERY_CATEGORIES, type RiskLevel } from '../economy/policy';
+import { ALL_DISCOVERY_CATEGORY_KEYS, POLICY_INT_RANGES, sanitizeDiscoveryCategories, type RiskLevel } from '../economy/policy';
 import {
   HierarchyControlError,
   delegationChain,
@@ -104,28 +104,15 @@ export function createEconomyRouter(): Router {
 
   // ── Policy + kill switch (O) ────────────────────────────────────────────
   router.get('/policy', (_req, res) => {
-    res.status(200).json({ policy: getEconomyPolicy(), categories: DISCOVERY_CATEGORIES.map((c) => c.key) });
+    res.status(200).json({ policy: getEconomyPolicy(), categories: [...ALL_DISCOVERY_CATEGORY_KEYS] });
   });
 
   router.patch('/policy', (req: AuthenticatedRequest, res) => {
     const body = req.body as Record<string, unknown>;
     const patch: Record<string, string | number> = {};
-    const intFields: Array<[string, number, number]> = [
-      ['max_concurrent_executions', 1, 10],
-      ['max_daily_spend_cents', 0, 100_000],
-      ['max_opportunity_cost_cents', 0, 100_000],
-      ['min_expected_net_cents', 0, 1_000_000],
-      ['settlement_threshold_cents', 0, 10_000_000],
-      ['max_economy_agents', 1, 500],
-      // Hierarchy policy (Section 3): the operator sets how fast the workforce
-      // may grow, how deep it may go, how many children a parent may have and
-      // what one delegation costs the parent. 0 disables spawning entirely.
-      ['max_agent_depth', 0, 10],
-      ['max_children_per_agent', 0, 100],
-      ['spawn_rate_per_hour', 0, 1_000],
-      ['spawn_cost_cents', 0, 100_000],
-    ];
-    for (const [field, min, max] of intFields) {
+    // D9: ranges live in policy.ts (POLICY_INT_RANGES) so the API ceiling and
+    // the documented scale move together; max_economy_agents now 1–10,000.
+    for (const [field, min, max] of POLICY_INT_RANGES) {
       if (body[field] !== undefined) patch[field] = clampInt(body[field], min, max, min);
     }
     if (body.min_roi !== undefined) patch.min_roi = Math.min(100, Math.max(0, Number(body.min_roi) || 0));
@@ -134,8 +121,8 @@ export function createEconomyRouter(): Router {
     if (body.autonomous_enabled !== undefined) patch.autonomous_enabled = body.autonomous_enabled ? 1 : 0;
     if (body.discovery_enabled !== undefined) patch.discovery_enabled = body.discovery_enabled ? 1 : 0;
     if (Array.isArray(body.discovery_categories)) {
-      const valid = new Set(DISCOVERY_CATEGORIES.map((c) => c.key));
-      patch.discovery_categories_json = JSON.stringify(body.discovery_categories.filter((c): c is string => typeof c === 'string' && valid.has(c)));
+      // D4: validate against the full union (legacy + all 21 workforce keys).
+      patch.discovery_categories_json = JSON.stringify(sanitizeDiscoveryCategories(body.discovery_categories));
     }
     const policy = updateEconomyPolicy(patch);
     appendAuditLog({

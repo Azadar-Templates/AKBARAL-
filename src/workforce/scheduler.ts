@@ -8,6 +8,7 @@ import { currentPolicy } from '../economy/policy';
 import { evaluateOpportunity, reconcileStaleExecutions, startExecution } from '../economy/operations';
 import { proposeSettlement } from '../economy/treasury';
 import { getAgentOverlay, isSourceUsable, sourceKeyFor } from './repositories';
+import { discoveryAlertKey, raiseAlert } from './alerts';
 import { WORKFORCE_CATEGORIES } from './categories';
 import { runWorkforceExecution } from './execution';
 
@@ -71,6 +72,15 @@ export async function workforceDiscovery(categoryKeys?: string[]): Promise<{ sea
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         recordEconomyEvent({ kind: 'discovery', summary: `workforce discovery unavailable for '${category.key}': ${message}`, details: { query } });
+        try {
+          // D11: blind discovery is a silent stop — raise once per category.
+          await raiseAlert({
+            condition: 'discovery-unavailable', severity: 'warning',
+            title: `Discovery unavailable for '${category.key}'`,
+            detail: `${message} (query: ${query.slice(0, 200)}) — discovery will keep returning nothing until this is fixed.`,
+            dedupeKey: discoveryAlertKey(category.key),
+          });
+        } catch { /* alerting must never break discovery */ }
         return { searched, discovered, duplicates, skippedBlocked, unavailable: message };
       }
       searched.push(category.key);
