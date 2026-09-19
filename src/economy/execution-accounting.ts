@@ -11,7 +11,7 @@ export function postExecutionCostShares(execution: ExecutionRow, costCents: numb
   if (participants.length > 0) {
     const share = Math.floor(costCents / participants.length);
     for (const [index, participant] of participants.entries()) {
-      postLedger({
+      const posting = postLedger({
         agentSlug: participant.agent_slug,
         direction: 'debit',
         category: 'api_cost',
@@ -20,6 +20,7 @@ export function postExecutionCostShares(execution: ExecutionRow, costCents: numb
         refType: 'execution',
         refId: `exec:${execution.id}:api_cost:${participant.agent_slug}${suffix}`,
       });
+      if (!posting.duplicate) db.run('UPDATE economy_execution_participants SET cost_share_cents = cost_share_cents + ? WHERE execution_id = ? AND agent_slug = ?', [share + (index < costCents % participants.length ? 1 : 0), execution.id, participant.agent_slug]);
     }
   } else {
     postLedger({

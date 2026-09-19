@@ -52,6 +52,8 @@ describe('D10 real model cost reaches the execution ledger', () => {
        VALUES (?, ?, ?, 'openai', 'llm', 0, 0, ?, 'enabled')`,
       ['mdl_d10_free', FREE_MODEL, 'D10 free test model', JSON.stringify(['research'])],
     );
+    // Registry sync retires unknown models, including fixtures from a prior run.
+    db.run("UPDATE models SET status = 'enabled' WHERE key IN (?, ?)", [PRICED_MODEL, FREE_MODEL]);
   });
 
   it('router returns usage with the same cost it records in model_runs', async () => {
@@ -133,10 +135,14 @@ describe('D10 real model cost reaches the execution ledger', () => {
     }));
     const savedBase = process.env.OPENAI_BASE_URL;
     const savedKey = process.env.OPENAI_API_KEY;
+    const savedFetch = process.env.AKBARAL_PAGE_FETCH_ENDPOINT;
+    const savedAllow = process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER;
     const stamp = Date.now();
     try {
       process.env.OPENAI_BASE_URL = fixture.url;
       process.env.OPENAI_API_KEY = 'test-fixture-key';
+      process.env.AKBARAL_PAGE_FETCH_ENDPOINT = fixture.url;
+      process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = '1';
       updateEconomyPolicy({ economy_model_key: PRICED_MODEL } as never);
       const id = insertOpportunity({
         sourceUrlHash: `d10-eco-${stamp}`, sourceUrl: 'https://example.com/d10-economy-cost',
@@ -151,6 +157,8 @@ describe('D10 real model cost reaches the execution ledger', () => {
       assert.ok(Number(debit.amount_cents) > 0);
       assert.equal(Number(debit.amount_cents), lastModelRunCost(PRICED_MODEL));
     } finally {
+      if (savedFetch === undefined) delete process.env.AKBARAL_PAGE_FETCH_ENDPOINT; else process.env.AKBARAL_PAGE_FETCH_ENDPOINT = savedFetch;
+      if (savedAllow === undefined) delete process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER; else process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = savedAllow;
       updateEconomyPolicy({ economy_model_key: null } as never);
       if (savedBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = savedBase;
@@ -168,10 +176,14 @@ describe('D10 real model cost reaches the execution ledger', () => {
     }));
     const savedBase = process.env.OPENAI_BASE_URL;
     const savedKey = process.env.OPENAI_API_KEY;
+    const savedFetch = process.env.AKBARAL_PAGE_FETCH_ENDPOINT;
+    const savedAllow = process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER;
     const stamp = Date.now();
     try {
       process.env.OPENAI_BASE_URL = fixture.url;
       process.env.OPENAI_API_KEY = 'test-fixture-key';
+      process.env.AKBARAL_PAGE_FETCH_ENDPOINT = fixture.url;
+      process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = '1';
       updateEconomyPolicy({ economy_model_key: FREE_MODEL } as never);
       const id = insertOpportunity({
         sourceUrlHash: `d10-free-${stamp}`, sourceUrl: 'https://example.com/d10-free-cost',
@@ -186,6 +198,8 @@ describe('D10 real model cost reaches the execution ledger', () => {
       const execution = db.get<{ cost_cents: number }>('SELECT cost_cents FROM economy_executions WHERE id = ?', [start.executionId]);
       assert.equal(Number(execution!.cost_cents), 0);
     } finally {
+      if (savedFetch === undefined) delete process.env.AKBARAL_PAGE_FETCH_ENDPOINT; else process.env.AKBARAL_PAGE_FETCH_ENDPOINT = savedFetch;
+      if (savedAllow === undefined) delete process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER; else process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = savedAllow;
       updateEconomyPolicy({ economy_model_key: null } as never);
       if (savedBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = savedBase;

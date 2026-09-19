@@ -49,6 +49,7 @@ it('allocates every cent deterministically, is replay-safe, and accounts for dis
   postExecutionCostShares(execution, 5);
   const amounts = db.all<{ amount_cents: number }>('SELECT amount_cents FROM economy_ledger ORDER BY agent_slug').map(row => Number(row.amount_cents));
   assert.deepEqual(amounts, [2, 2, 1]);
+  assert.deepEqual(db.all<{ cost_share_cents: number }>('SELECT cost_share_cents FROM economy_execution_participants ORDER BY agent_slug').map(row => Number(row.cost_share_cents)), [2, 2, 1]);
   postExecutionCostShares({ ...execution, attempts: 1 }, 1);
   assert.equal(Number(db.get<{ n: number }>('SELECT SUM(amount_cents) AS n FROM economy_ledger')!.n), 6);
 });
@@ -83,10 +84,34 @@ it('unverified work records incurred cost but no expected revenue; late revocati
     assert.equal(revoked.outcome.status, 'cancelled');
     assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM economy_deliveries WHERE execution_id = ?', [revoked.executionId])!.n, 0);
     assert.equal(Number(db.get<{ amount_cents: number }>('SELECT amount_cents FROM economy_ledger WHERE ref_id = ?', [`exec:${revoked.executionId}:api_cost`])!.amount_cents), 7, 'incurred cost survives revocation');
+    assert.equal(getExecution(revoked.executionId)!.cost_cents, 7);
     await assert.rejects(() => runWorkforceExecution(revoked.executionId), /not runnable/);
   } finally {
     modelRouter.complete = originalModel;
     Object.assign(TOOL_HANDLERS, originals);
     updateEconomyPolicy({ freeze_spending: 0 });
   }
+});
+
+it('persists the authorized property and prevents silent repointing before dispatch', async () => {
+  const { runExecution, reassignExecution } = require('../economy/operations') as typeof import('../economy/operations');
+  const { modelRouter } = require('../models/router') as typeof import('../models/router');
+  const original = modelRouter.complete;
+  let modelCalls = 0;
+  try {
+    modelRouter.complete = async () => { modelCalls += 1; throw new Error('must not call provider'); };
+    db.run("UPDATE economy_platforms SET status = 'verified' WHERE platform_key = 'fixture-platform'");
+    db.run("UPDATE economy_opportunity_assignments SET agent_slug = 'web-research-001', dedicated_account_property_id = 'original-property' WHERE id = 'fixture-binding'");
+    const opportunity = insertOpportunity({ sourceUrlHash: 'binding-snapshot', sourceUrl: 'https://example.test/snapshot', title: 'Synthetic binding fixture', platformKey: 'fixture-platform', category: 'research', expectedRevenueCents: 0, expectedCostCents: 0, timeHours: 1, riskLevel: 'low', probability: 0 });
+    const execution = startExecution({ opportunityId: opportunity.id, agentSlug: 'web-research-001', authorizedBy: 'owner' });
+    assert.match(getExecution(execution.executionId)!.verification_json!, /original-property/);
+    db.run("UPDATE economy_opportunity_assignments SET dedicated_account_property_id = 'repointed-property' WHERE id = 'fixture-binding'");
+    const result = await runExecution(execution.executionId);
+    assert.equal(result.status, 'cancelled');
+    assert.match(result.error!, /binding changed/);
+    assert.equal(modelCalls, 0, 'legacy entry point obeys the same runtime snapshot gate');
+    const next = startExecution({ opportunityId: opportunity.id, agentSlug: 'web-research-001', authorizedBy: 'owner' });
+    reassignExecution(next.executionId, 'web-research-001', 'explicit owner reauthorization fixture', 'test');
+    assert.match(getExecution(next.executionId)!.verification_json!, /repointed-property/);
+  } finally { modelRouter.complete = original; }
 });

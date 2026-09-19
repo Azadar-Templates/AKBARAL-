@@ -72,6 +72,8 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
   const opportunity = getOpportunity(execution.opportunity_id);
   if (!opportunity) throw new Error('opportunity missing');
 
+  let authorizationBinding: string | null = null;
+  try { authorizationBinding = JSON.parse(execution.verification_json ?? '{}').authorizationBinding ?? null; } catch { /* old/unbound executions fail closed for platform work */ }
   const policy = currentPolicy();
   const cancel = (reason: string, oppStatus: string): WorkforceOutcome => {
     updateExecution(execution.id, { status: 'cancelled', completed_at: new Date().toISOString(), error_message: reason });
@@ -83,11 +85,10 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
   const assertRuntime = (tool?: string): void => {
     if (currentPolicy().killSwitch) throw new Error('kill switch engaged');
     assertAgentRunnable(execution.agent_slug);
-    assertOpportunityAssignment(opportunity, execution.agent_slug);
+    if (assertOpportunityAssignment(opportunity, execution.agent_slug) !== authorizationBinding) throw new Error('authorized account/property binding changed; explicit reassignment is required');
     assertProviderAccessAllowed('workforce execution');
     assertSpendingAllowed('workforce execution');
     assertEmergencyStopDisabled();
-    assertOpportunityAssignment(opportunity, execution.agent_slug);
     const live = getExecution(execution.id);
     if (!live || !['authorized', 'running'].includes(live.status) || live.agent_slug !== execution.agent_slug) throw new Error('execution assignment or lifecycle changed during work');
     if (tool && !getAgentBySlug(execution.agent_slug)?.toolPermissions.includes(tool)) throw new Error(`tool permission revoked: ${tool}`);
@@ -96,11 +97,7 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
   if (policy.providerAccessRevoked) return cancel('provider access revoked', 'blocked');
   if (policy.freezeSpending) return cancel('spending frozen', 'blocked');
   try {
-    assertAgentRunnable(execution.agent_slug);
-    assertOpportunityAssignment(opportunity, execution.agent_slug);
-    assertProviderAccessAllowed('workforce execution');
-    assertSpendingAllowed('workforce execution');
-    assertEmergencyStopDisabled();
+    assertRuntime();
   } catch (error) {
     return cancel(error instanceof Error ? error.message : String(error), 'blocked');
   }
@@ -211,6 +208,7 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     return financialTransaction(db, 'economy', () => {
     // Already-incurred provider cost is retained even if authority was revoked while awaiting the model.
     postExecutionCostShares(execution, costCents);
+    updateExecution(execution.id, { cost_cents: execution.cost_cents + costCents });
     try { assertRuntime(); } catch (error) { return cancel(error instanceof Error ? error.message : String(error), 'blocked'); }
     const delivery = insertDelivery({
       executionId: execution.id,
@@ -225,8 +223,8 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
       status: verified ? 'completed' : 'failed',
       completed_at: new Date().toISOString(),
       result_json: JSON.stringify({ output: output.slice(0, 20_000), deliveredAt: new Date().toISOString(), deliveryId: delivery.id }),
-      verification_json: JSON.stringify({ ...verification, checkedBy: 'workforce_verifier_v2', toolsRan, successfulTools }),
-      cost_cents: costCents,
+      verification_json: JSON.stringify({ ...verification, authorizationBinding, checkedBy: 'workforce_verifier_v2', toolsRan, successfulTools }),
+      cost_cents: execution.cost_cents + costCents,
     });
     // Delivered work creates an EXPECTED estimate — NOT a claim.
     if (verified) insertRevenue({

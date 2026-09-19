@@ -204,13 +204,14 @@ export interface ExecutionRow {
 }
 
 export function insertExecution(input: { opportunityId: string; agentSlug: string; timeoutMs: number; maxAttempts?: number }): { id: string; created: boolean } {
-  const key = `opp:${input.opportunityId}:live`;
-  const existing = db.get<ExecutionRow>('SELECT * FROM economy_executions WHERE idempotency_key = ?', [key]);
-  if (existing && !['completed', 'failed', 'cancelled', 'timed_out'].includes(existing.status)) {
-    return { id: existing.id, created: false };
-  }
-  // A settled execution may be retried by bumping the round inside the key.
-  const round = existing ? Number(existing.idempotency_key.split('#')[1] || 0) + 1 : 0;
+  return financialTransaction(db, 'economy', () => {
+  const history = db.all<ExecutionRow>('SELECT * FROM economy_executions WHERE opportunity_id = ?', [input.opportunityId]);
+  const live = history.find(row => ['authorized', 'running'].includes(row.status));
+  if (live) return { id: live.id, created: false };
+  const round = history.reduce((max, row) => {
+    const value = Number(row.idempotency_key.split('#')[1] ?? 0);
+    return Math.max(max, Number.isSafeInteger(value) ? value : 0);
+  }, -1) + 1;
   const id = createId('eco_exe');
   db.run(
     `INSERT INTO economy_executions (id, opportunity_id, agent_slug, idempotency_key, status, attempts, max_attempts, timeout_at)
@@ -219,6 +220,7 @@ export function insertExecution(input: { opportunityId: string; agentSlug: strin
       new Date(Date.now() + input.timeoutMs).toISOString()],
   );
   return { id, created: true };
+  });
 }
 
 export function getExecution(id: string): ExecutionRow | undefined {
