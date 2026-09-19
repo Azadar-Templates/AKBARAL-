@@ -425,6 +425,7 @@ async function handleApi(
           }
           if (subject?.subject_type === 'resource') return { ...decisionResult, resource: decideResource({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
           if (subject?.subject_type === 'upgrade') return { ...decisionResult, upgrade: decideUpgrade({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
+          if (subject?.subject_type === 'tool') return { ...decisionResult, toolRequest: decideToolRequest({ id: String(subject.subject_id), decision, actorId: session.owner.id, actorType: 'owner' }) };
           return decisionResult;
         });
         json(res, 200, result);

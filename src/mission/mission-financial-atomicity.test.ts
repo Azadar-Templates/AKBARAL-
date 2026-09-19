@@ -224,3 +224,60 @@ it('mission message and audit writes roll back together and paginated replies re
   assert.equal(page.messages[0].id, reply.message.id);
   assert.equal(page.automaticReplies, false);
 });
+
+it('direct resource decisions synchronize the queue and roll both records back on failure', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const resource = management.requestResource({ agentId: agent, kind: 'storage', provider: 'synthetic-provider', monthlyCostCents: 100 });
+  const id = String(resource.id);
+  const queue = () => missionDb.get<{ status: string }>('SELECT status FROM mission_approvals WHERE subject_type = ? AND subject_id = ?', ['resource', id])!;
+  const before = snapshot();
+  failAfter('UPDATE mission_resources SET status', () => management.decideResource({ id, decision: 'approved', actorId: owner }));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(queue().status, 'pending');
+  assert.equal(management.decideResource({ id, decision: 'approved', actorId: owner }).status, 'approved');
+  assert.equal(queue().status, 'approved');
+  assert.throws(() => management.decideResource({ id, decision: 'rejected', actorId: owner }), /resource is approved/);
+  const conflicting = management.requestResource({ agentId: agent, kind: 'storage', provider: 'synthetic-provider', monthlyCostCents: 100 });
+  missionDb.run("UPDATE mission_approvals SET status = 'rejected' WHERE subject_type = 'resource' AND subject_id = ?", [String(conflicting.id)]);
+  assert.throws(() => management.decideResource({ id: String(conflicting.id), decision: 'approved', actorId: owner }), /conflicting/);
+});
+
+it('upgrade approval, queue decision, debit and audits are atomic and cannot charge twice', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const row = management.requestUpgrade({ agentId: agent, capability: 'Synthetic approval-sync fixture', requestedCostCents: 100, walletId: wallet }).upgrade;
+  const id = String(row.id);
+  const queue = () => missionDb.get<{ status: string }>('SELECT status FROM mission_approvals WHERE subject_type = ? AND subject_id = ?', ['upgrade', id])!;
+  const before = snapshot();
+  failAfter('UPDATE mission_upgrades SET status', () => management.decideUpgrade({ id, decision: 'approved', actorId: owner }));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(queue().status, 'pending');
+  management.decideUpgrade({ id, decision: 'approved', actorId: owner });
+  assert.equal(queue().status, 'approved');
+  const approved = snapshot();
+  assert.throws(() => management.decideUpgrade({ id, decision: 'approved', actorId: owner }), /upgrade is approved/);
+  assert.deepEqual(snapshot(), approved);
+  assert.equal(verifyLedger().ok, true);
+  assert.equal(verifyMissionAudit().ok, true);
+});
+
+it('tool decisions synchronize atomically and current blocks cannot be bypassed by pending requests', () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  management.seedTools();
+  const countBefore = missionDb.get<{ n: number }>('SELECT COUNT(*) AS n FROM mission_tool_requests')!.n;
+  failAfter('INSERT INTO mission_approvals', () => management.requestTool({ agentId: agent, toolKey: 'gemini_api' }));
+  assert.equal(missionDb.get<{ n: number }>('SELECT COUNT(*) AS n FROM mission_tool_requests')!.n, countBefore);
+  const row = management.requestTool({ agentId: agent, toolKey: 'gemini_api' });
+  const id = String(row.id);
+  const queue = () => missionDb.get<{ status: string }>('SELECT status FROM mission_approvals WHERE subject_type = ? AND subject_id = ?', ['tool', id])!;
+  const before = snapshot();
+  failAfter('UPDATE mission_tool_requests SET status', () => management.decideToolRequest({ id, decision: 'approved', actorId: owner }));
+  assert.deepEqual(snapshot(), before);
+  assert.equal(queue().status, 'pending');
+  management.setToolStatus('gemini_api', 'blocked', owner);
+  try {
+    assert.throws(() => management.decideToolRequest({ id, decision: 'approved', actorId: owner }), /blocked/);
+    assert.equal(queue().status, 'pending');
+    management.decideToolRequest({ id, decision: 'rejected', actorId: owner });
+    assert.equal(queue().status, 'rejected');
+  } finally { management.setToolStatus('gemini_api', 'approved', owner); }
+});

@@ -613,6 +613,25 @@ test('message mutations reject cross-agent, read-only, paused and invalid reques
   } finally { missionDb.run("UPDATE mission_agents SET status = 'active' WHERE id = ?", ['agt_link_a']); }
 });
 
+test('generic approval dispatch completes resource, upgrade and tool subjects without replay or fictitious payments', async () => {
+  const ledgerBefore = Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n);
+  for (const fixture of [
+    { type: 'resource', endpoint: '/api/resources', key: 'resource', input: { kind: 'storage', provider: 'synthetic-provider', monthlyCostCents: 10000 }, resultKey: 'resource' },
+    { type: 'upgrade', endpoint: '/api/upgrades', key: 'upgrade', input: { capability: 'Synthetic zero-cost approval fixture', requestedCostCents: 0 }, resultKey: 'upgrade' },
+    { type: 'tool', endpoint: '/api/tools/request', key: 'request', input: { toolKey: 'gemini_api' }, resultKey: 'toolRequest' },
+  ]) {
+    const requested = await owner(fixture.endpoint, { method: 'POST', body: JSON.stringify({ ...fixture.input, agentSlug: 'link-agent-a' }) });
+    assert.equal(requested.status, 201, fixture.type);
+    const id = requested.body[fixture.key].id;
+    const approval = missionDb.get<Row>('SELECT id FROM mission_approvals WHERE subject_type = ? AND subject_id = ?', [fixture.type, id])!;
+    const decided = await owner(`/api/approvals/${approval.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
+    assert.equal(decided.status, 200, JSON.stringify(decided.body));
+    assert.equal(decided.body[fixture.resultKey].status, 'approved');
+    assert.equal((await owner(`/api/approvals/${approval.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) })).status, 409);
+  }
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), ledgerBefore);
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

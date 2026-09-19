@@ -2,7 +2,7 @@ import { looksLikeInstrumentCredential } from './destination-safety';
 import { debit, getWallet } from './treasury';
 import { missionDb, missionId, nowIso, appendMissionAudit, type Row } from './database';
 import { encryptCredential, vaultConfigured, MissionAuthError } from './auth';
-import { currentPolicy, requestApproval, canAgentSpend, dailySpendCents } from './policy';
+import { currentPolicy, requestApproval, decideApproval, canAgentSpend, dailySpendCents } from './policy';
 
 /**
  * AGENT SELF-MANAGEMENT — the infrastructure that lets agents operate real
@@ -40,6 +40,21 @@ export class MissionSelfServiceError extends Error {
     this.name = 'MissionSelfServiceError';
     this.code = code;
     this.statusCode = statusCode;
+  }
+}
+
+/** Called only inside the subject mutation transaction. Queue and subject must
+ * agree; a stale rejection/expiry must never be silently overwritten by a
+ * direct endpoint. The generic route may already have recorded this decision.
+ */
+function synchronizeApproval(subjectType: 'resource' | 'upgrade' | 'tool', subjectId: string, decision: 'approved' | 'rejected', actorId: string, note?: string | null): void {
+  const approvals = missionDb.all<Row>('SELECT * FROM mission_approvals WHERE subject_type = ? AND subject_id = ? AND action = ?', [subjectType, subjectId, `${subjectType}.approve`]);
+  if (!approvals.length) throw new MissionSelfServiceError(409, 'approval record is missing; request owner review again', 'conflict');
+  if (approvals.some(approval => !['pending', decision].includes(String(approval.status)))) throw new MissionSelfServiceError(409, 'approval queue contains a conflicting or expired decision', 'conflict');
+  for (const approval of approvals) {
+    if (approval.status !== 'pending') continue;
+    const result = decideApproval({ id: String(approval.id), decision, decidedBy: actorId, note, actorType: 'owner' });
+    if (!result.ok) throw new MissionSelfServiceError(409, result.reason ?? 'approval decision failed', 'conflict');
   }
 }
 
@@ -119,6 +134,7 @@ export function setToolStatus(key: string, status: 'approved' | 'restricted' | '
 }
 
 export function requestTool(input: { agentId: string; toolKey: string; justification?: string | null; actorId?: string | null }): Row {
+  return missionDb.transaction(() => {
   const tool = getTool(input.toolKey);
   if (!tool) throw new MissionSelfServiceError(404, 'unknown tool — agents may only request catalog entries', 'not_found');
   const id = missionId('tqr');
@@ -137,19 +153,24 @@ export function requestTool(input: { agentId: string; toolKey: string; justifica
     requestApproval({ subjectType: 'tool', subjectId: id, action: 'tool.approve', requestedBy: input.actorId ?? input.agentId, note: `tool request: ${input.toolKey}` });
   }
   return missionDb.get<Row>('SELECT * FROM mission_tool_requests WHERE id = ?', [id])!;
+  });
 }
 
 export function decideToolRequest(input: { id: string; decision: 'approved' | 'rejected'; actorId: string; actorType?: SelfServiceActor }): Row {
+  return missionDb.transaction(() => {
   assertOwnerAction(input.actorType, 'decide a tool request');
   const row = missionDb.get<Row>('SELECT * FROM mission_tool_requests WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'tool request not found', 'not_found');
   if (String(row.status) !== 'requested') throw new MissionSelfServiceError(409, `request already ${row.status}`, 'conflict');
+  if (input.decision === 'approved' && getTool(String(row.tool_key))?.status === 'blocked') throw new MissionSelfServiceError(403, 'tool is blocked by current policy', 'forbidden');
+  synchronizeApproval('tool', input.id, input.decision, input.actorId);
   missionDb.run('UPDATE mission_tool_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', [input.decision, input.actorId, nowIso(), input.id]);
   appendMissionAudit({
     actorType: 'owner', actorId: input.actorId, action: `tool.request_${input.decision}`,
     subjectType: 'tool', subjectId: String(row.tool_key), detail: { agentId: String(row.agent_id) },
   });
   return missionDb.get<Row>('SELECT * FROM mission_tool_requests WHERE id = ?', [input.id])!;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -419,6 +440,7 @@ export function decideResource(input: { id: string; decision: 'approved' | 'reje
   const row = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
   if (String(row.status) !== 'requested') throw new MissionSelfServiceError(409, `resource is ${row.status}`, 'conflict');
+  synchronizeApproval('resource', input.id, input.decision, input.actorId, input.note);
   missionDb.run('UPDATE mission_resources SET status = ?, updated_at = ? WHERE id = ?', [input.decision === 'approved' ? 'approved' : 'retired', nowIso(), input.id]);
   appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: `resource.${input.decision}`, subjectType: 'resource', subjectId: input.id, detail: { note: input.note ?? null } });
   return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id])!;
@@ -518,6 +540,7 @@ export function decideUpgrade(input: { id: string; decision: 'approved' | 'rejec
   const row = missionDb.get<Row>('SELECT * FROM mission_upgrades WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'upgrade not found', 'not_found');
   if (String(row.status) !== 'requested') throw new MissionSelfServiceError(409, `upgrade is ${row.status}`, 'conflict');
+  synchronizeApproval('upgrade', input.id, input.decision, input.actorId, input.note);
   if (input.decision === 'rejected') {
     missionDb.run('UPDATE mission_upgrades SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', ['rejected', input.actorId, nowIso(), input.id]);
   } else {
