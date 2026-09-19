@@ -1,5 +1,7 @@
 # A→Z readiness audit — 2026-09-19 UTC
 
+**Current verdict: not production-ready.** Five demonstrated defects were fixed and checkpointed. The public preview now runs the verified code after a guarded, state-preserving refresh; seven real launch blockers remain. The final verification and current-runtime sections below supersede initial observations of the older processes.
+
 ## Recovery boundary
 
 Audit resumed from actual local/remote `1c6a2e355a609bfce64161eb62a7fb29766c28f4`, not the older requested `5a2f6ed` (verified ancestor). The initially pending documentation checkpoint was pushed after GitHub reconnection. Branch remains `arena/01a0ba0a-akbaral`; history is not shallow. `669dc60` and `2466a9d` are preserved. No reset, clean, revert, branch switch or forced push.
@@ -124,3 +126,14 @@ At **19:09:27 UTC**, performed a guarded process refresh, not a project/data res
 - Standalone mission still has no persistent listener, and anonymous external E2B requests still require the platform traffic token. Nothing here establishes a permanent production deployment.
 
 Evidence: `preview-refresh.json`, `preview-after.json`, `preview-financial-after.json`, `runtime-launch-after.json`; backup path is recorded in the refresh manifest. Initial route/old-process evidence remains above rather than being discarded. Next: the final focused private-server HTTP regression after the shared-driver changes, then final exact remote/CI report.
+
+
+## Final verification and continuation boundary
+
+The focused private-server HTTP suite passes **33/33** after all shared-driver/security changes (`final-mission-server-02.log`). It covers owner/read-only/scoped-agent authorization and the private resource/financial routes using isolated synthetic fixtures. The first invocation named a nonexistent test file; that command error remains in `final-mission-server.log`, and is not counted as an executed test.
+
+New audit evidence: 22 focused isolation/DB tests; 46 retained PG driver tests; 25 SQLite health/queue plus seven PG monitoring tests; 21 cache-disabled redaction/isolation/bridge tests; 33 private-server HTTP tests; 36 live local preview HTTP checks; final compiled platform/mission checks; types, secret scan and diff checks. These overlapping focused batches are **not** presented as a unique full-suite count. Current source has **101 test files**. Prior 186 mission SQLite / 74 mission PG / 17 browser / 27-route build evidence remains identified as retained evidence, not rerun unchanged.
+
+The refreshed preview's deployed tree is `7298227`, containing source-code checkpoint `3ca0c23`. Follow-up commits through this report change documentation only; no claim that its process magically loads later commits. Same preview URL and correct `/signin`, `/signup`, `/workspace`, `/admin`, `/owner` routes remain. Authenticated external/browser/device access and persistent mission service setup are not verified by the local HTTP checks.
+
+**Next exact action:** inspect the Verify workflow for the final pushed checkpoint (`gh run list --workflow verify.yml --branch arena/01a0ba0a-akbaral`); diagnose any real failure instead of rerunning successful unchanged batches. Hosted CI was still in progress at the last inspection, not a fresh green result. Production activation then requires the actual operator's persistent storage/domain, authorized provider/search/payment configuration and private mission identity/secrets. Do not replace these with fabricated credentials, earnings, purchases, opportunities or an exposed unauthenticated mission service.
