@@ -1,0 +1,75 @@
+name: workforce-live-verify
+
+# TEMPORARY verification workflow (same precedent as gemini-live-verify.yml):
+# created to exercise ONE real workforce execution against the REAL Google
+# provider on a runner with network egress + the GOOGLE_API_KEY secret, then
+# deleted after the evidence is collected. The permanent artifact is
+# scripts/verify-workforce-live-exec.ts, which any future run can re-execute.
+#
+# Evidence rules: no secret VALUE is ever printed (presence is a boolean);
+# verdict + model + latency + delivery evidence are published BOTH as job
+# output AND as check annotations (annotations are readable through the
+# checks API from environments that cannot download logs or artifacts).
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: ['arena/01a0b74e-akbaral']
+    paths:
+      - '.github/workflows/workforce-live-verify.yml'
+      - 'scripts/verify-workforce-live-exec.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  live-exec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Credential presence (boolean only, never values)
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -n "$GOOGLE_API_KEY" ]; then
+            echo "GOOGLE_API_KEY: CONFIGURED"
+            echo "::notice title=presence::GOOGLE_API_KEY: CONFIGURED"
+          else
+            echo "GOOGLE_API_KEY: not configured"
+            echo "::notice title=presence::GOOGLE_API_KEY: not configured"
+          fi
+      - name: Real workforce execution (one agent, live Google)
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          DATABASE_URL: file:./.workforce-live.db
+        run: |
+          rm -f .workforce-live.db
+          set +e
+          npx tsx scripts/verify-workforce-live-exec.ts 2>&1 | tee workforce-live-exec.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "script_exit=$code" | tee -a workforce-live-exec.log
+          exit "$code"
+      - name: Publish evidence as annotations (readable where logs are not)
+        if: always()
+        run: |
+          if [ -f workforce-live-exec.log ]; then
+            grep -E '^(ROUTED_MODEL|ROUTED_PROVIDER|ROUTED_AVAILABLE|EVALUATION|EXECUTION|LATENCY_MS|OUTCOME|MODEL|PROVIDER|PROVIDER_LATENCY_MS|INPUT_TOKENS|OUTPUT_TOKENS|COST_CENTS|MODEL_RUN_STATUS|EXECUTION_COST_CENTS|DELIVERY|DELIVERY_VERIFIED|OUTPUT_SHA|OUTPUT_PREVIEW|ERROR|VERDICT|script_exit)=' workforce-live-exec.log \
+              | tr '\n' '\n' | sed 's/::/:/g' | cut -c1-900 \
+              | while read -r line; do echo "::notice title=workforce-live::$line"; done
+          else
+            echo "::warning title=workforce-live::no evidence log was produced"
+          fi
+      - name: Keep the evidence log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workforce-live-exec
+          path: workforce-live-exec.log
+          if-no-files-found: warn
