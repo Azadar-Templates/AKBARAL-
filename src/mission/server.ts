@@ -1,3 +1,4 @@
+import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
@@ -684,6 +685,10 @@ async function handleApi(
         }
         if (method === 'POST' && rest.length === 4 && rest[3] === 'cancel') {
           json(res, 200, { call: cancelOwnerResourceCall(rest[0], rest[2], actor), moneyMoved: false, providerCalled: false });
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'record-cost') {
+          json(res, 200, recordResourceCallCost(rest[0], rest[2], actor, { actualCostCents: body.actualCostCents as number, providerRef: param('providerRef', '')!, evidence: param('evidence', '')! }));
           return true;
         }
         if (method === 'POST' && rest.length === 4 && rest[3] === 'reconcile') {

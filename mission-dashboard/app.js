@@ -1090,7 +1090,7 @@ async function renderResourceCalls(resource) {
   const editor = el('div');
   const next = el('button', { type: 'button', text: 'Load older calls', hidden: true });
   const refresh = el('button', { type: 'button', text: 'Refresh calls' });
-  host.replaceChildren(el('h3', { text: `Resource calls — ${resource.provider}` }), el('p', { class: 'muted small', text: 'Cancel only unstarted reservations. Reconcile unknown outcomes using actual provider usage evidence, never guessed zero usage. These controls do not call a provider, move money or issue refunds.' }), transcript, next, refresh, editor);
+  host.replaceChildren(el('h3', { text: `Resource calls — ${resource.provider}` }), el('p', { class: 'muted small', text: 'Cancel only unstarted reservations. Reconcile unknown outcomes using actual provider usage evidence, never guessed zero usage. These controls never call a provider or execute external payments/refunds. Usage reconciliation and financial receipt accounting are separate.' }), transcript, next, refresh, editor);
   let rows = [], cursor = null, loading = null;
   const load = async (reset = false) => {
     if (loading) { await loading; return load(reset); }
@@ -1106,6 +1106,7 @@ async function renderResourceCalls(resource) {
         { label: 'Call', key: 'id', wrap: true }, { label: 'State', key: 'status' },
         { label: 'Reserved quota', render: row => JSON.stringify(row.reservedUsage) },
         { label: 'Actual usage', render: row => row.actualUsage ? JSON.stringify(row.actualUsage) : 'Unknown / not reconciled' },
+        { label: 'Financial exposure', render: row => row.budget ? `${row.budget.status}: ${row.budget.reservedCents} ${row.budget.currency} minor units reserved; actual ${row.budget.actualCents ?? 'unknown'}` : 'Quota-only call; no financial hold' },
         { label: 'Deadline', render: row => when(row.deadlineAt) },
         { label: 'Provider reference', render: row => row.providerRef || 'No receipt' },
         { label: 'Evidence', key: 'evidence', wrap: true },
@@ -1124,6 +1125,11 @@ async function renderResourceCalls(resource) {
           if (['dispatched', 'uncertain'].includes(row.status)) {
             const button = el('button', { type: 'button', class: 'small', text: 'Reconcile usage', 'data-reconcile-call': row.id });
             button.addEventListener('click', () => editReceipt(row));
+            return button;
+          }
+          if (row.budget?.status === 'held' && ['succeeded', 'failed'].includes(row.status)) {
+            const button = el('button', { type: 'button', class: 'small', text: 'Record charge evidence', 'data-record-call-cost': row.id });
+            button.addEventListener('click', () => editCost(row));
             return button;
           }
           return 'Final record';
@@ -1156,6 +1162,24 @@ async function renderResourceCalls(resource) {
         const actualUsage = Object.fromEntries(counters.map(({ key, input }) => [key, Number(input.value)]));
         await api(`/resources/${resource.id}/calls/${call.id}/reconcile`, { method: 'POST', body: { outcome: outcome.value, actualUsage, providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value } });
         editor.replaceChildren(el('p', { text: 'Usage evidence recorded. No provider verification, payment or refund was performed.' }));
+        await load(true);
+      } catch (error) { banner(error.message, 'error'); }
+      finally { saving = false; form.querySelector('button').disabled = false; }
+    });
+    editor.replaceChildren(form);
+  };
+  const editCost = call => {
+    if (!guardMutation()) return;
+    const form = el('form', { class: 'stack-form' });
+    form.append(el('h4', { text: `Financial receipt — ${call.id}` }), el('p', { text: `This records an evidenced charge in the private ${call.budget.currency} ledger and releases the financial hold. It does not pay a provider. Do not substitute a token estimate for a financial receipt.` }), el('input', { name: 'actualCostCents', type: 'number', min: 0, step: 1, required: '', 'aria-label': 'Actual charge in minor units' }), el('input', { name: 'providerRef', required: '', minlength: 4, maxlength: 200, 'aria-label': 'Provider charge reference' }), el('textarea', { name: 'evidence', required: '', minlength: 12, maxlength: 2000, 'aria-label': 'Financial evidence without secrets' }), el('button', { type: 'submit', text: 'Record evidenced charge — no external payment' }));
+    let saving = false;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (saving || !guardMutation() || !form.reportValidity()) return;
+      saving = true; form.querySelector('button').disabled = true;
+      try {
+        await api(`/resources/${resource.id}/calls/${call.id}/record-cost`, { method: 'POST', body: { actualCostCents: Number(form.elements.actualCostCents.value), providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value } });
+        editor.replaceChildren(el('p', { text: 'Owner-evidenced charge recorded in the private ledger. No external payment executed.' }));
         await load(true);
       } catch (error) { banner(error.message, 'error'); }
       finally { saving = false; form.querySelector('button').disabled = false; }

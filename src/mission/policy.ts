@@ -1,3 +1,4 @@
+import { heldResourceBudget } from './resource-budget-state';
 import { missionDb, appendMissionAudit, missionId, nowIso, type Row } from './database';
 
 /**
@@ -312,6 +313,7 @@ export interface SpendDecision {
   requiresApproval: boolean;
   reasons: string[];
   dailySpentCents: number;
+  dailyReservedCents?: number;
   policyRemainingCents: number;
 }
 
@@ -328,7 +330,7 @@ interface WalletRow extends Row {
  * The single gate every spend must pass. Returns whether the spend may execute
  * now, or must be routed to the owner approval queue, or is refused outright.
  */
-export function canAgentSpend(request: SpendRequest, policy: MissionPolicy, dailySpentCents: number): SpendDecision {
+export function canAgentSpend(request: SpendRequest, policy: MissionPolicy, dailySpentCents: number, excludeCallId?: string): SpendDecision {
   const reasons: string[] = [];
   const amount = request.amountCents;
   if (!Number.isSafeInteger(amount) || amount <= 0) return { allowed: false, requiresApproval: false, reasons: ['amount_must_be_positive'], dailySpentCents, policyRemainingCents: policy.maxDailySpendCents - dailySpentCents };
@@ -339,25 +341,28 @@ export function canAgentSpend(request: SpendRequest, policy: MissionPolicy, dail
   if (policy.killSwitch) reasons.push('kill_switch_engaged');
   if (String(wallet.status) !== 'active') reasons.push(`wallet_${wallet.status}`);
 
+  const held = heldResourceBudget(request.walletId, excludeCallId);
+  const dailyHeld = heldResourceBudget(undefined, excludeCallId);
+  if (missionDb.get("SELECT call_id FROM mission_resource_call_budgets WHERE status = 'held' AND currency <> ? LIMIT 1", [policy.currency])) reasons.push('held_provider_currency_conflict');
   const budget = Number(wallet.budget_cents);
-  const spent = Number(wallet.spent_cents);
+  const spent = Number(wallet.spent_cents) + held;
   if (budget > 0 && spent + amount > budget) {
     reasons.push(`wallet_budget_exceeded (${spent + amount} > ${budget})`);
   }
-  if (Number(wallet.balance_cents) < amount) {
-    reasons.push(`insufficient_wallet_balance (${wallet.balance_cents} < ${amount})`);
+  if (Number(wallet.balance_cents) - held < amount) {
+    reasons.push(`insufficient_wallet_balance (${Number(wallet.balance_cents) - held} unreserved < ${amount})`);
   }
   if (amount > policy.maxExpenseCents) {
     reasons.push(`expense_above_per_transaction_cap (${amount} > ${policy.maxExpenseCents})`);
   }
-  const dailyRemaining = policy.maxDailySpendCents - dailySpentCents;
+  const dailyRemaining = policy.maxDailySpendCents - dailySpentCents - dailyHeld;
   if (amount > dailyRemaining) {
     reasons.push(`daily_spend_cap_exceeded (remaining ${dailyRemaining})`);
   }
 
   const requiresApproval = amount >= policy.requireApprovalAboveCents;
   const allowed = reasons.length === 0 && !requiresApproval;
-  return { allowed, requiresApproval: reasons.length === 0 && requiresApproval, reasons, dailySpentCents, policyRemainingCents: dailyRemaining };
+  return { allowed, requiresApproval: reasons.length === 0 && requiresApproval, reasons, dailySpentCents, dailyReservedCents: dailyHeld, policyRemainingCents: dailyRemaining };
 }
 
 export function dailySpendCents(dateIso: string): number {

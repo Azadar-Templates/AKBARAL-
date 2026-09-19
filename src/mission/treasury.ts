@@ -1,3 +1,4 @@
+import { heldResourceBudget } from './resource-budget-state';
 import { destinationFingerprint, payoutSlotVerificationStatus } from './payout-verification';
 import { DESTINATION_SAFETY_RULE, looksLikeInstrumentCredential } from './destination-safety';
 import { missionDb, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
@@ -229,6 +230,16 @@ function appendLedger(input: {
         `insufficient wallet balance: ${balance} minor units available, ${amount} requested`,
         'insufficient_funds',
       );
+    }
+
+    if (input.direction === 'debit') {
+      const held = heldResourceBudget(input.walletId);
+      if (balanceAfter < held) throw new MissionTreasuryError(409, 'wallet funds are held for outstanding provider calls', 'reserved_funds');
+      if (!['transfer', 'payout', 'reinvestment'].includes(input.category)) {
+        const totalHeld = heldResourceBudget();
+        const policy = currentPolicy();
+        if ((held > 0 && Number(wallet.budget_cents) > 0 && Number(wallet.spent_cents) + amount + held > Number(wallet.budget_cents)) || (totalHeld > 0 && dailySpendCents(nowIso()) + amount + totalHeld > policy.maxDailySpendCents)) throw new MissionTreasuryError(409, 'spend capacity is held for outstanding provider calls', 'reserved_budget');
+      }
     }
 
     // Ordering is explicit: `seq` (assigned below) rather than an engine-specific

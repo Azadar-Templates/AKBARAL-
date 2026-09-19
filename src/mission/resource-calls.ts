@@ -1,3 +1,4 @@
+import { reserveResourceBudget, recheckResourceBudget, releaseCancelledResourceBudget, getResourceCallBudget, type ResourceBudget } from './resource-budgets';
 import { missionDb, missionId, nowIso, appendMissionAudit, type Row } from './database';
 import { getCredentialPublic, MissionSelfServiceError, pendingResourceUsage, resourceCounters, resourceReadiness } from './self-management';
 
@@ -5,6 +6,7 @@ import { getCredentialPublic, MissionSelfServiceError, pendingResourceUsage, res
  * a request body. This meters quota only, not payments or provider verification. */
 export interface ResourceCallActor { actorType: 'owner' | 'agent'; actorId: string }
 export interface ReserveResourceCall extends ResourceCallActor {
+  budget?: ResourceBudget;
   resourceId: string;
   agentId: string;
   idempotencyKey: string;
@@ -74,6 +76,7 @@ export function reserveResourceCall(input: ReserveResourceCall): Row {
     const prior = missionDb.get<Row>('SELECT * FROM mission_resource_calls WHERE resource_id = ? AND idempotency_key = ?', [input.resourceId, key]);
     if (prior) {
       if (prior.agent_id !== input.agentId || prior.operation_fingerprint !== input.operationFingerprint || prior.reserved_usage !== canonical(units)) fail('idempotency key belongs to another reservation', 'idempotency_conflict');
+      reserveResourceBudget(prior, input.budget, input, true);
       return prior;
     }
     const current = binding(input.resourceId, input.agentId);
@@ -81,6 +84,7 @@ export function reserveResourceCall(input: ReserveResourceCall): Row {
     const id = missionId('rcall');
     missionDb.run("INSERT INTO mission_resource_calls (id, resource_id, agent_id, idempotency_key, operation_fingerprint, binding_snapshot, reserved_usage, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', ?)", [id, input.resourceId, input.agentId, key, input.operationFingerprint, current.snapshot, canonical(units), nowIso()]);
     const row = getCall(id);
+    reserveResourceBudget(row, input.budget, input);
     audit(row, input, 'reserved', { units });
     return row;
   });
@@ -95,6 +99,7 @@ export function claimResourceCall(id: string, actor: ResourceCallActor, timeoutM
     actorFor(actor, String(row.agent_id));
     if (row.status !== 'reserved') fail(`call is ${row.status}; automatic redispatch is forbidden`);
     try {
+      recheckResourceBudget(row);
       const current = binding(String(row.resource_id), String(row.agent_id), id);
       if (current.snapshot !== row.binding_snapshot) fail('authorized resource/credential binding changed');
       const units = resourceCounters(JSON.parse(String(row.reserved_usage)), 'reserved usage');
@@ -106,6 +111,7 @@ export function claimResourceCall(id: string, actor: ResourceCallActor, timeoutM
     } catch (error) {
       if (!(error instanceof MissionSelfServiceError)) throw error;
       missionDb.run("UPDATE mission_resource_calls SET status = 'cancelled', resolved_at = ? WHERE id = ?", [nowIso(), id]);
+      releaseCancelledResourceBudget(id);
       audit(row, actor, 'cancelled', { reason: error.code });
       return { denied: error };
     }
@@ -121,6 +127,7 @@ export function cancelResourceCall(id: string, actor: ResourceCallActor): Row {
     if (row.status === 'cancelled') return row;
     if (row.status !== 'reserved') fail('only an unstarted reservation can be cancelled; reconcile dispatched usage');
     missionDb.run("UPDATE mission_resource_calls SET status = 'cancelled', resolved_at = ? WHERE id = ?", [nowIso(), id]);
+    releaseCancelledResourceBudget(id);
     audit(row, actor, 'cancelled', { reason: 'cancelled_before_dispatch' });
     return getCall(id);
   });
@@ -222,9 +229,12 @@ export interface ResourceCallPublic {
   reservedUsage: Record<string, number>; actualUsage: Record<string, number> | null;
   providerRef: string | null; evidence: string | null;
   createdAt: string; deadlineAt: string | null; resolvedAt: string | null;
+  budget: { walletId: string; currency: string; reservedCents: number; status: string; actualCents: number | null } | null;
 }
 function publicCall(row: Row): ResourceCallPublic {
+  const hold = getResourceCallBudget(String(row.id));
   return {
+    budget: hold ? { walletId: String(hold.wallet_id), currency: String(hold.currency), reservedCents: Number(hold.reserved_cents), status: String(hold.status), actualCents: hold.actual_cents === null ? null : Number(hold.actual_cents) } : null,
     id: String(row.id), resourceId: String(row.resource_id), agentId: String(row.agent_id), status: String(row.status),
     reservedUsage: resourceCounters(JSON.parse(String(row.reserved_usage)), 'reserved usage'),
     actualUsage: row.actual_usage ? resourceCounters(JSON.parse(String(row.actual_usage)), 'actual usage') : null,

@@ -16,7 +16,7 @@ function consoleFixture() {
     '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
     '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
     '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'synthetic-provider', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
-    '/api/resources/resource-fixture/calls?limit=50': { calls: [{ id: 'held-fixture', status: 'reserved', reservedUsage: { requests: 1 }, actualUsage: null }, { id: 'uncertain-fixture', status: 'uncertain', reservedUsage: { requests: 1 }, actualUsage: null, evidence: '<img src=x> Synthetic evidence text' }], nextCursor: null },
+    '/api/resources/resource-fixture/calls?limit=50': { calls: [{ id: 'held-fixture', status: 'reserved', reservedUsage: { requests: 1 }, actualUsage: null }, { id: 'uncertain-fixture', status: 'uncertain', reservedUsage: { requests: 1 }, actualUsage: null, evidence: '<img src=x> Synthetic evidence text' }, { id: 'cost-fixture', status: 'succeeded', reservedUsage: { requests: 1 }, actualUsage: { requests: 1 }, budget: { status: 'held', reservedCents: 40, actualCents: null, currency: 'USD' } }], nextCursor: null },
     '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
     '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
   };
@@ -190,5 +190,26 @@ it('owner quota-call controls submit actual evidence, never guessed zero, and re
     win.fixture.state.token = '';
     await win.fixture.loadTools();
     assert.equal(win.document.querySelectorAll('[data-resource-calls], [data-reconcile-call], [data-cancel-call]').length, 0);
+  } finally { dom.window.close(); }
+});
+
+it('financial receipt control requires an explicit actual charge and distinguishes accounting from payment', async () => {
+  const { dom, win, requests, resource } = consoleFixture();
+  try {
+    await win.fixture.renderResourceCalls(resource);
+    const host = win.document.querySelector('#resource-calls');
+    assert.match(host.textContent, /40 USD minor units reserved; actual unknown/);
+    host.querySelector('[data-record-call-cost]').click();
+    const form = host.querySelector('form');
+    assert.equal(form.elements.actualCostCents.value, '');
+    form.elements.actualCostCents.value = '25';
+    form.elements.providerRef.value = 'synthetic-financial-ref';
+    form.elements.evidence.value = 'Synthetic financial evidence, not a real payment.';
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.length, 1, 'double submit records one request');
+    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/calls/cost-fixture/record-cost', body: { actualCostCents: 25, providerRef: 'synthetic-financial-ref', evidence: 'Synthetic financial evidence, not a real payment.' } });
+    assert.match(host.textContent, /No external payment executed/);
   } finally { dom.window.close(); }
 });

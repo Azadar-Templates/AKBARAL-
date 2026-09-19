@@ -694,6 +694,46 @@ test('owner call review and reconciliation are private, resource-scoped and neve
   assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), before);
 });
 
+test('owner cost receipt API records private accounting once and never accepts agent authority', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const operations = require('./resource-calls') as typeof import('./resource-calls');
+  const treasury = require('./treasury') as typeof import('./treasury');
+  const policy = require('./policy') as typeof import('./policy');
+  const previous = policy.currentPolicy();
+  policy.updatePolicy({ maxDailySpendCents: 1000000, maxExpenseCents: 1000, requireApprovalAboveCents: 1000 }, 'owner');
+  try {
+    const credential = await owner('/api/credentials', { method: 'POST', body: JSON.stringify({ provider: 'synthetic-budget-http', label: 'Synthetic budget fixture', secret: 'synthetic-credential-value-not-real' }) });
+    const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-budget-http', kind: 'api', credentialId: credential.body.credential.id, limits: { requests: 3 } });
+    const id = String(resource.id);
+    management.provisionResource({ id, actualCostCents: 0, providerRef: 'synthetic-budget-http-invoice', evidence: 'Synthetic fixture only; no real purchase.', actorId: 'owner' });
+    management.recordResourceUsage({ id, usage: { requests: 0 }, actorType: 'owner', actorId: 'owner' });
+    const wallet = treasury.ensureAgentWallet('agt_link_a', 'Synthetic budget HTTP wallet');
+    treasury.setWalletBudget({ walletId: wallet.id, budgetCents: 100000, actorId: 'owner' });
+    treasury.credit({ walletId: wallet.id, amountCents: 100, category: 'transfer', memo: 'Synthetic fixture funds' });
+    const actor = { actorType: 'agent' as const, actorId: 'agt_link_a' };
+    const call = operations.reserveResourceCall({ resourceId: id, agentId: actor.actorId, ...actor, operationFingerprint: 'c'.repeat(64), idempotencyKey: 'synthetic-http-budget-reservation', units: { requests: 1 }, budget: { walletId: wallet.id, maxCostCents: 40 } });
+    operations.claimResourceCall(String(call.id), actor);
+    operations.settleResourceCall(String(call.id), actor, { outcome: 'succeeded', actualUsage: { requests: 1 }, providerRef: 'synthetic-budget-http-usage', evidence: 'Synthetic usage; not financial evidence.' });
+    const url = `/api/resources/${id}/calls/${call.id}/record-cost`;
+    const receipt = { actualCostCents: 25, providerRef: 'synthetic-budget-http-charge', evidence: 'Synthetic financial receipt only, no provider payment.' };
+    const link = createAccessLink({ label: 'cost mutation denied', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+    assert.equal((await api(url, { method: 'POST', headers: { 'x-mission-link': link.token }, body: JSON.stringify({ ...receipt, actorType: 'owner', actorId: 'owner' }) })).status, 401);
+    assert.equal((await owner(url, { method: 'POST', body: JSON.stringify({ ...receipt, actualCostCents: null }) })).status, 400);
+    assert.equal((await owner(url.replace(id, 'wrong-resource'), { method: 'POST', body: JSON.stringify(receipt) })).status, 404);
+    const before = treasury.getWallet(wallet.id)!.balanceCents;
+    const result = await owner(url, { method: 'POST', body: JSON.stringify(receipt) });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.externalPaymentExecuted, false);
+    assert.equal(treasury.getWallet(wallet.id)!.balanceCents, before - 25);
+    assert.equal((await owner(url, { method: 'POST', body: JSON.stringify(receipt) })).status, 200);
+    assert.equal(treasury.getWallet(wallet.id)!.balanceCents, before - 25);
+    assert.equal((await owner(url, { method: 'POST', body: JSON.stringify({ ...receipt, actualCostCents: 26 }) })).status, 409);
+    const page = await owner(`/api/resources/${id}/calls`);
+    assert.equal(page.body.calls[0].budget.actualCents, 25);
+    assert.equal(page.body.calls[0].budget.status, 'recorded');
+  } finally { policy.updatePolicy(previous, 'owner'); }
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {
