@@ -1,9 +1,14 @@
+import { assertOpportunityAssignment } from './assignment-guard';
+import { db } from '../db/database';
+import { financialTransaction } from '../db/financial-transaction';
+import { postExecutionCostShares } from '../economy/execution-accounting';
+import { usableToolEvidence, verifyWorkforceDelivery } from './delivery-verification';
 import { createHash } from 'node:crypto';
 import { getAgentBySlug } from '../agents/registry';
 import { modelRouter } from '../models/router';
 import { runTool, listImplementedTools } from '../tools';
 import {
-  getExecution, getOpportunity, insertRevenue, listExecutionParticipants, postLedger,
+  getExecution, getOpportunity, insertRevenue,
   recordEconomyEvent, updateExecution, updateOpportunity,
 } from '../db/economy-repositories';
 import { currentPolicy } from '../economy/policy';
@@ -61,7 +66,7 @@ export interface WorkforceOutcome {
 export async function runWorkforceExecution(executionId: string): Promise<WorkforceOutcome> {
   const execution = getExecution(executionId);
   if (!execution) throw new Error('execution not found');
-  if (!['authorized', 'running'].includes(execution.status)) {
+  if (execution.status !== 'authorized') {
     throw new Error(`execution is '${execution.status}', not runnable`);
   }
   const opportunity = getOpportunity(execution.opportunity_id);
@@ -75,11 +80,24 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     return { status: 'cancelled', error: reason, verified: false };
   };
 
+  const assertRuntime = (tool?: string): void => {
+    if (currentPolicy().killSwitch) throw new Error('kill switch engaged');
+    assertAgentRunnable(execution.agent_slug);
+    assertOpportunityAssignment(opportunity, execution.agent_slug);
+    assertProviderAccessAllowed('workforce execution');
+    assertSpendingAllowed('workforce execution');
+    assertEmergencyStopDisabled();
+    assertOpportunityAssignment(opportunity, execution.agent_slug);
+    const live = getExecution(execution.id);
+    if (!live || !['authorized', 'running'].includes(live.status) || live.agent_slug !== execution.agent_slug) throw new Error('execution assignment or lifecycle changed during work');
+    if (tool && !getAgentBySlug(execution.agent_slug)?.toolPermissions.includes(tool)) throw new Error(`tool permission revoked: ${tool}`);
+  };
   if (policy.killSwitch) return cancel('kill switch engaged', 'failed');
   if (policy.providerAccessRevoked) return cancel('provider access revoked', 'blocked');
   if (policy.freezeSpending) return cancel('spending frozen', 'blocked');
   try {
     assertAgentRunnable(execution.agent_slug);
+    assertOpportunityAssignment(opportunity, execution.agent_slug);
     assertProviderAccessAllowed('workforce execution');
     assertSpendingAllowed('workforce execution');
     assertEmergencyStopDisabled();
@@ -103,11 +121,11 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     return { status: 'failed', error: 'agent not in registry', verified: false };
   }
 
-  updateExecution(execution.id, {
-    status: 'running',
-    attempts: execution.attempts + 1,
-    started_at: execution.started_at ?? new Date().toISOString(),
-  });
+  const claimed = financialTransaction(db, 'economy', () => db.run(
+    "UPDATE economy_executions SET status = 'running', attempts = attempts + 1, started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'authorized'",
+    [new Date().toISOString(), execution.id],
+  ).changes === 1);
+  if (!claimed) return { status: 'cancelled', verified: false, error: 'execution already claimed by another worker' };
   setAgentOverlay(execution.agent_slug, { touchActive: true });
 
   try {
@@ -119,7 +137,10 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     const permitted = agent.toolPermissions.filter((t) => implemented.has(t) && AUTO_SAFE.has(t)).slice(0, MAX_TOOL_CALLS);
     const toolOutputs: string[] = [];
     let toolsRan = 0;
+    let successfulTools = 0;
+    let sourceFetched = false;
     for (const tool of permitted) {
+      try { assertRuntime(tool); } catch (error) { return cancel(error instanceof Error ? error.message : String(error), 'blocked'); }
       try {
         const goal = `${opportunity.title} ${opportunity.summary ?? ''}`.slice(0, 300);
         const input: Record<string, unknown> =
@@ -132,7 +153,9 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
         // only owner-staged knowledge/files) instead of an empty user id.
         const result = await runTool(tool, input, { userId: WORKFORCE_SERVICE_USER, projectId: null, taskId: null, executionId: execution.id });
         toolsRan += 1;
-        if (result.ok && result.content.trim().length > 0) {
+        if (usableToolEvidence(result)) {
+          successfulTools += 1;
+          if (tool === 'page_fetch') sourceFetched = true;
           toolOutputs.push(`--- ${tool} (real) ---\n${result.content.slice(0, 2000)}`);
         } else {
           toolOutputs.push(`--- ${tool} (unavailable: ${(result.error ?? result.code ?? 'unknown').slice(0, 200)}) ---`);
@@ -164,6 +187,7 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
       capability: ['research'] as string[],
       ...(policy.economyModelKey ? { preferredModelKey: policy.economyModelKey } : {}),
     };
+    try { assertRuntime(); } catch (error) { return cancel(error instanceof Error ? error.message : String(error), 'blocked'); }
     const result = await modelRouter.complete(requirements, [
       {
         role: 'system' as const,
@@ -176,13 +200,18 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     ]);
 
     const output = typeof result.text === 'string' ? result.text : JSON.stringify(result);
-    const verified = output.trim().length >= 40 && !/as an ai|i cannot|i can't/i.test(output.slice(0, 200));
+    const verification = verifyWorkforceDelivery(output, successfulTools);
+    const { verified } = verification;
     const usage = (result as { usage?: { totalTokens?: number; costCents?: number } }).usage;
     const costCents = typeof usage?.costCents === 'number' ? usage.costCents : 0;
 
     // Source health: a completed run with real tool context = source alive.
-    recordSourceOutcome({ domain: domainOf(opportunity.source_url), category: opportunity.category, ok: true });
+    if (sourceFetched) recordSourceOutcome({ domain: domainOf(opportunity.source_url), category: opportunity.category, ok: true });
 
+    return financialTransaction(db, 'economy', () => {
+    // Already-incurred provider cost is retained even if authority was revoked while awaiting the model.
+    postExecutionCostShares(execution, costCents);
+    try { assertRuntime(); } catch (error) { return cancel(error instanceof Error ? error.message : String(error), 'blocked'); }
     const delivery = insertDelivery({
       executionId: execution.id,
       opportunityId: opportunity.id,
@@ -193,41 +222,25 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     });
 
     updateExecution(execution.id, {
-      status: 'completed',
+      status: verified ? 'completed' : 'failed',
       completed_at: new Date().toISOString(),
       result_json: JSON.stringify({ output: output.slice(0, 20_000), deliveredAt: new Date().toISOString(), deliveryId: delivery.id }),
-      verification_json: JSON.stringify({ verified, rule: 'non-empty deliverable >= 40 chars, no refusal preface', checkedBy: 'workforce_verifier', toolsRan }),
+      verification_json: JSON.stringify({ ...verification, checkedBy: 'workforce_verifier_v2', toolsRan, successfulTools }),
       cost_cents: costCents,
     });
-    if (costCents > 0) {
-      const participants = listExecutionParticipants(execution.id);
-      if (participants.length > 0) {
-        const share = Math.floor(costCents / participants.length);
-        for (const p of participants) {
-          postLedger({
-            agentSlug: p.agent_slug, direction: 'debit', category: 'api_cost', amountCents: share,
-            purpose: `workforce execution ${execution.id} (${p.role})`, refType: 'execution', refId: `exec:${execution.id}:api_cost:${p.agent_slug}`,
-          });
-        }
-      } else {
-        postLedger({
-          agentSlug: execution.agent_slug, direction: 'debit', category: 'api_cost', amountCents: costCents,
-          purpose: `workforce execution ${execution.id}`, refType: 'execution', refId: `exec:${execution.id}:api_cost`,
-        });
-      }
-    }
     // Delivered work creates an EXPECTED estimate — NOT a claim.
-    insertRevenue({
+    if (verified) insertRevenue({
       opportunityId: opportunity.id, state: 'expected',
       amountCents: Math.round(opportunity.expected_revenue_cents * opportunity.probability), evidence: null,
     });
-    updateOpportunity(opportunity.id, { status: 'completed' });
-    recordWorkflowOutcome({ agentSlug: execution.agent_slug, category: opportunity.category, workflowKey: WORKFLOW_KEY, ok: true });
+    updateOpportunity(opportunity.id, { status: verified ? 'completed' : 'blocked' });
+    recordWorkflowOutcome({ agentSlug: execution.agent_slug, category: opportunity.category, workflowKey: WORKFLOW_KEY, ok: verified, error: verified ? undefined : verification.reasons.join('; ') });
     recordEconomyEvent({
       kind: 'execution', actor: execution.agent_slug,
-      summary: `workforce execution ${execution.id} COMPLETED (verified: ${verified}, tools: ${toolsRan}); expected estimate recorded — realized revenue requires evidence`,
+      summary: `workforce execution ${execution.id} ${verified ? 'COMPLETED' : 'BLOCKED'} (verified: ${verified}, tools: ${successfulTools}/${toolsRan}); ${verified ? 'expected estimate recorded' : verification.reasons.join('; ')} — realized revenue requires evidence`,
     });
-    return { status: 'completed', verified, deliveryId: delivery.id, toolsRan };
+    return { status: verified ? 'completed' : 'failed', verified, deliveryId: delivery.id, toolsRan, ...(verified ? {} : { error: verification.reasons.join('; ') }) };
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const attempts = execution.attempts + 1;
@@ -241,7 +254,7 @@ export async function runWorkforceExecution(executionId: string): Promise<Workfo
     // Failure signals: source may be down, workflow may be broken. Both are
     // tracked; auto-blocks engage after consecutive failures (risk protection).
     const looksLikeSourceFailure = /fetch failed|ENOTFOUND|ECONNREFUSED|timeout|unreachable|404|403|401/i.test(message);
-    recordSourceOutcome({
+    if (looksLikeSourceFailure) recordSourceOutcome({
       domain: domainOf(opportunity.source_url), category: opportunity.category,
       ok: false, error: looksLikeSourceFailure ? message.slice(0, 300) : `execution error: ${message.slice(0, 200)}`,
     });

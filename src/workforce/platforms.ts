@@ -1,3 +1,4 @@
+import { financialTransaction } from '../db/financial-transaction';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -341,6 +342,7 @@ export function countPrimaryAssignments(): number {
 export function assignPrimaryOpportunity(input: {
   agentSlug: string; platformKey: string; assignedBy: string; dedicatedAccountPropertyId?: string | null;
 }): PrimaryAssignmentRow {
+  return financialTransaction(db, 'economy', () => {
   const agent = getAgentBySlug(input.agentSlug);
   if (!agent) throw new PlatformError(404, 'agent_not_found', `agent "${input.agentSlug}" does not exist in the registry`);
   const platform = getPlatform(input.platformKey);
@@ -394,6 +396,8 @@ export function assignPrimaryOpportunity(input: {
     details: { assignmentId: id, platformKey: input.platformKey },
   });
   return db.get<PrimaryAssignmentRow>('SELECT * FROM economy_opportunity_assignments WHERE id = ?', [id])!;
+
+  });
 }
 
 /**
@@ -403,6 +407,7 @@ export function assignPrimaryOpportunity(input: {
  * unique — one property, one assignment.
  */
 export function setAssignmentAccount(input: { agentSlug: string; dedicatedAccountPropertyId: string; actor: string }): PrimaryAssignmentRow {
+  return financialTransaction(db, 'economy', () => {
   const row = primaryAssignmentForAgent(input.agentSlug);
   if (!row) throw new PlatformError(404, 'assignment_not_found', `agent "${input.agentSlug}" holds no primary assignment`);
   const propertyId = input.dedicatedAccountPropertyId.trim();
@@ -419,11 +424,14 @@ export function setAssignmentAccount(input: { agentSlug: string; dedicatedAccoun
     details: { assignmentId: row.id },
   });
   return db.get<PrimaryAssignmentRow>('SELECT * FROM economy_opportunity_assignments WHERE id = ?', [row.id])!;
+
+  });
 }
 
 const ASSIGNMENT_STATUSES = new Set(['pending_account', 'active', 'paused', 'revoked']);
 
 export function setAssignmentStatus(agentSlug: string, status: string, actor: string): PrimaryAssignmentRow {
+  return financialTransaction(db, 'economy', () => {
   const row = primaryAssignmentForAgent(agentSlug);
   if (!row) throw new PlatformError(404, 'assignment_not_found', `agent "${agentSlug}" holds no primary assignment`);
   if (!ASSIGNMENT_STATUSES.has(status)) {
@@ -436,6 +444,8 @@ export function setAssignmentStatus(agentSlug: string, status: string, actor: st
     details: { assignmentId: row.id },
   });
   return db.get<PrimaryAssignmentRow>('SELECT * FROM economy_opportunity_assignments WHERE id = ?', [row.id])!;
+
+  });
 }
 
 /**
@@ -443,6 +453,7 @@ export function setAssignmentStatus(agentSlug: string, status: string, actor: st
  * freed for reassignment; the audit event preserves the full history.
  */
 export function releasePrimaryAssignment(agentSlug: string, reason: string, actor: string): { released: boolean } {
+  return financialTransaction(db, 'economy', () => {
   const row = primaryAssignmentForAgent(agentSlug);
   if (!row) throw new PlatformError(404, 'assignment_not_found', `agent "${agentSlug}" holds no primary assignment`);
   if (!reason || reason.trim().length < 4) throw new PlatformError(400, 'invalid_request', 'a release reason is required');
@@ -453,6 +464,8 @@ export function releasePrimaryAssignment(agentSlug: string, reason: string, acto
     details: { assignmentId: row.id },
   });
   return { released: true };
+
+  });
 }
 
 /**

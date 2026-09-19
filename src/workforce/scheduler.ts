@@ -164,6 +164,7 @@ export function pickWorkforceAgentForOpportunity(opportunity: { category: string
   if (opportunity.platform_key) {
     const primary = primaryAgentForPlatform(opportunity.platform_key);
     if (primary) return primary;
+    throw new Error('platform has no primary assignment; refusing generic fallback');
   }
   return pickWorkforceAgent(opportunity.category);
 }
@@ -217,8 +218,12 @@ export class WorkforceScheduler {
       for (const opportunity of pending) {
         const evaluation = evaluateOpportunity(opportunity.id, policy);
         if (evaluation.authorized) {
-          const start = startExecution({ opportunityId: opportunity.id, agentSlug: pickWorkforceAgentForOpportunity(opportunity), authorizedBy: 'policy' });
-          if (start.created) authorized += 1;
+          try {
+            const start = startExecution({ opportunityId: opportunity.id, agentSlug: pickWorkforceAgentForOpportunity(opportunity), authorizedBy: 'policy' });
+            if (start.created) authorized += 1;
+          } catch (error) {
+            notes.push(`authorization blocked for ${opportunity.id}: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
       }
       if (authorized > 0) notes.push(`auto-authorized ${authorized} opportunity(ies)`);

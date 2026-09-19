@@ -226,9 +226,13 @@ describe('workforce production layer', () => {
     }));
     const savedBase = process.env.OPENAI_BASE_URL;
     const savedKey = process.env.OPENAI_API_KEY;
+    const savedFetch = process.env.AKBARAL_PAGE_FETCH_ENDPOINT;
+    const savedAllow = process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER;
     try {
       process.env.OPENAI_BASE_URL = modelFixture.url;
       process.env.OPENAI_API_KEY = 'test-fixture-key';
+      process.env.AKBARAL_PAGE_FETCH_ENDPOINT = modelFixture.url;
+      process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = '1';
       const id = insertOpportunity({
         sourceUrlHash: `wf-ok-${Date.now()}`, sourceUrl: 'https://example.com/workforce-ok-test',
         category: 'research', title: 'Workforce fixture completion test', summary: 'A clean test contract.',
@@ -240,6 +244,8 @@ describe('workforce production layer', () => {
       assert.equal(outcome.verified, true);
       assert.ok(outcome.deliveryId, 'a completed run must record a delivery');
     } finally {
+      if (savedFetch === undefined) delete process.env.AKBARAL_PAGE_FETCH_ENDPOINT; else process.env.AKBARAL_PAGE_FETCH_ENDPOINT = savedFetch;
+      if (savedAllow === undefined) delete process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER; else process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER = savedAllow;
       if (savedBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = savedBase;
       if (savedKey === undefined) delete process.env.OPENAI_API_KEY;

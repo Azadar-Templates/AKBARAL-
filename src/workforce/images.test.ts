@@ -113,7 +113,8 @@ describe('governed image path (paid controls intact)', () => {
       }).id;
       const start = startExecution({ opportunityId: id, agentSlug: def.slug, authorizedBy: 'owner' });
       const outcome = await runWorkforceExecution(start.executionId);
-      assert.equal(outcome.status, 'completed');
+      assert.equal(outcome.status, 'failed', 'an unrendered image brief is not a completed image delivery');
+      assert.equal(outcome.verified, false);
       const briefs = listImageRequests().filter((r) => r.execution_id === start.executionId);
       assert.equal(briefs.length, 1);
       assert.equal(briefs[0].status, 'requested', 'execution files the brief but never approves or fulfills it');

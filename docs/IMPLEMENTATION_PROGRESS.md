@@ -50,3 +50,17 @@ Validation: **99/99 mission SQLite tests**, including **13 new financial regress
 Upgrade safety: old migrations are untouched. Legacy pending payouts without destination bindings must be rejected and re-requested; legacy reservations are refundable only when an unambiguous matching ledger debit exists. Destination fingerprints now include currency, so historical attestations may require owner re-verification. No verification or missing payment evidence is manufactured during migration.
 
 Remaining work above is not globally complete: assignment/runtime enforcement, delivery verification, resource lifecycle/UI coverage and final integrated checks continue after this phase. External production activation remains unproven.
+
+## Phase 3 — workforce execution integrity (2026-09-19)
+
+- Platform earning work requires an active primary assignment, a dedicated account/property reference and verified catalog status; authorization, reassignment and workforce runtime enforce the binding. An unassigned platform no longer falls back to a generic agent. Blocked authorizations do not abort the whole scheduler tick.
+- Workforce execution rechecks authority before tools, before the model, and after the awaited model call. A conditional claim prevents another worker from starting the same authorized execution. Paid usage is still posted if authority is revoked while the model is running.
+- Empty search results and failed tools do not count as supporting evidence. Missing-prerequisite/refusal text is checked across the output, not only its first 200 characters. Failed checks preserve the draft as unverified, block the opportunity, and create **no expected-revenue row**.
+- Verification is explicitly labelled **automated preflight, not customer acceptance**. It is not a semantic quality guarantee, client acceptance, platform submission or payment proof. An unrendered image brief no longer counts as a completed image delivery.
+- Completion, cost postings, delivery and expected-estimate mutations are transactional. Source success is recorded only after a successful source fetch; unrelated model errors no longer automatically condemn a source.
+- Shared execution accounting allocates every minor unit, including remainders, in deterministic agent order. Distinct retry attempts have distinct ledger references; replaying the same posting remains idempotent.
+- New regression coverage includes late authority revocation, no expected revenue for rejected output, complete cost attribution, empty-tool rejection and assignment/account gates. Positive provider tests now supply local tool-source fixtures rather than depending on unconfigured external fetches.
+
+Integrated validation for Phases 1–3: **832/832 SQLite tests, 114 suites, 90 files, zero failures/skips**; **37/37 platform PostgreSQL tests**, zero skips; production Webpack build passes with **27 routes**; compiled PostgreSQL worker reports **21 migrations applied, none pending**. The Phase 2 mission PostgreSQL results remain **10 existing checks + 13 financial tests**, with eight private migrations. Types, secret scan and diff checks pass.
+
+Important remaining local boundaries: the legacy model-only economy runner still needs the stronger delivery-review contract; current assignment checks do not yet persist an immutable authorization-time property snapshot; owner dashboard/provider-resource lifecycle and comprehensive browser/mobile checks remain unfinished. No million-opportunity or production-activation claim is made.

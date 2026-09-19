@@ -1,3 +1,6 @@
+import { financialTransaction } from '../db/financial-transaction';
+import { assertOpportunityAssignment } from '../workforce/assignment-guard';
+import { postExecutionCostShares } from './execution-accounting';
 import { searchWeb } from '../agents/web-research';
 import { getAgentBySlug } from '../agents/registry';
 import { db } from '../db/database';
@@ -15,10 +18,8 @@ import {
   listExecutions,
   insertExecutionParticipant,
   insertOpportunity,
-  listExecutionParticipants,
   listOpportunities,
   listStaleExecutions,
-  postLedger,
   recordEconomyEvent,
   updateExecution,
   updateOpportunity,
@@ -228,9 +229,11 @@ export interface ExecutionStart {
 }
 
 export function startExecution(input: { opportunityId: string; agentSlug: string; authorizedBy: 'policy' | 'owner'; participants?: Array<{ agentSlug: string; role: string }> }): ExecutionStart {
+  return financialTransaction(db, 'economy', () => {
   const policy = currentPolicy();
   const opportunity = getOpportunity(input.opportunityId);
   if (!opportunity) throw new Error('opportunity not found');
+  assertOpportunityAssignment(opportunity, input.agentSlug);
 
   if (input.authorizedBy === 'policy') {
     if (policy.killSwitch) return { executionId: '', created: false, reason: 'kill_switch_engaged' };
@@ -260,6 +263,8 @@ export function startExecution(input: { opportunityId: string; agentSlug: string
     summary: `execution ${execution.id} authorized for opportunity ${input.opportunityId} (agent ${input.agentSlug})`,
   });
   return { executionId: execution.id, created: execution.created, reason: execution.created ? 'created' : 'resumed_existing' };
+
+  });
 }
 
 /**
@@ -271,6 +276,7 @@ export function startExecution(input: { opportunityId: string; agentSlug: string
  * authorization is required for those.
  */
 export function reassignExecution(executionId: string, newAgentSlug: string, reason: string, actor: string): { reassigned: boolean } {
+  return financialTransaction(db, 'economy', () => {
   const execution = getExecution(executionId);
   if (!execution) throw new Error('execution not found');
   if (execution.status !== 'authorized') {
@@ -282,6 +288,7 @@ export function reassignExecution(executionId: string, newAgentSlug: string, rea
   assertAgentRunnable(newAgentSlug);
   const opportunity = getOpportunity(execution.opportunity_id);
   if (!opportunity) throw new Error('opportunity missing');
+  assertOpportunityAssignment(opportunity, newAgentSlug);
   // Eligibility: the new agent must serve the opportunity's category (the
   // flagship research agent stays eligible for research-shaped work).
   let eligible = newAgentSlug === 'web-research-001';
@@ -301,6 +308,8 @@ export function reassignExecution(executionId: string, newAgentSlug: string, rea
     summary: `execution ${executionId} REASSIGNED: ${previous} → ${newAgentSlug} — ${reason.trim().slice(0, 200)}`,
   });
   return { reassigned: true };
+
+  });
 }
 
 export interface ExecutionOutcome {
@@ -345,6 +354,7 @@ export async function runExecution(executionId: string): Promise<ExecutionOutcom
   // A paused agent — or one inside a paused hierarchy — must not be dispatched.
   try {
     assertAgentRunnable(execution.agent_slug);
+    assertOpportunityAssignment(opportunity, execution.agent_slug);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateExecution(execution.id, { status: 'cancelled', completed_at: new Date().toISOString(), error_message: message });
@@ -444,34 +454,7 @@ async function loadExecution(executionId: string): Promise<ExecutionRow> {
  * collaborating participants. Idempotent per (execution, agent): a retried or
  * restarted step can never double-bill.
  */
-export function postExecutionCostShares(execution: ExecutionRow, costCents: number): void {
-  if (costCents <= 0) return;
-  const participants = listExecutionParticipants(execution.id);
-  if (participants.length > 0) {
-    const share = Math.floor(costCents / participants.length);
-    for (const participant of participants) {
-      postLedger({
-        agentSlug: participant.agent_slug,
-        direction: 'debit',
-        category: 'api_cost',
-        amountCents: share,
-        purpose: `execution ${execution.id} (${participant.role})`,
-        refType: 'execution',
-        refId: `exec:${execution.id}:api_cost:${participant.agent_slug}`,
-      });
-    }
-  } else {
-    postLedger({
-      agentSlug: execution.agent_slug,
-      direction: 'debit',
-      category: 'api_cost',
-      amountCents: costCents,
-      purpose: `execution ${execution.id}`,
-      refType: 'execution',
-      refId: `exec:${execution.id}:api_cost`,
-    });
-  }
-}
+export { postExecutionCostShares } from './execution-accounting';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // N: restart recovery / reconciliation
