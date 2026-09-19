@@ -194,3 +194,17 @@ if (!process.env.PG_TEST_DATABASE_URL) it('independent SQLite workers cannot spe
     cancelResourceCall(row.id, f.actor);
   } finally { workers.forEach(worker => { if (worker.exitCode === null) worker.kill(); }); }
 });
+
+it('rejects an unfunded safe-integer charge before writing PostgreSQL integer accounting fields', () => {
+  const f = fixture(10), row = reserveResourceCall(f.input);
+  claimResourceCall(String(row.id), f.actor); finish(String(row.id), f.actor);
+  const run = missionDb.run.bind(missionDb); let chargeWrites = 0;
+  missionDb.run = ((sql, params) => { if (sql.includes("UPDATE mission_resource_call_budgets SET status = 'recorded'")) chargeWrites++; return run(sql, params); }) as typeof missionDb.run;
+  try { assert.throws(() => recordResourceCallCost(f.resourceId, String(row.id), owner, proof(Number.MAX_SAFE_INTEGER)), /insufficient wallet balance/); }
+  finally { missionDb.run = run; }
+  assert.equal(chargeWrites, 0, 'unfunded exposure must fail before a SQL integer parameter can overflow');
+  assert.equal(heldResourceBudget(f.walletId), 10);
+  assert.equal(getWallet(f.walletId)!.balanceCents, 100);
+  recordResourceCallCost(f.resourceId, String(row.id), owner, proof(0));
+  assert.equal(verifyLedger().ok, true);
+});

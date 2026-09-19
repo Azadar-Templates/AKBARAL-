@@ -68,6 +68,9 @@ export function recordResourceCallCost(resourceId: string, callId: string, actor
     if (hold.status !== 'held' || !['succeeded', 'failed'].includes(String(call.status))) fail('reconcile actual provider usage before recording its financial receipt');
     const wallet = getWallet(String(hold.wallet_id));
     if (!wallet || wallet.currency !== hold.currency) fail('original provider budget wallet currency changed');
+    // Fail before binding a potentially out-of-range SQL INTEGER amount. This
+    // also preserves the original hold when an evidenced overage is unfunded.
+    if (amount > wallet.balanceCents) fail('insufficient wallet balance for the evidenced provider charge');
     if (missionDb.get('SELECT call_id FROM mission_resource_call_budgets WHERE wallet_id = ? AND provider_ref = ? AND call_id <> ?', [hold.wallet_id, reference, callId])) fail('provider charge reference already recorded for this wallet');
     // Release only our own hold while recording the actual charge, atomically.
     // A debit failure (including an unfunded overage) rolls everything back.
