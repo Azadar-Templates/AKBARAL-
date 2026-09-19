@@ -37,8 +37,9 @@ export class MissionStripe implements MoneyProvider {
       const available=balance.available?.find((b:any)=>b.currency===txn.currency);
       const booked=Number(db.get<Row>('SELECT COALESCE(SUM(available_cents+held_cents),0) AS n FROM mission_cash_accounts WHERE currency=?',[txn.currency.toUpperCase()])?.n??0);
       const replay=!!db.get('SELECT external_id FROM mission_money_receipts WHERE provider=? AND external_id=?',[this.id,externalId]);
-      if(!balance.livemode||!available||available.amount<booked+(replay?0:txn.net))throw new MoneyError('provider_balance_requires_reconciliation');
-      return {externalId,amountCents:txn.net,currency:txn.currency.toUpperCase(),kind:'earning',agentId:charge.metadata.mission_agent_id};
+      const liability=Number(db.get<Row>('SELECT COALESCE(SUM(remaining_cents),0) AS n FROM mission_cash_liabilities WHERE provider=?',[this.id])?.n??0);
+      if(!balance.livemode||!available||!Number.isSafeInteger(available.amount)||available.amount<booked+(replay?0:Math.max(0,txn.net-liability)))throw new MoneyError('provider_balance_requires_reconciliation');
+      return {externalId,amountCents:txn.net,currency:txn.currency.toUpperCase(),kind:'earning',agentId:charge.metadata.mission_agent_id,availableBalanceCents:available.amount};
     }
     if(txn.type==='refund'&&txn.net<0&&/^re_[A-Za-z0-9]+$/.test(txn.source)) {
       const refund=await this.request(`refunds/${txn.source}`);
@@ -47,6 +48,14 @@ export class MissionStripe implements MoneyProvider {
       if(!charge.livemode||charge.metadata?.mission!=='ZA141251SA')throw new MoneyError('mission_receipt_mismatch');
       return {externalId,amountCents:-txn.net,currency:txn.currency.toUpperCase(),kind:'reversal',originalExternalId:charge.balance_transaction};
     }
+    if(txn.type==='payout_failure'&&txn.net>0&&/^po_[A-Za-z0-9]+$/.test(txn.source)) {
+      const payout=await this.request(`payouts/${txn.source}`);
+      if(!payout.livemode||payout.failure_balance_transaction!==txn.id||payout.status!=='failed'||payout.metadata?.mission!=='ZA141251SA'||!payout.metadata?.mission_operation)throw new MoneyError('payout_return_unverified');
+      const op=db.get<Row>('SELECT * FROM mission_money_operations WHERE id=?',[payout.metadata.mission_operation]);
+      if(!op||op.state!=='completed'||op.provider!==this.id||op.provider_ref!==payout.id)throw new MoneyError('payout_return_unverified');
+      await this.result(payout,op);
+      return {externalId,amountCents:txn.net,currency:txn.currency.toUpperCase(),kind:'refund',operationId:payout.metadata.mission_operation};
+    }
     throw new MoneyError('unsupported_receipt_requires_reconciliation');
   }
   private async result(payout:any,op:Row):Promise<PaymentResult> {
@@ -54,12 +63,12 @@ export class MissionStripe implements MoneyProvider {
     if(['failed','canceled'].includes(payout.status)) {
       // Failure alone is not proof that the reserved balance was returned.
       const reverse=await this.transaction(payout.failure_balance_transaction);
-      if(reverse.net!==Number(op.amount_cents)||reverse.currency!==payout.currency)throw new MoneyError('failure_return_unverified');
+      if(reverse.net!==Number(op.amount_cents)||reverse.currency!==payout.currency||reverse.source!==payout.id||reverse.type!=='payout_failure')throw new MoneyError('failure_return_unverified');
       return {state:'failed',providerRef:payout.id};
     }
     if(payout.status==='paid') {
       const txn=await this.transaction(payout.balance_transaction);
-      if(txn.source!==payout.id||txn.currency!==payout.currency||txn.net>=0)throw new MoneyError('payout_cost_unverified');
+      if(txn.source!==payout.id||txn.currency!==payout.currency||txn.net>=0||txn.type!=='payout')throw new MoneyError('payout_cost_unverified');
       return {state:'completed',providerRef:payout.id,actualCents:cents(-txn.net,true)};
     }
     if(!['pending','in_transit'].includes(payout.status))throw new MoneyError('payout_state_unverified');
@@ -72,7 +81,7 @@ export class MissionStripe implements MoneyProvider {
     if(destination.id!==op.destination||destination.object!=='bank_account'||!['validated','verified'].includes(destination.status)||destination.currency!==String(op.currency).toLowerCase())throw new MoneyError('destination_not_verified');
     const balance=await this.request('balance');
     const available=balance.available?.find((b:any)=>b.currency===String(op.currency).toLowerCase());
-    if(!balance.livemode||!available||available.amount<Number(op.max_cost_cents))throw new MoneyError('provider_funds_unavailable');
+    if(!balance.livemode||!available||!Number.isSafeInteger(available.amount)||available.amount<Number(op.max_cost_cents))throw new MoneyError('provider_funds_unavailable');
     const body=new URLSearchParams({amount:String(op.amount_cents),currency:String(op.currency).toLowerCase(),destination:String(op.destination),'metadata[mission]':'ZA141251SA','metadata[mission_operation]':String(op.id)});
     authorizeSend();
     return this.result(await this.request('payouts',body,`za141251sa:${op.id}`),op);

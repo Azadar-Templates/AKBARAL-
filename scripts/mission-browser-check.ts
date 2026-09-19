@@ -88,6 +88,12 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(page.locator('#app')).toBeVisible();
     await expect(page.locator('#identity')).toContainText('signed in as');
     checkpoint(name, 'real owner sign-in');
+    await page.locator('[data-tab="money"]').click();
+    await expect(page.locator('#verified-cash-summary')).toContainText('Verified available');
+    await expect(page.locator('#verified-cash-summary')).toContainText('0.00 USD');
+    await expect(page.locator('#money-command-form')).toBeVisible();
+    await page.screenshot({path:path.join(evidenceDir,`${name}-verified-cash.png`),fullPage:true});
+    checkpoint(name,'verified cash dashboard shows zero real funds; owner controls render without provider calls');
     await page.locator('[data-tab="tools"]').click();
     const credentialForm = page.locator('#credential-form');
     await expect(credentialForm.locator('[name="scope"]')).toHaveValue('');

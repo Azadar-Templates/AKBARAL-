@@ -147,8 +147,39 @@ it('missing opportunities and missing connectors remain blocked, not fabricated'
   grant(a,{opportunityId:undefined});assert.throws(()=>m.queueEarning(owner,a,'unassigned'),/no_real_opportunity/);
   grant();m.queueEarning(owner,a,'assigned');assert.deepEqual(await m.moneyWorkerTick(owner,[],[]),{blocked:'earning_connector_not_configured'});
 });
+it('owner standing allocation automatically funds agents from verified cash, never from a target',async()=>{
+  grant(a,{autoAllocateCents:200});await m.moneyWorkerTick(owner,[],[]);assert.equal(m.cashAccount(a).available_cents,0);
+  await earn(1000);await m.moneyWorkerTick(owner,[],[]);await m.moneyWorkerTick(owner,[],[]);
+  assert.equal(m.cashAccount(a).available_cents,200);assert.equal(m.cashAccount('treasury').available_cents,800);
+});
+it('owner can cancel only unsent reservations, including during a freeze',async()=>{
+  await earn();m.allocateCash(owner,a,100,'fund');const op=request();setKillSwitch(true,owner.id);
+  m.cancelMoney(owner,String(op.id));assert.equal(m.cashAccount(a).available_cents,100);assert.equal(m.cashAccount(a).held_cents,0);
+  assert.throws(()=>m.cancelMoney(owner,String(op.id)),/cannot_cancel/);
+});
 it('provisions 4,001+ distinct cash sub-ledgers without manufacturing opportunities or money',{skip:!!process.env.PG_TEST_DATABASE_URL},()=>{
   db.transaction(()=>{for(let n=0;n<4001;n++)addAgent(`fleet-${n}-${process.pid}`);});
   const fleet=m.bootstrapMoneyAgents(owner);assert.ok(fleet.agents>=4001);assert.ok(fleet.unassigned>=4001);
   assert.equal(db.get<Row>('SELECT SUM(available_cents) AS n FROM mission_cash_accounts')!.n,0);assert.equal(m.verifyCashLedger().ok,true);
+});
+it('receipt balance coverage is checked again atomically after provider lookup',async()=>{
+  const snapshot:CashReceipt={externalId:'balance-one',kind:'earning',currency:'USD',amountCents:100,agentId:a,availableBalanceCents:100};
+  const bounded={...provider,verifyReceipt:async(id:string)=>({...snapshot,externalId:id})};
+  await m.verifyMoneyReceipt(owner,bounded,'balance-one');
+  await assert.rejects(m.verifyMoneyReceipt(owner,bounded,'balance-two'),/balance_requires_reconciliation/);
+  snapshot.availableBalanceCents=200;
+  assert.equal((await m.verifyMoneyReceipt(owner,bounded,'balance-one')).duplicated,true);
+  assert.equal(m.cashAccount('treasury').available_cents,100);
+});
+it('provider recovery services only that provider liability before spendable cash',async()=>{
+  await earn(100,'liability-income');m.allocateCash(owner,a,100,'fund');await m.dispatchMoney(owner,provider,String(request().id));
+  receipt={externalId:'liability-reversal',kind:'reversal',amountCents:100,currency:'USD',originalExternalId:'liability-income'};
+  await m.verifyMoneyReceipt(owner,provider,receipt.externalId);
+  receipt={externalId:'liability-recovery',kind:'earning',amountCents:150,currency:'USD',agentId:a,availableBalanceCents:50};
+  await m.verifyMoneyReceipt(owner,provider,receipt.externalId);
+  assert.equal(m.cashAccount('treasury').available_cents,50);assert.equal(m.moneyOverview().liabilities[0].remaining_cents,0);
+});
+it('provisioning inactive registry identities never reactivates their authority',()=>{
+  const id=`inactive-${randomUUID()}`;addAgent(id);db.run("UPDATE mission_agents SET status='paused' WHERE id=?",[id]);
+  m.provisionMoneyAgent(id,owner.id);assert.equal(m.cashAccount(id).available_cents,0);assert.throws(()=>m.grant(id),/authority_inactive/);
 });

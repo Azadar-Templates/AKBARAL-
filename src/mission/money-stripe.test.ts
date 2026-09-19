@@ -13,7 +13,7 @@ function harness(patch:Record<string,any>={}) {
  const calls:Array<{path:string;init?:RequestInit}>=[];
  const account={id:'acct_fixture',charges_enabled:true,payouts_enabled:true,details_submitted:true,settings:{payouts:{schedule:{interval:'manual'}}}};
  const payout={id:'po_fixture',livemode:true,metadata:{mission:'ZA141251SA',mission_operation:'pay_fixture'},amount:100,currency:'usd',destination:'ba_fixture',status:'paid',balance_transaction:'txn_out'};
- const map:Record<string,any>={account,'balance_transactions/txn_income':{id:'txn_income',type:'charge',status:'available',net:1000,currency:'usd',source:'ch_fixture'},'charges/ch_fixture':{balance_transaction:'txn_income',paid:true,captured:true,livemode:true,refunded:false,disputed:false,amount_refunded:0,metadata:{mission:'ZA141251SA',mission_agent_id:'agent_fixture'}},balance:{livemode:true,available:[{currency:'usd',amount:1000}]},'accounts/acct_fixture/external_accounts/ba_fixture':{id:'ba_fixture',object:'bank_account',status:'verified',currency:'usd'},payouts:payout,'payouts/po_fixture':payout,'balance_transactions/txn_out':{id:'txn_out',source:'po_fixture',status:'available',net:-100,currency:'usd'},...patch};
+ const map:Record<string,any>={account,'balance_transactions/txn_income':{id:'txn_income',type:'charge',status:'available',net:1000,currency:'usd',source:'ch_fixture'},'charges/ch_fixture':{balance_transaction:'txn_income',paid:true,captured:true,livemode:true,refunded:false,disputed:false,amount_refunded:0,metadata:{mission:'ZA141251SA',mission_agent_id:'agent_fixture'}},balance:{livemode:true,available:[{currency:'usd',amount:1000}]},'accounts/acct_fixture/external_accounts/ba_fixture':{id:'ba_fixture',object:'bank_account',status:'verified',currency:'usd'},payouts:payout,'payouts/po_fixture':payout,'balance_transactions/txn_out':{id:'txn_out',type:'payout',source:'po_fixture',status:'available',net:-100,currency:'usd'},...patch};
  const transport=(async(url:any,init?:RequestInit)=>{const path=String(url).replace('https://api.stripe.com/v1/','');calls.push({path,init});assert.equal(new URL(url).origin,'https://api.stripe.com');return new Response(JSON.stringify(map[path]??{}),{status:200});}) as typeof fetch;
  return {client:new MissionStripe('sk_live_isolated_fixture','acct_fixture',transport),calls};
 }
@@ -53,4 +53,14 @@ it('lookup is read-only and absence never releases funds',async()=>{
 it('provider errors are redacted, never echoed with SDK payloads or secrets',async()=>{
  const client=new MissionStripe('sk_live_fixture','acct_fixture',(async()=>new Response('secret-provider-diagnostic',{status:500})) as typeof fetch);
  await assert.rejects(client.verifyReceipt('txn_income'),error=>String(error).includes('provider_response_unverified')&&!String(error).includes('secret-provider'));
+});
+it('rejects malformed provider balance amounts instead of treating NaN as available cash',async()=>{
+  for(const amount of ['1000',undefined,-1])await assert.rejects(harness({balance:{livemode:true,available:[{currency:'usd',amount}]}}).client.verifyReceipt('txn_income'),/balance_requires_reconciliation/);
+});
+it('late failed-payout returns require the original completed operation and bound bank',async()=>{
+ missionDb.run("INSERT INTO mission_money_operations (id,idempotency_key,fingerprint,kind,account_id,provider,destination,category,amount_cents,max_cost_cents,currency,state,provider_ref,actual_cents,created_at,updated_at) VALUES ('pay_fixture','fixture-return','fixture','withdrawal','treasury','stripe-mission','ba_fixture','withdrawal',100,100,'USD','completed','po_fixture',100,'fixture','fixture')");
+ const returned={id:'po_fixture',livemode:true,metadata:{mission:'ZA141251SA',mission_operation:'pay_fixture'},amount:100,currency:'usd',destination:'ba_fixture',status:'failed',failure_balance_transaction:'txn_return'};
+ const patch={'payouts/po_fixture':returned,'balance_transactions/txn_return':{id:'txn_return',type:'payout_failure',source:'po_fixture',status:'available',net:100,currency:'usd'}};
+ const receipt=await harness(patch).client.verifyReceipt('txn_return');assert.equal(receipt.kind,'refund');assert.equal(receipt.operationId,'pay_fixture');
+ await assert.rejects(harness({...patch,'payouts/po_fixture':{...returned,destination:'ba_other'}}).client.verifyReceipt('txn_return'),/mismatch/);
 });

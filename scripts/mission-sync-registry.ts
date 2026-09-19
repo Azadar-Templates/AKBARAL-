@@ -1,3 +1,4 @@
+import { provisionMoneyAgent } from '../src/mission/money';
 /**
  * ZA141251SA registry sync — `npm run mission:sync-registry`
  *
@@ -13,7 +14,7 @@
  *     user data, no credentials, no billing rows.
  *   · Idempotent: existing slugs are updated in place, never duplicated.
  */
-import { applyMissionMigrations, missionDb, nowIso, appendMissionAudit, type Row } from '../src/mission/database';
+import { applyMissionMigrations, missionDb, nowIso, sha256, appendMissionAudit, type Row } from '../src/mission/database';
 import { currentPolicy, ensurePolicy } from '../src/mission/policy';
 
 interface PlatformAgent {
@@ -48,8 +49,8 @@ async function readPlatformRegistry(): Promise<PlatformAgent[]> {
 }
 
 async function main(): Promise<void> {
-  ensurePolicy(currentPolicy().currency);
   applyMissionMigrations();
+  ensurePolicy(currentPolicy().currency);
 
   const skip = process.argv.includes('--skip-platform');
   const agents = skip ? [] : await readPlatformRegistry();
@@ -74,14 +75,16 @@ async function main(): Promise<void> {
           `UPDATE mission_agents SET name = ?, category = ?, capabilities = ?, origin_platform = 'akbaral-registry', updated_at = ? WHERE id = ?`,
           [agent.name, agent.category, JSON.stringify(agent.capabilities ?? []), nowIso(), String(existing.id)],
         );
+        provisionMoneyAgent(String(existing.id),'registry-sync');
         updated += 1;
         continue;
       }
       missionDb.run(
         `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
          VALUES (?, ?, ?, ?, 'specialist', NULL, 0, 'registry', 'active', 'worker', 'akbaral-registry', ?)`,
-        [`agt_reg_${agent.slug.slice(0, 32)}`, agent.slug, agent.name.slice(0, 200), agent.category, JSON.stringify(agent.capabilities ?? [])],
+        [`agt_reg_${sha256(agent.slug).slice(0, 32)}`, agent.slug, agent.name.slice(0, 200), agent.category, JSON.stringify(agent.capabilities ?? [])],
       );
+      provisionMoneyAgent(`agt_reg_${sha256(agent.slug).slice(0, 32)}`,'registry-sync');
       created += 1;
     }
   });

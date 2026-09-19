@@ -27,7 +27,7 @@ import { applyMissionMigrations, missionDb, resolveMissionDbPath, type Row } fro
 import { createAccessLink, login, provisionOwner } from './auth';
 import { createMissionServer } from './server';
 import { ensurePolicy } from './policy';
-import { ensurePayoutSlots, recordRevenue, listWallets } from './treasury';
+import { ensurePayoutSlots, recordRevenue } from './treasury';
 import { seedTools } from './self-management';
 import { buildAgentReport, buildMissionOverview, createTarget, listTargets, type AgentRow } from './reporting';
 
@@ -283,10 +283,11 @@ test('targets are labelled as targets and progress counts only verified revenue'
     method: 'POST',
     body: JSON.stringify({ agentId: 'agt_parent', amountCents: 25_000_000, source: 'client', status: 'received', idempotencyKey: 'tgt-received-1', verifier: 'provider-webhook', externalRef: 'pi_real_ref_1' }),
   });
-  assert.equal(received.status, 201);
+  assert.equal(received.status, 409);
+  assert.equal(received.body.error.code, 'provider_verification_required');
   const after = listTargets().find((target) => target.id === created.body.target.id)!;
-  assert.equal(after.actualCents, 25_000_000, 'verified receipts count toward the target');
-  assert.equal(after.progressPct, 25, 'progress is a real percentage, not a claim');
+  assert.equal(after.actualCents, 0, 'a caller-supplied verifier string cannot establish cash');
+  assert.equal(after.progressPct, 0, 'unverified claims do not advance this target');
   assert.ok(after.actualCents < after.amountCents, 'an unmet target stays unmet');
 });
 
@@ -310,19 +311,11 @@ test('the payout surface requires owner authority and verified destinations', as
   assert.equal(emptyVerification.status, 400, 'status-only activation cannot bypass documentary verification');
   const verified = await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({ checks: Object.fromEntries(PAYOUT_VERIFICATION_CHECKS.map(check => [check.key, true])), attestation: 'Synthetic owner attestation for HTTP tests only; no actual payment destination.' }) });
   assert.equal(verified.status, 200);
-  const missionWallet = listWallets('mission')[0];
-  assert.ok(missionWallet, 'a mission treasury wallet exists');
-  const request = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 2_000, idempotencyKey: 'srv-pay-2', memo: 'provider fee coverage' }) });
-  assert.equal(request.status, 201);
-  assert.equal(request.body.payout.status, 'pending_approval');
-  const approve = await owner(`/api/payouts/${request.body.payout.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
-  assert.equal(approve.status, 200);
-  assert.equal(approve.body.payout.status, 'approved');
-  const settleNoRef = await owner(`/api/payouts/${request.body.payout.id}/settle`, { method: 'POST', body: JSON.stringify({ status: 'settled' }) });
-  assert.equal(settleNoRef.status, 400, 'settlement needs a provider reference');
-  const settle = await owner(`/api/payouts/${request.body.payout.id}/settle`, { method: 'POST', body: JSON.stringify({ status: 'settled', settlementRef: 'po_provider_ref_1' }) });
-  assert.equal(settle.status, 200);
-  assert.equal(settle.body.payout.status, 'settled');
+  for (const status of ['sent','settled','failed']) {
+    const result = await owner('/api/payouts/legacy/settle', {method:'POST',body:JSON.stringify({status,settlementRef:'caller-invented-reference'})});
+    assert.equal(result.status,409);
+    assert.equal(result.body.error.code,'provider_verification_required');
+  }
 });
 
 test('the private dashboard is served by the mission server only', async () => {
@@ -402,37 +395,12 @@ test('pausing or retiring an agent requires a reason and is audited', async () =
   assert.equal(detail.reason, 'probe hold');
 });
 
-test('owner funding is real, idempotent and never counted as revenue', async () => {
-  const key = `fund-${Date.now()}`;
-  const first = await owner(`/api/wallets/${rootWalletId}/fund`, {
-    method: 'POST',
-    body: JSON.stringify({ amountCents: 4000, reference: 'bank transfer 12345', idempotencyKey: key }),
-  });
-  assert.equal(first.status, 201, JSON.stringify(first.body));
-  assert.equal(first.body.wallet.balanceCents, 4000);
-  assert.equal(first.body.category, 'owner_capital');
-
-  const retry = await owner(`/api/wallets/${rootWalletId}/fund`, {
-    method: 'POST',
-    body: JSON.stringify({ amountCents: 4000, reference: 'bank transfer 12345', idempotencyKey: key }),
-  });
-  assert.equal(retry.status, 200);
-  assert.equal(retry.body.duplicated, true);
-  assert.equal(retry.body.wallet.balanceCents, 4000, 'a retried request cannot double-credit the wallet');
-
-  const revenue = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_revenue WHERE wallet_id = ?`, [rootWalletId]);
-  assert.equal(Number(revenue?.count ?? 0), 0, 'owner capital is not revenue');
-  const ledger = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_ledger WHERE idempotency_key = ?`, [key]);
-  assert.equal(Number(ledger?.count ?? 0), 1, 'exactly one ledger row for the retried deposit');
-});
-
-test('funding requires a reference and a positive amount', async () => {
-  const noRef = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 100, reference: '', idempotencyKey: 'k-1' }) });
-  assert.equal(noRef.status, 400);
-  const noKey = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 100, reference: 'bank transfer 9', idempotencyKey: '' }) });
-  assert.equal(noKey.status, 400);
-  const zero = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 0, reference: 'bank transfer 9', idempotencyKey: 'k-2' }) });
-  assert.equal(zero.status, 400);
+test('owner notes cannot fund real money, even with idempotency keys', async () => {
+  for (const amountCents of [0,100,4000]) {
+    const result=await owner(`/api/wallets/${rootWalletId}/fund`,{method:'POST',body:JSON.stringify({amountCents,reference:'owner statement only',idempotencyKey:'legacy-deposit'})});
+    assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  }
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger WHERE idempotency_key=?',['legacy-deposit'])?.n),0);
 });
 
 test('the owner controls a wallet budget and can freeze it', async () => {
@@ -448,55 +416,18 @@ test('the owner controls a wallet budget and can freeze it', async () => {
     body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'p', description: 'frozen wallet', amountCents: 10 }),
   });
   assert.equal(refused.status, 409);
-  assert.match(String(refused.body.error.message), /wallet_frozen/);
+  assert.equal(refused.body.error.code,'provider_verification_required');
 
   await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ status: 'active' }) });
   const bad = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: -5 }) });
   assert.equal(bad.status, 400);
 });
 
-test('an expense uses the agent wallet, auto-executes under the threshold and queues above it', async () => {
-  const policy = (await owner('/api/policy')).body.policy;
-  const under = await owner('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'provider-a', description: 'under threshold', amountCents: Math.max(1, Math.floor(policy.requireApprovalAboveCents / 2)) }),
-  });
-  assert.equal(under.status, 201, `under-threshold expense: ${JSON.stringify(under.body)}`);
-  assert.equal(under.body.expense.status, 'paid', 'below the threshold the spend executes immediately');
-
-  // The budget is authority, the balance is money: raise the ceiling before
-  // committing more than what is left of the previous budget.
-  const raised = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: policy.requireApprovalAboveCents * 2 }) });
-  assert.equal(raised.status, 200);
-  const over = await owner('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'provider-a', description: 'over threshold', amountCents: policy.requireApprovalAboveCents + 1 }),
-  });
-  assert.equal(over.status, 201, `over-threshold expense: ${JSON.stringify(over.body)}`);
-  assert.equal(over.body.expense.status, 'requested');
-  assert.ok(over.body.approvalId, 'an approval was queued');
-
-  const rejected = await owner(`/api/expenses/${over.body.expense.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'rejected', note: 'not this month' }) });
-  assert.equal(rejected.status, 200);
-  assert.equal(rejected.body.expense.status, 'rejected');
-  const again = await owner(`/api/expenses/${over.body.expense.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
-  assert.equal(again.status, 409, 'a decided expense cannot be re-decided');
-});
-
-test('an agent wallet is resolved automatically and a missing wallet states the real requirement', async () => {
-  const orphan = await owner('/api/agents', {
-    method: 'POST',
-    body: JSON.stringify({ name: 'No Wallet Agent', specialization: 'scratch', activity: 'software_development', budgetCents: 0, missionRole: 'worker' }),
-  });
-  const slug = String(orphan.body.agent.slug);
-  const walletId = String(orphan.body.wallet.id);
-  missionDb.run('DELETE FROM mission_wallets WHERE id = ?', [walletId]);
-  const expense = await owner('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify({ agentSlug: slug, category: 'api', provider: 'p', description: 'no wallet', amountCents: 10 }),
-  });
-  assert.equal(expense.status, 409);
-  assert.equal(expense.body.error.code, 'wallet_required');
+test('legacy expense requests cannot claim payment without a provider', async () => {
+  for(const amountCents of [1,1000]) {
+    const result=await owner('/api/expenses',{method:'POST',body:JSON.stringify({agentSlug:rootAgentSlug,category:'api',provider:'fixture',amountCents,idempotencyKey:`legacy-${amountCents}`})});
+    assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  }
 });
 
 test('the kill switch sub-route is reachable on both paths and blocks work', async () => {
@@ -529,30 +460,12 @@ test('the agent report lists the delegation children with their state', async ()
   assert.equal(report.body.agent.childCount, children.length);
 });
 
-test('the approval queue atomically executes payouts and rolls back refused decisions', async () => {
-  const request = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 1000, idempotencyKey: 'queue-payout-atomic' }) });
-  assert.equal(request.status, 201);
-  const approval = request.body.payout.approval_id;
-  await owner('/api/kill-switch', { method: 'POST', body: JSON.stringify({ engage: true }) });
-  const refused = await owner(`/api/approvals/${approval}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
-  assert.equal(refused.status, 409);
-  assert.equal(missionDb.get<Row>('SELECT status FROM mission_approvals WHERE id = ?', [approval])!.status, 'pending', 'a failed payment cannot strand an approved queue row');
-  await owner('/api/kill-switch', { method: 'POST', body: JSON.stringify({ engage: false }) });
-  const approved = await owner(`/api/approvals/${approval}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
-  assert.equal(approved.status, 200);
-  assert.equal(approved.body.payout.status, 'approved');
-});
-
-test('rejecting an expense from the approval queue rejects both records without spending', async () => {
-  const policy = (await owner('/api/policy')).body.policy;
-  await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: 100000 }) });
-  const expense = await owner('/api/expenses', { method: 'POST', body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'fixture', description: 'synthetic queue rejection', amountCents: policy.requireApprovalAboveCents + 1, idempotencyKey: 'queue-expense-reject' }) });
-  assert.equal(expense.status, 201);
-  const before = missionDb.get<Row>('SELECT balance_cents FROM mission_wallets WHERE id = ?', [rootWalletId])!.balance_cents;
-  const rejected = await owner(`/api/approvals/${expense.body.approvalId}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'rejected' }) });
-  assert.equal(rejected.status, 200);
-  assert.equal(rejected.body.expense.status, 'rejected');
-  assert.equal(missionDb.get<Row>('SELECT balance_cents FROM mission_wallets WHERE id = ?', [rootWalletId])!.balance_cents, before);
+test('the legacy approval queue cannot bypass provider verification', async () => {
+  const id='legacy-finance-approval';
+  missionDb.run("INSERT INTO mission_approvals (id,subject_type,subject_id,action,status) VALUES (?,'payout','legacy-payout','payout.approve','pending')",[id]);
+  const result=await owner(`/api/approvals/${id}/decide`,{method:'POST',body:JSON.stringify({decision:'approved'})});
+  assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  assert.equal(missionDb.get<Row>('SELECT status FROM mission_approvals WHERE id=?',[id])?.status,'pending');
 });
 
 test('private agent messages are durable, replay-safe, scoped and never execute money commands', async () => {
@@ -797,4 +710,22 @@ test.after(async () => {
     const file = `${DB_PATH}${suffix}`;
     if (fs.existsSync(file)) fs.rmSync(file, { force: true });
   }
+});
+
+
+test('verified cash API is owner-scoped, zero-funded, and exposes audit pagination',async()=>{
+  assert.equal((await api('/api/money')).status,401);
+  const boot=await owner('/api/money/bootstrap',{method:'POST',body:'{}'});assert.equal(boot.status,200);
+  const cash=await owner('/api/money');assert.equal(cash.status,200);assert.equal(cash.body.accounting,'provider_verified_cash_only');assert.equal(cash.body.legacyBalancesImported,false);
+  assert.equal(cash.body.accounts.reduce((n:number,a:any)=>n+Number(a.available_cents),0),0);
+  const ledger=await owner('/api/money/ledger?limit=10');assert.equal(ledger.status,200);assert.ok(Array.isArray(ledger.body.entries));
+  const missingProvider=await owner('/api/money/receipt',{method:'POST',body:JSON.stringify({externalId:'txn_claim'})});
+  assert.equal(missingProvider.status,409);assert.equal(missingProvider.body.error.code,'mission_live_provider_not_configured');
+});
+
+test('new verified-cash requests reject fabricated funding and preserve zero balances',async()=>{
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents WHERE slug=?',[rootAgentSlug])!;
+  const grant=await owner('/api/money/grants',{method:'POST',body:JSON.stringify({agentId:agent.id,spendLimitCents:100,delegationCents:0,expiresAt:new Date(Date.now()+86400000).toISOString()})});assert.equal(grant.status,200);
+  const result=await owner('/api/money/request',{method:'POST',body:JSON.stringify({kind:'expense',agentId:agent.id,provider:'stripe-mission',destination:'vendor',category:'api',amountCents:10,maxCostCents:10,idempotencyKey:'unfunded-real-expense'})});
+  assert.equal(result.status,409);assert.equal(result.body.error.code,'insufficient_real_funds');
 });

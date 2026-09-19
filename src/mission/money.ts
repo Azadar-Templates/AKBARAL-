@@ -91,7 +91,7 @@ export function provisionMoneyAgent(agentId: string, ownerId: string, parentId?:
     db.run('INSERT INTO mission_money_grants (agent_id,parent_id,spend_limit_cents,expires_at,granted_by) VALUES (?,?,?,?,?)', [agentId,parentId ?? null,delegatedCents,expiry,ownerId]);
     if(parentId)db.run('UPDATE mission_money_grants SET opportunity_id=? WHERE agent_id=?',[grant(parentId).opportunity_id??null,agentId]);
     audit('agent_authorized', null, agentId, { parentId: parentId ?? null, spendLimitCents: delegatedCents, opportunity: 'blocked_until_assigned', canCreate: false });
-    return grant(agentId);
+    return db.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id=?',[agentId])!;
   });
 }
 export function grant(id: string): Row {
@@ -117,13 +117,15 @@ export function bootstrapMoneyAgents(actor: MoneyActor): { agents: number; unass
     return { agents: agents.length, unassigned: Number(db.get<Row>('SELECT COUNT(*) AS n FROM mission_money_grants WHERE opportunity_id IS NULL')?.n ?? 0) };
   });
 }
-export function setMoneyGrant(actor: MoneyActor, agentId: string, input: { spendLimitCents: number; delegationCents: number; canCreate: boolean; expiresAt: string; status: 'active'|'revoked'; opportunityId?: string }): Row {
-  assertMoneyOwner(actor); cents(input.spendLimitCents); cents(input.delegationCents);
+export function setMoneyGrant(actor: MoneyActor, agentId: string, input: { spendLimitCents: number; delegationCents: number; canCreate: boolean; expiresAt: string; status: 'active'|'revoked'; opportunityId?: string; autoAllocateCents?:number }): Row {
+  assertMoneyOwner(actor); cents(input.spendLimitCents); cents(input.delegationCents); cents(input.autoAllocateCents??0);
+  if((input.autoAllocateCents??0)>input.spendLimitCents)deny('allocation_exceeds_grant');
   if (!['active','revoked'].includes(input.status) || !Number.isFinite(Date.parse(input.expiresAt)) || Date.parse(input.expiresAt) <= Date.now()) deny('invalid_grant');
   return db.transaction(() => {
     provisionMoneyAgent(agentId, actor.id);
     if (input.opportunityId) opportunity(input.opportunityId);
     db.run('UPDATE mission_money_grants SET spend_limit_cents=?, delegation_cents=?, can_create=?, expires_at=?, status=?, opportunity_id=?, granted_by=? WHERE agent_id=?', [input.spendLimitCents,input.delegationCents,input.canCreate ? 1:0,input.expiresAt,input.status,input.opportunityId ?? null,actor.id,agentId]);
+    db.run('UPDATE mission_money_grants SET auto_allocate_cents=? WHERE agent_id=?',[input.autoAllocateCents??0,agentId]);
     audit('grant_updated', actor, agentId, input);
     return db.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id=?',[agentId])!;
   });
@@ -168,7 +170,7 @@ export function freezeCash(actor:MoneyActor,id:string,frozen:boolean) {
   if (!frozen && Number(db.get<Row>('SELECT COALESCE(SUM(remaining_cents),0) AS n FROM mission_cash_liabilities')?.n)) deny('unresolved_provider_liability');
   return db.transaction(()=> {cashAccount(id);db.run('UPDATE mission_cash_accounts SET frozen=? WHERE id=?',[frozen?1:0,id]); audit('freeze_changed',actor,id,{frozen});});
 }
-export interface CashReceipt { externalId:string; amountCents:number; currency:string; kind:'earning'|'refund'|'reversal'; agentId?:string; operationId?:string; originalExternalId?:string }
+export interface CashReceipt { externalId:string; amountCents:number; currency:string; kind:'earning'|'refund'|'reversal'; agentId?:string; operationId?:string; originalExternalId?:string; availableBalanceCents?:number }
 export interface PaymentResult { state:'pending'|'completed'|'failed'; providerRef:string; actualCents?:number }
 /** Implementations are trusted server-side code, never HTTP request objects or arbitrary URLs. */
 export interface MoneyProvider {
@@ -181,11 +183,17 @@ export interface MoneyProvider {
 function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt) {
   cents(receipt.amountCents,true); text(receipt.externalId);
   return db.transaction(()=> {
-    const fp=sha256(JSON.stringify(receipt));
+    const fp=sha256(JSON.stringify([receipt.externalId,receipt.amountCents,receipt.currency,receipt.kind,receipt.agentId??null,receipt.operationId??null,receipt.originalExternalId??null]));
     const old=db.get<Row>('SELECT * FROM mission_money_receipts WHERE provider=? AND external_id=?',[provider.id,receipt.externalId]);
-    if(old){ if(old.fingerprint!==fp) deny('receipt_conflict');return {duplicated:true}; }
+    if(old){ if(old.fingerprint!==fp && old.fingerprint!==sha256(JSON.stringify(Object.fromEntries(Object.entries(receipt).filter(([key])=>key!=='availableBalanceCents'))))) deny('receipt_conflict');return {duplicated:true}; }
     const treasury=ensureCashAccount();
     if(receipt.currency!==treasury.currency) deny('currency_mismatch');
+    if(receipt.availableBalanceCents!==undefined && receipt.kind==='earning') {
+      cents(receipt.availableBalanceCents);
+      const booked=Number(db.get<Row>('SELECT COALESCE(SUM(available_cents+held_cents),0) AS n FROM mission_cash_accounts WHERE currency=?',[receipt.currency])?.n??0);
+      const liability=Number(db.get<Row>('SELECT COALESCE(SUM(remaining_cents),0) AS n FROM mission_cash_liabilities WHERE provider=?',[provider.id])?.n??0);
+      if(booked+Math.max(0,receipt.amountCents-liability)>receipt.availableBalanceCents)deny('provider_balance_requires_reconciliation');
+    }
     if(receipt.kind==='earning') {
       if(!receipt.agentId) deny('earning_agent_missing');
       // Revocation cannot erase cash already earned; identity + prior assignment still required.
@@ -219,7 +227,7 @@ function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt) {
     // Incoming cash first services confirmed provider liabilities, never invents solvency.
     if(receipt.kind==='earning'||receipt.kind==='refund') {
       const target=receipt.kind==='earning'?'treasury':String(moneyOperation(receipt.operationId!).account_id);
-      for(const liability of db.all<Row>('SELECT * FROM mission_cash_liabilities WHERE remaining_cents>0 ORDER BY provider,external_id')) {
+      for(const liability of db.all<Row>('SELECT * FROM mission_cash_liabilities WHERE provider=? AND remaining_cents>0 ORDER BY external_id',[provider.id])) {
         const take=Math.min(Number(cashAccount(target).available_cents),Number(liability.remaining_cents));
         if(take){entry(target,'available',-take,`liability:${liability.external_id}`);db.run('UPDATE mission_cash_liabilities SET remaining_cents=remaining_cents-? WHERE provider=? AND external_id=?',[take,String(liability.provider),String(liability.external_id)]);}
       }
@@ -279,7 +287,7 @@ export function requestMoney(actor:MoneyActor,input:{kind:'expense'|'withdrawal'
     }
     capacity(op);
     if(Number(account.available_cents)<input.maxCostCents)deny('insufficient_real_funds');
-    const state=input.kind==='withdrawal'||input.maxCostCents>=currentPolicy().requireApprovalAboveCents?'approval_required':'reserved';
+    const state=input.kind==='withdrawal'||['account','property','upgrade'].includes(input.category)||input.maxCostCents>=currentPolicy().requireApprovalAboveCents?'approval_required':'reserved';
     db.run('INSERT INTO mission_money_operations (id,idempotency_key,fingerprint,kind,account_id,agent_id,provider,destination,category,amount_cents,max_cost_cents,currency,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[String(op.id),input.idempotencyKey,fp,input.kind,String(account.id),input.agentId??null,input.provider,input.destination,input.category,input.amountCents,input.maxCostCents,String(account.currency),state,nowIso(),nowIso()]);
     if(op.destination_hash)db.run('UPDATE mission_money_operations SET destination_hash=? WHERE id=?',[String(op.destination_hash),String(op.id)]);
     if(state==='reserved')move(String(account.id),input.maxCostCents,true,String(op.id));
@@ -325,7 +333,7 @@ export async function dispatchMoney(actor:MoneyActor,provider:MoneyProvider,id:s
     if(op.provider!==provider.id||!provider.supports(String(op.kind),String(op.category)))deny('provider_not_configured_for_operation');
     if(op.state!=='reserved')deny('dispatch_not_retryable_reconcile_only');
     capacity(op,id);
-    if((op.kind==='withdrawal'||Number(op.max_cost_cents)>=currentPolicy().requireApprovalAboveCents)&&!op.approved_by)deny('owner_approval_required');
+    if((op.kind==='withdrawal'||['account','property','upgrade'].includes(String(op.category))||Number(op.max_cost_cents)>=currentPolicy().requireApprovalAboveCents)&&!op.approved_by)deny('owner_approval_required');
     db.run("UPDATE mission_money_operations SET state='dispatching',updated_at=? WHERE id=?",[nowIso(),id]);
     audit('dispatch_claimed',actor,id);return moneyOperation(id);
   });
@@ -348,7 +356,7 @@ export async function reconcileMoney(actor:MoneyActor,provider:MoneyProvider,id:
   return settle(provider,id,await provider.lookup(op));
 }
 export function moneyOverview() {
-  return { accounting:'provider_verified_cash_only', legacyBalancesImported:false, providerConnectionsConfigured:false,
+  return { accounting:'provider_verified_cash_only', legacyBalancesImported:false, providerConnectionStatus:'requires_live_connection_check',
     accounts:db.all<Row>('SELECT * FROM mission_cash_accounts ORDER BY id'),
     operations:db.all<Row>('SELECT * FROM mission_money_operations ORDER BY created_at DESC LIMIT 200'),
     grants:db.all<Row>('SELECT * FROM mission_money_grants ORDER BY agent_id'),
@@ -411,6 +419,15 @@ export async function moneyWorkerTick(actor:MoneyActor,providers:MoneyProvider[]
     if(p){try{await reconcileMoney(actor,p,String(pending.id));}catch{/* Held; never retry POST on uncertainty. */}}
   }
   if(currentPolicy().killSwitch||!currentPolicy().autonomousEnabled)return {blocked:'policy_disabled'};
+  for(const g of db.all<Row>("SELECT * FROM mission_money_grants WHERE status='active' AND auto_allocate_cents>0 ORDER BY agent_id")) {
+    try{db.transaction(()=>{
+      const id=String(g.agent_id);grant(id);const account=cashAccount(id),treasury=ensureCashAccount();
+      const spent=Number(db.get<Row>("SELECT COALESCE(SUM(actual_cents),0) AS n FROM mission_money_operations WHERE agent_id=? AND state='completed'",[id])?.n??0);
+      const held=Number(account.held_cents),available=Number(account.available_cents);
+      const amount=Math.min(Number(g.auto_allocate_cents)-available-held,Number(g.spend_limit_cents)-spent-available-held,Number(treasury.available_cents));
+      if(amount>0)allocateCash(actor,id,amount,missionId('autoalloc'));
+    });}catch{/* Revoked/frozen/exhausted agents receive no allocation. */}
+  }
   const op=db.get<Row>("SELECT * FROM mission_money_operations WHERE state='reserved' ORDER BY created_at LIMIT 1");
   if(op){const p=providers.find(p=>p.id===op.provider&&p.supports(String(op.kind),String(op.category)));if(p)await dispatchMoney(actor,p,String(op.id),true);}
   const job=db.get<Row>("SELECT * FROM mission_earning_jobs WHERE state='queued' ORDER BY created_at LIMIT 1");

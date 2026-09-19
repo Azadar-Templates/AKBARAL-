@@ -44,7 +44,8 @@
         <nav class="tabs" id="tabs" aria-label="Mission sections">
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
-          <button data-tab="treasury" class="tab">Treasury &amp; payouts</button>
+          <button data-tab="money" class="tab">Verified cash</button>
+          <button data-tab="treasury" class="tab">Legacy accounting &amp; destinations</button>
           <button data-tab="publishing" class="tab">Publishing</button>
           <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="tools" class="tab">Tools &amp; credentials</button>
@@ -124,8 +125,26 @@
           <div id="agent-report"></div>
         </section>
 
+        <section data-panel="money" class="panel" hidden>
+          <h2>Provider-verified mission cash</h2>
+          <p>No opening balance is imported from legacy accounting. Missing opportunities and providers remain blocked. A ledger is not a bank or a payment connection.</p>
+          <div id="verified-cash-summary" class="cards"></div>
+          <div id="verified-cash-operations" class="table-wrap"></div>
+          <form id="money-command-form" class="stack-form">
+            <h3>Owner cash controls</h3>
+            <p>Amounts are integer minor units. Requesting/approving is not proof of payment. Dispatch may send real money only after provider setup.</p>
+            <label>Action <select name="action">
+              <option>bootstrap</option><option>opportunities</option><option>grants</option><option>allocate</option><option>freeze</option>
+              <option>request</option><option>decide</option><option>cancel</option><option>receipt</option><option>dispatch</option><option>reconcile</option><option>earn</option>
+            </select></label>
+            <label>Request JSON (never enter credentials) <textarea name="payload" rows="6" required>{}</textarea></label>
+            <button type="submit">Submit owner-authorized action</button>
+          </form>
+          <p id="money-command-result" role="status"></p>
+          <details><summary>Full cash accounts, grants, opportunities and audit integrity</summary><pre id="verified-cash-data"></pre></details>
+        </section>
         <section data-panel="treasury" class="panel" hidden>
-          <h2>Treasury</h2>
+          <h2>Legacy owner-reported accounting — not verified available funds</h2>
           <div id="treasury-summary" class="cards"></div>
           <h2>Payout destinations (four configurable slots)</h2>
           <p class="muted small">

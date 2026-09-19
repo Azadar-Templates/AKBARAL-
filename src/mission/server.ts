@@ -1,3 +1,5 @@
+import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
+import { configuredMoneyProvider } from './money-stripe';
 import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
 import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
 import { recordResourceCallCost } from './resource-budgets';
@@ -350,6 +352,48 @@ async function handleApi(
     return Number.isFinite(value) ? value : fallback;
   };
 
+  if (head === 'money') {
+    if (method === 'GET') {
+      const session = requireOwner(context);
+      assertMoneyOwner({kind:'owner',id:session.owner.id});
+      json(res,200,rest[0]==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200))}:moneyOverview()); return true;
+    }
+    let actor: MoneyActor;
+    if (context.session) actor={kind:'owner',id:requireOwner(context,true).owner.id};
+    else { const bound=requireAgent(context,param('agentId')); actor={kind:'agent',id:bound.agentId}; }
+    if(method!=='POST')throw new HttpProblem(405,'use POST for money mutations','method_not_allowed');
+    const action=rest[0];
+    let result: unknown;
+    try {
+    if(action==='bootstrap')result=bootstrapMoneyAgents(actor);
+    else if(action==='opportunities')result=approveOpportunity(actor,{title:param('title','')!,evidenceUrl:param('evidenceUrl','')!,activity:param('activity','')!,provider:param('provider','')!});
+    else if(action==='grants')result=setMoneyGrant(actor,param('agentId','')!,{spendLimitCents:num('spendLimitCents'),delegationCents:num('delegationCents'),canCreate:body.canCreate===true,expiresAt:param('expiresAt','')!,status:param('status')==='revoked'?'revoked':'active',opportunityId:param('opportunityId')??undefined,autoAllocateCents:num('autoAllocateCents')});
+    else if(action==='allocate')result=allocateCash(actor,param('agentId','')!,num('amountCents'),param('idempotencyKey','')!);
+    else if(action==='freeze')result=freezeCash(actor,param('accountId','')!,body.frozen!==false);
+    else if(action==='request')result=requestMoney(actor,{kind:param('kind') as 'expense'|'withdrawal',agentId:param('agentId')??undefined,provider:param('provider','')!,destination:param('destination','')!,category:param('category','')!,amountCents:num('amountCents'),maxCostCents:num('maxCostCents'),idempotencyKey:param('idempotencyKey','')!});
+    else if(action==='cancel')result=cancelMoney(actor,param('id','')!);
+    else if(action==='decide')result=decideMoney(actor,param('id','')!,body.approve===true);
+    else if(action==='receipt'){assertMoneyOwner(actor);result=await verifyMoneyReceipt(actor,configuredMoneyProvider(),param('externalId','')!);}
+    else if(action==='dispatch')result=await dispatchMoney(actor,configuredMoneyProvider(),param('id','')!);
+    else if(action==='reconcile'){assertMoneyOwner(actor);result=await reconcileMoney(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='earn')result=queueEarning(actor,param('agentId','')!,param('idempotencyKey','')!,param('costOperationId')??undefined);
+    else throw new HttpProblem(404,'unknown money action','not_found');
+    } catch(error) {
+      appendMissionAudit({actorType:actor.kind,actorId:actor.id,action:'money.action_refused',subjectType:'verified_cash',subjectId:action,detail:{code:error instanceof MoneyError?error.code:'internal_error'}});
+      throw error;
+    }
+    json(res,200,{result:result??null});return true;
+  }
+  // Legacy entries are owner-reported accounting, not verified external cash.
+  // Refuse HTTP paths that previously accepted a note as payment confirmation.
+  if (method !== 'GET' && ((head==='wallets' && rest[1]==='fund') ||
+      (head==='revenue' && param('status')==='received') || head==='expenses' ||
+      (head==='payouts' && ['settle','decide'].includes(rest[1])) ||
+      (head==='work' && rest[1]==='status' && param('status')==='paid'))) {
+    requireRead(context);
+    throw new HttpProblem(409,'Use /api/money: provider-verified cash is required; legacy notes cannot fund or settle real payments.','provider_verification_required');
+  }
+
   switch (head) {
     // ── Session ─────────────────────────────────────────────────────────────
     case 'session': {
@@ -422,6 +466,7 @@ async function handleApi(
           const decisionResult = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
           if (!decisionResult.ok) throw new HttpProblem(decisionResult.status === 'not_found' ? 404 : 409, decisionResult.reason ?? 'approval not actionable', decisionResult.status === 'not_found' ? 'not_found' : 'conflict');
           const subject = decisionResult.approval;
+          if(decision==='approved' && ['expense','payout'].includes(String(subject?.subject_type))) throw new HttpProblem(409,'Legacy approvals cannot move verified cash; use /api/money.','provider_verification_required');
           if (subject?.subject_type === 'expense') {
             return { ...decisionResult, expense: decideExpense({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
           }
@@ -1413,6 +1458,7 @@ function createRootAgent(input: {
   missionRole: 'worker' | 'supervisor' | 'director';
   actorId: string;
 }): { agent: Row; contract: Row; wallet: Wallet } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
   if (!policy.allowAgentCreation) throw new HttpProblem(403, 'agent creation is disabled by policy', 'policy_denied');
   if (policy.killSwitch) throw new HttpProblem(409, 'the mission kill switch is engaged', 'policy_denied');
@@ -1450,6 +1496,7 @@ function createRootAgent(input: {
       ],
     );
     const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    provisionMoneyAgent(agentId,input.actorId);
     appendMissionAudit({
       actorType: 'owner',
       actorId: input.actorId,
@@ -1463,6 +1510,7 @@ function createRootAgent(input: {
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
     };
+  });
   });
 }
 
@@ -1479,6 +1527,7 @@ function createSubAgent(input: {
   actorId: string;
   actorType: 'owner' | 'agent';
 }): { agent: Row; contract: Row; wallet: Wallet } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
   const parent = findAgentBySlug(input.parentSlug);
   if (!parent) throw new HttpProblem(404, 'parent agent not found', 'not_found');
@@ -1526,6 +1575,7 @@ function createSubAgent(input: {
       ],
     );
     const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    provisionMoneyAgent(agentId,input.actorId,input.actorType==='agent'?String(parent.id):undefined,input.actorType==='agent'?input.budgetCents:0);
     appendMissionAudit({
       actorType: input.actorType,
       actorId: input.actorId,
@@ -1539,6 +1589,7 @@ function createSubAgent(input: {
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
     };
+  });
   });
 }
 
@@ -1573,12 +1624,14 @@ export function createMissionServer(): http.Server {
         const status =
           error instanceof HttpProblem ? error.status
             : error instanceof MissionAuthError ? error.statusCode
+              : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
                 : error instanceof MissionSelfServiceError ? error.statusCode
                   : 500;
         const code =
           error instanceof HttpProblem ? error.code
             : error instanceof MissionAuthError ? error.code
+              : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code
                 : error instanceof MissionSelfServiceError ? error.code
                   : 'internal_error';

@@ -229,7 +229,7 @@ function renderOverview(overview) {
   cards.append(
     card('Agents', overview.agents.total, `${overview.agents.custom} created in-mission · ${overview.agents.registry} from the registry`),
     card('Hierarchy depth', overview.agents.maxDepth, `cap ${overview.policy.maxDepth}`),
-    card('Realized revenue', money(overview.revenue.windows.lifetimeCents, currency), 'verified receipts only'),
+    card('Legacy reported revenue', money(overview.revenue.windows.lifetimeCents, currency), 'verified receipts only'),
     card('Treasury balance', money(treasury.totalBalanceCents, currency), `${overview.treasury.wallets.length} wallets`),
     card('Today (verified)', money(overview.revenue.windows.todayCents, currency)),
     card('Last 30 days', money(overview.revenue.windows.last30DaysCents, currency)),
@@ -309,7 +309,7 @@ function renderAgentReport(report) {
     card('Children', report.agent.childCount),
     card('Status', report.agent.status),
     card('Wallet balance', report.wallet ? money(report.wallet.balanceCents, currency) : 'no wallet'),
-    card('Realized revenue', money(revenue.realizedCents, currency), 'verified receipts'),
+    card('Legacy reported revenue', money(revenue.realizedCents, currency), 'verified receipts'),
     card('Contracted', money(revenue.contractedCents, currency)),
     card('Expected', money(revenue.expectedCents, currency)),
     card('Audit entries', report.audit.entries, report.audit.lastAction || ''),
@@ -530,6 +530,7 @@ async function loadTab(tab) {
       renderOverview(overview);
     }
     if (tab === 'agents') await loadAgents();
+    if (tab === 'money') await loadVerifiedCash();
     if (tab === 'treasury') await loadTreasury();
     if (tab === 'publishing') await loadPublishing();
     if (tab === 'approvals') await loadApprovals();
@@ -847,10 +848,10 @@ async function loadTreasury() {
     card('Total balance', money(totals.totalBalanceCents, currency)),
     card('Mission treasury', money(totals.missionBalanceCents, currency)),
     card('Agent wallets', money(totals.agentBalancesCents, currency)),
-    card('Realized revenue', money(totals.realizedRevenueCents, currency)),
+    card('Legacy reported revenue', money(totals.realizedRevenueCents, currency)),
     card('Pending revenue', money(totals.pendingRevenueCents, currency), 'contracted + expected'),
     card('Expenses', money(totals.totalExpensesCents, currency)),
-    card('Settled payouts', money(totals.settledPayoutsCents, currency)),
+    card('Legacy reported payouts', money(totals.settledPayoutsCents, currency)),
     card('Spend today', money(treasury.treasury.daily.spentTodayCents, currency), `cap ${money(treasury.treasury.daily.policyDailyCapCents, currency)}`),
   );
 
@@ -1640,3 +1641,31 @@ async function boot() {
 }
 
 document.addEventListener('DOMContentLoaded', boot);
+
+
+async function loadVerifiedCash() {
+  const target = $('#verified-cash-summary');
+  target.replaceChildren();
+  if (!canMutate()) { target.textContent = 'Verified cash controls require the mission owner session.'; return; }
+  const data = await api('/money');
+  const accounts = data.accounts || [];
+  const currency = accounts[0]?.currency || 'USD';
+  target.append(
+    card('Verified available', money(accounts.reduce((n,a) => n + Number(a.available_cents),0),currency)),
+    card('Held / uncertain', money(accounts.reduce((n,a) => n + Number(a.held_cents),0),currency)),
+    card('Integrity', data.ledger.ok ? 'Verified' : 'FAILED'),
+    card('Execution', data.killSwitch ? 'FROZEN' : 'Policy gated'),
+  );
+  $('#verified-cash-operations').replaceChildren(el('pre',{text:JSON.stringify(data.operations,null,2)}));
+  $('#verified-cash-data').textContent=JSON.stringify(data,null,2);
+}
+const moneyForm = $('#money-command-form');
+if(moneyForm) moneyForm.addEventListener('submit',async(event)=>{
+  event.preventDefault(); const form = new FormData(moneyForm); const status = $('#money-command-result');
+  try {
+    const action=String(form.get('action')); const payload=JSON.parse(String(form.get('payload')));
+    if(action==='dispatch' && !window.confirm('Dispatch this approved operation to the configured real payment provider?')) return;
+    const result=await api(`/money/${action}`,{method:'POST',body:payload});
+    status.textContent=JSON.stringify(result);await loadVerifiedCash();
+  } catch(error) {status.textContent=error.message || 'Action refused';}
+});
