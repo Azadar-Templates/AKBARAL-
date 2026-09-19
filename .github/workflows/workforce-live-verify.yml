@@ -56,15 +56,31 @@ jobs:
           set -e
           echo "script_exit=$code" | tee -a workforce-live-exec.log
           exit "$code"
-      - name: Publish evidence as annotations (readable where logs are not)
+      - name: Publish evidence as annotations (1/3)
         if: always()
         run: |
           if [ -f workforce-live-exec.log ]; then
             grep -E '^(ROUTED_MODEL|ROUTED_PROVIDER|ROUTED_AVAILABLE|EVALUATION|EXECUTION|LATENCY_MS|OUTCOME|MODEL|PROVIDER|PROVIDER_LATENCY_MS|INPUT_TOKENS|OUTPUT_TOKENS|COST_CENTS|MODEL_RUN_STATUS|EXECUTION_COST_CENTS|DELIVERY|DELIVERY_VERIFIED|OUTPUT_SHA|OUTPUT_PREVIEW|ERROR|VERDICT|script_exit)=' workforce-live-exec.log \
-              | tr '\n' '\n' | sed 's/::/:/g' | cut -c1-900 \
+              | sed 's/::/:/g' | cut -c1-900 | head -n 10 \
               | while read -r line; do echo "::notice title=workforce-live::$line"; done
           else
             echo "::warning title=workforce-live::no evidence log was produced"
+          fi
+      - name: Publish evidence as annotations (2/3)
+        if: always()
+        run: |
+          if [ -f workforce-live-exec.log ]; then
+            grep -E '^(ROUTED_MODEL|ROUTED_PROVIDER|ROUTED_AVAILABLE|EVALUATION|EXECUTION|LATENCY_MS|OUTCOME|MODEL|PROVIDER|PROVIDER_LATENCY_MS|INPUT_TOKENS|OUTPUT_TOKENS|COST_CENTS|MODEL_RUN_STATUS|EXECUTION_COST_CENTS|DELIVERY|DELIVERY_VERIFIED|OUTPUT_SHA|OUTPUT_PREVIEW|ERROR|VERDICT|script_exit)=' workforce-live-exec.log \
+              | sed 's/::/:/g' | cut -c1-900 | sed -n '11,20p' \
+              | while read -r line; do echo "::notice title=workforce-live::$line"; done
+          fi
+      - name: Publish evidence as annotations (3/3)
+        if: always()
+        run: |
+          if [ -f workforce-live-exec.log ]; then
+            grep -E '^(ROUTED_MODEL|ROUTED_PROVIDER|ROUTED_AVAILABLE|EVALUATION|EXECUTION|LATENCY_MS|OUTCOME|MODEL|PROVIDER|PROVIDER_LATENCY_MS|INPUT_TOKENS|OUTPUT_TOKENS|COST_CENTS|MODEL_RUN_STATUS|EXECUTION_COST_CENTS|DELIVERY|DELIVERY_VERIFIED|OUTPUT_SHA|OUTPUT_PREVIEW|ERROR|VERDICT|script_exit)=' workforce-live-exec.log \
+              | sed 's/::/:/g' | cut -c1-900 | sed -n '21,30p' \
+              | while read -r line; do echo "::notice title=workforce-live::$line"; done
           fi
       - name: Keep the evidence log
         if: always()
