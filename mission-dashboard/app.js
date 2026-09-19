@@ -1038,6 +1038,8 @@ async function loadApprovals() {
 }
 
 async function loadTools() {
+  $('#credential-form').hidden = !canMutate();
+  if (!canMutate()) replace('#resource-periods', el('p', { text: 'Owner sign-in is required to review resource billing periods.' }));
   if (!canMutate()) replace('#resource-calls', el('p', { text: 'Owner sign-in is required to review resource calls.' }));
   const [tools, credentials, resources, services] = await Promise.all([
     api('/tools'), api('/credentials'), api('/resources'), api('/services'),
@@ -1085,6 +1087,7 @@ async function loadTools() {
     { label: 'Provider', key: 'provider' },
     { label: 'Label', key: 'label' },
     { label: 'Masked', key: 'maskedHint' },
+    { label: 'Local permissions', render: row => (row.scope || []).join(', ') || 'None recorded' },
     { label: 'Env var', render: (row) => row.envVar || '—' },
     { label: 'Status', render: (row) => pill(String(row.status), String(row.status) === 'active' ? 'ok' : 'warn') },
     { label: 'Expires', render: (row) => (row.expiresAt ? `${when(row.expiresAt)} (${row.daysUntilExpiry} d)` : '—') },
@@ -1123,10 +1126,15 @@ async function loadTools() {
     { label: 'Expires', render: (row) => when(row.expires_at) },
     { label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
     { label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
+    { label: 'Billing periods', render: row => canMutate() ? el('button', { class: 'small', text: 'Review periods', 'data-resource-periods': row.id }) : 'Owner-only' },
     { label: 'Quota calls', render: row => canMutate() ? el('button', { class: 'small', text: 'Review calls', 'data-resource-calls': row.id }) : 'Owner-only' },
     { label: 'Credential binding', render: row => canMutate() && row.status !== 'retired' ? el('button', { class: 'small', text: 'Bind credential', 'data-bind-credential': row.id }) : (row.credential_id || 'Not bound') },
     { label: 'Action', render: (row) => canMutate() && ['approved', 'needs_verification'].includes(row.status) ? el('button', { class: 'small', text: 'Record provisioning', 'data-provision': row.id }) : '—' },
   ], resources.resources, 'No resources requested.'));
+  $$('#resources button[data-resource-periods]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourcePeriods(resources.resources.find(row => row.id === button.getAttribute('data-resource-periods'))); } catch (error) { banner(error.message, 'error'); }
+  }));
   $$('#resources button[data-resource-calls]').forEach(button => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
     try { await renderResourceCalls(resources.resources.find(row => row.id === button.getAttribute('data-resource-calls'))); } catch (error) { banner(error.message, 'error'); }
@@ -1147,6 +1155,71 @@ async function loadTools() {
     { label: 'Source', render: (row) => row.health_source || '—' },
     { label: 'Checked', render: (row) => when(row.last_checked_at) },
   ], services.services, 'No services registered.'));
+}
+
+async function renderResourcePeriods(resource) {
+  if (!resource || !canMutate()) return;
+  const host = $('#resource-periods');
+  const history = el('div', { class: 'table-wrap' });
+  const older = el('button', { type: 'button', text: 'Older billing periods', hidden: true });
+  const refresh = el('button', { type: 'button', text: 'Refresh billing history' });
+  let cursor = null, rows = [], loading = null;
+  const load = async (reset = false) => {
+    if (loading) { await loading; return load(reset); }
+    older.disabled = true; refresh.disabled = true;
+    loading = (async () => {
+      try {
+        const result = await api(`/resources/${resource.id}/periods?limit=50${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`);
+        if (reset) rows = [];
+        const seen = new Set(rows.map(row => row.id));
+        rows.push(...result.periods.filter(row => !seen.has(row.id)));
+        cursor = result.nextCursor;
+        history.replaceChildren(table([{ label: 'Start', render: row => when(row.period_start) }, { label: 'End', render: row => when(row.period_end) }, { label: 'Archived usage', key: 'previous_usage', wrap: true }, { label: 'Starting usage', key: 'starting_usage', wrap: true }, { label: 'Actual charge', render: row => money(row.actual_cost_cents, row.currency) }, { label: 'Evidence', key: 'evidence', wrap: true }], rows, 'No evidenced renewal periods recorded.'));
+        older.hidden = !cursor;
+      } finally { loading = null; older.disabled = false; refresh.disabled = false; }
+    })();
+    return loading;
+  };
+  host.replaceChildren(el('h3', { text: `Billing periods — ${resource.provider}` }), el('p', { class: 'muted small', text: 'An auto-renew flag is intent, not a purchase. Record only an actual current provider period. Resolve all quota and financial holds first. Prior usage is archived; no provider is contacted and no external payment is executed.' }), history, older, refresh);
+  older.addEventListener('click', () => { void load().catch(error => banner(error.message, 'error')); });
+  refresh.addEventListener('click', () => { void load(true).catch(error => banner(error.message, 'error')); });
+  await load(true);
+  if (resource.status !== 'active' || !resource.provisioned_at || !resource.expires_at) {
+    host.appendChild(el('p', { text: 'A previously provisioned, non-retired resource with a known prior expiry is required before a renewed period can be recorded.' }));
+    return;
+  }
+  const [wallets, policy] = await Promise.all([api('/wallets'), api('/policy')]);
+  const currency = policy.policy.currency;
+  const limits = typeof resource.limits === 'string' ? JSON.parse(resource.limits) : (resource.limits || {});
+  const form = el('form', { class: 'stack-form' });
+  form.append(el('h4', { text: 'Record a renewed current period' }), el('p', { text: `Prior expiry: ${when(resource.expires_at)} UTC. Enter provider period dates in your browser’s local time. Accounting currency: ${currency}. No cost or starting usage is assumed.` }));
+  form.append(el('label', {}, ['Provider period start', el('input', { name: 'periodStart', type: 'datetime-local', required: '', 'aria-label': 'Provider period start' })]), el('label', {}, ['Provider period end', el('input', { name: 'periodEnd', type: 'datetime-local', required: '', 'aria-label': 'Provider period end' })]));
+  const wallet = el('select', { name: 'walletId', 'aria-label': 'Renewal funding wallet' }, [el('option', { value: '', text: 'Choose funded mission wallet (required for a charge)' }), ...wallets.wallets.filter(row => row.currency === currency && (!row.agentId || row.agentId === resource.agent_id)).map(row => el('option', { value: row.id, text: `${row.label} — ${money(row.balanceCents, currency)}` }))]);
+  form.append(wallet, el('input', { name: 'actualCostCents', type: 'number', min: 0, max: resource.monthly_cost_cents, step: 1, required: '', 'aria-label': 'Actual renewal charge in minor units' }));
+  const counters = Object.keys(limits).sort().map(key => {
+    const cap = el('input', { type: 'number', min: 0, step: 'any', value: limits[key], required: '', 'aria-label': `New ${key} limit` });
+    const usage = el('input', { type: 'number', min: 0, step: 'any', required: '', 'aria-label': `Starting ${key} usage` });
+    form.append(el('label', {}, [`Provider ${key} limit for this period`, cap]), el('label', {}, [`Actual starting ${key} usage`, usage]));
+    return { key, cap, usage };
+  });
+  form.append(el('input', { name: 'providerRef', required: '', minlength: 4, maxlength: 200, 'aria-label': 'Renewal charge reference' }), el('textarea', { name: 'evidence', required: '', minlength: 12, maxlength: 2000, 'aria-label': 'Provider period evidence without secrets' }), el('button', { type: 'submit', text: 'Record evidenced renewal — no purchase' }));
+  let saving = false, attempt = null;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !guardMutation() || !form.reportValidity()) return;
+    saving = true; form.querySelector('button').disabled = true;
+    try {
+      const body = { expectedExpiresAt: resource.expires_at, periodStart: new Date(form.elements.periodStart.value).toISOString(), periodEnd: new Date(form.elements.periodEnd.value).toISOString(), actualCostCents: Number(form.elements.actualCostCents.value), currency, ...(wallet.value ? { walletId: wallet.value } : {}), limits: Object.fromEntries(counters.map(row => [row.key, Number(row.cap.value)])), startingUsage: Object.fromEntries(counters.map(row => [row.key, Number(row.usage.value)])), providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value };
+      const signature = JSON.stringify(body);
+      if (!attempt || attempt.signature !== signature) attempt = { signature, key: crypto.randomUUID() };
+      await api(`/resources/${resource.id}/periods`, { method: 'POST', body: { ...body, idempotencyKey: attempt.key } });
+      form.replaceWith(el('p', { text: 'Evidenced period and private accounting recorded; previous usage archived. No purchase or external payment executed.' }));
+      await load(true); await loadTools();
+      banner('Provider period recorded, not purchased or independently verified.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+    finally { saving = false; form.querySelector('button').disabled = false; }
+  });
+  host.appendChild(form);
 }
 
 async function renderResourceCalls(resource) {
@@ -1481,10 +1554,14 @@ function wire() {
     } catch (error) { banner(error.message, 'error'); }
   });
 
+  let storingCredential = false;
   $('#credential-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!guardMutation()) return;
-    const data = new FormData(event.target);
+    if (storingCredential || !guardMutation()) return;
+    const form = event.target;
+    if (!form.reportValidity()) return;
+    storingCredential = true; form.querySelector('button').disabled = true;
+    const data = new FormData(form);
     try {
       await api('/credentials', {
         method: 'POST',
@@ -1492,14 +1569,16 @@ function wire() {
           provider: data.get('provider'),
           label: data.get('label'),
           secret: data.get('secret'),
+          scope: data.get('scope') === 'model.call' ? ['model.call'] : [],
           expiresAt: data.get('expiresAt') || undefined,
           envVar: data.get('envVar') || undefined,
         },
       });
-      banner('Credential stored encrypted. Its value will never be displayed.', 'ok');
-      event.target.reset();
+      banner('Credential stored encrypted. Its value will never be displayed. Local permission does not activate or verify a provider.', 'ok');
+      form.reset();
       await loadTools();
     } catch (error) { banner(error.message, 'error'); }
+    finally { storingCredential = false; form.querySelector('button').disabled = false; }
   });
 
   $('#policy-form').addEventListener('submit', async (event) => {

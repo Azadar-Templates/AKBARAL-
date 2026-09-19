@@ -18,6 +18,8 @@ function consoleFixture() {
     '/api/agents/agent-fixture/chat-jobs?limit=50': { jobs: [], nextCursor: null },
     '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
     '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'google', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
+    '/api/policy': { policy: { currency: 'USD' } },
+    '/api/resources/resource-fixture/periods?limit=50': { periods: [], nextCursor: null },
     '/api/resources/resource-fixture/calls?limit=50': { calls: [{ id: 'held-fixture', status: 'reserved', reservedUsage: { requests: 1 }, actualUsage: null }, { id: 'uncertain-fixture', status: 'uncertain', reservedUsage: { requests: 1 }, actualUsage: null, evidence: '<img src=x> Synthetic evidence text' }, { id: 'cost-fixture', status: 'succeeded', reservedUsage: { requests: 1 }, actualUsage: { requests: 1 }, budget: { status: 'held', reservedCents: 40, actualCents: null, currency: 'USD' } }], nextCursor: null },
     '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
     '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
@@ -30,7 +32,7 @@ function consoleFixture() {
     }
     return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls, renderAgentChatControls };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls, renderAgentChatControls, renderResourcePeriods, wire };`);
   dom.window.fixture.state.token = 'synthetic-dom-session';
   return { dom, win: dom.window, requests, resource };
 }
@@ -240,5 +242,48 @@ it('automatic reply controls require owner opt-in and explicit financial assumpt
     const privateHost = win.document.createElement('div');
     await win.fixture.renderAgentChatControls(privateHost, 'agent-fixture');
     assert.equal(privateHost.children.length, 0);
+  } finally { dom.window.close(); }
+});
+
+it('owner period controls require explicit starting usage and cost and retain one idempotency key per attempt', async () => {
+  const { dom, win, requests, resource } = consoleFixture();
+  try {
+    await win.fixture.renderResourcePeriods({ ...resource, status: 'active', provisioned_at: '2026-08-01T00:00:00Z', expires_at: '2026-09-01T00:00:00Z', limits: '{"requests":10}' });
+    const host = win.document.querySelector('#resource-periods'), form = host.querySelector('form');
+    assert.equal(form.elements.actualCostCents.value, '');
+    assert.equal(form.querySelector('[aria-label="Starting requests usage"]').value, '');
+    form.elements.periodStart.value = '2026-09-01T00:00'; form.elements.periodEnd.value = '2026-10-01T00:00';
+    form.elements.walletId.value = 'wallet-fixture'; form.elements.actualCostCents.value = '5';
+    form.querySelector('[aria-label="Starting requests usage"]').value = '2';
+    form.elements.providerRef.value = 'synthetic-period-ui'; form.elements.evidence.value = 'Synthetic current provider-period evidence only.';
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, '/api/resources/resource-fixture/periods');
+    assert.deepEqual(requests[0].body.startingUsage, { requests: 2 });
+    assert.equal(requests[0].body.actualCostCents, 5); assert.equal(requests[0].body.currency, 'USD');
+    assert.ok(String(requests[0].body.idempotencyKey).length >= 8);
+    assert.match(host.textContent, /No purchase or external payment executed/);
+    win.fixture.state.token = ''; await win.fixture.loadTools();
+    assert.equal(host.querySelectorAll('form').length, 0);
+  } finally { dom.window.close(); }
+});
+
+it('credential creation requires explicit local model permission and blocks duplicate secret submissions', async () => {
+  const { dom, win, requests } = consoleFixture();
+  try {
+    win.fixture.wire();
+    const form = win.document.querySelector('#credential-form');
+    assert.equal(form.elements.scope.value, '');
+    form.elements.provider.value = 'google'; form.elements.label.value = 'Synthetic scoped credential';
+    form.elements.secret.value = 'synthetic-credential-not-real'; form.elements.scope.value = 'model.call';
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.length, 1); assert.deepEqual(requests[0].body.scope, ['model.call']);
+    assert.equal(form.elements.secret.value, '');
+    assert.match(win.document.querySelector('#banner').textContent, /does not activate or verify a provider/);
+    win.fixture.state.token = ''; await win.fixture.loadTools(); assert.equal(form.hidden, true);
   } finally { dom.window.close(); }
 });

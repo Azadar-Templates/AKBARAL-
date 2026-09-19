@@ -201,6 +201,7 @@
               <h3>Store a provider credential</h3>
               <label>Provider <input name="provider" placeholder="google" required /></label>
               <label>Label <input name="label" placeholder="gemini key" required /></label>
+              <label>Local model permission <select name="scope"><option value="">No model-call permission</option><option value="model.call">Allow model.call (does not activate a provider)</option></select></label>
               <label>Value <input name="secret" type="password" placeholder="stored encrypted, never shown again" required /></label>
               <label>Expires at <input name="expiresAt" type="date" /></label>
               <label>Environment variable <input name="envVar" placeholder="GOOGLE_API_KEY" /></label>
@@ -212,6 +213,7 @@
               <div id="resource-provision"></div>
               <div id="resource-credential"></div>
               <div id="resource-calls"></div>
+              <div id="resource-periods"></div>
               <div id="services" class="table-wrap"></div>
             </div>
           </div>
