@@ -1,3 +1,4 @@
+import { financialTransaction } from './financial-transaction';
 import { db, type SqlValue } from './database';
 import { createId } from './id';
 
@@ -456,16 +457,20 @@ export function postLedger(input: {
   refId: string;
   policyDecision?: string | null;
 }): { id: string; duplicate: boolean } {
-  if (input.amountCents === 0) return { id: '', duplicate: true };
-  const existing = db.get<{ id: string }>('SELECT id FROM economy_ledger WHERE ref_id = ?', [input.refId]);
-  if (existing) return { id: existing.id, duplicate: true };
-  const id = createId('eco_lgr');
-  db.run(
-    `INSERT INTO economy_ledger (id, agent_slug, direction, category, amount_cents, purpose, ref_type, ref_id, policy_decision)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.agentSlug ?? null, input.direction, input.category, input.amountCents, input.purpose, input.refType, input.refId, input.policyDecision ?? null],
-  );
-  return { id, duplicate: false };
+  return financialTransaction(db, 'economy', () => {
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents < 0) throw new Error('ledger amount must be nonnegative integer cents');
+    if (input.amountCents === 0) return { id: '', duplicate: true };
+    const existing = db.get<{ id: string }>('SELECT id FROM economy_ledger WHERE ref_id = ?', [input.refId]);
+    if (existing) return { id: existing.id, duplicate: true };
+    const id = createId('eco_lgr');
+    db.run(
+      `INSERT INTO economy_ledger (id, agent_slug, direction, category, amount_cents, purpose, ref_type, ref_id, policy_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.agentSlug ?? null, input.direction, input.category, input.amountCents, input.purpose, input.refType, input.refId, input.policyDecision ?? null],
+    );
+    return { id, duplicate: false };
+
+  });
 }
 
 export function listLedger(limit = 100): LedgerRow[] {

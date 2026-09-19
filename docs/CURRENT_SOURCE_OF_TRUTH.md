@@ -1,5 +1,7 @@
 # AKBARAL! current source of truth
 
+> Implementation continued after the reconstruction checkpoint. See [implementation progress](IMPLEMENTATION_PROGRESS.md) for subsequent fixes, measured tests, and remaining work; the dated evidence below is retained, not silently rewritten.
+
 **As of 2026-09-19 (UTC).** This document supersedes older reports **for current status**, without deleting their historical evidence. It distinguishes code, historical claims, current tests and production proof. Supporting appendices: [complete recovered commit chronology](PROJECT_HISTORY.md), [source inventory](SOURCE_INVENTORY.md).
 
 ## 1. Recovery boundary and exact continuation point
