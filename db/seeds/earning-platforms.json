@@ -4602,5 +4602,580 @@
     "categories": [],
     "evidence_text": "Affnext 101-networks list (2026): global CPA network, nutra/white-hat/sweepstakes offers; multiple payment methods; broad GEO. Sweepstakes/nutra need offer-level vetting; kept as candidate with high-review risk.",
     "tier": "candidate"
+  },
+  {
+    "name": "SurveySparrow Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 25% lifetime commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 25% lifetime commission. | Survey/omnichannel feedback SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Dripify Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): up to 20% commission (~$3K/mo average partner earnings stated).",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): up to 20% commission. | LinkedIn automation SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Reclaim.ai Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $48-$105+ per annual plan plus $1 per signup.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $48-$105+ per annual plan plus $1 per signup. | AI scheduling SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Livestorm Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): up to 20% commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): up to 20% commission. | Webinar/video-engagement SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Aircall Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $75 per lead.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $75 per lead. | Cloud phone system SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Ignition Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $100/$300 bounties plus 10% commission tier.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $100/$300 bounties plus 10% commission tier. | Proposals/billing SaaS for accountants.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Hello Bar Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% lifetime commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% lifetime commission. | Lead-capture SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Gamma Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% commission for 1 year.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% commission for 1 year. | AI presentations SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Emergent Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% commission for 6 months.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% commission for 6 months. | App-building SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Close Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% commission. | Sales CRM SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Thryv Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $250 per signup.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $250 per signup. | Small-business management SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "CallHippo Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% lifetime commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% lifetime commission. | Virtual phone system SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "HiBob Partner Listing",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "rejected",
+    "reject_reason": "PartnerStack listing states no affiliate commission — customer/partner listing only, no documented earning mechanism.",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): no commission stated. | HR SaaS.",
+    "tier": "rejected"
+  },
+  {
+    "name": "SaneBox Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): up to 30% commission (~$2.3K/90d partner earnings stated).",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): up to 30% commission. | Email management SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "1Password Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 25% commission for 1 year.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 25% commission for 1 year. | Password manager SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "respond.io Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 15% lifetime commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 15% lifetime commission. | Messaging inbox SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Fastmail Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% commission for 2 years.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% commission for 2 years. | Email hosting SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Similarweb Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 50% commission for 12 months (up to $2400 stated cap).",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 50% commission for 12 months. | Web analytics SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Shippo Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $60 per Pro plan referral.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $60 per Pro plan referral. | Shipping SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "ActiveCampaign Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% commission. | Marketing automation SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "VisualCV Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% commission. | Resume builder SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Seamless Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% commission per transaction.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% commission per transaction. | Sales data SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Housecall Pro Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): up to $320 per lead.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): up to $320 per lead. | Field-service SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Circle Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $100+ per referral, up to 20% commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $100+ per referral, up to 20%. | Community platform SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "NiceJob Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 15% tiered commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 15% tiered commission. | Review management SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Tidio Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20-25% commission for 2 years.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20-25% commission for 2 years. | Live chat SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "FreshBooks Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $10 per trial plus up to $200 per paid signup.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $10 per trial plus up to $200 per paid signup. | Accounting SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "lemlist Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): up to 25% commission for 12 months.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): up to 25% commission for 12 months. | Sales outreach SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Process Street Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): +10% commission (thin listing detail).",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): +10% commission, thin detail. | Workflow SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Salesflare Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% lifetime commission.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% lifetime commission. | Sales CRM SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Kartra Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 40% bundle commission for 12 months.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 40% bundle commission for 12 months. | All-in-one marketing SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "MarketerHire Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $5000 per referral.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $5000 per referral. | Marketing talent marketplace.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Katana Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% commission for 24 months.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% commission for 24 months. | Manufacturing ERP SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Tellent Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% commission for year 1.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% commission for year 1. | HR/recruiting SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Ownr Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): up to $50 per referral.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): up to $50 per referral. | Business registration SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "folk Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% commission for 24 months.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% commission for 24 months. | CRM SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Atria Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 25% commission (~$80/mo partner earnings stated).",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 25% commission. | Ad creative SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Nextiva Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): $200-$350 per referral.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): $200-$350 per referral. | Business phone SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Sendcloud Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 100% commission for 1 month.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 100% commission for 1 month. | Shipping SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Optery Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 30% commission for 12 months (~$50 stated).",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 30% commission for 12 months. | Privacy/data-removal SaaS.",
+    "tier": "candidate"
+  },
+  {
+    "name": "Later Affiliate Program",
+    "official_url": "",
+    "earning_mechanism": "affiliate",
+    "payout_evidence": "PartnerStack directory (fetched 2026-09-19): 20% commission for 1 year.",
+    "risk_level": "unknown",
+    "source_urls": [
+      "https://market.partnerstack.com/"
+    ],
+    "verification_date": "2026-09-19",
+    "status": "candidate",
+    "evidence_text": "PartnerStack directory (fetched 2026-09-19): 20% commission for 1 year. | Social scheduling SaaS.",
+    "tier": "candidate"
   }
 ]

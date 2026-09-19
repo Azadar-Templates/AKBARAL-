@@ -1,6 +1,7 @@
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import nodeFs from 'node:fs';
 import { createUser, db } from '../db';
 import { applyMigrations } from '../db/migrate';
 import { syncAgentRegistry } from '../agents/registry';
@@ -31,6 +32,7 @@ import {
   listPlatforms,
   matchPlatformsForAgent,
   seedPlatforms,
+  PLATFORM_SEED_PATH,
 } from './platforms';
 
 
@@ -72,12 +74,16 @@ describe('earning workforce: platform catalog', () => {
   });
 
   it('seeds verified+candidate rows, refuses every rejected row, reseed is idempotent', () => {
-    // Seed file: 153 rows = 6 verified + 139 candidate + 8 rejected.
-    assert.equal(countPlatforms(), 145);
+    // Seed file grows as the expansion batches land — expectations derive from it, never hardcode it.
+    const seedRows = JSON.parse(nodeFs.readFileSync(PLATFORM_SEED_PATH, 'utf8'));
+    const importable = seedRows.filter((r: { status?: string }) => r.status === 'verified' || r.status === 'candidate').length;
+    const rejected = seedRows.filter((r: { status?: string }) => r.status === 'rejected').length;
+    assert.ok(importable > 100 && rejected > 0, 'seed file must hold importable + rejected rows');
+    assert.equal(countPlatforms(), importable);
     const again = seedPlatforms();
-    assert.equal(again.total, 145);
-    assert.equal(again.seeded, 145);
-    assert.equal(again.skipped_rejected, 8);
+    assert.equal(again.total, importable);
+    assert.equal(again.seeded, importable);
+    assert.equal(again.skipped_rejected, rejected);
     assert.equal(getPlatform('888starz'), undefined);
     assert.equal(getPlatform('peerfly'), undefined);
     const amazon = getPlatform('amazon-associates');
@@ -87,11 +93,11 @@ describe('earning workforce: platform catalog', () => {
   });
 
   it('lists verified rows first and filters by category', () => {
-    const all = listPlatforms({ limit: 145 });
-    assert.equal(all.length, 145);
+    const all = listPlatforms({ limit: 10000 });
+    assert.equal(all.length, countPlatforms());
     assert.equal(all[0].status, 'verified');
     assert.ok(all.filter((p) => p.status === 'verified').length >= 6);
-    const affiliate = listPlatforms({ category: 'affiliate', limit: 145 });
+    const affiliate = listPlatforms({ category: 'affiliate', limit: 10000 });
     assert.ok(affiliate.length > 50);
     assert.ok(affiliate.every((p) => JSON.parse(p.workforce_categories_json).includes('affiliate')));
   });

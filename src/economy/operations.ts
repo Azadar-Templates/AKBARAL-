@@ -38,6 +38,7 @@ import { proposeSettlement } from './treasury';
 import { discoveryAlertKey, raiseAlert, raiseAlertSync } from '../workforce/alerts';
 import { assertAgentRunnable } from './hierarchy';
 import { createHash } from 'node:crypto';
+import { primaryAgentForPlatform } from '../workforce/platforms';
 
 /**
  * ZA141251SA operations: discovery → evaluation → authorization → durable
@@ -611,6 +612,11 @@ export class EconomyScheduler {
 }
 
 function pickAgentFor(opportunity: OpportunityRow): string {
+  // 1:1 primary wins: catalog-platform work belongs to the platform's primary.
+  if (opportunity.platform_key) {
+    const primary = primaryAgentForPlatform(opportunity.platform_key);
+    if (primary) return primary;
+  }
   // Registry overlay: prefer an economy-enabled agent whose slug contains the
   // category; fall back to the flagship research agent. Registry is read-only.
   const profiles = listAgentProfiles().filter((profile) => profile.status === 'active');

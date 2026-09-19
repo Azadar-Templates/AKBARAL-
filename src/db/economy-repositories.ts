@@ -118,6 +118,7 @@ export interface OpportunityRow {
   time_hours: number;
   risk_level: string;
   platform_rules: string | null;
+  platform_key: string | null;
   probability: number;
   expected_net_cents: number;
   roi: number | null;
@@ -142,6 +143,7 @@ export function insertOpportunity(input: {
   riskLevel: string;
   probability: number;
   platformRules?: string | null;
+  platformKey?: string | null;
   estimateBasis?: string;
 }): { id: string; duplicate: boolean } {
   const existing = db.get<{ id: string }>('SELECT id FROM economy_opportunities WHERE source_url_hash = ?', [input.sourceUrlHash]);
@@ -150,11 +152,11 @@ export function insertOpportunity(input: {
   db.run(
     `INSERT INTO economy_opportunities
        (id, source_url_hash, source_url, category, title, summary, expected_revenue_cents, expected_cost_cents,
-        time_hours, risk_level, platform_rules, probability, estimate_basis, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered')`,
+        time_hours, risk_level, platform_rules, platform_key, probability, estimate_basis, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered')`,
     [id, input.sourceUrlHash, input.sourceUrl, input.category, input.title, input.summary ?? null,
       input.expectedRevenueCents, input.expectedCostCents, input.timeHours, input.riskLevel,
-      input.platformRules ?? null, input.probability, input.estimateBasis ?? 'category_default'],
+      input.platformRules ?? null, input.platformKey ?? null, input.probability, input.estimateBasis ?? 'category_default'],
   );
   return { id, duplicate: false };
 }

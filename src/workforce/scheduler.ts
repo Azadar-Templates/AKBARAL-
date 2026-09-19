@@ -11,7 +11,7 @@ import { getAgentOverlay, isSourceUsable, sourceKeyFor } from './repositories';
 import { discoveryAlertKey, raiseAlert } from './alerts';
 import { WORKFORCE_CATEGORIES } from './categories';
 import { runWorkforceExecution } from './execution';
-import { countPlatforms, discoverPlatformOpportunities, seedPlatforms } from './platforms';
+import { countPlatforms, discoverPlatformOpportunities, primaryAgentForPlatform, seedPlatforms } from './platforms';
 
 /**
  * WORKFORCE SCHEDULER — continuous operation across ALL earning categories.
@@ -155,6 +155,19 @@ export function pickWorkforceAgent(category: string): string {
   return 'web-research-001';
 }
 
+/**
+ * Dispatch binding for the 1:1 rule: work that belongs to a catalog platform
+ * goes to that platform's primary agent. Non-platform opportunities keep the
+ * legacy category matching. Registry is read-only.
+ */
+export function pickWorkforceAgentForOpportunity(opportunity: { category: string; platform_key?: string | null }): string {
+  if (opportunity.platform_key) {
+    const primary = primaryAgentForPlatform(opportunity.platform_key);
+    if (primary) return primary;
+  }
+  return pickWorkforceAgent(opportunity.category);
+}
+
 export class WorkforceScheduler {
   private timer: NodeJS.Timeout | null = null;
   private tickCount = 0;
@@ -204,7 +217,7 @@ export class WorkforceScheduler {
       for (const opportunity of pending) {
         const evaluation = evaluateOpportunity(opportunity.id, policy);
         if (evaluation.authorized) {
-          const start = startExecution({ opportunityId: opportunity.id, agentSlug: pickWorkforceAgent(opportunity.category), authorizedBy: 'policy' });
+          const start = startExecution({ opportunityId: opportunity.id, agentSlug: pickWorkforceAgentForOpportunity(opportunity), authorizedBy: 'policy' });
           if (start.created) authorized += 1;
         }
       }
