@@ -221,3 +221,9 @@ The retained upgrade applied migration 0012 successfully, but the subsequent HTT
 A deterministic bridge regression reproduced the same false-timeout path: a delayed notification from the previous reply wakes the main thread while the current request remains pending. The old driver treated that notification as a timeout. **4/4 new bridge tests failed before the fix and 4/4 pass afterward**. The bridge now waits against a monotonic deadline until response state actually changes, acknowledges copied responses so the worker can sleep, forwards the real connection-startup deadline, and closes a genuinely timed-out bridge rather than overwriting an uncertain request. Normal close terminates a blocked worker as well. Typecheck and secret scan pass.
 
 This is a concrete production-critical reliability fix discovered while continuing quota validation. Next exact task: rerun the failed PostgreSQL smoke against the same retained database, complete the not-yet-run financial/deadline tests, and verify platform PostgreSQL parity for the shared-driver change. No database reset or blind financial retry was added.
+
+### Retained-fixture payout sweep regression
+
+With the bridge fixed, the retained PostgreSQL HTTP probe exposed a second concrete bug: sweeping an old expired or old-destination attestation paused slot 1 even though its latest owner verification was valid. The failed resumed log is preserved (`quota-batch-09-pg-resumed.log`). A new engine-neutral regression reproduced the failure on SQLite (**23/24 before**).
+
+The sweep still expires and audits historical evidence, but pauses a slot only when the invalidated record is its current verification. Current-record expiry still pauses/refuses payouts; no payment guard is weakened. **24/24 financial/resource SQLite tests**, types and secret scan now pass. Next task: finish the retained PostgreSQL batch with both fixes, then validate shared-driver platform parity.

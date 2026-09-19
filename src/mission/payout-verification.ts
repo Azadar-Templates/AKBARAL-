@@ -485,7 +485,10 @@ export function sweepPayoutVerifications(): { expired: number[]; paused: number[
       missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'expired', updated_at = ? WHERE id = ?`, [now, String(row.id)]);
       expired.push(Number(row.slot));
       const slot = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [Number(row.slot)]);
-      if (slot && String(slot.status) === 'active') {
+      // Expire historical evidence, but only the current verification controls
+      // whether this slot must pause. A newer attestation must not be undone.
+      const isCurrent = latestVerification(Number(row.slot))?.id === row.id;
+      if (slot && isCurrent && String(slot.status) === 'active') {
         setPayoutSlotStatus(Number(row.slot), 'paused', String(row.verified_by ?? 'system'));
         paused.push(Number(row.slot));
       }
@@ -509,7 +512,8 @@ export function sweepPayoutVerifications(): { expired: number[]; paused: number[
         String(row.id),
       ]);
       expired.push(Number(row.slot));
-      if (String(slot.status) === 'active') {
+      const isCurrent = latestVerification(Number(row.slot))?.id === row.id;
+      if (isCurrent && String(slot.status) === 'active') {
         setPayoutSlotStatus(Number(row.slot), 'paused', 'system');
         paused.push(Number(row.slot));
       }

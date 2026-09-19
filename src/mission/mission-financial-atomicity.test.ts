@@ -360,3 +360,30 @@ it('owner credential rebinding is provider/expiry guarded, optimistic, atomic an
   assert.equal(management.bindResourceCredential({ ...input, credentialId: second, expectedCredentialId: first }).credential_id, second);
   assert.ok(management.resourceReadiness(id).blockers.includes('quota_exhausted:requests'));
 });
+
+it('sweeping historical payout attestations cannot pause a newly reverified destination', () => {
+  const verification = require('./payout-verification') as typeof import('./payout-verification');
+  for (const invalidation of ['expiry', 'destination'] as const) {
+    attest();
+    const old = verification.payoutSlotVerificationStatus(1).verification!;
+    missionDb.run("UPDATE mission_payout_slot_verifications SET created_at = '1970-01-01T00:00:00Z' WHERE id = ?", [old.id]);
+    if (invalidation === 'expiry') missionDb.run("UPDATE mission_payout_slot_verifications SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?", [old.id]);
+    else missionDb.run("UPDATE mission_payout_slot_verifications SET destination_fingerprint = 'synthetic-obsolete-destination' WHERE id = ?", [old.id]);
+    attest();
+    assert.equal(verification.payoutSlotVerificationStatus(1).payable, true);
+    const sweep = verification.sweepPayoutVerifications();
+    assert.equal(verification.payoutSlotVerificationStatus(1).payable, true, `old ${invalidation} must not disable fresh owner verification`);
+    assert.ok(!sweep.paused.includes(1));
+    assert.equal(missionDb.get<{ status: string }>('SELECT status FROM mission_payout_slot_verifications WHERE id = ?', [old.id])!.status, 'expired');
+  }
+  const latest = verification.payoutSlotVerificationStatus(1).verification!;
+  missionDb.run("UPDATE mission_payout_slot_verifications SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?", [latest.id]);
+  try {
+    assert.ok(verification.sweepPayoutVerifications().paused.includes(1), 'expiry of the current verification still pauses the slot');
+    assert.equal(verification.payoutSlotVerificationStatus(1).payable, false);
+  } finally {
+    missionDb.run("UPDATE mission_payout_slot_verifications SET created_at = '1970-01-01T00:00:00Z' WHERE id = ?", [latest.id]);
+    attest();
+  }
+  assert.equal(verifyMissionAudit().ok, true);
+});
