@@ -237,3 +237,7 @@ The same retained quota database now passes the entire interrupted batch: **10 m
 The isolated platform PostgreSQL fixture passed **37/37 tests** (22 integration, eight workforce parity, seven financial atomicity), zero failures/skips. Production Webpack/backend build passed with **27 routes** and copied worker assets. The compiled PostgreSQL worker then reported **21 platform migrations applied, none pending** against that same fixture. Evidence: `quota-batch-11-platform-pg.log`, `quota-batch-11-build.log`, `quota-batch-11-compiled-pg.log` under `logs/continuation/`.
 
 No customer or mission runtime database was reset. These checks validate the shared driver and artifact locally, not a hosted deployment or real provider/payment operation. Next exact task: finish small current-source SQLite validation batches (mission and driver regressions), commit/push each, and record the next provider-integration boundary honestly.
+
+### Quota/bridge batch 12 — final-source SQLite core and finance
+
+**65/65 tests pass** in six deterministic files: the PostgreSQL handshake unit regression plus mission core, executed-client dashboard, financial/resource atomicity, identity lock and payout verification. Evidence: `logs/continuation/quota-batch-12-sqlite.log`. This batch covers the final driver and payout-sweep fixes; historical completed full-suite fingerprints remain unchanged. Next exact task: the remaining four mission files and quota tests, then commit the completed validation boundary.
