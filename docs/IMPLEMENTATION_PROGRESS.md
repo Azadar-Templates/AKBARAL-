@@ -347,3 +347,7 @@ After the fix, **17/17 real Chromium checkpoints** pass: eight each on desktop a
 ### Current resource-period source — complete mission regression checkpoint
 
 **186/186 mission tests pass** in one deterministic, serial current-source run, zero failures/skips, including the three independent-process SQLite quota/budget races and the native-hidden-rule companion assertion. Evidence: `logs/continuation/period-final-mission-sqlite.log`. This is the complete mission test surface, not the whole AKBARAL! project suite or live-operation proof. Next exact task: current production build and retained PostgreSQL compiled-artifact/financial/provider parity checks.
+
+### Current resource-period production artifact build
+
+`npm run build:webpack` passes on the current provider/chat/renewal source, producing **27 Next routes** and the compiled backend/runtime assets. Evidence: `logs/continuation/period-final-build.log`. This is a local artifact build, not a deployed host or provider/payment activation. Next exact task: retained PostgreSQL financial/quota/budget/chat/period suites and the compiled 15-migration integrity check.
