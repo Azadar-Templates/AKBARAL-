@@ -1,3 +1,4 @@
+import { enqueueAgentChat, agentChatConfig } from './chat-state';
 import { missionDb, missionId, nowIso, appendMissionAudit, type Row } from './database';
 import { MissionSelfServiceError } from './self-management';
 
@@ -21,13 +22,15 @@ export function appendAgentMessage(input: { agentId: string; actorType: 'owner' 
     const seq = Number(missionDb.get<{ n: number }>('SELECT COALESCE(MAX(seq), 0) AS n FROM mission_agent_messages')!.n) + 1;
     missionDb.run('INSERT INTO mission_agent_messages (id, seq, agent_id, actor_type, actor_id, body, reply_to, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, seq, input.agentId, input.actorType, input.actorId, body, input.replyTo ?? null, key, nowIso()]);
     appendMissionAudit({ actorType: input.actorType, actorId: input.actorId, action: 'agent.message_recorded', subjectType: 'agent', subjectId: input.agentId, detail: { messageId: id, characters: body.length, replyTo: input.replyTo ?? null, commandExecuted: false } });
-    return { message: missionDb.get<Row>('SELECT * FROM mission_agent_messages WHERE id = ?', [id])!, duplicate: false, commandExecuted: false };
+    const message = missionDb.get<Row>('SELECT * FROM mission_agent_messages WHERE id = ?', [id])!;
+    enqueueAgentChat(message);
+    return { message, duplicate: false, commandExecuted: false };
   });
 }
 
-export function listAgentMessages(agentId: string, afterSeq = 0, limit = 100): { messages: Row[]; nextCursor: number; hasMore: boolean; automaticReplies: false } {
+export function listAgentMessages(agentId: string, afterSeq = 0, limit = 100): { messages: Row[]; nextCursor: number; hasMore: boolean; automaticReplies: false; automaticRepliesConfigured: boolean } {
   if (!Number.isSafeInteger(afterSeq) || afterSeq < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new MissionSelfServiceError(400, 'invalid message cursor or limit (1–100)', 'validation_error');
   const rows = missionDb.all<Row>('SELECT * FROM mission_agent_messages WHERE agent_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?', [agentId, afterSeq, limit + 1]);
   const messages = rows.slice(0, limit);
-  return { messages, nextCursor: messages.length ? Number(messages[messages.length - 1].seq) : afterSeq, hasMore: rows.length > limit, automaticReplies: false };
+  return { messages, nextCursor: messages.length ? Number(messages[messages.length - 1].seq) : afterSeq, hasMore: rows.length > limit, automaticReplies: false, automaticRepliesConfigured: agentChatConfig(agentId)?.enabled === true };
 }

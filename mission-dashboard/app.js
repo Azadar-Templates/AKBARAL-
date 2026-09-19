@@ -397,6 +397,61 @@ function renderAgentReport(report) {
   ], report.upgrades, 'No upgrades requested.'));
 }
 
+async function renderAgentChatControls(host, slug) {
+  if (!canMutate()) return;
+  const base = `/agents/${encodeURIComponent(slug)}`;
+  const [settings, resources, wallets] = await Promise.all([api(`${base}/chat-config`), api('/resources'), api('/wallets')]);
+  const config = settings.config || {};
+  const form = el('form', { class: 'stack-form' });
+  form.append(el('h4', { text: 'Automatic replies — explicit owner opt-in' }), el('p', { text: 'Only future owner messages are eligible. Google receives the message text; no tools or payment commands are available. A separately enabled private worker, active policy, scoped credential, quota and funded budget are required. Worker liveness and provider access are not verified here.' }));
+  const enabled = el('select', { name: 'enabled', 'aria-label': 'Automatic replies enabled' }, [el('option', { value: 'false', text: 'Disabled' }), el('option', { value: 'true', text: 'Enable future owner-message jobs' })]);
+  enabled.value = config.enabled ? 'true' : 'false';
+  const resource = el('select', { name: 'resourceId', required: '', 'aria-label': 'Assigned Google resource' }, [el('option', { value: '', text: 'Choose this agent’s Google resource' }), ...(resources.resources || []).filter(row => row.agent_id === settings.agentId && row.provider === 'google').map(row => el('option', { value: row.id, text: `${row.id} — ${row.status}` }))]);
+  resource.value = config.resourceId || '';
+  const wallet = el('select', { name: 'walletId', required: '', 'aria-label': 'Assigned funded wallet' }, [el('option', { value: '', text: 'Choose this agent’s wallet' }), ...(wallets.wallets || []).filter(row => row.agentId === settings.agentId).map(row => el('option', { value: row.id, text: `${row.label} — ${row.currency}` }))]);
+  wallet.value = config.walletId || '';
+  form.append(enabled, resource, wallet, el('p', { text: 'Fixed model: gemini-2.5-flash. Internal reservations are not a provider-enforced billing ceiling.' }));
+  for (const [name, label, min, max, fallback] of [['maxInputBytes', 'Maximum message bytes', 128, 48000, 2000], ['maxOutputTokens', 'Maximum output tokens', 64, 4096, 1024], ['maxCostCents', 'Maximum reserved cost in minor units', 1, 1000000, '']]) {
+    form.appendChild(el('label', {}, [label, el('input', { name, type: 'number', min, max, step: 1, required: '', value: config[name] ?? fallback, 'aria-label': label })]));
+  }
+  const basis = el('textarea', { name: 'costBasis', required: '', minlength: 12, maxlength: 1000, 'aria-label': 'Owner-reviewed cost basis', placeholder: 'Record your reviewed pricing/cap assumptions. This is not a financial receipt.' });
+  basis.value = config.costBasis || '';
+  form.append(basis, el('button', { type: 'submit', text: 'Save reply configuration' }));
+  let saving = false;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !guardMutation() || !form.reportValidity()) return;
+    if (enabled.value === 'true' && !confirm('Enable future owner-message jobs? An enabled worker can send their text to Google and incur provider charges within the configured request limits. Review pricing and provider billing caps first.')) return;
+    saving = true; form.querySelector('button').disabled = true;
+    try {
+      await api(`${base}/chat-config`, { method: 'POST', body: { enabled: enabled.value === 'true', resourceId: resource.value, walletId: wallet.value, model: 'gemini-2.5-flash', maxInputBytes: Number(form.elements.maxInputBytes.value), maxOutputTokens: Number(form.elements.maxOutputTokens.value), maxCostCents: Number(form.elements.maxCostCents.value), costBasis: basis.value } });
+      banner('Reply configuration saved. This does not activate a provider or prove a live worker.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+    finally { saving = false; form.querySelector('button').disabled = false; }
+  });
+  const jobs = el('div', { class: 'table-wrap' });
+  const next = el('button', { type: 'button', text: 'Older reply jobs', hidden: true });
+  const refresh = el('button', { type: 'button', text: 'Refresh reply jobs' });
+  let rows = [], cursor = null, loading = false;
+  const loadJobs = async (reset = false) => {
+    if (loading) return;
+    loading = true; next.disabled = true; refresh.disabled = true;
+    try {
+      const result = await api(`${base}/chat-jobs?limit=50${!reset && cursor ? `&before=${cursor}` : ''}`);
+      if (reset) rows = [];
+      const seen = new Set(rows.map(row => row.id));
+      rows.push(...result.jobs.filter(row => !seen.has(row.id)));
+      cursor = result.nextCursor;
+      jobs.replaceChildren(table([{ label: 'Job', key: 'id', wrap: true }, { label: 'State', key: 'status' }, { label: 'Reason', key: 'reason', wrap: true }, { label: 'Resource call', key: 'call_id', wrap: true }], rows, 'No automatic reply jobs recorded.'));
+      next.hidden = !cursor;
+    } finally { loading = false; next.disabled = false; refresh.disabled = false; }
+  };
+  next.addEventListener('click', () => { void loadJobs().catch(error => banner(error.message, 'error')); });
+  refresh.addEventListener('click', () => { void loadJobs(true).catch(error => banner(error.message, 'error')); });
+  host.replaceChildren(form, el('p', { class: 'muted small', text: 'Blocked/interrupted jobs are never automatically retried. Review their call under Tools → Resource calls; reconcile actual usage and financial evidence separately. No reply is fabricated for an interrupted job.' }), jobs, next, refresh);
+  await loadJobs(true);
+}
+
 async function renderAgentMessages(host, slug) {
   host.replaceChildren(el('h3', { text: 'Owner / agent messages' }), el('p', { class: 'muted small', text: 'Stored private correspondence, not simulated agent replies. Text does not execute commands or move money. Use the explicit owner controls for actions.' }));
   const transcript = el('div', { class: 'table-wrap', 'aria-live': 'polite' });
@@ -428,6 +483,17 @@ async function renderAgentMessages(host, slug) {
   };
   refresh.addEventListener('click', load);
   host.appendChild(refresh);
+  if (canMutate()) {
+    const control = el('button', { type: 'button', class: 'small', text: 'Configure automatic replies', 'data-chat-config': slug });
+    const settings = el('section', { class: 'control-block', 'aria-label': 'Automatic reply configuration' });
+    control.addEventListener('click', async () => {
+      if (!guardMutation() || control.disabled) return;
+      control.disabled = true;
+      try { await renderAgentChatControls(settings, slug); } catch (error) { banner(error.message, 'error'); }
+      finally { control.disabled = false; }
+    });
+    host.append(control, settings);
+  }
   if (canMutate()) {
     const form = el('form', { class: 'stack-form' });
     const input = el('textarea', { name: 'message', maxlength: 12000, required: '', 'aria-label': 'Message to this agent', placeholder: 'Send a private message. Never paste credentials.' });

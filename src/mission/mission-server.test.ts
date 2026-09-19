@@ -734,6 +734,37 @@ test('owner cost receipt API records private accounting once and never accepts a
   } finally { policy.updatePolicy(previous, 'owner'); }
 });
 
+test('automatic chat configuration and job visibility require owner identity; config is not provider activation', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const treasury = require('./treasury') as typeof import('./treasury');
+  const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'google', kind: 'api' });
+  const wallet = treasury.ensureAgentWallet('agt_link_a', 'Synthetic chat HTTP wallet');
+  const config = { enabled: true, resourceId: resource.id, walletId: wallet.id, model: 'gemini-2.5-flash', maxInputBytes: 2000, maxOutputTokens: 128, maxCostCents: 40, costBasis: 'Synthetic configuration, no real model access or pricing claim.' };
+  const base = '/api/agents/link-agent-a';
+  for (const scope of ['agent:self', 'dashboard:read'] as const) {
+    const link = createAccessLink({ label: 'chat configuration denied', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
+    const headers = { 'x-mission-link': link.token };
+    assert.equal((await api(`${base}/chat-config`, { headers })).status, 401);
+    assert.equal((await api(`${base}/chat-jobs`, { headers })).status, 401);
+    assert.equal((await api(`${base}/chat-config`, { method: 'POST', headers, body: JSON.stringify({ ...config, actorType: 'owner' }) })).status, 401);
+  }
+  assert.equal((await owner(`${base}/chat-config`, { method: 'POST', body: JSON.stringify({ ...config, maxCostCents: 0 }) })).status, 400);
+  assert.equal((await owner(`${base}/chat-config`, { method: 'POST', body: JSON.stringify({ ...config, resourceId: undefined }) })).status, 400);
+  assert.equal((await owner('/api/agents/link-agent-b/chat-config', { method: 'POST', body: JSON.stringify(config) })).status, 403);
+  const configured = await owner(`${base}/chat-config`, { method: 'POST', body: JSON.stringify(config) });
+  assert.equal(configured.status, 200); assert.equal(configured.body.providerActivated, false);
+  const posted = await owner(`${base}/messages`, { method: 'POST', body: JSON.stringify({ message: 'Synthetic new owner message, no actual provider request', idempotencyKey: 'synthetic-http-chat-message' }) });
+  assert.equal(posted.status, 201); assert.equal(posted.body.commandExecuted, false);
+  const jobs = await owner(`${base}/chat-jobs`);
+  assert.equal(jobs.body.jobs.length, 1); assert.equal(jobs.body.jobs[0].status, 'queued');
+  assert.ok(!JSON.stringify(jobs.body).includes('config_snapshot'));
+  assert.equal((await owner(`${base}/chat-jobs?limit=101`)).status, 400);
+  const settings = await owner(`${base}/chat-config`);
+  assert.equal(settings.body.workerLivenessVerified, false);
+  assert.equal(settings.body.agentId, 'agt_link_a');
+  assert.equal((await owner(`${base}/messages`)).body.automaticRepliesConfigured, true);
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

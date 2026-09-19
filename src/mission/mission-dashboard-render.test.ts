@@ -9,13 +9,15 @@ function consoleFixture() {
   const source = fs.readFileSync(path.resolve('mission-dashboard/app.js'), 'utf8').replace("document.addEventListener('DOMContentLoaded', boot);", '');
   const dom = new JSDOM(html, { url: 'https://mission.example.test/', runScripts: 'outside-only' });
   const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
-  const resource = { id: 'resource-fixture', provider: 'synthetic-provider', status: 'approved', monthly_cost_cents: 100, readiness: { usable: false, blockers: ['resource_not_provisioned'] } };
-  const wallet = { id: 'wallet-fixture', label: 'Synthetic reserve', currency: 'USD', balanceCents: 1000, budgetCents: 1000, spentCents: 0, kind: 'reserve', status: 'active' };
+  const resource = { id: 'resource-fixture', agent_id: 'agent-fixture', provider: 'google', status: 'approved', monthly_cost_cents: 100, readiness: { usable: false, blockers: ['resource_not_provisioned'] } };
+  const wallet = { id: 'wallet-fixture', label: 'Synthetic reserve', currency: 'USD', balanceCents: 1000, budgetCents: 1000, spentCents: 0, agentId: 'agent-fixture', kind: 'reserve', status: 'active' };
   const payloads: Record<string, unknown> = {
     '/api/treasury': { treasury: { currency: 'USD', totals: { totalBalanceCents: 1000 }, daily: {} } },
     '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
+    '/api/agents/agent-fixture/chat-config': { agentId: 'agent-fixture', config: null, workerLivenessVerified: false },
+    '/api/agents/agent-fixture/chat-jobs?limit=50': { jobs: [], nextCursor: null },
     '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
-    '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'synthetic-provider', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
+    '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'google', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
     '/api/resources/resource-fixture/calls?limit=50': { calls: [{ id: 'held-fixture', status: 'reserved', reservedUsage: { requests: 1 }, actualUsage: null }, { id: 'uncertain-fixture', status: 'uncertain', reservedUsage: { requests: 1 }, actualUsage: null, evidence: '<img src=x> Synthetic evidence text' }, { id: 'cost-fixture', status: 'succeeded', reservedUsage: { requests: 1 }, actualUsage: { requests: 1 }, budget: { status: 'held', reservedCents: 40, actualCents: null, currency: 'USD' } }], nextCursor: null },
     '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
     '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
@@ -28,7 +30,7 @@ function consoleFixture() {
     }
     return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls, renderAgentChatControls };`);
   dom.window.fixture.state.token = 'synthetic-dom-session';
   return { dom, win: dom.window, requests, resource };
 }
@@ -211,5 +213,32 @@ it('financial receipt control requires an explicit actual charge and distinguish
     assert.equal(requests.length, 1, 'double submit records one request');
     assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/calls/cost-fixture/record-cost', body: { actualCostCents: 25, providerRef: 'synthetic-financial-ref', evidence: 'Synthetic financial evidence, not a real payment.' } });
     assert.match(host.textContent, /No external payment executed/);
+  } finally { dom.window.close(); }
+});
+
+it('automatic reply controls require owner opt-in and explicit financial assumptions without claiming activation', async () => {
+  const { dom, win, requests } = consoleFixture();
+  try {
+    const host = win.document.createElement('div'); win.document.body.appendChild(host);
+    await win.fixture.renderAgentChatControls(host, 'agent-fixture');
+    const form = host.querySelector('form');
+    assert.equal(form.elements.enabled.value, 'false');
+    assert.equal(form.elements.maxCostCents.value, '');
+    form.elements.resourceId.value = 'resource-fixture';
+    form.elements.walletId.value = 'wallet-fixture';
+    form.elements.maxCostCents.value = '40';
+    form.elements.costBasis.value = 'Synthetic owner-reviewed test pricing assumption.';
+    form.elements.enabled.value = 'true';
+    let confirmed = 0; win.confirm = () => { confirmed++; return true; };
+    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(confirmed, 1);
+    assert.equal(requests[0].url, '/api/agents/agent-fixture/chat-config');
+    assert.deepEqual(requests[0].body, { enabled: true, resourceId: 'resource-fixture', walletId: 'wallet-fixture', model: 'gemini-2.5-flash', maxInputBytes: 2000, maxOutputTokens: 1024, maxCostCents: 40, costBasis: 'Synthetic owner-reviewed test pricing assumption.' });
+    assert.match(win.document.querySelector('#banner').textContent, /does not activate a provider or prove a live worker/);
+    win.fixture.state.token = '';
+    const privateHost = win.document.createElement('div');
+    await win.fixture.renderAgentChatControls(privateHost, 'agent-fixture');
+    assert.equal(privateHost.children.length, 0);
   } finally { dom.window.close(); }
 });

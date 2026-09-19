@@ -1,3 +1,4 @@
+import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
 import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
@@ -510,6 +511,25 @@ async function handleApi(
         return true;
       }
       const slug = rest[0];
+      if (rest[1] === 'chat-config' || rest[1] === 'chat-jobs') {
+        const session = requireOwner(context, method !== 'GET');
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (rest.length !== 2) throw new HttpProblem(404, 'chat route not found', 'not_found');
+        if (method === 'GET' && rest[1] === 'chat-jobs') {
+          json(res, 200, listAgentChatJobs(agent.id, Number(url.searchParams.get('before') ?? Number.MAX_SAFE_INTEGER), Number(url.searchParams.get('limit') ?? 50)));
+          return true;
+        }
+        if (method === 'GET') {
+          json(res, 200, { agentId: agent.id, config: agentChatConfig(agent.id), workerLivenessVerified: false, providerActivated: false });
+          return true;
+        }
+        if (method === 'POST' && rest[1] === 'chat-config') {
+          json(res, 200, { config: configureAgentChat(agent.id, body as unknown as AgentChatConfig, { actorType: 'owner', actorId: session.owner.id }), providerActivated: false });
+          return true;
+        }
+        throw new HttpProblem(405, 'unsupported chat operation', 'method_not_allowed');
+      }
       if (rest[1] === 'messages') {
         const agent = findAgentBySlug(slug) ?? findAgentById(slug);
         if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
