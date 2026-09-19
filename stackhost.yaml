@@ -2,14 +2,55 @@
 #
 # Minimum production-safe configuration for https://www.stackhost.org: StackHost
 # clones the repository, runs the commands below in a Node container, then keeps
-# the start command alive behind its proxy. This mirrors exactly what the
-# repository's own Dockerfile does (npm ci -> npm run build -> the container
-# entrypoint -> the single production start script), so there is no second,
-# divergent build path to maintain.
+# the start command alive behind its proxy. The install + start steps match the
+# repository's own Dockerfile (npm ci -> build -> scripts/start-prod.mjs); only
+# the build is split into heap-capped steps, because the free plan's container
+# (512 MB RAM) is smaller than the default build's peak memory.
 #
-#   build  — installs the exact locked dependency tree (dev dependencies ARE
-#            required: the production build compiles the API with tsc and the
-#            frontend with Next.js) and produces dist/ + .next/.
+#   build  — five separate YAML list items (StackHost's schema rejects a single
+#            string with `&&`), each one chosen from a measurement, not a guess.
+#            Peak RSS of the whole process tree on a clean tree, 2026-09-19:
+#
+#              1. `npm cache clean --force` ........................ ~76 MB
+#                 npm's peak during a `npm ci` depends on its package cache:
+#                 with an EMPTY cache (a fresh container) it extracts each
+#                 tarball as it arrives and peaks at ~313-344 MB; with a WARM
+#                 cache (`~/.npm/_cacache`, e.g. a redeploy on a reused
+#                 container) it peaks at ~719-743 MB on the same tree. Both
+#                 numbers reproduced repeatedly here, and `--prefer-online`
+#                 does NOT avoid the warm path. Clearing the cache first makes
+#                 the install step deterministic and inside the 512 MB budget,
+#                 at the cost of re-downloading ~150 MB of tarballs (~12 s).
+#              2. `npm ci --no-audit --no-fund` ................... ~323 MB
+#                 the exact locked tree the Dockerfile installs; dev
+#                 dependencies ARE required — the API build runs tsc and the
+#                 frontend build runs Next.js
+#              3. `tsc -p tsconfig.backend.json` (heap 384 MB) .... ~378 MB
+#                 compiles the API to `dist/src/**`
+#              4. copy backend runtime assets ..................... ~0 MB
+#                 `src/db/pg-worker.mjs` / `pg-connection.mjs` are spawned by
+#                 path from `__dirname` at runtime; tsc does not emit .mjs, so
+#                 `scripts/copy-backend-runtime-assets.mjs` (the same script
+#                 package.json's build calls) puts them in `dist/`
+#              5. `next build --webpack` (low-memory, heap 320 MB) ~465 MB
+#                 builds `.next/`
+#
+#            The binaries are invoked directly through `./node_modules/.bin/`
+#            instead of `npx`, which removes npm's wrapper process (~80 MB per
+#            step). For comparison, the same tree measured untuned: `npx tsc`
+#            ~475 MB, `next build --webpack` ~668 MB, `next build` on the
+#            Turbopack default ~1284 MB. Every untuned phase on its own
+#            overshoots 512 MB, which is what the platform reports as a failed
+#            install/build step; the tuned phases all fit.
+#
+#            `AKBARAL_LOW_MEMORY_BUILD=1` skips Next's in-build type check,
+#            which alone peaked at ~475 MB here. NOTHING goes unchecked: the
+#            same types are enforced by `npm run typecheck`, the full test
+#            suite and the docker-publish image build, all of which run in CI
+#            on machines with normal memory. See next.config.mjs.
+#
+#            Both `dist/` and `.next/` are required by the `scripts/start-prod.mjs`
+#            preflight (dist/src/db/migrate.js, dist/src/index.js, .next/BUILD_ID).
 #   start  — node scripts/start-prod.mjs, which applies database migrations,
 #            verifies the build artifacts exist (failing fast with a clear
 #            message — or self-healing when AKBARAL_AUTO_BUILD=true — instead
@@ -20,11 +61,20 @@
 #            API + web tiers. scripts/entrypoint.sh remains the Docker/Modal
 #            entrypoint and simply execs this same wrapper for local parity.
 #
+#            The running stack measured ~336 MB on this tree (API ~194 MB,
+#            next-server ~96 MB, wrapper ~46 MB), so the 512 MB free plan is
+#            big enough to RUN the app — it was only ever too small to BUILD
+#            it untuned.
+#
 # StackHost startup fix (2026-09-17): deployments were dying 2-3 seconds after
 # start with no application logs — root cause was `set -e` aborting the shell
 # before Node ever printed a line whenever a build artifact or SESSION_SECRET
 # was missing. scripts/start-prod.mjs now owns every startup precondition and
 # always logs a specific, actionable reason before it exits non-zero.
+#
+# Plan note (honest): on the free plan the app auto-sleeps after 30 minutes
+# idle and gets a stackhost.org subdomain; always-on + a custom domain start at
+# StackHost Starter (2 GB RAM). Nothing in this file depends on the plan.
 #
 # Ports: StackHost injects the public port it routes traffic to as PORT. The
 # public entry point is the Next.js tier (it serves the app and rewrites
@@ -65,8 +115,11 @@ runtime:
 commands:
   package: ""
   build:
-    - "npm ci"
-    - "npm run build"
+    - "npm cache clean --force"
+    - "npm ci --no-audit --no-fund"
+    - "NODE_OPTIONS=--max-old-space-size=384 ./node_modules/.bin/tsc -p tsconfig.backend.json"
+    - "node scripts/copy-backend-runtime-assets.mjs"
+    - "AKBARAL_LOW_MEMORY_BUILD=1 NODE_OPTIONS=--max-old-space-size=320 ./node_modules/.bin/next build --webpack"
   start: "node scripts/start-prod.mjs"
 
 # Deploy target: the repository's `main` branch (it already contains the full

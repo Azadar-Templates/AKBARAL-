@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, rmSync, mkdtempSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, rmSync, mkdtempSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -31,6 +31,7 @@ const STACKHOST_YAML = path.resolve('stackhost.yaml');
 const startProdSource = readFileSync(START_PROD, 'utf8');
 const entrypointSource = readFileSync(ENTRYPOINT, 'utf8');
 const stackhostSource = readFileSync(STACKHOST_YAML, 'utf8');
+const packageJsonSource = readFileSync(path.resolve('package.json'), 'utf8');
 
 interface RunResult {
   status: number | null;
@@ -113,12 +114,60 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
   // StackHost requires `commands.build` to be a YAML list (array) — a single
   // string with `&&` is a schema violation that causes the platform's build
   // step to be skipped or to fail with no application logs (2-5s silent exit).
-  // The correct form is two separate list items exactly as the Dockerfile does.
-  // Minimal fix 2026-09-17 for “FAILED TO INSTALL DEPENDENCIES”: `npm ci`
-  // (without `--include=dev`) is the Dockerfile-faithful form and avoids the
-  // platform-specific install failure observed with `--include=dev` on free-tier.
-  assert.match(stackhostSource, /build:\s*\n\s*- "npm ci"/);
-  assert.match(stackhostSource, /- "npm run build"/);
+  //
+  // Memory fix 2026-09-19 (after the free plan's 512 MB container kept failing
+  // at its "Installing dependencies" step): every build phase is now the
+  // measured, heap-capped form. Untuned peaks on a clean tree were npm ci
+  // ~325 MB, `npx tsc` ~475 MB, `next build --webpack` ~668 MB and the
+  // Turbopack default ~1284 MB — each of which overshoots 512 MB alone. The
+  // tuned equivalents (direct binaries, no npx wrapper; heap caps; no in-build
+  // type check) measure ~325/404/464 MB. The running stack is ~336 MB, so the
+  // free plan can RUN the app — it was only ever too small to BUILD it untuned.
+  // npm's peak during `npm ci` depends on its cache: ~313-344 MB with an empty
+  // cache (fresh container) vs ~719-743 MB with a warm one (reused container),
+  // on the same tree. Both reproduced repeatedly; `--prefer-online` does not
+  // avoid the warm path. Clearing the cache first is what makes this step fit
+  // 512 MB deterministically, so the two lines must stay together and in order.
+  assert.match(
+    stackhostSource,
+    /build:\s*\n\s*- "npm cache clean --force"\n\s*- "npm ci --no-audit --no-fund"/,
+    'the install must clear npm\'s cache first — with a warm ~/.npm/_cacache, npm ci peaks at ~740 MB and the 512 MB container kills it',
+  );
+  assert.doesNotMatch(
+    stackhostSource,
+    /- "npm run build"/,
+    'stackhost.yaml must NOT use "npm run build" — it pulls the Turbopack default (~1284 MB peak), which overshoots the 512 MB free-plan ceiling. Use the measured heap-capped steps instead.',
+  );
+  assert.doesNotMatch(
+    stackhostSource,
+    /- "npx /,
+    'build steps must call ./node_modules/.bin/<tool> directly — npx adds an npm wrapper process (~80 MB) to every step, which matters on a 512 MB container',
+  );
+  // The API compile must stay present and heap-capped (tsc alone peaked at
+  // ~475 MB uncapped; the cap is what keeps it inside the container).
+  assert.match(
+    stackhostSource,
+    /- "NODE_OPTIONS=--max-old-space-size=384 \.\/node_modules\/\.bin\/tsc -p tsconfig\.backend\.json"/,
+  );
+  // The Next.js build must stay on the low-memory, Webpack path — the plain
+  // `next build` (Turbopack) is the single biggest overshoot.
+  assert.match(
+    stackhostSource,
+    /- "AKBARAL_LOW_MEMORY_BUILD=1 NODE_OPTIONS=--max-old-space-size=320 \.\/node_modules\/\.bin\/next build --webpack"/,
+  );
+  // tsc does not emit .mjs: dist/ is only complete once the runtime assets are
+  // copied. Both build paths (package.json and stackhost.yaml) must call the
+  // SAME script, so the two cannot drift.
+  assert.match(
+    stackhostSource,
+    /- "node scripts\/copy-backend-runtime-assets\.mjs"/,
+    'stackhost.yaml must copy src/db/*.mjs into dist/ — pg-worker.mjs is spawned by path at runtime and tsc never emits it',
+  );
+  assert.match(
+    packageJsonSource,
+    /"build": "tsc -p tsconfig\.backend\.json && node scripts\/copy-backend-runtime-assets\.mjs && next build"/,
+    'package.json build must call the shared copy script (not an inline node -e), so stackhost.yaml and the Docker/CI build stay identical',
+  );
   assert.doesNotMatch(
     stackhostSource,
     /build:\s*"npm ci --include=dev && npm run build"/,
@@ -143,6 +192,73 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
     /StackHost injects the public port it routes traffic to as PORT/,
     'the documented PORT contract must stay intact',
   );
+});
+
+test('the low-memory build flag exists in next.config.mjs and only relaxes the in-build type check', () => {
+  const nextConfigSource = readFileSync(path.resolve('next.config.mjs'), 'utf8');
+  assert.match(
+    nextConfigSource,
+    /AKBARAL_LOW_MEMORY_BUILD/,
+    'next.config.mjs must honour AKBARAL_LOW_MEMORY_BUILD=1 (set by stackhost.yaml)',
+  );
+  assert.match(
+    nextConfigSource,
+    /lowMemoryBuild \? \{ typescript: \{ ignoreBuildErrors: true \} \}/,
+    'the flag may ONLY drop the in-build type check (the ~475 MB phase) — it must not relax anything else',
+  );
+  // The type check must still exist as an explicit, enforced command.
+  assert.match(
+    packageJsonSource,
+    /"typecheck": "tsc --noEmit -p tsconfig\.json"/,
+    'skipping the in-build type check is only acceptable because `npm run typecheck` enforces the same types',
+  );
+});
+
+test('the backend runtime asset copy is real: dist/src/db/pg-worker.mjs after tsc + copy', () => {
+  // The script must be the single source of truth for what gets copied, and it
+  // must fail loudly rather than silently produce a dist/ that breaks at the
+  // first PostgreSQL worker spawn.
+  const scriptSource = readFileSync(path.resolve('scripts/copy-backend-runtime-assets.mjs'), 'utf8');
+  for (const asset of ['pg-worker.mjs', 'pg-connection.mjs']) {
+    assert.match(scriptSource, new RegExp(asset.replace('.', '\\.')), `the copy script must handle ${asset}`);
+    assert.ok(
+      existsSync(path.resolve('src', 'db', asset)),
+      `${asset} must exist in src/db — it is spawned by path from __dirname at runtime`,
+    );
+  }
+  assert.match(scriptSource, /process\.exit\(1\)/, 'a missing asset must fail the build, not warn');
+
+  // Prove the copy actually works on a throwaway tree: lay out a fake dist/src,
+  // run the script with cwd pointed at a temp fixture, and read the result back.
+  const fixture = mkdtempSync(path.join(os.tmpdir(), 'akbaral-copy-assets-'));
+  try {
+    mkdirSync(path.join(fixture, 'dist', 'src'), { recursive: true });
+    mkdirSync(path.join(fixture, 'src', 'db'), { recursive: true });
+    mkdirSync(path.join(fixture, 'scripts'), { recursive: true });
+    for (const asset of ['pg-worker.mjs', 'pg-connection.mjs']) {
+      copyFileSync(path.resolve('src', 'db', asset), path.join(fixture, 'src', 'db', asset));
+    }
+    copyFileSync(
+      path.resolve('scripts', 'copy-backend-runtime-assets.mjs'),
+      path.join(fixture, 'scripts', 'copy-backend-runtime-assets.mjs'),
+    );
+    const run = spawnSync(process.execPath, ['scripts/copy-backend-runtime-assets.mjs'], {
+      cwd: fixture,
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, `copy script must exit 0 on a valid tree (stderr: ${run.stderr})`);
+    for (const asset of ['pg-worker.mjs', 'pg-connection.mjs']) {
+      const copied = path.join(fixture, 'dist', 'src', 'db', asset);
+      assert.ok(existsSync(copied), `${asset} must exist in dist/src/db after the copy`);
+      assert.equal(
+        readFileSync(copied, 'utf8'),
+        readFileSync(path.resolve('src', 'db', asset), 'utf8'),
+        `${asset} must be copied byte-for-byte`,
+      );
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 // --------------------------------------------------------------------------
