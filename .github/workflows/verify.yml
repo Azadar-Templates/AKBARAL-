@@ -49,6 +49,21 @@ jobs:
         run: npm run test:pg
       - name: Standalone mission PostgreSQL parity
         run: npm run mission:pg-check
+      - name: Private mission Chromium desktop and mobile-viewport checks
+        env:
+          MISSION_BROWSER_NPM_RUNTIME: "true"
+          MISSION_BROWSER_EVIDENCE_DIR: logs/browser/ci
+        run: npm run mission:browser-check
+      - name: Preserve browser screenshots and source fingerprint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            logs/browser/ci/*.png
+            logs/browser/ci/result.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Production Webpack build with PostgreSQL runtime assets
         run: npm run build:webpack
       - name: Exercise the compiled PostgreSQL worker, not just TypeScript sources
