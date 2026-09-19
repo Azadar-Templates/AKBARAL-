@@ -27,6 +27,8 @@ export interface PolicySnapshot {
   minRoi: number;
   settlementThresholdCents: number;
   settlementDestination: string;
+  autoUpgradeEnabled: boolean;
+  maxAutoUpgradeCostCents: number;
   maxEconomyAgents: number;
   maxAgentDepth: number;
   maxChildrenPerAgent: number;
@@ -61,6 +63,8 @@ export function snapshotPolicy(row: EconomyPolicyRow): PolicySnapshot {
     maxEconomyAgents: row.max_economy_agents,
     maxAgentDepth: row.max_agent_depth,
     maxChildrenPerAgent: row.max_children_per_agent,
+    autoUpgradeEnabled: row.auto_upgrade_enabled === 1,
+    maxAutoUpgradeCostCents: row.max_auto_upgrade_cost_cents,
     spawnRatePerHour: row.spawn_rate_per_hour,
     spawnCostCents: row.spawn_cost_cents,
     freezeSpending: row.freeze_spending === 1,

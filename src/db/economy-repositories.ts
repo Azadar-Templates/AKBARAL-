@@ -48,6 +48,8 @@ export interface EconomyPolicyRow {
   provider_access_revoked: number;
   economy_model_key: string | null;
   discovery_categories_json: string;
+  auto_upgrade_enabled: number;
+  max_auto_upgrade_cost_cents: number;
 }
 
 export function getEconomyPolicy(): EconomyPolicyRow {
@@ -559,14 +561,16 @@ export interface UpgradeRow {
   status: string;
   applied_at: string | null;
   rolled_back_at: string | null;
+  cost_cents: number;
+  requested_by_agent: string | null;
   created_at: string;
 }
 
-export function insertUpgrade(input: { target: string; currentValue: string; candidateValue: string; benchmark?: Record<string, unknown> | null }): UpgradeRow {
+export function insertUpgrade(input: { target: string; currentValue: string; candidateValue: string; benchmark?: Record<string, unknown> | null; costCents?: number; requestedByAgent?: string | null }): UpgradeRow {
   const id = createId('eco_upg');
   db.run(
-    'INSERT INTO economy_upgrades (id, target, current_value, candidate_value, benchmark_json) VALUES (?, ?, ?, ?, ?)',
-    [id, input.target, input.currentValue, input.candidateValue, input.benchmark ? JSON.stringify(input.benchmark) : null],
+    'INSERT INTO economy_upgrades (id, target, current_value, candidate_value, benchmark_json, cost_cents, requested_by_agent) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, input.target, input.currentValue, input.candidateValue, input.benchmark ? JSON.stringify(input.benchmark) : null, input.costCents ?? 0, input.requestedByAgent ?? null],
   );
   return db.get<UpgradeRow>('SELECT * FROM economy_upgrades WHERE id = ?', [id])!;
 }
@@ -670,6 +674,8 @@ export interface AgentProfileRow {
   enabled_at: string;
   budget_cents: number;
   spend_cents: number;
+  daily_spend_quota_cents: number | null;
+  monthly_spend_quota_cents: number | null;
   paused_at: string | null;
   paused_reason: string | null;
 }
@@ -1021,6 +1027,87 @@ export function executedTransferTotalForAgent(agentSlug: string): number {
   const row = db.get<{ total: number | null }>(
     "SELECT SUM(amount_cents) AS total FROM economy_transfers WHERE source_agent_slug = ? AND status = 'executed'",
     [agentSlug],
+  );
+  return Number(row?.total ?? 0);
+}
+
+// ── Owner command flow (0022) ────────────────────────────────────────────────
+
+export interface CommandRow {
+  id: string;
+  idempotency_key: string;
+  owner_user_id: string;
+  agent_slug: string;
+  instruction: string;
+  status: string;
+  opportunity_id: string | null;
+  execution_id: string | null;
+  delivery_id: string | null;
+  result_summary: string | null;
+  verification: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function insertCommand(input: { idempotencyKey: string; ownerUserId: string; agentSlug: string; instruction: string }): { row: CommandRow; duplicate: boolean } {
+  const existing = db.get<CommandRow>('SELECT * FROM economy_commands WHERE idempotency_key = ?', [input.idempotencyKey]);
+  if (existing) return { row: existing, duplicate: true };
+  const id = createId('eco_cmd');
+  db.run(
+    'INSERT INTO economy_commands (id, idempotency_key, owner_user_id, agent_slug, instruction) VALUES (?, ?, ?, ?, ?)',
+    [id, input.idempotencyKey, input.ownerUserId, input.agentSlug, input.instruction],
+  );
+  const row = db.get<CommandRow>('SELECT * FROM economy_commands WHERE id = ?', [id]);
+  if (!row) throw new Error('command insert did not persist (id ' + id + ')');
+  return { row, duplicate: false };
+}
+
+export function getCommand(id: string): CommandRow | undefined {
+  return db.get<CommandRow>('SELECT * FROM economy_commands WHERE id = ?', [id]);
+}
+
+export function updateCommand(id: string, patch: { status?: string; opportunityId?: string | null; executionId?: string | null; deliveryId?: string | null; resultSummary?: string | null; verification?: string | null }): void {
+  const sets = [];
+  const vals = [];
+  if (patch.status !== undefined) { sets.push('status = ?'); vals.push(patch.status); }
+  if (patch.opportunityId !== undefined) { sets.push('opportunity_id = ?'); vals.push(patch.opportunityId); }
+  if (patch.executionId !== undefined) { sets.push('execution_id = ?'); vals.push(patch.executionId); }
+  if (patch.deliveryId !== undefined) { sets.push('delivery_id = ?'); vals.push(patch.deliveryId); }
+  if (patch.resultSummary !== undefined) { sets.push('result_summary = ?'); vals.push(patch.resultSummary); }
+  if (patch.verification !== undefined) { sets.push('verification = ?'); vals.push(patch.verification); }
+  if (sets.length === 0) return;
+  sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+  db.run('UPDATE economy_commands SET ' + sets.join(', ') + ' WHERE id = ?', [...vals, id]);
+}
+
+export function listCommands(input: { agentSlug?: string; status?: string; limit?: number } = {}): CommandRow[] {
+  const conds = [];
+  const vals = [];
+  if (input.agentSlug) { conds.push('agent_slug = ?'); vals.push(input.agentSlug); }
+  if (input.status) { conds.push('status = ?'); vals.push(input.status); }
+  const where = conds.length > 0 ? 'WHERE ' + conds.join(' AND ') : '';
+  return db.all<CommandRow>('SELECT * FROM economy_commands ' + where + ' ORDER BY created_at DESC LIMIT ?', [...vals, Math.min(500, Math.max(1, input.limit ?? 100))]);
+}
+
+// ── Per-agent spend quotas (0022) ────────────────────────────────────────────
+
+export function setAgentQuotas(agentSlug: string, quotas: { dailySpendQuotaCents?: number | null; monthlySpendQuotaCents?: number | null }): void {
+  const profile = getAgentProfileBySlug(agentSlug);
+  if (!profile) throw new Error('agent profile "' + agentSlug + '" does not exist');
+  const entries: Array<[keyof typeof quotas, string]> = [['dailySpendQuotaCents', 'daily_spend_quota_cents'], ['monthlySpendQuotaCents', 'monthly_spend_quota_cents']];
+  for (const [key, column] of entries) {
+    const value = quotas[key];
+    if (value === undefined) continue;
+    if (value !== null && (!Number.isInteger(value) || value < 0)) throw new Error('quota "' + key + '" must be a non-negative integer or null (got ' + value + ')');
+    db.run('UPDATE economy_agent_profiles SET ' + column + ' = ? WHERE agent_slug = ?', [value, agentSlug]);
+  }
+}
+
+/** Ledger debits attributed to one agent since the given ISO instant. */
+export function agentSpendSince(agentSlug: string, sinceIso: string): number {
+  const row = db.get<{ total: number | null }>(
+    "SELECT SUM(amount_cents) AS total FROM economy_ledger WHERE agent_slug = ? AND direction = 'debit' AND ts >= ?",
+    [agentSlug, sinceIso],
   );
   return Number(row?.total ?? 0);
 }

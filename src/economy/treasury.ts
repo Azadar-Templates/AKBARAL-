@@ -41,7 +41,7 @@ import {
   listTransfers,
 } from '../db/economy-repositories';
 import { currentPolicy } from './policy';
-import { assertSpendingAllowed, assertWithdrawalsAllowed, chargeSpawn, evaluateSpawn, recordSpawnDecision } from './hierarchy';
+import { assertAgentQuota, assertSpendingAllowed, assertWithdrawalsAllowed, chargeSpawn, evaluateSpawn, recordSpawnDecision } from './hierarchy';
 
 /**
  * ZA141251SA treasury + agent self-management flows.
@@ -157,6 +157,10 @@ export function proposeSettlement(): SettlementOutcome {
   if (distributable <= 0) {
     return { created: false, reason: `no distributable profit above the ${policy.settlementThresholdCents}-cent operating float (available: ${available})` };
   }
+  const destination = (policy.settlementDestination ?? '').trim();
+  if (!destination || destination === 'owner-configured-settlement') {
+    return { created: false, reason: 'settlement destination is not configured — the owner must set a real payout destination in policy before any withdrawal' };
+  }
   const settlement = insertSettlement({
     amountCents: distributable,
     destination: policy.settlementDestination,
@@ -207,6 +211,14 @@ export { listSettlements };
 // Resource economy (E)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Spendable resource kinds. account_fee/property_fee cover platform account
+ * and earning-property costs; every kind maps to an explicit ledger category
+ * at provisioning time. Unknown kinds are refused, never bucketed silently. */
+const RESOURCE_KINDS = new Set([
+  'ai_api', 'search_api', 'storage', 'compute', 'database', 'hosting', 'domain',
+  'tool_license', 'account_fee', 'property_fee',
+]);
+
 export interface ResourceDecision {
   status: 'approved' | 'denied';
   reason: string;
@@ -233,6 +245,9 @@ export function requestResource(input: { kind: string; provider: string; descrip
       details: { resourceId: resource.id },
     });
     return { decision: { status: 'denied', reason: 'spending frozen by owner' }, resourceId: resource.id };
+  }
+  if (!RESOURCE_KINDS.has(input.kind)) {
+    throw new Error('resource kind must be one of ' + [...RESOURCE_KINDS].join(', ') + ' (got "' + input.kind + '")');
   }
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
@@ -269,6 +284,16 @@ export function requestResource(input: { kind: string; provider: string; descrip
     summary: `resource request ${input.kind}/${input.provider} → ${decision.status}`,
     details: { resourceId: resource.id, monthlyCostCents: input.monthlyCostCents, reasons },
   });
+  if (decision.status === 'approved' && input.requestedByAgent) {
+    try {
+      assertAgentQuota(input.requestedByAgent, input.monthlyCostCents);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      updateResource(resource.id, { status: 'denied' });
+      recordEconomyEvent({ kind: 'resource', actor: input.requestedByAgent, summary: 'resource request ' + input.kind + '/' + input.provider + ' → denied (' + reason + ')', details: { resourceId: resource.id } });
+      return { decision: { status: 'denied', reason }, resourceId: resource.id };
+    }
+  }
   if (decision.status === 'approved') updateResource(resource.id, { status: 'approved' });
   return { decision, resourceId: resource.id };
 }
@@ -286,6 +311,7 @@ export function confirmResourceProvisioned(id: string, evidence: string, actualC
   if (!evidence || evidence.trim().length < 4) throw new Error('provisioning evidence required');
   // Committing real money while spending is frozen would defeat the freeze.
   assertSpendingAllowed(`provisioning resource ${id}`);
+  if (resource.requested_by_agent) assertAgentQuota(resource.requested_by_agent, actualCostCents ?? resource.monthly_cost_cents);
   const cost = actualCostCents ?? resource.monthly_cost_cents;
   updateResource(id, { status: 'provisioned', provisioned_at: new Date().toISOString() });
   postLedger({
@@ -294,7 +320,8 @@ export function confirmResourceProvisioned(id: string, evidence: string, actualC
     category: resource.kind === 'ai_api' || resource.kind === 'search_api' ? 'api_cost'
       : resource.kind === 'storage' ? 'storage_cost'
         : resource.kind === 'compute' || resource.kind === 'database' ? 'compute_cost'
-          : 'resource_purchase',
+          : resource.kind === 'account_fee' || resource.kind === 'property_fee' ? 'account_cost'
+            : 'resource_purchase',
     amountCents: cost,
     purpose: `provision ${resource.kind} from ${resource.provider}`,
     refType: 'resource',
@@ -319,9 +346,11 @@ export { listResources };
 
 const APPROVED_UPGRADE_TARGETS = new Set(['model', 'tool', 'api', 'compute', 'storage']);
 
-export function proposeUpgrade(input: { target: string; currentValue: string; candidateValue: string; benchmark?: Record<string, unknown> | null }): { upgradeId: string; securityCheck: string; economicCheck: string } {
+export function proposeUpgrade(input: { target: string; currentValue: string; candidateValue: string; benchmark?: Record<string, unknown> | null; costCents?: number; requestedByAgent?: string | null }): { upgradeId: string; securityCheck: string; economicCheck: string } {
   if (!APPROVED_UPGRADE_TARGETS.has(input.target)) throw new Error(`upgrade target must be one of ${[...APPROVED_UPGRADE_TARGETS].join(', ')}`);
-  const upgrade = insertUpgrade(input);
+  const costCents = Math.max(0, Math.round(input.costCents ?? 0));
+  if (input.requestedByAgent && !getAgentBySlug(input.requestedByAgent)) throw new Error('requesting agent "' + input.requestedByAgent + '" does not exist in the registry');
+  const upgrade = insertUpgrade({ ...input, costCents, requestedByAgent: input.requestedByAgent ?? null });
   // Security check: candidate must not reference credentials/secrets and must
   // come from the platform's own catalog namespace (models/tools), never an
   // arbitrary external endpoint.
@@ -342,7 +371,7 @@ export function proposeUpgrade(input: { target: string; currentValue: string; ca
   return { upgradeId: upgrade.id, securityCheck: securityOk ? 'passed' : 'failed', economicCheck: economicOk ? 'passed' : 'failed' };
 }
 
-export function applyUpgrade(id: string): { applied: boolean; reason: string } {
+export function applyUpgrade(id: string, actor = 'owner'): { applied: boolean; reason: string } {
   const upgrade = getUpgrade(id);
   if (!upgrade) throw new Error('upgrade not found');
   if (upgrade.status !== 'proposed' && upgrade.status !== 'approved') return { applied: false, reason: `status is '${upgrade.status}'` };
@@ -350,7 +379,43 @@ export function applyUpgrade(id: string): { applied: boolean; reason: string } {
     updateUpgrade(id, { status: 'rejected' });
     return { applied: false, reason: `checks not passed (security=${upgrade.security_check}, economic=${upgrade.economic_check}) — the system does not blindly spend money` };
   }
+  // Funding: upgrades are paid from REALIZED earnings only — the requester's
+  // own surplus when an agent requested it, else the treasury net.
+  const policy = currentPolicy();
+  const cost = upgrade.cost_cents ?? 0;
+  if (cost > 0) {
+    const funds = upgrade.requested_by_agent
+      ? agentAccountFor(upgrade.requested_by_agent).availableCents
+      : treasurySummary().realizedRevenueCents - treasurySummary().totalExpensesCents;
+    if (funds < cost) {
+      return { applied: false, reason: 'unfunded: ' + funds + 'c of realized surplus available, upgrade costs ' + cost + 'c — earn first' };
+    }
+  }
+  // Autonomy: only the owner applies freely. Any other actor (an agent
+  // executing autonomously) needs the owner-enabled auto-upgrade policy plus
+  // the per-upgrade cost cap. Default OFF — autonomy is granted, never assumed.
+  if (actor !== 'owner') {
+    if (!policy.autoUpgradeEnabled) {
+      return { applied: false, reason: 'autonomous execution refused: auto-upgrade policy is OFF (owner must enable it)' };
+    }
+    if (cost > policy.maxAutoUpgradeCostCents) {
+      return { applied: false, reason: 'autonomous execution refused: cost ' + cost + 'c exceeds the ' + policy.maxAutoUpgradeCostCents + 'c auto cap' };
+    }
+  }
+  if (cost > 0 && upgrade.requested_by_agent) assertAgentQuota(upgrade.requested_by_agent, cost);
   updateUpgrade(id, { status: 'applied', applied_at: new Date().toISOString() });
+  if (cost > 0) {
+    postLedger({
+      agentSlug: upgrade.requested_by_agent,
+      direction: 'debit',
+      category: 'upgrade_cost',
+      amountCents: cost,
+      purpose: 'apply upgrade ' + upgrade.target + ' → ' + upgrade.candidate_value,
+      refType: 'upgrade',
+      refId: 'upgrade:' + id + ':apply',
+      policyDecision: actor === 'owner' ? 'owner_applied' : 'auto_upgrade_policy',
+    });
+  }
   if (upgrade.target === 'model') {
     // Scoped, real effect: the economy's own model preference (registry
     // routing for economy work only — never the public user platform).
@@ -359,7 +424,7 @@ export function applyUpgrade(id: string): { applied: boolean; reason: string } {
       new Date().toISOString(),
     ]);
   }
-  recordEconomyEvent({ kind: 'upgrade', actor: 'owner', summary: `upgrade ${id} APPLIED: ${upgrade.target} → ${upgrade.candidate_value}` });
+  recordEconomyEvent({ kind: 'upgrade', actor, summary: `upgrade ${id} APPLIED (${actor}): ${upgrade.target} → ${upgrade.candidate_value}` });
   return { applied: true, reason: 'applied' };
 }
 
@@ -391,6 +456,21 @@ export interface ExpansionOutcome {
   blockedReason?: string;
 }
 
+/**
+ * Spawn-safe tool subset: a child NEVER receives a tool its parent lacks.
+ * The spawn-safe baseline is read-only research; when the parent lacks even
+ * that, the expansion is rejected (a tool-less child cannot do honest work).
+ */
+const SPAWN_BASELINE_TOOLS = ['web_search', 'page_fetch'];
+
+export function childToolPermissions(parentAgentSlug?: string | null): string[] {
+  if (!parentAgentSlug) return [...SPAWN_BASELINE_TOOLS];
+  const parent = getAgentBySlug(parentAgentSlug);
+  const parentTools = parent?.toolPermissions ?? [];
+  if (parentTools.length === 0) return [...SPAWN_BASELINE_TOOLS];
+  return SPAWN_BASELINE_TOOLS.filter((tool) => parentTools.includes(tool));
+}
+
 export function expandCapability(input: {
   gap: string;
   specialization: string;
@@ -417,6 +497,9 @@ export function expandCapability(input: {
   if (input.parentAgentSlug && !getAgentBySlug(input.parentAgentSlug)) {
     return rejectExpansion('parent agent not found', `expansion REJECTED: parent ${input.parentAgentSlug} does not exist`);
   }
+  if (input.parentAgentSlug && childToolPermissions(input.parentAgentSlug).length === 0) {
+    return rejectExpansion('parent lacks spawn-safe tools', 'expansion REJECTED: parent ' + input.parentAgentSlug + ' holds none of ' + SPAWN_BASELINE_TOOLS.join(', ') + ' — a tool-less child cannot do honest work');
+  }
 
   // Every remaining gate — kill switch, provider access, spending freeze, depth,
   // children-per-parent, total cap, spawn rate and budget — is evaluated in one
@@ -439,7 +522,7 @@ export function expandCapability(input: {
     specialization: input.specialization,
     description: `Self-expanded for capability gap: ${input.gap}`,
     systemInstructions: input.systemInstructions,
-    toolPermissions: ['web_search', 'page_fetch'],
+    toolPermissions: childToolPermissions(input.parentAgentSlug),
     verificationRules: ['output must directly address the assigned objective'],
   });
   const expansion = insertExpansion({ gap: input.gap, parentAgentSlug: input.parentAgentSlug ?? null, agentSlug: created.slug });

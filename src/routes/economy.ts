@@ -4,9 +4,15 @@ import { requireRole } from '../server/middleware/rbac';
 import { HttpError, asyncRoute } from '../server/http';
 import { appendAuditLog } from '../db';
 import { getEconomyPolicy, listEconomyEvents, listExecutions, listOpportunities, getOpportunity, updateEconomyPolicy, listMissionThreads,
-  getAgentProfileBySlug,
+  getAgentProfileBySlug, listCommands, setAgentQuotas,
 } from '../db/economy-repositories';
 import { MissionChatError, missionChatHistory, missionChatWithAgent, missionChatWithGroup } from '../economy/mission-chat';
+import {
+  CommandError, acknowledgeCommand, cancelCommand, commandStatus, completeCommand,
+  linkCommandWork, sendCommand,
+} from '../economy/commands';
+import { agentWorkforceProfile, workforceOverview } from '../economy/agent-report';
+import { getAgentBySlug } from '../agents/registry';
 import { rateLimit } from '../server/middleware/rate-limit';
 import { readinessPayload } from '../server/health';
 import { getBody } from '../server/middleware/validation';
@@ -21,6 +27,7 @@ function toHttpError(error: unknown): unknown {
 import { ALL_DISCOVERY_CATEGORY_KEYS, POLICY_INT_RANGES, sanitizeDiscoveryCategories, type RiskLevel } from '../economy/policy';
 import {
   HierarchyControlError,
+  agentQuotaStatus,
   delegationChain,
   hierarchyControls,
   hierarchyTree,
@@ -64,6 +71,11 @@ import {
   proposeTreasuryTransfer,
   decideTreasuryTransfer,
   TreasuryTransferError,
+  EarningError,
+  recordDeliveryPayment,
+  listReinvestments,
+  proposeReinvestment,
+  decideReinvestment,
 } from '../economy/treasury';
 
 /**
@@ -304,7 +316,12 @@ export function createEconomyRouter(): Router {
   });
 
   router.post('/upgrades/:id/apply', (req: AuthenticatedRequest, res) => {
-    const result = applyUpgrade(req.params.id);
+    const body = getBody(req);
+    const actor = typeof body?.actor === 'string' && body.actor ? (body.actor as string) : 'owner';
+    if (actor !== 'owner' && !getAgentBySlug(actor)) {
+      throw new HttpError(400, `actor must be "owner" or a registry agent slug (got "${actor}")`, 'invalid_request');
+    }
+    const result = applyUpgrade(req.params.id, actor);
     appendAuditLog({ actorId: req.auth!.userId, action: 'economy.upgrade.apply', resourceId: req.params.id, metadata: result });
     res.status(200).json(result);
   });
@@ -547,6 +564,161 @@ export function createEconomyRouter(): Router {
     res.status(200).json({ controls: hierarchyControls() });
   });
 
+  // ── Delivery payments (verified delivery → realized revenue, exactly once)
+  router.post('/delivery-payments', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const payment = recordDeliveryPayment({
+      deliveryId: String(body?.delivery_id ?? ''),
+      amountCents: clampInt(body?.amount_cents, 1, 1_000_000_000, 0),
+      evidence: String(body?.evidence ?? ''),
+      externalRef: typeof body?.external_ref === 'string' ? (body.external_ref as string) : undefined,
+      recordedBy: req.auth!.userId,
+    });
+    appendAuditLog({ actorId: req.auth!.userId, action: 'economy.delivery.payment', resourceId: payment.revenueId });
+    res.status(201).json(payment);
+  });
+
+  // ── Reinvestment (propose → owner decision → executed debit)
+  router.get('/reinvestments', (req, res) => {
+    res.status(200).json({ reinvestments: listReinvestments(clampInt(req.query.limit, 1, 500, 100)) });
+  });
+
+  router.post('/reinvestments', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const result = proposeReinvestment({
+      agentSlug: String(body?.agent_slug ?? ''),
+      amountCents: clampInt(body?.amount_cents, 1, 1_000_000_000, 0),
+      purpose: String(body?.purpose ?? ''),
+      idempotencyKey: String(body?.idempotency_key ?? ''),
+      proposedBy: req.auth!.userId,
+    });
+    appendAuditLog({ actorId: req.auth!.userId, action: 'economy.reinvestment.propose', resourceId: result.reinvestment.id });
+    res.status(result.idempotentReplay ? 200 : 201).json(result);
+  });
+
+  router.post('/reinvestments/:id/approve', (req: AuthenticatedRequest, res) => {
+    const decided = decideReinvestment(req.params.id, 'approve', req.auth!.userId);
+    appendAuditLog({ actorId: req.auth!.userId, action: 'economy.reinvestment.approve', resourceId: req.params.id });
+    res.status(200).json({ reinvestment: decided });
+  });
+
+  router.post('/reinvestments/:id/reject', (req: AuthenticatedRequest, res) => {
+    const decided = decideReinvestment(req.params.id, 'reject', req.auth!.userId);
+    appendAuditLog({ actorId: req.auth!.userId, action: 'economy.reinvestment.reject', resourceId: req.params.id });
+    res.status(200).json({ reinvestment: decided });
+  });
+
+  // ── Owner → agent commands (issue → acknowledge → link → complete → verify)
+  router.post('/commands', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const result = sendCommand({
+      ownerUserId: req.auth!.userId,
+      agentSlug: String(body?.agent_slug ?? ''),
+      instruction: String(body?.instruction ?? ''),
+      idempotencyKey: String(body?.idempotency_key ?? ''),
+    });
+    appendAuditLog({ actorId: req.auth!.userId, action: 'economy.command.issue', resourceId: result.command.id });
+    res.status(result.duplicate ? 200 : 201).json(result);
+  });
+
+  router.get('/commands', (req, res) => {
+    const q = req.query as Record<string, unknown>;
+    res.status(200).json({
+      commands: listCommands({
+        agentSlug: typeof q.agent_slug === 'string' ? q.agent_slug : undefined,
+        status: typeof q.status === 'string' ? q.status : undefined,
+        limit: clampInt(q.limit, 1, 500, 100),
+      }),
+    });
+  });
+
+  router.get('/commands/:id', (req, res) => {
+    res.status(200).json(commandStatus(req.params.id));
+  });
+
+  router.post('/commands/:id/acknowledge', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    const actor = typeof body?.actor === 'string' && body.actor ? (body.actor as string) : req.auth!.userId;
+    res.status(200).json({ command: acknowledgeCommand(req.params.id, actor) });
+  });
+
+  router.post('/commands/:id/link', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    res.status(200).json({
+      command: linkCommandWork({
+        id: req.params.id,
+        opportunityId: String(body?.opportunity_id ?? ''),
+        executionId: String(body?.execution_id ?? ''),
+        actor: req.auth!.userId,
+      }),
+    });
+  });
+
+  router.post('/commands/:id/complete', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    res.status(200).json({
+      command: completeCommand({
+        id: req.params.id,
+        actor: req.auth!.userId,
+        resultSummary: String(body?.result_summary ?? ''),
+        deliveryId: typeof body?.delivery_id === 'string' ? (body.delivery_id as string) : null,
+        failed: body?.failed === true,
+        failureReason: typeof body?.failure_reason === 'string' ? (body.failure_reason as string) : undefined,
+      }),
+    });
+  });
+
+  router.post('/commands/:id/cancel', (req: AuthenticatedRequest, res) => {
+    const body = getBody(req);
+    res.status(200).json({ command: cancelCommand(req.params.id, String(body?.reason ?? ''), req.auth!.userId) });
+  });
+
+  // ── Per-agent workforce profile + quotas + fleet overview
+  router.get('/agents/:slug/report', (req, res) => {
+    try {
+      res.status(200).json({ report: agentWorkforceProfile(req.params.slug) });
+    } catch (error) {
+      if (error instanceof Error && /does not exist in the registry/.test(error.message)) {
+        throw new HttpError(404, error.message, 'agent_not_found');
+      }
+      throw error;
+    }
+  });
+
+  router.get('/agents/:slug/quotas', (req, res) => {
+    if (!getAgentBySlug(req.params.slug)) throw new HttpError(404, `agent "${req.params.slug}" does not exist in the registry`, 'agent_not_found');
+    res.status(200).json({ quotas: agentQuotaStatus(req.params.slug) });
+  });
+
+  router.put('/agents/:slug/quotas', (req: AuthenticatedRequest, res) => {
+    if (!getAgentBySlug(req.params.slug)) throw new HttpError(404, `agent "${req.params.slug}" does not exist in the registry`, 'agent_not_found');
+    const body = getBody(req);
+    const numOrNull = (value: unknown): number | null | undefined => {
+      if (value === undefined) return undefined;
+      if (value === null) return null;
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 0) throw new HttpError(400, 'quotas must be non-negative integers or null', 'invalid_request');
+      return parsed;
+    };
+    try {
+      setAgentQuotas(req.params.slug, {
+        dailySpendQuotaCents: numOrNull(body?.daily_spend_quota_cents),
+        monthlySpendQuotaCents: numOrNull(body?.monthly_spend_quota_cents),
+      });
+    } catch (error) {
+      if (error instanceof Error && /does not exist/.test(error.message)) {
+        throw new HttpError(404, error.message, 'profile_not_found');
+      }
+      throw error;
+    }
+    appendAuditLog({ actorId: req.auth!.userId, action: 'economy.agent.quotas', resourceId: req.params.slug });
+    res.status(200).json({ quotas: agentQuotaStatus(req.params.slug) });
+  });
+
+  router.get('/workforce-overview', (_req, res) => {
+    res.status(200).json({ overview: workforceOverview() });
+  });
+
   // Domain refusals carry their own status and code — a frozen control or a
   // refused transfer must answer 4xx with a machine-readable reason, never a
   // generic 500. Anything that is not a known domain error continues to the
@@ -556,7 +728,11 @@ export function createEconomyRouter(): Router {
       ? { statusCode: error.statusCode, code: error.code, message: error.message }
       : error instanceof TreasuryTransferError
         ? { statusCode: error.statusCode, code: error.code, message: error.message }
-        : null;
+        : error instanceof CommandError
+          ? { statusCode: error.statusCode, code: error.code, message: error.message }
+          : error instanceof EarningError
+            ? { statusCode: error.statusCode, code: error.code, message: error.message }
+            : null;
     if (!domain) {
       next(error);
       return;

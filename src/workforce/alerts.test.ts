@@ -133,6 +133,7 @@ describe('D11 centralized owner alerting', () => {
     const saved = clearAlertEnv();
     try {
       recordLedgerRevenue({ amountCents: 50_000, evidence: 'd11 test funding — bank advice TF-D11', externalRef: `TF-D11-${Date.now()}` });
+      updateEconomyPolicy({ settlement_destination: 'owner-bankRef TEST-ACCT-D11' });
       const outcome = proposeSettlement();
       assert.equal(outcome.created, true, `settlement must be created (reason: ${outcome.reason})`);
       const found = listAlerts('open').filter((a) => a.dedupe_key === `settlement-awaiting-owner:${outcome.settlementId}`);

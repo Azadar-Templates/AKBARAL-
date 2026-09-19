@@ -517,6 +517,7 @@ describe('ZA141251SA agent economy', () => {
   // ── I: owner settlement ──────────────────────────────────────────────────
   it('settles net profit only above the operating float, honestly (pending external provider)', () => {
     updateEconomyPolicy({ settlement_threshold_cents: 10_000 });
+    updateEconomyPolicy({ settlement_destination: 'owner-bankRef TEST-ACCT-001' });
     const before = listSettlements().length;
     const outcome = proposeSettlement();
     assert.equal(outcome.created, true, `settlement must be created (reason was: ${outcome.reason})`);

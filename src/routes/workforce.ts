@@ -15,6 +15,11 @@ import { ImageError, decideImageRequest, fulfillImageRequest, listImageRequests,
 import { runWorkforceExecution } from '../workforce/execution';
 import { pickWorkforceAgent, workforceDiscovery, workforceScheduler } from '../workforce/scheduler';
 import { buildWorkforceReport } from '../workforce/report';
+import {
+  PlatformError, assignPrimaryOpportunity, autoAssignPrimaries, countPrimaryAssignments, getPlatform,
+  listPlatforms, listPrimaryAssignments, primaryAssignmentForAgent, primaryAssignmentForPlatform,
+  releasePrimaryAssignment, setAssignmentAccount, setAssignmentStatus,
+} from '../workforce/platforms';
 
 /**
  * WORKFORCE API — OWNER + SUPER_ADMIN ONLY.
@@ -351,6 +356,113 @@ export function createWorkforceRouter(): Router {
       if (error instanceof ImageError) throw new HttpError(error.statusCode, error.message, error.code);
       throw error;
     }
+  });
+
+  // ── Earning catalog browsing (owner visibility into the integrated inventory)
+  router.get('/platforms', (req, res) => {
+    const q = req.query as Record<string, unknown>;
+    res.status(200).json({
+      platforms: listPlatforms({
+        category: typeof q.category === 'string' ? q.category : undefined,
+        status: typeof q.status === 'string' ? (q.status as 'verified' | 'candidate') : undefined,
+        limit: clampInt(q.limit, 1, 1000, 100),
+      }),
+    });
+  });
+
+  router.get('/platforms/:key', (req, res) => {
+    const platform = getPlatform(req.params.key);
+    if (!platform) throw new HttpError(404, `platform "${req.params.key}" is not in the catalog`, 'platform_not_found');
+    res.status(200).json({ platform, primary: primaryAssignmentForPlatform(req.params.key) ?? null });
+  });
+
+  // ── Exclusive 1:1 primaries (assign once — the database refuses every shared side)
+  router.post('/primaries', (req: AuthenticatedRequest, res) => {
+    const body = (req as unknown as { body?: unknown }).body as Record<string, unknown> | undefined;
+    try {
+      const row = assignPrimaryOpportunity({
+        agentSlug: String(body?.agent_slug ?? ''),
+        platformKey: String(body?.platform_key ?? ''),
+        assignedBy: req.auth!.userId,
+        dedicatedAccountPropertyId: typeof body?.dedicated_account_property_id === 'string' ? (body.dedicated_account_property_id as string) : null,
+      });
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.primary.assign', resourceId: row.id });
+      res.status(201).json({ assignment: row });
+    } catch (error) {
+      if (error instanceof PlatformError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.get('/primaries', (req, res) => {
+    const q = req.query as Record<string, unknown>;
+    res.status(200).json({
+      total: countPrimaryAssignments(),
+      assignments: listPrimaryAssignments({
+        status: typeof q.status === 'string' ? q.status : undefined,
+        limit: clampInt(q.limit, 1, 500, 100),
+        offset: clampInt(q.offset, 0, 1000000, 0),
+      }),
+    });
+  });
+
+  router.get('/primaries/agent/:slug', (req, res) => {
+    const row = primaryAssignmentForAgent(req.params.slug);
+    if (!row) throw new HttpError(404, `agent "${req.params.slug}" holds no primary assignment`, 'assignment_not_found');
+    res.status(200).json({ assignment: row });
+  });
+
+  router.get('/primaries/platform/:key', (req, res) => {
+    const row = primaryAssignmentForPlatform(req.params.key);
+    if (!row) throw new HttpError(404, `platform "${req.params.key}" has no primary agent`, 'assignment_not_found');
+    res.status(200).json({ assignment: row });
+  });
+
+  router.post('/primaries/account', (req: AuthenticatedRequest, res) => {
+    const body = (req as unknown as { body?: unknown }).body as Record<string, unknown> | undefined;
+    try {
+      const row = setAssignmentAccount({
+        agentSlug: String(body?.agent_slug ?? ''),
+        dedicatedAccountPropertyId: String(body?.dedicated_account_property_id ?? ''),
+        actor: req.auth!.userId,
+      });
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.primary.account', resourceId: row.id });
+      res.status(200).json({ assignment: row });
+    } catch (error) {
+      if (error instanceof PlatformError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.post('/primaries/status', (req: AuthenticatedRequest, res) => {
+    const body = (req as unknown as { body?: unknown }).body as Record<string, unknown> | undefined;
+    try {
+      const row = setAssignmentStatus(String(body?.agent_slug ?? ''), String(body?.status ?? ''), req.auth!.userId);
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.primary.status', resourceId: row.id });
+      res.status(200).json({ assignment: row });
+    } catch (error) {
+      if (error instanceof PlatformError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.post('/primaries/release', (req: AuthenticatedRequest, res) => {
+    const body = (req as unknown as { body?: unknown }).body as Record<string, unknown> | undefined;
+    try {
+      const result = releasePrimaryAssignment(String(body?.agent_slug ?? ''), String(body?.reason ?? ''), req.auth!.userId);
+      appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.primary.release', resourceId: String(body?.agent_slug ?? '') });
+      res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof PlatformError) throw new HttpError(error.statusCode, error.message, error.code);
+      throw error;
+    }
+  });
+
+  router.post('/primaries/auto-assign', (req: AuthenticatedRequest, res) => {
+    const body = (req as unknown as { body?: unknown }).body as Record<string, unknown> | undefined;
+    const result = autoAssignPrimaries(clampInt(body?.limit, 1, 100000, 5000));
+    appendAuditLog({ actorId: req.auth!.userId, action: 'workforce.primary.auto_assign', metadata: result as unknown as Record<string, unknown> });
+    res.status(200).json(result);
   });
 
   return router;

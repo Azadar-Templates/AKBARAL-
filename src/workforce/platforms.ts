@@ -73,6 +73,9 @@ export interface PlatformRow {
   source_urls_json: string;
   verification_date: string;
   created_at: string;
+  source: string;
+  external_id: string;
+  content_hash: string;
 }
 
 interface SeedRow {
@@ -113,18 +116,23 @@ export function seedPlatforms(seedPath: string = PLATFORM_SEED_PATH): { seeded: 
     const status = row.status === 'verified' ? 'verified' : 'candidate';
     const mechanism = (row.earning_mechanism || row.mechanism || '').trim();
     const sources = row.source_urls ?? row.sources ?? [];
+    const payoutEvidence = (row.payout_evidence ?? '').slice(0, 4000);
+    // Same content-hash formula as inventory-import.contentHashFor (duplicated
+    // deliberately: platforms.ts cannot import the pipeline without a cycle).
+    const hash = createHash('sha256').update([name.toLowerCase(), mechanism, payoutEvidence.trim(), 'seed', ''].join('|')).digest('hex');
     db.run(
       `INSERT OR IGNORE INTO economy_platforms
-        (platform_key, name, official_url, mechanism, workforce_categories_json, status, payout_evidence, fees, payout_method, minimum_payout, account_kyc, countries, risk_level, source_urls_json, verification_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (platform_key, name, official_url, mechanism, workforce_categories_json, status, payout_evidence, fees, payout_method, minimum_payout, account_kyc, countries, risk_level, source_urls_json, verification_date, source, external_id, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         platformKeyFor(name), name, (row.official_url || row.url || '').trim(), mechanism,
         JSON.stringify(categoriesForMechanism(mechanism)), status,
-        (row.payout_evidence ?? '').slice(0, 4000), (row.fees ?? '').slice(0, 1000),
+        payoutEvidence, (row.fees ?? '').slice(0, 1000),
         (row.payout_method ?? '').slice(0, 500), (row.minimum_payout ?? '').slice(0, 200),
         (row.account_kyc ?? '').slice(0, 1000), (row.countries ?? '').slice(0, 1000),
         (row.risk_level || row.risk || 'unknown').slice(0, 20),
         JSON.stringify(sources.slice(0, 10)), (row.verification_date ?? '').slice(0, 20),
+        'seed', '', hash,
       ],
     );
     seeded += 1;
@@ -145,27 +153,20 @@ export function getPlatform(platformKey: string): PlatformRow | undefined {
   return db.get<PlatformRow>('SELECT * FROM economy_platforms WHERE platform_key = ?', [platformKey]);
 }
 
-export function listPlatforms(filter: { status?: 'verified' | 'candidate'; mechanism?: string; category?: string; limit?: number } = {}): PlatformRow[] {
+export function listPlatforms(filter: { status?: 'verified' | 'candidate'; mechanism?: string; category?: string; limit?: number; offset?: number } = {}): PlatformRow[] {
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
   const where: string[] = [];
   const params: Array<string | number> = [];
   if (filter.status) { where.push('status = ?'); params.push(filter.status); }
   if (filter.mechanism) { where.push('mechanism = ?'); params.push(filter.mechanism); }
-  const rows = db.all<PlatformRow>(
-    `SELECT * FROM economy_platforms ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY status ASC, name ASC LIMIT ?`,
-    [...params, limit * 3],
+  if (filter.category) { where.push('workforce_categories_json LIKE ?'); params.push('%"' + filter.category + '"%'); }
+  // Verified-first ordering happens in SQL so LIMIT/OFFSET page a stable,
+  // million-row-safe sequence instead of a JS re-sort over a truncated fetch.
+  return db.all<PlatformRow>(
+    `SELECT * FROM economy_platforms ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY CASE status WHEN 'verified' THEN 0 ELSE 1 END, name ASC LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
   );
-  // ORDER BY status ASC puts 'candidate' before 'verified' alphabetically —
-  // re-sort so verified rows come first, then apply the category filter.
-  rows.sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === 'verified' ? -1 : 1));
-  const byCategory = filter.category
-    ? rows.filter((r) => {
-        try {
-          return (JSON.parse(r.workforce_categories_json) as string[]).includes(filter.category!);
-        } catch { return false; }
-      })
-    : rows;
-  return byCategory.slice(0, limit);
 }
 
 /**
@@ -177,12 +178,13 @@ export function matchPlatformsForAgent(agentSlug: string, limit = 10): PlatformR
   const overlay = getAgentOverlay(agentSlug);
   if (overlay.categories.length === 0) return [];
   const wanted = new Set(overlay.categories);
-  const rows = db.all<PlatformRow>('SELECT * FROM economy_platforms ORDER BY name ASC LIMIT 1000');
-  const matched = rows.filter((r) => {
-    try {
-      return (JSON.parse(r.workforce_categories_json) as string[]).some((c) => wanted.has(c));
-    } catch { return false; }
-  });
+  const seen = new Set<string>();
+  const matched: PlatformRow[] = [];
+  for (const category of wanted) {
+    for (const row of listPlatforms({ category, limit: 100 })) {
+      if (!seen.has(row.platform_key)) { seen.add(row.platform_key); matched.push(row); }
+    }
+  }
   matched.sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === 'verified' ? -1 : 1));
   return matched.slice(0, Math.min(Math.max(limit, 1), 100));
 }
@@ -332,6 +334,17 @@ export function primaryAssignmentForPlatform(platformKey: string): PrimaryAssign
 
 export function primaryAgentForPlatform(platformKey: string): string | undefined {
   return primaryAssignmentForPlatform(platformKey)?.agent_slug;
+}
+
+export function listPrimaryAssignments(input: { status?: string; limit?: number; offset?: number } = {}): PrimaryAssignmentRow[] {
+  const conds = [];
+  const vals = [];
+  if (input.status) { conds.push('status = ?'); vals.push(input.status); }
+  const where = conds.length > 0 ? 'WHERE ' + conds.join(' AND ') : '';
+  return db.all<PrimaryAssignmentRow>(
+    'SELECT * FROM economy_opportunity_assignments ' + where + ' ORDER BY assigned_at DESC LIMIT ? OFFSET ?',
+    [...vals, Math.min(500, Math.max(1, input.limit ?? 100)), Math.max(0, input.offset ?? 0)],
+  );
 }
 
 export function countPrimaryAssignments(): number {
