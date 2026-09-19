@@ -799,6 +799,8 @@ export function resourceReadiness(id: string, excludeCallId?: string): { usable:
     const limits = resourceCounters(JSON.parse(String(resource.limits ?? '{}')), 'resource limits');
     const usage = resourceCounters(JSON.parse(String(resource.usage ?? '{}')), 'resource usage');
     const held = pendingResourceUsage(id, excludeCallId);
+    const outstanding = missionDb.all<Row>("SELECT id, status, deadline_at FROM mission_resource_calls WHERE resource_id = ? AND status IN ('dispatched', 'uncertain')", [id]);
+    if (outstanding.some(call => call.id !== excludeCallId && (call.status === 'uncertain' || !call.deadline_at || !Number.isFinite(Date.parse(String(call.deadline_at))) || Date.parse(String(call.deadline_at)) <= Date.now()))) blockers.push('provider_outcome_uncertain');
     for (const [key, cap] of Object.entries(limits)) {
       if (usage[key] === undefined) blockers.push(`quota_usage_unreported:${key}`);
       else if (usage[key] >= cap) blockers.push(`quota_exhausted:${key}`);

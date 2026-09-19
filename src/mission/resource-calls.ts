@@ -19,10 +19,15 @@ export interface ResourceCallPermit {
   credentialId: string;
   credentialVersion: number;
   operationFingerprint: string;
+  deadlineAt: string;
   units: Readonly<Record<string, number>>;
 }
 function fail(message: string, code = 'conflict', status = 409): never { throw new MissionSelfServiceError(status, message, code); }
 const canonical = (value: Record<string, number>): string => JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))));
+function callTimeout(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 300000) fail('provider timeout must be 1–300000 milliseconds', 'validation_error', 400);
+  return value;
+}
 function actorFor(actor: ResourceCallActor, agentId: string): void {
   if (!['owner', 'agent'].includes(actor.actorType) || !actor.actorId?.trim() || (actor.actorType === 'agent' && actor.actorId !== agentId)) fail('call belongs to another agent or requires a trusted actor', 'forbidden', 403);
 }
@@ -83,7 +88,8 @@ export function reserveResourceCall(input: ReserveResourceCall): Row {
 
 /** Claims once before crossing the asynchronous boundary. Rejected preflight
  * cancels only an unstarted reservation and commits that release atomically. */
-export function claimResourceCall(id: string, actor: ResourceCallActor): ResourceCallPermit {
+export function claimResourceCall(id: string, actor: ResourceCallActor, timeoutMs = 60000): ResourceCallPermit {
+  timeoutMs = callTimeout(timeoutMs);
   const result = missionDb.transaction(() => {
     const row = getCall(id);
     actorFor(actor, String(row.agent_id));
@@ -93,9 +99,10 @@ export function claimResourceCall(id: string, actor: ResourceCallActor): Resourc
       if (current.snapshot !== row.binding_snapshot) fail('authorized resource/credential binding changed');
       const units = resourceCounters(JSON.parse(String(row.reserved_usage)), 'reserved usage');
       requireCapacity(current.resource, units, current.limits, id);
-      missionDb.run("UPDATE mission_resource_calls SET status = 'dispatched', dispatched_at = ? WHERE id = ?", [nowIso(), id]);
+      const deadlineAt = new Date(Date.now() + timeoutMs).toISOString();
+      missionDb.run("UPDATE mission_resource_calls SET status = 'dispatched', dispatched_at = ?, deadline_at = ? WHERE id = ?", [nowIso(), deadlineAt, id]);
       audit(row, actor, 'dispatched');
-      return { permit: Object.freeze({ callId: id, resourceId: String(row.resource_id), agentId: String(row.agent_id), provider: String(current.resource.provider), credentialId: current.credential.id, credentialVersion: current.credential.rotationCount, operationFingerprint: String(row.operation_fingerprint), units: Object.freeze({ ...units }) }) };
+      return { permit: Object.freeze({ callId: id, resourceId: String(row.resource_id), agentId: String(row.agent_id), provider: String(current.resource.provider), credentialId: current.credential.id, credentialVersion: current.credential.rotationCount, operationFingerprint: String(row.operation_fingerprint), deadlineAt, units: Object.freeze({ ...units }) }) };
     } catch (error) {
       if (!(error instanceof MissionSelfServiceError)) throw error;
       missionDb.run("UPDATE mission_resource_calls SET status = 'cancelled', resolved_at = ? WHERE id = ?", [nowIso(), id]);
@@ -143,7 +150,8 @@ export function settleResourceCall(id: string, actor: ResourceCallActor, receipt
   return missionDb.transaction(() => {
     const row = getCall(id);
     actorFor(actor, String(row.agent_id));
-    if (row.status === 'uncertain' && actor.actorType !== 'owner') fail('uncertain usage requires owner reconciliation', 'forbidden', 403);
+    const expiredDispatch = row.status === 'dispatched' && (!row.deadline_at || !Number.isFinite(Date.parse(String(row.deadline_at))) || Date.parse(String(row.deadline_at)) <= Date.now());
+    if ((row.status === 'uncertain' || expiredDispatch) && actor.actorType !== 'owner') fail('uncertain usage requires owner reconciliation', 'forbidden', 403);
     const actual = resourceCounters(receipt.actualUsage, 'actual usage');
     if (!['succeeded', 'failed'].includes(receipt.outcome) || canonicalKeys(actual) !== canonicalKeys(JSON.parse(String(row.reserved_usage)))) fail('receipt must describe every reserved counter and a known outcome', 'validation_error', 400);
     const reference = typeof receipt.providerRef === 'string' ? receipt.providerRef.trim() : '';
@@ -175,12 +183,29 @@ export function settleResourceCall(id: string, actor: ResourceCallActor, receipt
 /** The callback must be a trusted server-side adapter, never a client URL or
  * executable supplied in a message. No secret or response payload is persisted.
  * Existing unrelated provider entry points are NOT automatically covered. */
-export async function runResourceCall<T>(input: ReserveResourceCall, invoke: (permit: ResourceCallPermit) => Promise<ResourceCallReceipt & { value: T }>): Promise<{ call: Row; value: T }> {
+export async function runResourceCall<T>(input: ReserveResourceCall, invoke: (permit: ResourceCallPermit, signal: AbortSignal) => Promise<ResourceCallReceipt & { value: T }>, options: { timeoutMs?: number } = {}): Promise<{ call: Row; value: T }> {
+  const timeoutMs = callTimeout(options.timeoutMs ?? 60000);
   const reserved = reserveResourceCall(input);
-  const permit = claimResourceCall(String(reserved.id), input);
+  const permit = claimResourceCall(String(reserved.id), input, timeoutMs);
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let outcome: Awaited<ReturnType<typeof invoke>>;
-  try { outcome = await invoke(permit); }
-  catch (error) { markResourceCallUncertain(permit.callId, input); throw error; }
+  try {
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        const error = new MissionSelfServiceError(504, 'provider call deadline exceeded; quota retained pending reconciliation', 'provider_timeout');
+        reject(error);
+        controller.abort(error);
+      }, Math.max(1, Date.parse(permit.deadlineAt) - Date.now()));
+    });
+    outcome = await Promise.race([Promise.resolve().then(() => invoke(permit, controller.signal)), timedOut]);
+    // A blocking callback can delay timer delivery; the durable clock still wins.
+    if (Date.now() >= Date.parse(permit.deadlineAt)) fail('provider response arrived after its deadline; quota retained', 'provider_timeout', 504);
+  } catch (error) {
+    controller.abort();
+    markResourceCallUncertain(permit.callId, input);
+    throw error;
+  } finally { clearTimeout(timer); }
   let settled: ReturnType<typeof settleResourceCall>;
   try { settled = settleResourceCall(permit.callId, input, outcome); }
   catch (error) { markResourceCallUncertain(permit.callId, input); throw error; }

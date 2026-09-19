@@ -187,6 +187,52 @@ it('provider-declared failure records usage without returning an apparent succes
   assert.deepEqual(usage(resourceId), { requests: 1, tokens: 5 });
 });
 
+it('uncertain outcomes block a resource even when estimated reserved capacity remains', () => {
+  const { input, resourceId } = fixture();
+  const row = reserveResourceCall(input);
+  claimResourceCall(String(row.id), agent);
+  markResourceCallUncertain(String(row.id), agent);
+  assert.ok(resourceReadiness(resourceId).blockers.includes('provider_outcome_uncertain'));
+  assert.throws(() => reserveResourceCall({ ...input, idempotencyKey: randomUUID() }), /provider_outcome_uncertain/);
+  settleResourceCall(String(row.id), owner, receipt());
+  assert.equal(resourceReadiness(resourceId).usable, true);
+});
+
+it('a crashed or legacy dispatch cannot silently release capacity or authorize new work', () => {
+  for (const deadline of [null, '2000-01-01T00:00:00Z', 'invalid']) {
+    const { input, resourceId } = fixture();
+    const row = reserveResourceCall(input);
+    claimResourceCall(String(row.id), agent);
+    missionDb.run('UPDATE mission_resource_calls SET deadline_at = ? WHERE id = ?', [deadline, String(row.id)]);
+    assert.ok(resourceReadiness(resourceId).blockers.includes('provider_outcome_uncertain'));
+    assert.throws(() => settleResourceCall(String(row.id), agent, receipt()), /owner reconciliation/);
+    assert.throws(() => cancelResourceCall(String(row.id), owner), /reconcile dispatched/);
+    assert.throws(() => reserveResourceCall({ ...input, idempotencyKey: randomUUID() }), /provider_outcome_uncertain/);
+    settleResourceCall(String(row.id), owner, receipt());
+    assert.equal(pendingResourceUsage(resourceId).requests, undefined);
+  }
+});
+
+it('worker deadline aborts cooperatively but retains quota when a provider ignores cancellation', async () => {
+  const { input, resourceId } = fixture();
+  for (const timeoutMs of [0, Infinity, 300001]) await assert.rejects(() => runResourceCall(input, async () => ({ ...receipt(), value: 'must not run' }), { timeoutMs }), /timeout must/);
+  assert.equal(calls(resourceId).length, 0);
+  let release!: (result: ReturnType<typeof receipt> & { value: string }) => void;
+  let signal: AbortSignal | undefined;
+  await assert.rejects(() => runResourceCall(input, async (_permit, receivedSignal) => {
+    signal = receivedSignal;
+    return new Promise<ReturnType<typeof receipt> & { value: string }>(resolve => { release = resolve; });
+  }, { timeoutMs: 100 }), /deadline/);
+  assert.equal(signal?.aborted, true);
+  assert.equal(calls(resourceId)[0].status, 'uncertain');
+  assert.equal(pendingResourceUsage(resourceId).requests, 1);
+  release({ ...receipt(), value: 'late response must not be delivered or auto-reconciled' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(usage(resourceId), { requests: 0, tokens: 0 });
+  assert.equal(calls(resourceId)[0].status, 'uncertain');
+  assert.ok(resourceReadiness(resourceId).blockers.includes('provider_outcome_uncertain'));
+});
+
 // PGlite uses a single embedded backend, so it is not independent-session
 // concurrency evidence. These races intentionally exercise SQLite processes.
 if (!process.env.PG_TEST_DATABASE_URL) {

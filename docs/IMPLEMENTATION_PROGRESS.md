@@ -203,3 +203,9 @@ The isolated retained `.pglite-mission-test/quota-reservations` fixture applied 
 ### Quota batch 5 — remaining existing mission SQLite files
 
 **59/59 tests pass** across mission reinvestment, HTTP server, social and treasury. Together with batch 4, all **119 existing mission tests** pass on this frozen quota source; the new quota suite separately passed **13/13**, including the independent-process races. Evidence: `logs/continuation/quota-batch-05-sqlite.log`. Next exact task: review the new worker boundary for authority/reconciliation gaps and add any necessary regression before the next implementation checkpoint.
+
+### Quota batch 6 — deadlines and conservative unknown outcomes
+
+Review found that retaining only an estimate for an unknown outcome could leave apparent spare capacity even though actual usage might exceed that estimate. Readiness now blocks the entire resource while a call is uncertain, or a dispatched call has a missing/invalid/elapsed deadline. Migration **0012** adds persisted deadlines without rewriting migration 0011 or inventing historical usage. An expired/legacy dispatch requires owner reconciliation and cannot be cancelled into free capacity.
+
+The worker wrapper now enforces a bounded deadline, passes an AbortSignal to its trusted adapter, withholds late results and retains quota even if the adapter ignores cancellation. Invalid timeout configuration is rejected before reserving anything. **16/16 SQLite quota regressions**, including two process races, typecheck and secret scan pass. New tests cover apparent spare quota under uncertainty, crash/legacy dispatch state, malformed deadlines, cooperative abort and ignored/late cancellation. Next batch: upgrade the retained PostgreSQL fixture to migration 0012 and run the engine-neutral deadline regressions, then the existing mission tests on this updated source.
