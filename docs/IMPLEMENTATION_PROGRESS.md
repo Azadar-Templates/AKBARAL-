@@ -227,3 +227,7 @@ This is a concrete production-critical reliability fix discovered while continui
 With the bridge fixed, the retained PostgreSQL HTTP probe exposed a second concrete bug: sweeping an old expired or old-destination attestation paused slot 1 even though its latest owner verification was valid. The failed resumed log is preserved (`quota-batch-09-pg-resumed.log`). A new engine-neutral regression reproduced the failure on SQLite (**23/24 before**).
 
 The sweep still expires and audits historical evidence, but pauses a slot only when the invalidated record is its current verification. Current-record expiry still pauses/refuses payouts; no payment guard is weakened. **24/24 financial/resource SQLite tests**, types and secret scan now pass. Next task: finish the retained PostgreSQL batch with both fixes, then validate shared-driver platform parity.
+
+### Quota batch 10 — retained PostgreSQL validation completed
+
+The same retained quota database now passes the entire interrupted batch: **10 mission checks**, **24/24 financial/resource regressions**, and **15/15 engine-neutral quota/deadline regressions**, zero failures/skips. All **12 migrations** remained applied; **zero** were reapplied/reset. This validates both the bridge wake-up fix and historical-attestation sweep fix through the actual HTTP probe and PostgreSQL driver. Evidence: `logs/continuation/quota-batch-10-pg-final.log`; both earlier failed logs/databases remain retained. Next batch: platform PostgreSQL parity and compiled-worker validation for the shared-driver change.
