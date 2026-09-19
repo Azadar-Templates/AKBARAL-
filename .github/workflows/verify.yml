@@ -55,8 +55,10 @@ jobs:
           sudo -u postgres createuser --superuser runner
           sudo -u postgres createdb --owner=runner mission_cash
           sudo -u postgres createdb --owner=runner mission_cash_race
+          sudo -u postgres createdb --owner=runner mission_cash_registry
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash?host=/var/run/postgresql' npx tsx --test src/mission/money.test.ts
           MONEY_CONCURRENCY_DATABASE_URL='postgres://runner@localhost/mission_cash_race?host=/var/run/postgresql' npx tsx --test src/mission/money-concurrency.test.ts
+          REGISTRY_PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash_registry?host=/var/run/postgresql' npx tsx --test src/mission/registry-sync.test.ts
       - name: Private mission Chromium desktop and mobile-viewport checks
         env:
           MISSION_BROWSER_NPM_RUNTIME: "true"

@@ -14,10 +14,10 @@ before(()=>{
  applyMissionMigrations();
  db.run("INSERT INTO mission_owner (id,email,password_hash,role,status) VALUES (?,?,'test-only','owner','active')",[owner.id,`${owner.id}@example.test`]);
  db.run("INSERT INTO mission_agents (id,slug,name,role_key,depth,generation,status,mission_role,origin_platform) VALUES (?,?,'Race test fixture','specialist',0,'custom','active','worker','test')",[agent,agent]);
- setKillSwitch(false,owner.id);updatePolicy({maxDailySpendCents:10000,maxExpenseCents:1000,requireApprovalAboveCents:1000},owner.id);
+ setKillSwitch(false,owner.id);updatePolicy({autonomousEnabled:true,allowAgentCreation:true,maxDailySpendCents:10000,maxExpenseCents:1000,requireApprovalAboveCents:1000},owner.id);
  m.provisionMoneyAgent(agent,owner.id);
  const opp=m.approveOpportunity(owner,{title:'Race fixture only',evidenceUrl:'https://example.test/race',activity:'software_development',provider:'race-fixture-only'});
- m.setMoneyGrant(owner,agent,{spendLimitCents:10000,delegationCents:0,canCreate:false,expiresAt:new Date(Date.now()+86400000).toISOString(),status:'active',opportunityId:String(opp.id)});
+ m.setMoneyGrant(owner,agent,{spendLimitCents:10000,delegationCents:100,canCreate:true,expiresAt:new Date(Date.now()+86400000).toISOString(),status:'active',opportunityId:String(opp.id)});
 });
 after(()=>db.close());
 async function race(action:string,id='') {
@@ -43,4 +43,19 @@ it('cross-process dispatch claim permits exactly one provider invocation',async(
  const op=db.get<Row>("SELECT id FROM mission_money_operations WHERE agent_id=? AND state='reserved'",[agent])!;
  const result=await race('dispatch',String(op.id));assert.equal(result.filter(r=>r.ok).length,1);assert.equal(result.reduce((n,r)=>n+r.sends,0),1);
  assert.equal(m.cashAccount(agent).held_cents,0);assert.equal(m.verifyCashLedger().ok,true);assert.equal(verifyMissionAudit().ok,true);
+});
+
+it('cross-process child delegation consumes a finite parent budget without orphan identities',async()=>{
+ const result=await race('delegate');assert.equal(result.filter(r=>r.ok).length,1);
+ assert.equal(m.grant(agent).delegation_cents,40);
+ assert.equal(db.get<Row>('SELECT COUNT(*) AS n FROM mission_agents WHERE parent_id=?',[agent])!.n,1);
+});
+it('cross-process earning delivery claims execute once',async()=>{
+ const job=m.queueEarning(owner,agent,'race-job');const result=await race('earning',String(job.id));
+ assert.equal(result.reduce((n,r)=>n+r.sends,0),1);assert.equal(m.cashAccount('treasury').available_cents,100);
+});
+it('cross-process delivered-payment reconciliation credits once without redelivery',async()=>{
+ const job=m.queueEarning(owner,agent,'race-delivered');db.run("UPDATE mission_earning_jobs SET state='awaiting_payment',provider_ref='race-delivered-income' WHERE id=?",[job.id]);
+ const result=await race('earning-payment',String(job.id));assert.equal(result.every(r=>r.ok),true);
+ assert.equal(m.cashAccount('treasury').available_cents,200);assert.equal(m.verifyCashLedger().ok,true);assert.equal(verifyMissionAudit().ok,true);
 });

@@ -1,4 +1,4 @@
-import { revokeOpportunity, agentMoneyOverview, listMoneyOperations } from './money';
+import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
 import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
@@ -229,12 +229,12 @@ function requireOwner(context: RequestContext, mutation = false): SessionContext
 }
 
 /** Agent-scoped authorization for the self-management surface. */
-function requireAgent(context: RequestContext, agentSlugOrId: string | null): { agentId: string; actorId: string; actorType: 'agent' } {
+function requireAgent(context: RequestContext, agentSlugOrId: string | null, readOnly=false): { agentId: string; actorId: string; actorType: 'agent' } {
   // One enforcement point for every agent-initiated mutation (work, tools,
   // resources, services, upgrades, expenses): an agent that is not 'active'
   // cannot act. Pausing is therefore a real brake, not a label.
   const assertActive = (agent: AgentRow): void => {
-    if (String(agent.status) !== 'active') {
+    if (!readOnly && String(agent.status) !== 'active') {
       throw new HttpProblem(409, `agent ${agent.slug} is ${agent.status} — an operator paused it, so it cannot act until it is resumed`, 'agent_not_active');
     }
   };
@@ -357,11 +357,12 @@ async function handleApi(
     if (method === 'GET') {
       let agentId:string|undefined;
       if(context.session){const session=requireOwner(context);assertMoneyOwner({kind:'owner',id:session.owner.id});}
-      else agentId=requireAgent(context,url.searchParams.get('agentId')).agentId;
+      else agentId=requireAgent(context,url.searchParams.get('agentId'),true).agentId;
       const action=rest[0];
-      if(action&& !['ledger','operations'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
+      if(action&& !['ledger','operations','jobs'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
       const data=action==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200),agentId)}:
         action==='operations'?{operations:listMoneyOperations(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
+        action==='jobs'?{jobs:listEarningJobs(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
         agentId?agentMoneyOverview(agentId):moneyOverview();
       json(res,200,data);return true;
     }
@@ -384,6 +385,7 @@ async function handleApi(
     else if(action==='receipt'){assertMoneyOwner(actor);result=await verifyMoneyReceipt(actor,configuredMoneyProvider(),param('externalId','')!);}
     else if(action==='dispatch')result=await dispatchMoney(actor,configuredMoneyProvider(),param('id','')!);
     else if(action==='reconcile'){assertMoneyOwner(actor);result=await reconcileMoney(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='reconcile-earning'){assertMoneyOwner(actor);result=await reconcileEarningPayment(actor,configuredMoneyProvider(),param('id','')!);}
     else if(action==='earn')result=queueEarning(actor,param('agentId','')!,param('idempotencyKey','')!,param('costOperationId')??undefined);
     else throw new HttpProblem(404,'unknown money action','not_found');
     } catch(error) {
@@ -474,7 +476,7 @@ async function handleApi(
           const decisionResult = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
           if (!decisionResult.ok) throw new HttpProblem(decisionResult.status === 'not_found' ? 404 : 409, decisionResult.reason ?? 'approval not actionable', decisionResult.status === 'not_found' ? 'not_found' : 'conflict');
           const subject = decisionResult.approval;
-          if(decision==='approved' && ['expense','payout'].includes(String(subject?.subject_type))) throw new HttpProblem(409,'Legacy approvals cannot move verified cash; use /api/money.','provider_verification_required');
+          if(decision==='approved' && (['expense','payout'].includes(String(subject?.subject_type)) || (subject?.subject_type==='upgrade' && Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[String(subject.subject_id)])?.requested_cost_cents)>0))) throw new HttpProblem(409,'Legacy approvals cannot move verified cash; use /api/money.','provider_verification_required');
           if (subject?.subject_type === 'expense') {
             return { ...decisionResult, expense: decideExpense({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
           }
@@ -535,7 +537,7 @@ async function handleApi(
         // Root-agent creation (owner only). Without this, a POST here used to
         // fall through to the LIST handler and answer 200 with a page of
         // agents — a silent fake success. Creation is real: policy gates,
-        // contract, funded wallet, audit entry.
+        // contract, unfunded accounting subledger, audit entry.
         const session = requireOwner(context, true);
         const created = createRootAgent({
           name: param('name', '') ?? '',
@@ -646,15 +648,15 @@ async function handleApi(
       }
       if (rest[1] === 'children' && method === 'POST') {
         // Controlled sub-agent creation: contract + limits + audit, or refused.
-        const session = requireOwner(context, true);
+        const actor=context.session?{actorId:requireOwner(context,true).owner.id,actorType:'owner' as const}:requireAgent(context,slug);
         const created = createSubAgent({
           parentSlug: slug,
           name: param('name', '') ?? '',
           specialization: param('specialization', '') ?? '',
           activityKey: param('activity', 'general') ?? 'general',
           budgetCents: num('budgetCents'),
-          actorId: session.owner.id,
-          actorType: 'owner',
+          actorId: actor.actorId,
+          actorType: actor.actorType,
         });
         json(res, 201, created);
         return true;
@@ -815,7 +817,7 @@ async function handleApi(
       }
       if (rest[1] === 'provision' && method === 'POST') {
         const session = requireOwner(context, true);
-        json(res, 200, { resource: provisionResource({ id: rest[0], walletId: param('walletId') ?? undefined, actualCostCents: num('actualCostCents'), providerRef: param('providerRef', '')!, evidence: param('evidence', '')!, actorId: session.owner.id }) });
+        json(res, 200, { resource: provisionResource({ id: rest[0], walletId: param('walletId') ?? undefined, actualCostCents: num('actualCostCents'), providerRef: param('providerRef', '')!, evidence: param('evidence', '')!, actorId: session.owner.id }), accounting:'legacy_owner_reported',providerVerified:false,externalPaymentExecuted:false });
         return true;
       }
       if (rest[1] === 'credential' && method === 'POST') {
@@ -877,11 +879,13 @@ async function handleApi(
       }
       if (rest[1] === 'decide' && method === 'POST') {
         const session = requireOwner(context, true);
+        if(param('decision')!=='rejected' && Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[rest[0]])?.requested_cost_cents)>0)throw new HttpProblem(409,'Paid upgrades require provider-verified money operations.','provider_verification_required');
         json(res, 200, { upgrade: decideUpgrade({ id: rest[0], decision: param('decision') === 'approved' ? 'approved' : 'rejected', actorId: session.owner.id, note: param('note') }) });
         return true;
       }
       if (rest[1] === 'apply' && method === 'POST') {
         const session = requireOwner(context, true);
+        if(Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[rest[0]])?.requested_cost_cents)>0)throw new HttpProblem(409,'Legacy approval is not verified payment.','provider_verification_required');
         json(res, 200, { upgrade: applyUpgrade(rest[0], session.owner.id) });
         return true;
       }
@@ -1465,7 +1469,7 @@ function createRootAgent(input: {
   budgetCents: number;
   missionRole: 'worker' | 'supervisor' | 'director';
   actorId: string;
-}): { agent: Row; contract: Row; wallet: Wallet } {
+}): { agent: Row; contract: Row; wallet: Wallet; cashAccount:Row } {
   return missionDb.transaction(() => {
   const policy = currentPolicy();
   if (!policy.allowAgentCreation) throw new HttpProblem(403, 'agent creation is disabled by policy', 'policy_denied');
@@ -1517,6 +1521,7 @@ function createRootAgent(input: {
       agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
+      cashAccount:cashAccount(agentId),
     };
   });
   });
@@ -1534,7 +1539,7 @@ function createSubAgent(input: {
   budgetCents: number;
   actorId: string;
   actorType: 'owner' | 'agent';
-}): { agent: Row; contract: Row; wallet: Wallet } {
+}): { agent: Row; contract: Row; wallet: Wallet; cashAccount:Row } {
   return missionDb.transaction(() => {
   const policy = currentPolicy();
   const parent = findAgentBySlug(input.parentSlug);
@@ -1596,6 +1601,7 @@ function createSubAgent(input: {
       agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
+      cashAccount:cashAccount(agentId),
     };
   });
   });

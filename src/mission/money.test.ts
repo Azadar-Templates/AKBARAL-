@@ -220,3 +220,47 @@ it('bounded scheduler rotates unsupported jobs instead of starving a configured 
   await m.moneyWorkerTick(owner,[provider],[earning]);await m.moneyWorkerTick(owner,[provider],[earning]);
   assert.equal(executed,1);assert.equal(db.get<Row>('SELECT state FROM mission_earning_jobs WHERE id=?',[target.id])!.state,'completed');
 });
+it('withdrawals enforce destination amount limits and prohibit agent attribution or dispatch',async()=>{
+  await earn();configurePayoutSlot({slot:1,providerRef:'ba_limited',currency:'USD',minPayoutCents:50,maxPayoutCents:150,actorId:owner.id});
+  confirmPayoutVerification({slot:1,ownerId:owner.id,checks:Object.fromEntries(PAYOUT_VERIFICATION_CHECKS.map(c=>[c.key,true])),attestation:'Synthetic bounded destination fixture; not a real bank account.'});
+  const input={kind:'withdrawal' as const,provider:provider.id,destination:'ba_limited',category:'withdrawal',amountCents:100,maxCostCents:100,idempotencyKey:'bounded-destination'};
+  assert.throws(()=>m.requestMoney(owner,{...input,agentId:a}),/treasury_only/);
+  for(const amount of [49,151])assert.throws(()=>m.requestMoney(owner,{...input,amountCents:amount,maxCostCents:amount}),/destination_amount_limit/);
+  const op=m.requestMoney(owner,input);m.decideMoney(owner,String(op.id),true);
+  await assert.rejects(m.dispatchMoney({kind:'agent',id:a},provider,String(op.id)),/owner_required/);assert.equal(sends,0);
+  db.run('UPDATE mission_payout_slots SET max_payout_cents=75 WHERE slot=1');
+  await assert.rejects(m.dispatchMoney(owner,provider,String(op.id)),/destination_amount_limit/);assert.equal(sends,0);
+});
+it('delivered payment reconciles without an earning connector and after reassignment',async()=>{
+  const job=m.queueEarning(owner,a,'connector-removed');let available=false;
+  const payment={...provider,verifyReceipt:async()=>{if(!available)throw Error('pending');return {externalId:'delivered-income',amountCents:100,currency:'USD',kind:'earning' as const,agentId:a};}};
+  const executor={id:provider.id,execute:async()=>({paymentReference:'delivered-income'}),lookup:async()=>{throw Error('must not need executor');}};
+  await m.runEarning(owner,executor,payment,String(job.id));
+  grant(a,{opportunityId:undefined,status:'revoked'});setKillSwitch(true,owner.id);available=true;
+  await m.moneyWorkerTick(owner,[payment],[]);
+  assert.equal(db.get<Row>('SELECT state FROM mission_earning_jobs WHERE id=?',[job.id])!.state,'completed');assert.equal(m.cashAccount('treasury').available_cents,100);
+  await m.reconcileEarningPayment(owner,payment,String(job.id));assert.equal(m.cashAccount('treasury').available_cents,100);
+});
+it('queued work cannot be reconciled into delivery, and reassignment prevents old execution',async()=>{
+  const job=m.queueEarning(owner,a,'undelivered');let calls=0;
+  const executor={id:provider.id,execute:async()=>{calls++;return {paymentReference:'not-real'};},lookup:async()=>{calls++;return {paymentReference:'not-real'};}};
+  await assert.rejects(m.runEarning(owner,executor,provider,String(job.id),true),/not_delivered/);
+  await assert.rejects(m.reconcileEarningPayment(owner,provider,String(job.id)),/not_delivered/);
+  grant(a,{opportunityId:undefined});await assert.rejects(m.runEarning(owner,executor,provider,String(job.id)),/assignment_changed/);assert.equal(calls,0);
+});
+it('concurrent payment-only earning reconciliation credits once',async()=>{
+  const job=m.queueEarning(owner,a,'parallel-reconcile');
+  db.run("UPDATE mission_earning_jobs SET state='awaiting_payment',provider_ref='concurrent-income' WHERE id=?",[job.id]);
+  receipt={externalId:'concurrent-income',amountCents:100,currency:'USD',kind:'earning',agentId:a};
+  await Promise.all([m.reconcileEarningPayment(owner,provider,String(job.id)),m.reconcileEarningPayment(owner,provider,String(job.id))]);
+  assert.equal(m.cashAccount('treasury').available_cents,100);assert.equal(m.verifyCashLedger().ok,true);
+});
+it('legacy owner accounting never supplies verified cash, even when labelled received or paid',()=>{
+  const legacy=require('./treasury') as typeof import('./treasury');
+  const wallet=legacy.createWallet({kind:'agent',agentId:a,label:'Synthetic legacy accounting fixture',currency:'USD',budgetCents:1000});
+  legacy.credit({walletId:wallet.id,amountCents:200,category:'owner_deposit',memo:'Synthetic owner note; not provider confirmation'});
+  legacy.recordRevenue({walletId:wallet.id,agentId:a,amountCents:100,source:'Synthetic old report',status:'received',externalRef:'synthetic-owner-note',verifier:owner.id,idempotencyKey:randomUUID()});
+  legacy.debit({walletId:wallet.id,amountCents:10,category:'expense',memo:'Synthetic owner-reported cost'});
+  assert.equal(m.cashAccount(a).available_cents,0);assert.equal(m.ensureCashAccount().available_cents,0);
+  assert.equal(m.verifyCashLedger().rows,0);assert.throws(()=>request(),/insufficient_real_funds/);
+});

@@ -244,3 +244,41 @@ still grepping the old `database.js` facade after translation moved to `driver.j
 It now executes assertions against the compiled driver's actual SQL translation;
 the same probe runs in Verify. The probe passed locally without opening a database.
 Container execution remains CI evidence, not a claim of a running deployment.
+
+## Follow-up hardening after 4d6d7fe
+
+- Registry synchronization now uses one transactional metadata-only importer. It
+  enforces the owner agent ceiling before inserting anything, rejects collisions
+  with independently created mission identities, hashes the full slug, preserves
+  pause/revocation/freeze state, and commits its audit with the import. The test
+  imports all 4,001 definitions from the existing catalog into a disposable
+  database; these are accounting identities, not invented bank wallets or jobs.
+- Agent-scoped Factory child creation is now actually reachable through the
+  authenticated parent endpoint. Explicit `canCreate`, finite delegation, active
+  ancestry, expiry, child/depth/fleet limits and policy are required. Failed
+  creation rolls back identity, contract, legacy wallet and verified subledger
+  together. Owner-created agents still start with zero cash and spend authority.
+- Paused agents can read their own money data while all mutations stay blocked.
+  `/api/money/jobs?after=<id>&limit=<1..1000>` provides scoped job pagination.
+- Delivered jobs with a stored payment reference can be reconciled without the
+  delivery connector. Owner `POST /api/money/reconcile-earning {id}` fetches only
+  the recorded provider reference. No body amount, note or status can supply
+  payment evidence. Unknown jobs without a reference still require the original
+  delivery connector's read-only lookup. Queued jobs cannot be reconciled into
+  fictitious delivery. Reassignment blocks old queued execution but cannot erase
+  already delivered earnings; receipt settlement uses the durable job assignment.
+- Withdrawals enforce destination minimum/maximum bounds in addition to global
+  policy. Only the owner may request or manually dispatch them; agent attribution
+  is rejected. Approved worker dispatch remains owner-authorized, with a final
+  pre-send identity/policy/destination recheck. Approval does not confirm payment.
+- Paid legacy upgrades cannot be approved or applied through either old HTTP
+  alias. Resource provisioning/cost/renewal notes remain explicitly owner-reported
+  historical accounting (`providerVerified: false`, no external payment); they
+  cannot credit verified cash. The historical treasury, resource and reporting
+  modules have no access to the verified receipt/settlement engine. Runtime and
+  source-boundary regressions protect that separation. Historical accounting is
+  not represented as an active payment adapter.
+
+No live keys, opportunities, confirmations or financial balances were inserted by
+these changes. Production registry import/bootstrap and real-provider activation
+remain owner operations against real configured services, not test side effects.

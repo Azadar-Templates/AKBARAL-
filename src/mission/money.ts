@@ -101,6 +101,8 @@ export function grant(id: string): Row {
     seen.add(cursor);
     const g: Row | undefined = db.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id = ?', [cursor]);
     const a = db.get<Row>('SELECT status FROM mission_agents WHERE id = ?', [cursor]);
+    const contract=db.get<Row>('SELECT status,expires_at FROM mission_agent_contracts WHERE agent_id=? ORDER BY created_at DESC,id DESC LIMIT 1',[cursor]);
+    if(contract&&(contract.status!=='active'||(contract.expires_at&&(!Number.isFinite(Date.parse(String(contract.expires_at)))||Date.parse(String(contract.expires_at))<=Date.now()))))deny('agent_contract_inactive');
     if (!g || g.status !== 'active' || a?.status !== 'active' || !Number.isFinite(Date.parse(String(g.expires_at))) || Date.parse(String(g.expires_at)) <= Date.now()) deny('agent_authority_inactive');
     if (!first) first = g;
     cursor = g.parent_id ? String(g.parent_id) : null;
@@ -180,7 +182,7 @@ export interface MoneyProvider {
   pay(operation:Row, authorizeSend:()=>void):Promise<PaymentResult>;
   lookup(operation:Row):Promise<PaymentResult>;
 }
-function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt) {
+function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt,earnedJob?:Row) {
   cents(receipt.amountCents,true); text(receipt.externalId);
   return db.transaction(()=> {
     const fp=sha256(JSON.stringify([receipt.externalId,receipt.amountCents,receipt.currency,receipt.kind,receipt.agentId??null,receipt.operationId??null,receipt.originalExternalId??null]));
@@ -198,8 +200,9 @@ function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt) {
       if(!receipt.agentId) deny('earning_agent_missing');
       // Revocation cannot erase cash already earned; identity + prior assignment still required.
       const g=db.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id=?',[receipt.agentId]);
-      if(!g?.opportunity_id) deny('earning_opportunity_missing');
-      const op=db.get<Row>('SELECT provider FROM mission_money_opportunities WHERE id=?',[String(g.opportunity_id)]);
+      if(!earnedJob&&!g?.opportunity_id) deny('earning_opportunity_missing');
+      if(earnedJob && (earnedJob.agent_id!==receipt.agentId||!['running','unknown','awaiting_payment'].includes(String(earnedJob.state))))deny('earning_job_not_delivered');
+      const op=db.get<Row>('SELECT provider FROM mission_money_opportunities WHERE id=?',[String(earnedJob?.opportunity_id??g!.opportunity_id)]);
       if(op?.provider!==provider.id) deny('earning_provider_mismatch');
       ensureCashAccount(receipt.agentId);
       entry(receipt.agentId,'available',receipt.amountCents,receipt.externalId);
@@ -253,6 +256,8 @@ function capacity(op:Row,excludeId?:string) {
     const slot=db.get<Row>('SELECT * FROM mission_payout_slots WHERE provider_ref=?',[String(op.destination)]);
     if(!slot||!payoutSlotVerificationStatus(Number(slot.slot)).payable||slot.currency!==op.currency)deny('verified_owner_destination_required');
     if(op.destination_hash && op.destination_hash!==destinationFingerprint(slot))deny('destination_changed');
+    const amount=Number(op.amount_cents);
+    if(amount<Number(slot.min_payout_cents)||(slot.max_payout_cents!=null&&amount>Number(slot.max_payout_cents)))deny('destination_amount_limit');
   }
   running();const p=currentPolicy(),account=cashAccount(String(op.account_id));
   if(Number(account.frozen)||account.currency!==op.currency||p.currency!==op.currency) deny('cash_account_unavailable');
@@ -272,7 +277,7 @@ export function requestMoney(actor:MoneyActor,input:{kind:'expense'|'withdrawal'
   cents(input.amountCents,true);cents(input.maxCostCents,true);
   if(input.maxCostCents<input.amountCents)deny('invalid_cost_ceiling');
   text(input.provider);text(input.destination);text(input.idempotencyKey);
-  if(input.kind==='withdrawal')assertMoneyOwner(actor);
+  if(input.kind==='withdrawal'){assertMoneyOwner(actor);if(input.agentId)deny('withdrawal_is_owner_treasury_only');}
   else if(input.kind==='expense'&&input.agentId&&categories.includes(input.category))authorize(actor,input.agentId);
   else deny('invalid_operation');
   return db.transaction(()=> {
@@ -329,7 +334,7 @@ function settle(provider:MoneyProvider,id:string,result:PaymentResult):Row {
 export async function dispatchMoney(actor:MoneyActor,provider:MoneyProvider,id:string, automatic=false):Promise<Row> {
   const op=db.transaction(()=> {
     const op=moneyOperation(id);
-    if(actor.kind==='owner')assertMoneyOwner(actor);else authorize(actor,String(op.agent_id));
+    if(op.kind==='withdrawal'||actor.kind==='owner')assertMoneyOwner(actor);else authorize(actor,String(op.agent_id));
     if(op.provider!==provider.id||!provider.supports(String(op.kind),String(op.category)))deny('provider_not_configured_for_operation');
     if(op.state!=='reserved')deny('dispatch_not_retryable_reconcile_only');
     capacity(op,id);
@@ -339,7 +344,7 @@ export async function dispatchMoney(actor:MoneyActor,provider:MoneyProvider,id:s
   });
   try {return settle(provider,id,await provider.pay(op,()=>db.transaction(()=>{
     if(automatic&&!currentPolicy().autonomousEnabled)deny('autonomy_disabled');
-    if(actor.kind==='owner')assertMoneyOwner(actor);else authorize(actor,String(op.agent_id));
+    if(op.kind==='withdrawal'||actor.kind==='owner')assertMoneyOwner(actor);else authorize(actor,String(op.agent_id));
     const current=moneyOperation(id);if(current.state!=='dispatching')deny('dispatch_authority_changed');
     capacity(current,id);
   })));}
@@ -394,17 +399,21 @@ export async function runEarning(actor:MoneyActor,earning:EarningProvider,paymen
     const opp=reconcile?db.get<Row>('SELECT * FROM mission_money_opportunities WHERE id=?',[job.opportunity_id]):opportunity(String(job.opportunity_id));
     if(!opp||opp.provider!==earning.id||opp.provider!==payments.id)deny('earning_provider_not_configured');
     if(!reconcile&&job.state!=='queued')deny('earning_requires_reconciliation');
+    if(reconcile&&job.state==='queued')deny('earning_job_not_delivered');
+    if(!reconcile&&grant(String(job.agent_id)).opportunity_id!==job.opportunity_id)deny('earning_assignment_changed');
     if(job.state==='completed')return job;
     if(!reconcile){db.run("UPDATE mission_earning_jobs SET state='running',updated_at=? WHERE id=?",[nowIso(),id]);audit('earning_claimed',actor,id);}
     return job;
   });
   if(job.state==='completed')return job;
+  if(reconcile&&job.provider_ref)return reconcileEarningPayment(actor,payments,id);
   try {
     // Revocation stops new execution, not read-only verification of already delivered work.
     const opp=db.get<Row>('SELECT * FROM mission_money_opportunities WHERE id=?',[job.opportunity_id])!;
     const authorizeExecute=()=>db.transaction(()=>{
       if(signal.aborted)deny('earning_timeout');
       authorize(actor,String(job.agent_id));opportunity(String(job.opportunity_id));
+      if(grant(String(job.agent_id)).opportunity_id!==job.opportunity_id)deny('earning_assignment_changed');
       if(automatic&&!currentPolicy().autonomousEnabled)deny('autonomy_disabled');
       if(Number(cashAccount(String(job.agent_id)).frozen))deny('cash_account_unavailable');
       const live=db.get<Row>('SELECT * FROM mission_earning_jobs WHERE id=?',[id])!;
@@ -425,16 +434,7 @@ export async function runEarning(actor:MoneyActor,earning:EarningProvider,paymen
       if(live.state==='completed')return;
       db.run("UPDATE mission_earning_jobs SET state='awaiting_payment',provider_ref=?,updated_at=? WHERE id=?",[result.paymentReference,nowIso(),id]);audit('earning_delivered',actor,id);
     });
-    const receipt=await payments.verifyReceipt(result.paymentReference);
-    if(receipt.externalId!==result.paymentReference||receipt.kind!=='earning'||receipt.agentId!==job.agent_id)deny('earning_receipt_mismatch');
-    db.transaction(()=>{
-      if(db.get<Row>('SELECT state FROM mission_earning_jobs WHERE id=?',[id])?.state==='completed')return;
-      const prior=db.get<Row>('SELECT * FROM mission_money_receipts WHERE provider=? AND external_id=?',[payments.id,receipt.externalId]);
-      if(prior?.operation_id&&prior.operation_id!==id)deny('earning_receipt_already_assigned');
-      acceptReceipt(payments,receipt);
-      db.run('UPDATE mission_money_receipts SET operation_id=? WHERE provider=? AND external_id=?',[id,payments.id,receipt.externalId]);
-      db.run("UPDATE mission_earning_jobs SET state='completed',updated_at=? WHERE id=?",[nowIso(),id]);audit('earning_verified',null,id);
-    });
+    await finishEarningPayment(payments,id);
   } catch {
     db.transaction(()=>{db.run("UPDATE mission_earning_jobs SET state='unknown',updated_at=? WHERE id=? AND state='running'",[nowIso(),id]);db.run('UPDATE mission_earning_jobs SET updated_at=? WHERE id=? AND state<>?',[nowIso(),id,'completed']);audit('earning_waiting_for_verification',null,id);});
   }
@@ -452,7 +452,7 @@ export async function moneyWorkerTick(actor:MoneyActor,providers:MoneyProvider[]
   for(const job of db.all<Row>("SELECT j.*,o.provider FROM mission_earning_jobs j JOIN mission_money_opportunities o ON o.id=j.opportunity_id WHERE j.state IN ('running','unknown','awaiting_payment') ORDER BY j.updated_at,j.id LIMIT 20")) {
     db.transaction(()=>db.run('UPDATE mission_earning_jobs SET updated_at=? WHERE id=?',[nowIso(),job.id]));
     const earning=earningProviders.find(p=>p.id===job.provider),payments=providers.find(p=>p.id===job.provider);
-    if(earning&&payments){try{await runEarning(actor,earning,payments,String(job.id),true);}catch{/* No repeat delivery on uncertainty. */}}
+    if(payments){try{if(job.provider_ref)await reconcileEarningPayment(actor,payments,String(job.id));else if(earning)await runEarning(actor,earning,payments,String(job.id),true);}catch{/* No repeat delivery on uncertainty. */}}
   }
   if(currentPolicy().killSwitch||!currentPolicy().autonomousEnabled)return {blocked:'policy_disabled'};
   for(const g of db.all<Row>("SELECT * FROM mission_money_grants WHERE status='active' AND auto_allocate_cents>0 ORDER BY agent_id")) {
@@ -517,4 +517,34 @@ export function agentMoneyOverview(agentId:string) {
 export function listMoneyOperations(after='',limit=200,agentId?:string):Row[] {
   if(!Number.isSafeInteger(limit)||limit<1||limit>1000||typeof after!=='string'||after.length>240)deny('invalid_pagination');
   return db.all<Row>(`SELECT * FROM mission_money_operations WHERE id>?${agentId?' AND agent_id=?':''} ORDER BY id LIMIT ?`,[after,...(agentId?[agentId]:[]),limit]);
+}
+
+async function finishEarningPayment(payments:MoneyProvider,id:string):Promise<Row> {
+  const job=db.get<Row>('SELECT * FROM mission_earning_jobs WHERE id=?',[id]);
+  if(!job)deny('earning_job_missing');
+  const opp=db.get<Row>('SELECT * FROM mission_money_opportunities WHERE id=?',[job.opportunity_id]);
+  if(opp?.provider!==payments.id)deny('earning_provider_not_configured');
+  if(job.state==='completed')return job;
+  if(!job.provider_ref||!['running','unknown','awaiting_payment'].includes(String(job.state)))deny('earning_job_not_delivered');
+  const receipt=await payments.verifyReceipt(String(job.provider_ref));
+  if(receipt.externalId!==job.provider_ref||receipt.kind!=='earning'||receipt.agentId!==job.agent_id)deny('earning_receipt_mismatch');
+  return db.transaction(()=>{
+    const live=db.get<Row>('SELECT * FROM mission_earning_jobs WHERE id=?',[id])!;
+    if(live.state==='completed')return live;
+    if(live.provider_ref!==receipt.externalId)deny('earning_reference_changed');
+    const prior=db.get<Row>('SELECT * FROM mission_money_receipts WHERE provider=? AND external_id=?',[payments.id,receipt.externalId]);
+    if(prior?.operation_id&&prior.operation_id!==id)deny('earning_receipt_already_assigned');
+    acceptReceipt(payments,receipt,live);
+    db.run('UPDATE mission_money_receipts SET operation_id=? WHERE provider=? AND external_id=?',[id,payments.id,receipt.externalId]);
+    db.run("UPDATE mission_earning_jobs SET state='completed',updated_at=? WHERE id=?",[nowIso(),id]);audit('earning_verified',null,id);
+    return db.get<Row>('SELECT * FROM mission_earning_jobs WHERE id=?',[id])!;
+  });
+}
+/** Only the recorded payment reference is fetched; never redelivers work or accepts owner evidence. */
+export async function reconcileEarningPayment(actor:MoneyActor,payments:MoneyProvider,id:string) {
+  assertMoneyOwner(actor);return finishEarningPayment(payments,id);
+}
+export function listEarningJobs(after='',limit=200,agentId?:string):Row[] {
+  if(!Number.isSafeInteger(limit)||limit<1||limit>1000||typeof after!=='string'||after.length>240)deny('invalid_pagination');
+  return db.all<Row>(`SELECT * FROM mission_earning_jobs WHERE id>?${agentId?' AND agent_id=?':''} ORDER BY id LIMIT ?`,[after,...(agentId?[agentId]:[]),limit]);
 }

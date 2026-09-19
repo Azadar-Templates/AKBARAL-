@@ -739,3 +739,39 @@ test('agent cash read is scoped; ledger, operations and grants cannot leak fleet
   assert.equal((await api('/api/money/operations?limit=10',{headers})).status,200);
   const mutation=await api('/api/money/revoke-opportunity',{method:'POST',headers,body:JSON.stringify({id:'not-owned'})});assert.equal(mutation.status,409);assert.equal(mutation.body.error.code,'owner_required');
 });
+test('Agent Factory delegates a finite grant only through explicit parent permission; failure leaves no orphan',async()=>{
+  await owner('/api/policy',{method:'PATCH',body:JSON.stringify({allowAgentCreation:true,autonomousEnabled:true,maxChildrenPerAgent:5,maxAgents:5000,maxDepth:4})});
+  const root=await owner('/api/agents',{method:'POST',body:JSON.stringify({name:'Synthetic bounded-factory fixture',activity:'software_development',budgetCents:500})});
+  assert.equal(root.status,201);assert.equal(root.body.cashAccount.available_cents,0);
+  const parent=root.body.agent;
+  const link=createAccessLink({scope:'agent:self',agentId:parent.id,label:'Synthetic factory authorization fixture'});
+  const headers={'x-mission-link':link.token};
+  const payload={name:'Synthetic delegated child fixture',activity:'software_development',budgetCents:30};
+  const create=()=>api(`/api/agents/${parent.slug}/children`,{method:'POST',headers,body:JSON.stringify(payload)});
+  assert.equal((await create()).status,409);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_agents WHERE parent_id=?',[parent.id])!.n,0);
+  const expiry=new Date(Date.now()+86400000).toISOString();
+  assert.equal((await owner('/api/money/grants',{method:'POST',body:JSON.stringify({agentId:parent.id,spendLimitCents:0,delegationCents:40,canCreate:true,expiresAt:expiry})})).status,200);
+  const child=await create();assert.equal(child.status,201);assert.equal(child.body.cashAccount.available_cents,0);
+  const grant=missionDb.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id=?',[child.body.agent.id])!;
+  assert.equal(grant.parent_id,parent.id);assert.equal(grant.spend_limit_cents,30);assert.equal(grant.can_create,0);assert.equal(grant.expires_at,expiry);
+  assert.equal((await create()).status,409);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_agents WHERE parent_id=?',[parent.id])!.n,1);
+  missionDb.run("UPDATE mission_agent_contracts SET expires_at='2000-01-01T00:00:00Z' WHERE agent_id=?",[child.body.agent.id]);
+  assert.throws(()=>require('./money').grant(child.body.agent.id),/agent_contract_inactive/);
+  await owner('/api/agents/'+parent.slug+'/status',{method:'POST',body:JSON.stringify({status:'paused',reason:'Synthetic owner brake'})});
+  assert.equal((await api('/api/money',{headers})).status,200,'a paused agent may still read its own accounting');
+  assert.equal((await api('/api/money/jobs?limit=1',{headers})).status,200);
+  assert.equal((await create()).status,409);
+});
+test('paid legacy upgrade approval aliases and apply cannot masquerade as verified purchase',async()=>{
+  const requested=await owner('/api/upgrades',{method:'POST',body:JSON.stringify({agentSlug:rootAgentSlug,capability:'Synthetic paid-upgrade refusal fixture',requestedCostCents:10})});
+  assert.equal(requested.status,201);const id=requested.body.upgrade.id;
+  const approval=missionDb.get<Row>('SELECT id FROM mission_approvals WHERE subject_id=?',[id])!;
+  for(const url of [`/api/upgrades/${id}/decide`,`/api/approvals/${approval.id}/decide`,`/api/upgrades/${id}/apply`]){
+    const result=await owner(url,{method:'POST',body:JSON.stringify({decision:'approved',note:'Owner note is not payment proof'})});
+    assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  }
+  assert.equal(missionDb.get<Row>('SELECT status FROM mission_upgrades WHERE id=?',[id])!.status,'requested');
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,0);
+});
