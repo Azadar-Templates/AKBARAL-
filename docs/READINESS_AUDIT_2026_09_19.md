@@ -81,3 +81,7 @@ Mission default address is **http://127.0.0.1:4200/** only after explicitly star
 ## Remaining / not verified
 
 Permanent domain/ingress and persistent database/uploads; operator-owned mission startup and private access; full latest-source hosted CI outcome; live configured provider/search/payment proofs; payment webhooks/returns and payouts; live chat-worker/provider execution; broader adapter enforcement and authorized provisioning; fresh external opportunity verification; physical iOS/Android/Safari and signed mobile builds. Repository/fixture success is not evidence of real revenue or launch completion.
+
+## Follow-up checkpoint — compiled and retained PostgreSQL isolation
+
+After `3d03aab`, backend TypeScript compilation and runtime-asset copy passed. Compiled private bootstrap succeeded with an unusable customer DB path. Separate retained PG stores passed **24 mission financial + 22 platform integration = 46/46** tests, zero skips/failures; both harnesses exit 0. Compiled platform facade reports 21 migrations; compiled mission driver reports PostgreSQL / 15 migrations / zero newly applied / audit true / ledger true even with customer storage unavailable. The already-successful unchanged Next build was not repeated. Logs: `compiled-isolation.log`, `isolation-pg-{mission,platform}.log`, `backend-assets.log` under the audit evidence directory. This closes the module-split compiled/PG check, not external PostgreSQL concurrency or deployment verification.
