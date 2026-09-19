@@ -299,3 +299,7 @@ Resuming only the unfinished suite against the same retained database now passes
 ### Provider/chat regression checkpoint
 
 **118/118 tests pass** in the remaining ten affected mission files: core, identity, payout verification, reinvestment, social, treasury, financial atomicity, quota calls, budget holds and probe-policy rules. Together with the separately recorded 32 HTTP, nine executed-dashboard and 14 chat tests on unchanged corresponding source, the mission surface has **173 focused passing tests**. This is not a newly completed whole-project suite. Evidence: `logs/continuation/provider-chat-mission-regression.log`. Next exact task: compiled backend/worker checks, then isolated real-browser desktop/mobile-viewport verification.
+
+### Compiled provider/chat runtime checkpoint
+
+Backend TypeScript compilation and runtime-asset copying pass; types and secret scan pass. The compiled CommonJS artifact opens the retained mission PostgreSQL database, reports **14 migrations / zero pending or reapplied**, and verifies **both audit and ledger chains**, including retained failed-run history. Evidence: `logs/continuation/provider-chat-compiled-pg.log`. No worker was enabled and no provider was contacted. Next exact task: install an isolated browser-test dependency and execute the new owner controls in desktop/mobile browser viewports, preserving screenshots/logs as synthetic local evidence.
