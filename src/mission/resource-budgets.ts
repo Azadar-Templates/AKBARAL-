@@ -1,3 +1,4 @@
+import { providerChargeRecorded } from './resource-receipts';
 import { missionDb, nowIso, appendMissionAudit, type Row } from './database';
 import { canAgentSpend, currentPolicy, dailySpendCents } from './policy';
 import { MissionSelfServiceError } from './self-management';
@@ -53,7 +54,7 @@ export function releaseCancelledResourceBudget(callId: string): void {
 export function recordResourceCallCost(resourceId: string, callId: string, actor: Actor, receipt: { actualCostCents: number; providerRef: string; evidence: string }): { budget: Row; externalPaymentExecuted: false } {
   return missionDb.transaction(() => {
     if (actor.actorType !== 'owner' || !actor.actorId?.trim()) fail('provider cost reconciliation requires a trusted owner', 403);
-    const call = missionDb.get<Row>('SELECT * FROM mission_resource_calls WHERE id = ? AND resource_id = ?', [callId, resourceId]);
+    const call = missionDb.get<Row>('SELECT c.*, r.provider FROM mission_resource_calls c JOIN mission_resources r ON r.id = c.resource_id WHERE c.id = ? AND c.resource_id = ?', [callId, resourceId]);
     if (!call) fail('resource call not found', 404);
     const hold = getResourceCallBudget(callId);
     if (!hold) fail('resource call has no financial reservation', 404);
@@ -71,7 +72,7 @@ export function recordResourceCallCost(resourceId: string, callId: string, actor
     // Fail before binding a potentially out-of-range SQL INTEGER amount. This
     // also preserves the original hold when an evidenced overage is unfunded.
     if (amount > wallet.balanceCents) fail('insufficient wallet balance for the evidenced provider charge');
-    if (missionDb.get('SELECT call_id FROM mission_resource_call_budgets WHERE wallet_id = ? AND provider_ref = ? AND call_id <> ?', [hold.wallet_id, reference, callId])) fail('provider charge reference already recorded for this wallet');
+    if (providerChargeRecorded(String(call.provider), reference)) fail('provider charge reference already recorded for this provider');
     // Release only our own hold while recording the actual charge, atomically.
     // A debit failure (including an unfunded overage) rolls everything back.
     missionDb.run("UPDATE mission_resource_call_budgets SET status = 'recorded', actual_cents = ?, provider_ref = ?, evidence = ?, resolved_at = ? WHERE call_id = ?", [amount, reference, evidence, nowIso(), callId]);

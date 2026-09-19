@@ -765,6 +765,32 @@ test('automatic chat configuration and job visibility require owner identity; co
   assert.equal((await owner(`${base}/messages`)).body.automaticRepliesConfigured, true);
 });
 
+test('resource periods require owner evidence and preserve prior usage without a purchase or replayed debit', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const expiry = new Date(Date.now() - 3600000).toISOString();
+  const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-period-http', kind: 'api', expiresAt: expiry, limits: { requests: 10 } });
+  const id = String(resource.id);
+  management.provisionResource({ id, actualCostCents: 0, providerRef: 'synthetic-period-http-provision', evidence: 'Synthetic prior resource, not external activation.', actorId: 'owner' });
+  management.recordResourceUsage({ id, usage: { requests: 2 }, actorType: 'owner', actorId: 'owner' });
+  const body = { idempotencyKey: 'synthetic-period-http-replay', expectedExpiresAt: expiry, periodStart: new Date(Date.now() - 1000).toISOString(), periodEnd: new Date(Date.now() + 86400000).toISOString(), limits: { requests: 20 }, startingUsage: { requests: 1 }, actualCostCents: 0, currency: 'USD', providerRef: 'synthetic-period-http-renewal', evidence: 'Synthetic renewed period evidence, not a real provider receipt.' };
+  const route = `/api/resources/${id}/periods`;
+  for (const scope of ['agent:self', 'dashboard:read'] as const) {
+    const link = createAccessLink({ label: 'period access denied', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
+    const headers = { 'x-mission-link': link.token };
+    assert.equal((await api(route, { headers })).status, 401);
+    assert.equal((await api(route, { method: 'POST', headers, body: JSON.stringify({ ...body, actorType: 'owner' }) })).status, 401);
+  }
+  assert.equal((await owner(route, { method: 'POST', body: JSON.stringify({ ...body, startingUsage: {} }) })).status, 400);
+  const result = await owner(route, { method: 'POST', body: JSON.stringify(body) });
+  assert.equal(result.status, 200); assert.equal(result.body.externalPaymentExecuted, false); assert.equal(result.body.providerVerified, false);
+  assert.equal((await owner(route, { method: 'POST', body: JSON.stringify(body) })).body.duplicate, true);
+  assert.equal((await owner(route, { method: 'POST', body: JSON.stringify({ ...body, evidence: 'Different synthetic evidence cannot replace this receipt.' }) })).status, 409);
+  const history = await owner(route);
+  assert.equal(history.body.periods[0].previous_usage, '{"requests":2}');
+  assert.equal(history.body.periods[0].starting_usage, '{"requests":1}');
+  assert.ok(!JSON.stringify(history.body).includes('idempotency_key'));
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {

@@ -1,3 +1,4 @@
+import { providerChargeRecorded } from './resource-receipts';
 import { looksLikeInstrumentCredential } from './destination-safety';
 import { debit, getWallet } from './treasury';
 import { missionDb, missionId, nowIso, appendMissionAudit, type Row } from './database';
@@ -741,7 +742,7 @@ export function provisionResource(input: { id: string; walletId?: string; actual
     if (!Number.isSafeInteger(amount) || amount < 0 || amount > Number(resource.monthly_cost_cents)) throw new MissionSelfServiceError(400, 'actual resource cost exceeds its approved quote or is invalid', 'validation_error');
     if (looksLikeInstrumentCredential(input.providerRef).unsafe) throw new MissionSelfServiceError(400, 'provisioning reference must not contain payment instruments or credentials', 'unsafe_reference');
     if (input.providerRef.trim().length < 4 || input.evidence.trim().length < 12) throw new MissionSelfServiceError(400, 'provider reference and provisioning evidence are required', 'verification_required');
-    if (missionDb.get('SELECT id FROM mission_resources WHERE provider = ? AND provisioning_ref = ?', [String(resource.provider), input.providerRef.trim()])) throw new MissionSelfServiceError(409, 'provider provisioning reference already recorded', 'duplicate_receipt');
+    if (providerChargeRecorded(String(resource.provider), input.providerRef.trim())) throw new MissionSelfServiceError(409, 'provider provisioning reference already recorded', 'duplicate_receipt');
     const policy = currentPolicy();
     if (policy.killSwitch) throw new MissionSelfServiceError(409, 'mission kill switch is engaged', 'policy_denied');
     if (amount > 0) {

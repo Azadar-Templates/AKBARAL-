@@ -1,3 +1,4 @@
+import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
 import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
 import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
@@ -696,6 +697,15 @@ async function handleApi(
     // ── Resources ───────────────────────────────────────────────────────────
     case 'resources': {
       requireRead(context);
+      if (rest[1] === 'periods') {
+        const session = requireOwner(context, method !== 'GET');
+        const actor = { actorType: 'owner' as const, actorId: session.owner.id };
+        if (rest.length !== 2) throw new HttpProblem(404, 'resource period route not found', 'not_found');
+        if (method === 'GET') json(res, 200, listResourcePeriods(rest[0], actor, { before: url.searchParams.get('before') ?? undefined, limit: Number(url.searchParams.get('limit') ?? 50) }));
+        else if (method === 'POST') json(res, 200, recordResourcePeriod(rest[0], body as unknown as ResourcePeriodInput, actor));
+        else throw new HttpProblem(405, 'unsupported resource period operation', 'method_not_allowed');
+        return true;
+      }
       if (rest[1] === 'calls') {
         const session = requireOwner(context, method !== 'GET');
         const actor = { actorType: 'owner' as const, actorId: session.owner.id };
