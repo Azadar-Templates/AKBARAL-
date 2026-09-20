@@ -60,6 +60,7 @@ jobs:
           sudo -u postgres createdb --owner=runner mission_cash_registry
           sudo -u postgres createdb --owner=runner mission_freelancer
           sudo -u postgres createdb --owner=runner mission_freelancer_settlement
+          sudo -u postgres createdb --owner=runner mission_fiverr
           sudo -u postgres createdb --owner=runner mission_upwork
           sudo -u postgres createdb --owner=runner mission_awin
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash?host=/var/run/postgresql' npx tsx --test src/mission/money.test.ts
@@ -67,6 +68,7 @@ jobs:
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_awin?host=/var/run/postgresql' npx tsx --test src/mission/earning/awin-workflow.test.ts
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_freelancer?host=/var/run/postgresql' npx tsx --test src/mission/earning/freelancer-workflow.test.ts
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_freelancer_settlement?host=/var/run/postgresql' npx tsx --test src/mission/earning/freelancer-settlement.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_fiverr?host=/var/run/postgresql' npx tsx --test src/mission/earning/fiverr-workflow.test.ts
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_upwork?host=/var/run/postgresql' npx tsx --test src/mission/earning/upwork-workflow.test.ts
           REGISTRY_PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash_registry?host=/var/run/postgresql' npx tsx --test src/mission/registry-sync.test.ts
       - name: Private mission Chromium desktop and mobile-viewport checks
