@@ -33,7 +33,7 @@ jobs:
           npm run typecheck
           npm run scan:secrets
       - name: Full SQLite suite (includes mission, isolation, billing and workforce)
-        run: npm test -- --prune-working-copies
+        run: npm test -- --prune-working-copies --compress-snapshots
       - name: Preserve SQLite checkpoint evidence
         if: always()
         uses: actions/upload-artifact@v4

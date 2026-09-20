@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { gzipSync, gunzipSync, brotliCompressSync, brotliDecompressSync, constants as zlibConstants } from 'node:zlib';
 import { DatabaseSync } from 'node:sqlite';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -58,6 +59,36 @@ function snapshot(source, destination) {
   const db = new DatabaseSync(source);
   try { db.exec(`VACUUM INTO '${destination.replaceAll("'", "''")}'`); }
   finally { db.close(); }
+}
+function decodeSnapshot(attempt) {
+  const bytes = fs.readFileSync(attempt.snapshot);
+  return attempt.snapshotEncoding === 'gzip' ? gunzipSync(bytes) : brotliDecompressSync(bytes);
+}
+function restoreSnapshot(previous, destination) {
+  if (['gzip','brotli'].includes(previous.snapshotEncoding)) {
+    const raw = decodeSnapshot(previous);
+    if (digest(raw) !== previous.snapshotRawHash) throw new Error('Compressed snapshot content is corrupted');
+    fs.writeFileSync(destination, raw, { flag: 'wx', mode: 0o600 });
+  } else snapshot(previous.snapshot, destination);
+}
+function saveSnapshot(attempt, attemptDir, compress) {
+  if (!compress) {
+    attempt.snapshot = path.join(attemptDir, 'passed.db');
+    snapshot(attempt.database, attempt.snapshot);
+    return;
+  }
+  // A scratch capture, not the retained verification artifact. The full SQLite
+  // image is retained losslessly in the new artifact; no older snapshot is touched.
+  attempt.captureTemporary = path.join(attemptDir, 'capture.tmp.db');
+  snapshot(attempt.database, attempt.captureTemporary);
+  const raw = fs.readFileSync(attempt.captureTemporary);
+  const zipped = compress === 'gzip' ? gzipSync(raw, { level: 9 }) : brotliCompressSync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } });
+  attempt.snapshotRawHash = digest(raw);
+  if (digest(compress === 'gzip' ? gunzipSync(zipped) : brotliDecompressSync(zipped)) !== attempt.snapshotRawHash) throw new Error('Snapshot compression verification failed');
+  attempt.snapshot = path.join(attemptDir, compress === 'gzip' ? 'passed.db.gz' : 'passed.db.br');
+  attempt.snapshotEncoding = compress === 'gzip' ? 'gzip' : 'brotli';
+  const fd = fs.openSync(attempt.snapshot, 'wx', 0o600);
+  try { fs.writeFileSync(fd, zipped); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 export function tapCounts(text) {
   const counts = {};
@@ -141,9 +172,15 @@ export function pruneCompletedWorkingCopy(attempt) {
   const working = path.resolve(attempt.database);
   const saved = path.resolve(attempt.snapshot ?? '');
   if (attempt.status !== 'passed' || path.basename(working) !== 'working.db' ||
-      path.basename(saved) !== 'passed.db' || path.dirname(working) !== path.dirname(saved) ||
+      path.basename(saved) !== (attempt.snapshotEncoding === 'gzip' ? 'passed.db.gz' : attempt.snapshotEncoding === 'brotli' ? 'passed.db.br' : 'passed.db') || path.dirname(working) !== path.dirname(saved) ||
       !fs.lstatSync(working).isFile() || fs.lstatSync(working).isSymbolicLink()) throw new Error('Not a disposable completed test copy');
   if (fileDigest(saved) !== attempt.snapshotHash || fileDigest(attempt.log) !== attempt.logHash) throw new Error('Completed evidence is corrupted; refusing cleanup');
+  if (['gzip','brotli'].includes(attempt.snapshotEncoding)) {
+    if (digest(decodeSnapshot(attempt)) !== attempt.snapshotRawHash) throw new Error('Compressed snapshot content is corrupted; refusing cleanup');
+    const capture = path.resolve(attempt.captureTemporary ?? '');
+    if (path.basename(capture) !== 'capture.tmp.db' || path.dirname(capture) !== path.dirname(saved) || fileDigest(capture) !== attempt.snapshotRawHash) throw new Error('Not a disposable capture');
+    fs.unlinkSync(capture);
+  }
   fs.unlinkSync(working);
 }
 
@@ -167,7 +204,7 @@ export async function runBatch(options) {
       const attemptDir = path.join(directory, `${file === '__bootstrap__' ? 'bootstrap' : state.attempts.length}-${crypto.randomUUID()}`);
       fs.mkdirSync(attemptDir, { mode: 0o700 });
       const attempt = { file, status: 'running', startedAt: new Date().toISOString(), log: path.join(attemptDir, 'output.tap'), database: path.join(attemptDir, 'working.db') };
-      if (previous) snapshot(previous.snapshot, attempt.database);
+      if (previous) restoreSnapshot(previous, attempt.database);
       if (file !== '__bootstrap__') state.attempts.push(attempt);
       save();
       try {
@@ -175,8 +212,7 @@ export async function runBatch(options) {
         await command(args, { ...options, root }, attempt, state, save);
         options.checkFingerprint?.();
         if (file !== '__bootstrap__') attempt.counts = tapCounts(fs.readFileSync(attempt.log, 'utf8'));
-        attempt.snapshot = path.join(attemptDir, 'passed.db');
-        snapshot(attempt.database, attempt.snapshot);
+        saveSnapshot(attempt, attemptDir, options.compressSnapshots);
         attempt.snapshotHash = fileDigest(attempt.snapshot);
         attempt.logHash = fileDigest(attempt.log);
         attempt.status = 'passed';

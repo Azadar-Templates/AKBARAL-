@@ -162,3 +162,21 @@ TAP log hashes are verified and its checkpoint is saved. Snapshots, logs, metada
 failed/interrupted databases, source, commits and production artifacts are never
 removed. The runner still validates all retained evidence on resume. This avoids
 recreating the original disk-exhaustion failure without erasing verification.
+
+### Integrated-run reporting defect caught before acceptance
+
+The first changed-source integrated run reported 111 files but only 1,147 tests:
+its forced process exit omitted 17 settlement and 5 cash test results. This is
+**not accepted as a complete regression**, despite the zero process exit code.
+Its logs/snapshots remain untouched. The test runner now awaits normal completion;
+12 runner tests cover retention, resume, lossless compression, corruption and the
+prohibition on forced exit. A new final source fingerprint is required.
+
+To retain every prior verification database/snapshot while performing that new
+run, only the disposable npm download cache from completed installs was removed
+(about 250 MiB; installed dependencies, lockfiles, npm logs/configuration and
+production artifacts untouched). New test snapshots can be stored losslessly in
+Brotli form instead of consuming another four GiB; no existing snapshot is
+rewritten or deleted. The plain SQLite image hash is verified before temporary
+capture cleanup and again on restore. This follows the user's preservation rule
+rather than deleting old verification evidence to make room.

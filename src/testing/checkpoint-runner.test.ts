@@ -151,3 +151,23 @@ it('pruning retains failed-run databases and refuses cleanup when immutable evid
   assert.throws(()=>pruneCompletedWorkingCopy({...a,status:'failed'}),/Not a disposable/);
   assert.throws(()=>pruneCompletedWorkingCopy({...a,database:a.snapshot}),/Not a disposable/);assert.equal(fs.existsSync(a.snapshot),true);
 });
+
+it('the full-suite runner must not force process exit and truncate completed test reporting', () => {
+  const script=fs.readFileSync(path.resolve('scripts/test-resumable.mjs'),'utf8');
+  assert.equal(script.includes('--test-force-exit'),false);
+});
+for(const encoding of ['gzip','brotli'])it(`losslessly ${encoding}-compressed verification snapshots resume with identical database contents`,async()=>{
+  const f=fixture(),options={...f.options,pruneWorkingCopies:true,compressSnapshots:encoding};
+  await runBatch(options);const a=f.state().attempts[0];
+  assert.equal(a.snapshotEncoding,encoding);assert.equal(fs.existsSync(a.database),false);assert.equal(fs.existsSync(a.captureTemporary),false);assert.equal(fs.existsSync(a.snapshot),true);
+  const {gunzipSync,brotliDecompressSync}=require('node:zlib') as typeof import('node:zlib');
+  const {createHash}=require('node:crypto') as typeof import('node:crypto');
+  assert.equal(createHash('sha256').update((encoding==='gzip'?gunzipSync:brotliDecompressSync)(fs.readFileSync(a.snapshot))).digest('hex'),a.snapshotRawHash);
+  assert.equal((await runBatch({...options,batchSize:2})).pass,3);
+  assert.equal((await runBatch(options)).complete,true);assert.equal(f.state().attempts.length,3);
+});
+it('compressed snapshot corruption stops resume without replacing existing evidence',async()=>{
+  const f=fixture(),options={...f.options,pruneWorkingCopies:true,compressSnapshots:true};await runBatch(options);
+  const a=f.state().attempts[0];fs.appendFileSync(a.snapshot,'fixture corruption');
+  await assert.rejects(runBatch(options),/corrupted/);assert.equal(fs.existsSync(a.log),true);assert.equal(f.state().attempts.length,1);
+});

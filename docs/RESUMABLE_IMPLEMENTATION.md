@@ -63,3 +63,18 @@ only that subprocess's redundant mutable `working.db`. Failed/interrupted DBs,
 all verification snapshots, logs, checkpoint metadata and source are preserved.
 Resume still checks every snapshot/log hash and skips completed tests. This flag
 changes retention of disposable copies only, not test coverage or pass criteria.
+
+### Lossless snapshots and complete reporting
+
+Use `npm test -- --prune-working-copies --compress-snapshots` when old verification
+artifacts must be retained. New snapshots are stored losslessly as `passed.db.br`
+(Brotli quality 5), with hashes of both the compressed file and full SQLite image.
+Resume decodes and verifies the image before restoring a new working database.
+Existing raw snapshots are not converted, replaced or deleted. Temporary captures
+and mutable working copies are discarded only after successful completion and
+verification; canonical compressed snapshots and all logs remain. Gzip snapshots
+are also readable by the library. Corruption blocks resume/cleanup.
+
+The runner no longer passes `--test-force-exit`: it was reproduced truncating TAP
+results even with exit status zero. Normal test-process completion is mandatory;
+the existing bounded process timeout and resumable failure handling remain.
