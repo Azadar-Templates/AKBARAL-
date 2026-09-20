@@ -1,5 +1,7 @@
 # AKBARAL! current source of truth
 
+> **Latest: 2026-09-20 Contra checkpoint.** Direct human-assisted Contra service workflow `ed591ea` is pushed, preserving starting remote `99ec471` and all history. Full current-source regression: **1,551/1,551**, fresh native PostgreSQL Contra: **150/150**; GitHub verify passed for ed591ea. Awin, Freelancer, Upwork and Fiverr implementations are unchanged. Live Contra remains disabled; no earnings claimed. See [selection, policy limits and exact live gates](CONTRA_CONNECTOR.md) and [verification provenance](CONTRA_VERIFICATION_2026-09-20.json). Earlier dated sections below are historical.
+
 > **Latest: 2026-09-20 Fiverr checkpoint.** Human-assisted Fiverr source `96a399f` is pushed, preserving remote starting point `537716c` and all prior history. Full current-source regression: **1,400/1,400**, fresh native PostgreSQL Fiverr: **119/119**; GitHub verify passed for 96a399f. Awin, Freelancer and Upwork implementations are unchanged. Live Fiverr remains disabled; no earnings claimed. See [selection, policy limits, workflow and live blockers](FIVERR_CONNECTOR.md) and [verification provenance](FIVERR_VERIFICATION_2026-09-20.json). Earlier dated sections remain historical records.
 
 > **Latest: 2026-09-20 Upwork checkpoint.** Implementation `c1b20c0` is pushed, preserving the newer recovery/Freelancer history and the requested `07f59b0` ancestor. Current-source full regression: **1,280/1,280**, with **105/105** fresh native PostgreSQL Upwork tests; GitHub verify passed for c1b20c0. Live Upwork remains blocked. See [implementation and exact live gates](UPWORK_CONNECTOR.md) and [verification provenance](UPWORK_VERIFICATION_2026-09-20.json). Earlier dated counts and GitHub-auth blockers below are retained historical records, not the latest status.
@@ -311,3 +313,31 @@ passed. Compact evidence restores all 2,069 captured original files by exact byt
 hash; previous protected source/history/database/snapshot/log evidence remains.
 See FIVERR_CONNECTOR.md and FIVERR_VERIFICATION_2026-09-20.json for recovery and
 per-file provenance. Existing CI image publication is not deployment or income.
+
+
+## Contra direct-service paid-work phase (2026-09-20)
+
+The 194-entry inventory was reviewed, excluding all four implemented providers.
+Contra was selected from the remaining service candidates after official agreement,
+USD escrow/release, fee, payout and automation policy review. No general platform
+API is assumed. Human account/platform operation and client-authorized assistance
+remain prerequisites; no recruitment intermediary, botting or scraping is enabled.
+
+Countersigned direct-client fixed projects, fully funded USD escrow without an
+advance release, actual reviewed work and authenticated manual delivery must reach
+explicit client acceptance and exactly attributed release/remittance before any
+independent net-USD receiving proof is considered. Wallets, escrow, automatic
+timeout release, pending payouts, FX and USDC are not cash admissions in this lane.
+Existing money-engine dedup, isolation, grants, uncertainty and reversals remain.
+
+Source ed591ea passed 231 focused SQLite tests, 150 fresh native PostgreSQL tests,
+1,551 full normal-exit regression tests, types/backend/secrets and GitHub verify.
+Lossless evidence preserves all 2,096 captured original files and each snapshot's
+exact byte hash. Only redundant temporary compression outputs were removed after
+canonical-hash verification; previous protected source/history/DB/snapshot/log
+evidence remains. See the Contra report for recovery and critical storage limits.
+
+The factory has no live provider/receiving adapters. Authentic account/client/work,
+permissions, lawful current record verification and a mission-owned independent USD
+receiver remain external gates. No receiver was assumed; no live income, spending,
+withdrawal or deployment is claimed. CI image publication is not live operation.

@@ -144,3 +144,63 @@ Storage planning removed only three redundant temporary compression outputs afte
 checking the canonical Upwork archive SHA-256. No original database, snapshot,
 log, source, commit or canonical evidence archive was removed. Cleanup details are
 retained in `/tmp/contra-storage-cleanup.json` for the final evidence manifest.
+
+## Final current-source verification and preservation
+
+Implementation **ed591ea** is committed and pushed on `arena/01a0ba0a-akbaral`,
+descending from `99ec471`. The four earlier provider implementations and their
+migrations remain unchanged. The complete new-source normal-exit regression passed
+**1,551/1,551 tests across 114 files / 114 suites**, without failures, skips or
+cancellations. Fingerprint:
+`3c39254a7aaa9e1d7d08cae36d0312abb8483a6a5b6c88ce1d509ce5d45026cd`.
+A subsequent runner invocation validated all saved evidence without replay.
+
+GitHub [verify run 35493215624](https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35493215624)
+succeeded for this implementation commit, including full SQLite, native PostgreSQL,
+browser/mobile-viewport, production build and compiled PG-worker checks. Existing
+Docker image publication succeeded too; neither is deployment or live-money proof.
+See [per-file provenance](CONTRA_VERIFICATION_2026-09-20.json). Documentation-only
+updates after the implementation do not change the tested application fingerprint.
+
+Compact canonical evidence:
+`logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence.tar.xz`
+(12,417,688 bytes; SHA-256
+`0df4a1547f9bfe7e73542d4f2b864e2084137755f07ddddd812de5bf2cb0b157`).
+The exact checkpoint, independent logs, archive manifest, cleanup audit and codec
+are beside it. Runtime evidence follows the ignored-log convention, not Git binary
+commits. All original captured DBs, snapshots and logs remain; no previous source,
+commit or canonical evidence archive was removed or rewritten.
+
+The archive preserves **2,096 captured original files**, including **115** bootstrap/
+test snapshots and the stopped native PG cluster. SQLite snapshots are decoded for
+compression across images, then restored with the original Brotli quality-5
+encoding. Reading the finished archive and reconstructing each original verified
+**every original file byte hash**. This is lossless storage, not regenerated tests.
+
+Recovery: verify the outer archive and codec hashes against the tracked manifest;
+use the recorded Node/Brotli versions and `xz`:
+
+```sh
+node logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence-codec.mjs \
+  verify logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence.tar.xz
+node logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence-codec.mjs \
+  restore logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence.tar.xz /new-output-directory
+```
+
+The destination must not exist. Restoration reconstructs one original compressed
+snapshot at a time; plain tar extraction of all decoded snapshots needs much more
+storage. Do not overwrite existing evidence. Restore the checkpoint directory to
+its original `/dev/shm/contra-full-ed591ea` location only if absent, and validate or
+resume with the original application/configuration:
+
+```sh
+TMPDIR=/dev/shm/contra-full-temp node scripts/test-resumable.mjs --all \
+  --run-dir /dev/shm/contra-full-ed591ea \
+  --prune-working-copies --compress-snapshots
+```
+
+A completed checkpoint validates without replaying tests. Storage is critically
+limited (about 5 MiB on root and 81 MiB in RAM-backed temp after preservation).
+Further full regressions require storage planning, not removal of protected data.
+All live blockers above remain. No actual client work, payment, USD receipt or
+mission income is claimed by these synthetic verification results.
