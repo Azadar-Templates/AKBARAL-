@@ -156,12 +156,13 @@ been verified. No account/agent-count inflation or income guarantee is implied.
 
 ## Disk-safe future regression runs
 
-`npm test -- --prune-working-copies` opts into deleting only a **completed test
-subprocess's redundant mutable `working.db`**, after its `passed.db` snapshot and
-TAP log hashes are verified and its checkpoint is saved. Snapshots, logs, metadata,
-failed/interrupted databases, source, commits and production artifacts are never
-removed. The runner still validates all retained evidence on resume. This avoids
-recreating the original disk-exhaustion failure without erasing verification.
+`npm test -- --prune-working-copies --compress-snapshots` retains new verification
+snapshots losslessly and discards only completed redundant mutable `working.db`
+and temporary capture copies after snapshot/TAP hashes are verified and the
+checkpoint is saved. Canonical snapshots, logs, metadata, failed/interrupted
+databases, source, commits and production artifacts are not removed. Resume
+validates the retained evidence. This reduces storage growth; it does not create
+unlimited capacity or authorize deleting older evidence.
 
 ### Integrated-run reporting defect caught before acceptance
 
@@ -221,3 +222,46 @@ Rather than restart 86 completed files, an audited evidence fork was created:
   It resumed at the corrected realtime file: **5/5 passed**, then continued the
   remaining files. This narrow pending-test-only evidence reuse does not permit
   reusing old passes after changing runtime code, config or completed tests.
+
+
+## Final accepted verification (2026-09-20)
+
+**1,174/1,174 tests; 111/111 files; 114 suites; zero failures, cancellations,
+skips or TODOs in the completed regression.** Source checkpoint: `636f9f3`;
+fingerprint `f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0`.
+This includes the audited 86-file reuse described above, not an unreported
+restart. A subsequent normal runner invocation verified every retained TAP and
+snapshot hash and returned complete **without executing any tests again**.
+
+The backup fixture later hit genuine `ENOSPC` while making several simultaneous
+full-database copies. Its failed working database/log/partial restore evidence
+were retained. With source and assertions unchanged, only temporary fixture
+storage was redirected to a private directory under `/dev/shm` (2 GiB available
+mount). Resume started at that failed file, which passed all four tests, and
+completed the remaining suite. Canonical checkpoint snapshots/TAP logs stayed
+in the repository's ignored verification directory. The memory-backed fixture
+files were additionally archived losslessly in
+`logs/test-checkpoints/f43de898877c5eb8de24bb29/memory-fixtures.tar.br` and compared
+against their originals; originals were not removed. Archive SHA-256:
+`1d4bccc0caf738786e0964b3db841b68c206e1c0873f0f6a832565583f7b6f91`.
+
+The small tracked [verification manifest](FREELANCER_VERIFICATION_2026-09-20.json)
+records per-file counts, evidence hashes, provenance, native PostgreSQL counts
+and the archive hash, without checking large test databases into Git. Native
+PostgreSQL remains **155 passes and one existing SQLite-only skip**; its affected
+mission implementation/dependencies did not change during the API/test-harness
+corrections. Full SQLite execution passed all **53 settlement** and **41 cash**
+tests. Typecheck, backend compilation, secret scan and Git integrity checks passed.
+
+Historical forced-exit results remain preserved as history, but the normal-exit
+verification supersedes them: forced exit could truncate reports and hide late
+teardown failures. No real earnings, provider payout, mission cash, spending,
+withdrawal, live adapter activation or deployment occurred.
+
+**Operational boundaries:** after preserving all evidence, only approximately
+129 MiB remained on the root filesystem; further disk-heavy work needs additional
+storage or separately authorized evidence archival, not deletion of protected
+artifacts. GitHub authentication became unavailable after the successful
+`56efb47` push. `636f9f3` and the final documentation checkpoint are committed
+locally; pushing them requires reconnecting GitHub in Arena. No final remote CI
+success is claimed. All earlier history, including `9cbbb9d`, remains in ancestry.

@@ -229,3 +229,33 @@ existing SQLite-only bulk fixture skipped. Normal native execution was used afte
 forced-exit runs proved capable of truncating counts; incomplete runs are not
 accepted as verification. Types/backend/secrets passed. Final changed-source
 integrated regression follows this implementation checkpoint.
+
+
+## Final Freelancer phase-2 verification and preservation checkpoint
+
+The current implementation is verified by **1,174 passing tests across all 111
+files / 114 suites**, with no failures, skips or cancellations in the completed
+regression. Fingerprint:
+`f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0`.
+See [per-file evidence hashes](FREELANCER_VERIFICATION_2026-09-20.json) and the
+[recovery/settlement record](FREELANCER_SETTLEMENT.md). Native mission settlement,
+delivery, money and Awin suites passed **155 tests**, with one existing
+SQLite-only test skipped on PostgreSQL and passed on SQLite.
+
+Forced-exit reporting/late-error masking was removed; API close now stops all
+four polling loops it starts. The realtime fixture uses the API lifecycle rather
+than bypassing it. Its pending-test-only correction preserved 86 completed files
+through an audited full-fingerprint reconstruction; all original evidence stayed
+untouched. A later backup-fixture disk-full failure was resumed with memory-backed
+temporary storage, not by rerunning completed files or deleting protected data.
+New snapshots are losslessly compressed; the final runner validated all saved
+evidence without replay. Historical forced-exit results are not a substitute for
+this normal-exit verification.
+
+Root storage is still constrained (approximately 129 MiB free at completion).
+Source/history/snapshots/logs/failed databases are preserved; no reset or revert
+was used. Last confirmed successful push: `56efb47`. Source checkpoint `636f9f3`
+and final documentation remain local pending GitHub reconnection. No final
+remote CI success, live provider activation, real income or deployment is claimed.
+The exact account/contract/approved-work/remittance/receiving-adapter live blockers
+remain listed in FREELANCER_SETTLEMENT.md; credentials alone do not activate them.
