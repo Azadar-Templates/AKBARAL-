@@ -1,0 +1,3441 @@
+{
+  "schemaVersion": 1,
+  "verifiedSourceCommit": "ec8b11ef426ccdc3dc3804256036f95d1b42ecef",
+  "preservedStartingCommit": "4c09b2b29c728d18d03e71c005ebedc5f2bdbba3",
+  "previousProviderImplementationsUnchanged": true,
+  "summary": {
+    "fingerprint": "4c731c86d019491304ae99152b453b0f38615254a2702c50d5ba9b404e375198",
+    "completedFiles": 115,
+    "totalFiles": 115,
+    "complete": true,
+    "tests": 1732,
+    "suites": 114,
+    "pass": 1732,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "next": null
+  },
+  "normalExit": true,
+  "forcedExit": false,
+  "focusedSqlite": {
+    "tests": 262,
+    "pass": 262,
+    "fail": 0,
+    "skipped": 0,
+    "toptal": 180,
+    "ownerHttp": 41,
+    "sharedMoney": 41
+  },
+  "nativePostgresql": {
+    "version": "18.4",
+    "freshDatabase": "toptal_fixture",
+    "tests": 180,
+    "pass": 180,
+    "fail": 0,
+    "skipped": 0,
+    "unixSocketOnly": true,
+    "serverStopped": true,
+    "binaryPackage": "@embedded-postgres/linux-x64@18.4.0-beta.17",
+    "packageArchive": {
+      "path": "../toptal-test-tools/embedded-postgres-linux-x64-18.4.0-beta.17.tgz",
+      "bytes": 23732346,
+      "sha256": "795d587bb466423385db256dc81e61f2ee40c9e10efde21e881f3e997dd1bdb2"
+    }
+  },
+  "ci": {
+    "conclusion": "success",
+    "headSha": "ec8b11ef426ccdc3dc3804256036f95d1b42ecef",
+    "jobs": [
+      {
+        "completedAt": "2026-09-20T07:06:29Z",
+        "conclusion": "success",
+        "databaseId": 106037090895,
+        "name": "local-contracts",
+        "startedAt": "2026-09-20T06:51:19Z",
+        "status": "completed",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v4",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run npm ci",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Types and secret-handling gate",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Full SQLite suite (includes mission, isolation, billing and workforce)",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Preserve SQLite checkpoint evidence",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "PostgreSQL platform and workforce parity",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Standalone mission PostgreSQL parity",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Verified mission cash on native PostgreSQL, including multi-process contention",
+            "number": 10,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Private mission Chromium desktop and mobile-viewport checks",
+            "number": 11,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Preserve browser screenshots and source fingerprint",
+            "number": 12,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Production Webpack build with PostgreSQL runtime assets",
+            "number": 13,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Verify compiled PostgreSQL JSON translation behavior",
+            "number": 14,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Exercise the compiled PostgreSQL worker, not just TypeScript sources",
+            "number": 15,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v4",
+            "number": 29,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 30,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 31,
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35495309440/job/106037090895"
+      }
+    ],
+    "name": "verify",
+    "status": "completed",
+    "url": "https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35495309440"
+  },
+  "artifacts": [
+    {
+      "expired": false,
+      "expires_at": "2026-09-27T07:05:49Z",
+      "id": 10600289542,
+      "name": "mission-browser-35495309440-1",
+      "size_in_bytes": 1099045
+    },
+    {
+      "expired": false,
+      "expires_at": "2026-09-27T07:03:18Z",
+      "id": 10599849185,
+      "name": "sqlite-checkpoints-35495309440-1",
+      "size_in_bytes": 230243492
+    }
+  ],
+  "dockerPublication": {
+    "conclusion": "success",
+    "headSha": "ec8b11ef426ccdc3dc3804256036f95d1b42ecef",
+    "name": "docker-publish",
+    "status": "completed",
+    "url": "https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35495309500"
+  },
+  "checkpoint": {
+    "path": "logs/test-checkpoints/4c731c86d019491304ae9915/checkpoint.json",
+    "bytes": 147322,
+    "sha256": "d615103392ff0e8e3d680a694609ebcf60208e2609449f32795dab15c6b663fa"
+  },
+  "completedReuse": {
+    "checkpointByteHashUnchanged": true,
+    "completedFilesNotReplayed": true
+  },
+  "resumption": {
+    "completedFilesPreserved": 100,
+    "reason": "Generated tsx cache copies of existing synthetic DSN fixtures under in-repository TMPDIR triggered the working-tree scanner. Byte-identical cache files retained outside repository; no source or scanner changes. Only unfinished file and remaining files resumed.",
+    "originalTemporaryDirectory": "logs/toptal/tmp",
+    "continuedTemporaryDirectory": "/home/user/toptal-test-tmp",
+    "failedAttemptsRetained": [
+      {
+        "file": "src/security/scan-secrets.test.ts",
+        "status": "failed",
+        "startedAt": "2026-09-20T07:01:39.450Z",
+        "log": {
+          "path": "logs/test-checkpoints/4c731c86d019491304ae9915/100-659f938a-2ec1-4c43-87eb-239828773790/output.tap",
+          "bytes": 2811,
+          "sha256": "12204c7c8f416b75c27e2cf8dacc775d6d189d9268c7f02d180f60c6d2ad4582"
+        }
+      }
+    ]
+  },
+  "checks": {
+    "focused.tap": {
+      "path": "logs/toptal/focused.tap",
+      "bytes": 54496,
+      "sha256": "0348d1e4fa490fc222c5ad0ff716d69ba6949bfea39632a61601cad5724d5526"
+    },
+    "typecheck.log": {
+      "path": "logs/toptal/typecheck.log",
+      "bytes": 70,
+      "sha256": "aac5162f47de6f0f49a5981782b75664321c039f96a80bf914a16881b375701d"
+    },
+    "backend-build.log": {
+      "path": "logs/toptal/backend-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "secrets.log": {
+      "path": "logs/toptal/secrets.log",
+      "bytes": 181,
+      "sha256": "22865d48aa7f2878567ff4f9efd173241fb5cd7d9fc1b2f91464d585e3cd5025"
+    },
+    "secrets-after-cache-relocation.log": {
+      "path": "logs/toptal/secrets-after-cache-relocation.log",
+      "bytes": 181,
+      "sha256": "22865d48aa7f2878567ff4f9efd173241fb5cd7d9fc1b2f91464d585e3cd5025"
+    },
+    "full-regression.log": {
+      "path": "logs/toptal/full-regression.log",
+      "bytes": 27228,
+      "sha256": "ab4a9bbf605050d489332984450318ce0af01c1eb7030e698dd00ff57395de0b"
+    },
+    "full-regression-resumed.log": {
+      "path": "logs/toptal/full-regression-resumed.log",
+      "bytes": 4407,
+      "sha256": "15a5a134450f9ae49b6081172e625c580fe8d09325122d0353ec9de15d240b82"
+    },
+    "completed-reuse.log": {
+      "path": "logs/toptal/completed-reuse.log",
+      "bytes": 518,
+      "sha256": "5b8f991cf1b72329bc75f75bbd5624678f34b7ab71d3408af2ed30f105124950"
+    },
+    "runtime-relocation.json": {
+      "path": "logs/toptal/runtime-relocation.json",
+      "bytes": 42772,
+      "sha256": "495d1af5c90bb670fb5a7e9dccf872e3895a926722093d94f9aeb552ac2adc3f"
+    },
+    "native/toptal.tap": {
+      "path": "logs/toptal/native/toptal.tap",
+      "bytes": 35582,
+      "sha256": "043738b8083da6bac5217ddd91ec877dbef1dc5ae152dd2c61b0465dc7c41072"
+    },
+    "native/initdb.log": {
+      "path": "logs/toptal/native/initdb.log",
+      "bytes": 907,
+      "sha256": "1ebfa11b6fc2e642e15fc3db793cc12e47af42e5772c8905d3dc07f2180b901a"
+    },
+    "native/shutdown.log": {
+      "path": "logs/toptal/native/shutdown.log",
+      "bytes": 56,
+      "sha256": "ca19178a35ab4153b75b494963b66ce8243e1b94c173107c87b44d09db23652d"
+    },
+    "github-verify.json": {
+      "path": "logs/toptal/github-verify.json",
+      "bytes": 2403,
+      "sha256": "7a42b6b025bb14905e03002ff139892657c6774173949194bf451762d84aa3d1"
+    },
+    "github-docker.json": {
+      "path": "logs/toptal/github-docker.json",
+      "bytes": 201,
+      "sha256": "65bc19d3db3cb582597f4135496410dcd01db77847ec58d287e58ab375d0b1a2"
+    },
+    "github-artifacts.json": {
+      "path": "logs/toptal/github-artifacts.json",
+      "bytes": 289,
+      "sha256": "45ab14caf783367b7893823b302bea25c3f089083c1d72daabb80b0fdef6d490"
+    }
+  },
+  "bootstrap": {
+    "file": "__bootstrap__",
+    "status": "passed",
+    "startedAt": "2026-09-20T06:51:18.512Z",
+    "finishedAt": "2026-09-20T06:51:18.964Z",
+    "log": {
+      "path": "logs/test-checkpoints/4c731c86d019491304ae9915/bootstrap-f67f78c9-e066-4f7f-b1dc-14257ed3320b/output.tap",
+      "bytes": 1147,
+      "sha256": "316419359f020548c63e2a709c7279af77498787214d930e53a9ac60f6ddcdd3"
+    },
+    "snapshot": {
+      "path": "logs/test-checkpoints/4c731c86d019491304ae9915/bootstrap-f67f78c9-e066-4f7f-b1dc-14257ed3320b/passed.db.br",
+      "bytes": 22618,
+      "sha256": "497a8e0b47186e1db7c1e93053fca9cbfe51552925960e9819582d97f3ccf2ce"
+    },
+    "snapshotEncoding": "brotli",
+    "snapshotRawHash": "9d7fb3ae7ef873ab10de835d830892c5b2629607a8c1d6f8d8492436c0b7d3a7"
+  },
+  "files": [
+    {
+      "file": "src/agents/access.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:51:18.975Z",
+      "finishedAt": "2026-09-20T06:51:19.759Z",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/0-800573a3-8b71-4d2a-80fc-df629eb983fd/output.tap",
+        "bytes": 956,
+        "sha256": "c25086efa055c004c3d096799b6a2283d4fda65c9f3db58e201bb5ae8cb6a0a8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/0-800573a3-8b71-4d2a-80fc-df629eb983fd/passed.db.br",
+        "bytes": 23946,
+        "sha256": "f22eee67b7097b7ae0db907072625f238d31674caaed579075b18bb1a03f7606"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "1bd632b2d980b18f993a0c71cadfdd4fdff53cdd70f10242681eaa171fce553d"
+    },
+    {
+      "file": "src/agents/registry.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:51:19.767Z",
+      "finishedAt": "2026-09-20T06:51:54.423Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/1-8b6a2751-cf8a-4bb1-9bf2-e29794d4f317/output.tap",
+        "bytes": 1701,
+        "sha256": "6631e2b942c2e975ae023ba75dd0a1b80b47357d57183f959d7cb437ee005ad9"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/1-8b6a2751-cf8a-4bb1-9bf2-e29794d4f317/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "0bd022ba9f9190e29a1347c874c1be279469a66d21829097c336f383f8f9c5d5"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "ce18dd1b65ed69f76d1c8950da5a1b2bd6c2c374b21b1bb0ab4f9b1264dacd4b"
+    },
+    {
+      "file": "src/agents/search-providers.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:51:54.576Z",
+      "finishedAt": "2026-09-20T06:51:56.057Z",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/2-53115549-5819-4c58-8737-80b81a9ee096/output.tap",
+        "bytes": 3950,
+        "sha256": "945914a6faf5d31db40a74373118411834e8057b3397656ec34eb50875bbc88f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/2-53115549-5819-4c58-8737-80b81a9ee096/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "4d7bcc8f98adb5c7b91e89c106bf5f194049e68ccf40041e6c92c898e44a93ba"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "777a2327d43c02344fb2da7df78f086c0fcd15036fe33bb9f2919568d53079d9"
+    },
+    {
+      "file": "src/agents/web-research.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:51:56.206Z",
+      "finishedAt": "2026-09-20T06:51:58.205Z",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/3-44fd96f3-fab6-4a5e-8f19-20140a709b57/output.tap",
+        "bytes": 2657,
+        "sha256": "98f8226acb05db1e4c66357992dbcb64a95146e59e6f1e0772d7e73dd595b22d"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/3-44fd96f3-fab6-4a5e-8f19-20140a709b57/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "7b028127a0d13d155e39027a853bd79e6a728dbbeacc3ddc4acbd64e0b953d72"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "e2021c91728125d4725d3a21e3eb6366938696a6ffdb59ed86866ab4b3fc2b7d"
+    },
+    {
+      "file": "src/app/asset-delivery.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:51:58.391Z",
+      "finishedAt": "2026-09-20T06:51:59.403Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/4-8b731381-9f82-4d1b-b0b4-0f1c11194795/output.tap",
+        "bytes": 1897,
+        "sha256": "1fea3a5fbf418de8b419eba37fce1719b8980685b6e19d3250b743b5e17076de"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/4-8b731381-9f82-4d1b-b0b4-0f1c11194795/passed.db.br",
+        "bytes": 1886829,
+        "sha256": "7b9dbe9514d56a67dbb3f75297f2079d482226d45249d18ece9148f9d3ec778e"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "68a18080d1c740b144ae3816c331f028c6a6a9f231c7d5f834656552caaef181"
+    },
+    {
+      "file": "src/app/auth-provider-ux.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:51:59.595Z",
+      "finishedAt": "2026-09-20T06:52:00.716Z",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/5-e078b250-f8ba-434a-9d8b-bdcf99019a90/output.tap",
+        "bytes": 2286,
+        "sha256": "f4c87a1e213a0abc1fdbf77f3daaca61681bdbf606228cfbdb91b96e6069e0ad"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/5-e078b250-f8ba-434a-9d8b-bdcf99019a90/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "1736ff8e1278834f9c87665adf3a3394a8fe0185c44321cde99d3bdc4867114d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "fb005e84f9661fbb03fb1b4e84be54abeaa7adbf5f28b95a4dea55c9d3259184"
+    },
+    {
+      "file": "src/app/build-runtime-assets.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:00.869Z",
+      "finishedAt": "2026-09-20T06:52:01.825Z",
+      "counts": {
+        "tests": 1,
+        "suites": 0,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/6-05e065d7-6a2b-404e-86dd-c4ec076046f9/output.tap",
+        "bytes": 352,
+        "sha256": "c1d155b81d120c32408fd88e2578abcfcb6b55d4f5febe83e25218400b13d184"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/6-05e065d7-6a2b-404e-86dd-c4ec076046f9/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "0e02ba335ac9c55264ff21974520c60ac644cae192d1babc8be8b0b7aa2ad60e"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b13beaa9dd55acd47ab24a2b3f1ad6d5a381eee4472a6e32bcb1c39653b85247"
+    },
+    {
+      "file": "src/app/deep-link-refresh.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:02.001Z",
+      "finishedAt": "2026-09-20T06:52:02.934Z",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/7-cdd9e90b-8267-47f4-a6d2-dc8da462a828/output.tap",
+        "bytes": 834,
+        "sha256": "e08f326e94bb0e936d6d406ffac06ca7287bab9b8960569a553aa131fc91ffba"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/7-cdd9e90b-8267-47f4-a6d2-dc8da462a828/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "1e87097b2d9fa0fc3dfde3d34b74ea82cbbee46e44207b1774f98cb01484f180"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "80133d28be426e8b911e7fc3006efbe5e32dd7534816fbf2da5faaf5b439364a"
+    },
+    {
+      "file": "src/app/final-ui-ux.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:03.082Z",
+      "finishedAt": "2026-09-20T06:52:04.082Z",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/8-9e50f8e2-9a00-4b14-ae53-db14c1cdd043/output.tap",
+        "bytes": 2477,
+        "sha256": "e2d4c94bc69dd26a511746cce83917a9b01aa1419290ea26de0cc78ecc1af06f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/8-9e50f8e2-9a00-4b14-ae53-db14c1cdd043/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "0126d3e0b14b1540724adae263bb973b3847eda66365700a7450921c6c0e9195"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "94568fd8294d579efa4f23e930e34bdf3e9872b096f1e99593beaec2a1d48553"
+    },
+    {
+      "file": "src/app/master-routing.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:04.232Z",
+      "finishedAt": "2026-09-20T06:52:05.260Z",
+      "counts": {
+        "tests": 10,
+        "suites": 1,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/9-abf88d01-6b1b-40de-ac6c-6f1dcae408aa/output.tap",
+        "bytes": 2632,
+        "sha256": "258a2fece60a28ac9348ee519b4bdc3cf7c8dd93fa13a9dbfd394d1c7d9c8604"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/9-abf88d01-6b1b-40de-ac6c-6f1dcae408aa/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "12f0d8468dca4011fb532f5ec8ac0e7e2cacee99fa0d15d41b4e808feb1df0ae"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "447b5b79ba9cf7c9cdac0cc60146b78558959c215827bf1a0394d5773eded51c"
+    },
+    {
+      "file": "src/app/preview-stack.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:05.417Z",
+      "finishedAt": "2026-09-20T06:52:06.379Z",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/10-76a5c7a4-2d39-4ba5-acc1-357f98d40fa6/output.tap",
+        "bytes": 1953,
+        "sha256": "14bc97c42b99e2dd505248d05a520515c590a444fbab5b44f3fcdaab74d8707b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/10-76a5c7a4-2d39-4ba5-acc1-357f98d40fa6/passed.db.br",
+        "bytes": 1886778,
+        "sha256": "aa0d25a4374c6691ceb7ba537aeb8d937e437d591c94f82086521e96e2679f23"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "3232a0a7ec11cd10c4d06cf17982c9b44f832cbbe899a606cc157ec699f94bdb"
+    },
+    {
+      "file": "src/app/preview-supervisor.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:06.530Z",
+      "finishedAt": "2026-09-20T06:52:07.442Z",
+      "counts": {
+        "tests": 5,
+        "suites": 0,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/11-2cf8074b-3134-40b1-b90f-d5bc4b94e547/output.tap",
+        "bytes": 1129,
+        "sha256": "7e915aa39dc5915efb177f9ad7e32c1fe709521bdffe257658e0ca6d91b6e221"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/11-2cf8074b-3134-40b1-b90f-d5bc4b94e547/passed.db.br",
+        "bytes": 1886778,
+        "sha256": "f8e8b6dfa3d30c2d0b61437a49719402e6b1bb3c82fedfd7d6a2e095ab734296"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "d838b7e823b261726066c16934263b3c5e139bbf4684ac9e22557194e3bffcd0"
+    },
+    {
+      "file": "src/app/prod-roles.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:07.597Z",
+      "finishedAt": "2026-09-20T06:52:08.980Z",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/12-6723f43d-146d-4d70-aa9d-92fc7e0a154a/output.tap",
+        "bytes": 1170,
+        "sha256": "f0dd9dd166d5258460617069828f135a8fd3de6f64a922b1fec00b8b3833377f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/12-6723f43d-146d-4d70-aa9d-92fc7e0a154a/passed.db.br",
+        "bytes": 1886778,
+        "sha256": "88aac9c16441fdedb5bfbb6a2649e2666fac4f98443ddb3523ae43b7023c46f6"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b02b88a8a33b2607101a67052b5cdf9e8a059ec89712e82cc3355f129f0edc54"
+    },
+    {
+      "file": "src/app/responsive-contract.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:09.120Z",
+      "finishedAt": "2026-09-20T06:52:10.082Z",
+      "counts": {
+        "tests": 13,
+        "suites": 1,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/13-79e6455f-10b0-4bf0-b739-6c124f600042/output.tap",
+        "bytes": 3294,
+        "sha256": "6e1b28c321cd2fce3929a465c39f46bd00cd0973008071e97b794adc51978788"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/13-79e6455f-10b0-4bf0-b739-6c124f600042/passed.db.br",
+        "bytes": 1886778,
+        "sha256": "9645df36ced505e986bc867cbd8c2970023a91d47d024aa2330d73856e64688b"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "c9fcbdf78e4ba487305ff0e5e115f91b8b7b5b713dea75300d36a76fa9a3d1f1"
+    },
+    {
+      "file": "src/app/result-state-contract.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:10.234Z",
+      "finishedAt": "2026-09-20T06:52:11.376Z",
+      "counts": {
+        "tests": 20,
+        "suites": 4,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/14-1b29c572-f1d5-4e7a-ba26-3a8bcf487c45/output.tap",
+        "bytes": 6035,
+        "sha256": "e7728505dfc1ecee6b54f6a50a934ef2effad814091168495d7b48840340cc06"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/14-1b29c572-f1d5-4e7a-ba26-3a8bcf487c45/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "0d2f786f57b39aaf4c5b7d0ac32fb7dc81cef72eafbc0044c403248d37bde387"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "06d1086e6222d6db55637c2f301d636c1e35dab41225a8b104bf71c19c58e4c8"
+    },
+    {
+      "file": "src/app/stackhost-deploy.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:11.523Z",
+      "finishedAt": "2026-09-20T06:52:12.772Z",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/15-a3a29ca4-b84e-45be-a057-623db2736fdf/output.tap",
+        "bytes": 3401,
+        "sha256": "679cb7d3ddeb0f3faca518f61ca96d18f9c2c7b214361b2c82e280159efab1db"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/15-a3a29ca4-b84e-45be-a057-623db2736fdf/passed.db.br",
+        "bytes": 1886779,
+        "sha256": "3ff8449dc7a81b2c7add76872c242b834779e350f9fec585505635dcb8f735cc"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "efe4a1e08ec2670d5e904aead573dc096293c4691127916825aaebadb8d6a075"
+    },
+    {
+      "file": "src/app/user-journey.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:12.952Z",
+      "finishedAt": "2026-09-20T06:52:32.715Z",
+      "counts": {
+        "tests": 16,
+        "suites": 1,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/16-6889dccf-2120-4e8d-b8be-909b14455f03/output.tap",
+        "bytes": 14707,
+        "sha256": "a43523ad79120b3ab48487ba20ffe2dcc40f048f976c37c6d0814928d447fcf0"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/16-6889dccf-2120-4e8d-b8be-909b14455f03/passed.db.br",
+        "bytes": 1912777,
+        "sha256": "27479637b7b142f152f8a35ae935bc4e220196946aeb6d5e5d5c7bd456db4a65"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "986b6052587529151ee6d94e93f46011280313d015990475e49579135bbcb22b"
+    },
+    {
+      "file": "src/app/website-builder.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:52:32.878Z",
+      "finishedAt": "2026-09-20T06:53:26.082Z",
+      "counts": {
+        "tests": 14,
+        "suites": 3,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/17-cd91d160-2ce7-4116-a135-5704ae43adb1/output.tap",
+        "bytes": 18938,
+        "sha256": "1781f0ca7f5c85d07d10fbae58cf154bc2c93365e24a0c1a49dc824c2718f499"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/17-cd91d160-2ce7-4116-a135-5704ae43adb1/passed.db.br",
+        "bytes": 1950988,
+        "sha256": "d6f2629c9a4db5cc99d81195d6bf72e786a8b3d086a03cfcf2dce29607dd7e17"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "8dc841e7f2bc88c72df93f20d4d051aa7d6a98c30623c03d87e9499c5dc7677f"
+    },
+    {
+      "file": "src/app/workspace-ux-contract.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:53:26.237Z",
+      "finishedAt": "2026-09-20T06:53:27.370Z",
+      "counts": {
+        "tests": 25,
+        "suites": 3,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/18-3198eaed-2de1-4d87-a5b1-afe42473720a/output.tap",
+        "bytes": 6968,
+        "sha256": "e14deee7807290f36dd965ca6fee8ee52d4279df5f400b37e099e93838a10fe8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/18-3198eaed-2de1-4d87-a5b1-afe42473720a/passed.db.br",
+        "bytes": 1950988,
+        "sha256": "854236277d447741a054266110616b725ca4461b9b5292d741d3a9ef4444bbc7"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "5e0e49eef7266980d7ff39c12e8df9bd816a1a1d605e6205824f46a208486f84"
+    },
+    {
+      "file": "src/auth/oauth.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:53:27.525Z",
+      "finishedAt": "2026-09-20T06:53:31.624Z",
+      "counts": {
+        "tests": 20,
+        "suites": 1,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/19-cf4465fb-5b33-4130-81e3-c3aa7263a0a9/output.tap",
+        "bytes": 23813,
+        "sha256": "f5a3cf239b5993fe78368b85fefd1b036ddd6c2fc2a294f768f17d836d353a2b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/19-cf4465fb-5b33-4130-81e3-c3aa7263a0a9/passed.db.br",
+        "bytes": 1981653,
+        "sha256": "3fcdbcda478aaf53656d676c02616a401d7935a97e6a426678594f544b23a591"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "07a0772977d0b50fa311755339a0455a7f17925d8074e042ccaa39de1299f568"
+    },
+    {
+      "file": "src/auth/service.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:53:31.773Z",
+      "finishedAt": "2026-09-20T06:53:33.077Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/20-797e0a2f-ce47-417b-a7fb-370d1485161f/output.tap",
+        "bytes": 1327,
+        "sha256": "237ce9781e664fa2b572258a31bd2290f0eb389cb95d8373605dc21f0f072f0c"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/20-797e0a2f-ce47-417b-a7fb-370d1485161f/passed.db.br",
+        "bytes": 1981923,
+        "sha256": "9a63a55b64f999c6f5edcda43db6502811521d9b26b146311b149cd5b1981f56"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "08484112c73c17cb18f0ad547cdff52143a67113d5a675ae4564e703c0ddfbfd"
+    },
+    {
+      "file": "src/automation/automation.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:53:33.238Z",
+      "finishedAt": "2026-09-20T06:54:09.088Z",
+      "counts": {
+        "tests": 18,
+        "suites": 1,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/21-6c7029a4-a8a2-4b8e-839a-d6b2918edaf7/output.tap",
+        "bytes": 23549,
+        "sha256": "79ea0bbdcc0f0aa12e425cc99bc311dfd24d3cc1765c55af9a12a20510ec6f27"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/21-6c7029a4-a8a2-4b8e-839a-d6b2918edaf7/passed.db.br",
+        "bytes": 2016708,
+        "sha256": "5f3d9486cea0192c02ed06cfb9a31108b4c1b79aeb99b806b900d3ac3408109d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "126e69404cd2c8b8dedfbce6ce6123d353e5ef899badcc7d9777014df6b60d2f"
+    },
+    {
+      "file": "src/automation/cron.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:09.272Z",
+      "finishedAt": "2026-09-20T06:54:10.325Z",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/22-6d043781-c407-4405-9738-e873f6c586d3/output.tap",
+        "bytes": 2342,
+        "sha256": "8623dc527e7c00695e7076a1fcdaaf4a6364def6dc5d8c88c4bbe7400e35322f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/22-6d043781-c407-4405-9738-e873f6c586d3/passed.db.br",
+        "bytes": 2016706,
+        "sha256": "b9aecb305127b46a8119f97af1e4ffd51ecd4d16e36fcb0a83100560ec8eaaef"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "1249be5423e8e68e8bb431a2351e6c06187e7621ca1847a09fb5c1e5d271292f"
+    },
+    {
+      "file": "src/billing/billing.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:10.513Z",
+      "finishedAt": "2026-09-20T06:54:29.209Z",
+      "counts": {
+        "tests": 19,
+        "suites": 1,
+        "pass": 19,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/23-8d10d7be-a446-4bdd-9043-486cdf594103/output.tap",
+        "bytes": 13368,
+        "sha256": "b5ed024d80d7ecac82c2b03dc07c947aa3f1cc272c20df3bf137ecb702b82f4d"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/23-8d10d7be-a446-4bdd-9043-486cdf594103/passed.db.br",
+        "bytes": 2024751,
+        "sha256": "dde6340f164939053f444835f79e539898cf91141cc9f2ece14f15eb55c62fbf"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "5de17da5475cc8da221f5552f037ad61e7150cf76841a8c3db942ecdfbb923bc"
+    },
+    {
+      "file": "src/billing/stripe-webhook.http.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:29.369Z",
+      "finishedAt": "2026-09-20T06:54:31.232Z",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/24-aa830ded-2344-4690-838e-692051b7974d/output.tap",
+        "bytes": 4750,
+        "sha256": "684977d3852493628ea1c77cfda589fe010d6d65e64d268dc07f61df6600a77b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/24-aa830ded-2344-4690-838e-692051b7974d/passed.db.br",
+        "bytes": 2025922,
+        "sha256": "18741a9780975e52ec00bed67e7c18f552b0b35c6f433b0aceed012064c94e5d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "76492ed4435a0be20d98485784e64a57c661ecb4a591d90cf9bcd9790b47ec5b"
+    },
+    {
+      "file": "src/billing/stripe-webhook.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:31.405Z",
+      "finishedAt": "2026-09-20T06:54:32.537Z",
+      "counts": {
+        "tests": 13,
+        "suites": 2,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/25-7d7770cf-1793-4fda-8383-d38f04f49731/output.tap",
+        "bytes": 2942,
+        "sha256": "795ea87bdbd83a9bd0e06b47efb3cd743ac147bdce699d622af11df8f810c29a"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/25-7d7770cf-1793-4fda-8383-d38f04f49731/passed.db.br",
+        "bytes": 2025922,
+        "sha256": "3d7bfa55145c063310f29e8b0ecdd23068238806317af1d5cc5163c39fab528b"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "c72941dccafa595ccf04970b11c5983c97826fc53e5febcdf54760e6cc3b2de5"
+    },
+    {
+      "file": "src/business/owner-analytics.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:32.699Z",
+      "finishedAt": "2026-09-20T06:54:48.189Z",
+      "counts": {
+        "tests": 13,
+        "suites": 2,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/26-674f77cd-bb02-4dc5-95c8-a42a3f8acdc7/output.tap",
+        "bytes": 7436,
+        "sha256": "481344c41bb463b9696a886f3d06959b8e20ff345580c03561eaa3262e82bd25"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/26-674f77cd-bb02-4dc5-95c8-a42a3f8acdc7/passed.db.br",
+        "bytes": 2028348,
+        "sha256": "bfeaa7f2c4b3ba462f422bce3643d30233d02e69d22ed1b5c70aaf186dd7d56d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "80e34866cc55229203d88c7ab3fa44bcbaabe83374157e09b76a63f7b6969c4c"
+    },
+    {
+      "file": "src/config/env.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:48.343Z",
+      "finishedAt": "2026-09-20T06:54:50.328Z",
+      "counts": {
+        "tests": 13,
+        "suites": 4,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/27-3cc08064-24a2-4da8-b096-78d013d8c7f1/output.tap",
+        "bytes": 3300,
+        "sha256": "aef624218c6302832eb1ea5cf1313139f7b487fbcd00f7cd9c03f36829dc6350"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/27-3cc08064-24a2-4da8-b096-78d013d8c7f1/passed.db.br",
+        "bytes": 2028348,
+        "sha256": "a7670823d7e859f271cf9d0534de34ef24e09162b88f0be7a17942f1ba429de9"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "cfcfeb9ca2cdb9466e0a9d106506e5c97d1c7696f1ada3f7a1985f5d30ba6863"
+    },
+    {
+      "file": "src/db/business.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:50.498Z",
+      "finishedAt": "2026-09-20T06:54:51.691Z",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/28-f566d337-de1b-4274-b993-feb3e36e45ca/output.tap",
+        "bytes": 1031,
+        "sha256": "74c7188b0942966f951ee613c0cea515153cf2a4f70f8131a07636a762f4bd89"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/28-f566d337-de1b-4274-b993-feb3e36e45ca/passed.db.br",
+        "bytes": 2028381,
+        "sha256": "d2fa1935705d8ba000bc94b147219df85f78ad043abfed9311c1fce692789448"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "fc9fbefbb031f1b86ef8b553c87febc3b86f28fe23f940cf25c565838dcadd3e"
+    },
+    {
+      "file": "src/db/database-display.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:51.845Z",
+      "finishedAt": "2026-09-20T06:54:53.589Z",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/29-74add533-4244-454b-b1a2-1f1a406fe92c/output.tap",
+        "bytes": 1665,
+        "sha256": "bedd4a4fc22dbfa0b640f90e02c8f01370c36f7c2630faaf35d1ae983ed1fbc3"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/29-74add533-4244-454b-b1a2-1f1a406fe92c/passed.db.br",
+        "bytes": 2028381,
+        "sha256": "5ff49f7b8116c8b80664290a9d6611202fb1294230f05bae523b3b5e454aec12"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "e2387743adafd75e201900d035fcd754dc8d6c3cf4c184fcb58ceb84b16fb4a5"
+    },
+    {
+      "file": "src/db/database.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:53.747Z",
+      "finishedAt": "2026-09-20T06:54:54.969Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/30-0f8ae5f2-f0b9-4f5c-b920-960af564de3b/output.tap",
+        "bytes": 1338,
+        "sha256": "3508cccdfc42a3e50c1e6802157684597359e46580c6270d5d7a18135f32533a"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/30-0f8ae5f2-f0b9-4f5c-b920-960af564de3b/passed.db.br",
+        "bytes": 2028959,
+        "sha256": "0827f92ff8be8056e3dd76522e1ab501dd079f0a17f9df895b405605d16f0771"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "2775aec01fd7e5eeae55ba5e221d4290969faf992c721964df5dfc9c2167dfba"
+    },
+    {
+      "file": "src/db/migration-parity.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:55.125Z",
+      "finishedAt": "2026-09-20T06:54:56.144Z",
+      "counts": {
+        "tests": 2,
+        "suites": 1,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/31-6ff4870f-89c4-40e9-bbe7-7629697ad169/output.tap",
+        "bytes": 862,
+        "sha256": "b6dc92e57bed265daa9229afe548666ca10145bd6fe0ef9b632021724e7b0487"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/31-6ff4870f-89c4-40e9-bbe7-7629697ad169/passed.db.br",
+        "bytes": 2028959,
+        "sha256": "72d7f656cb0547b2f22decb1a60611b3a3d060287db034730492d7f54f442b62"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "32b8a1f771647992e624c225fb3d6ed28234fdc2602f30ed6129eed16319f57e"
+    },
+    {
+      "file": "src/db/pg-bridge-wakeup.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:56.297Z",
+      "finishedAt": "2026-09-20T06:54:57.287Z",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/32-f4bbde8d-9016-4349-b883-6b704e882de1/output.tap",
+        "bytes": 1203,
+        "sha256": "752cae9cceab04bc0bd605db742c7689151263cac661da3b3afd465a5b00a7c1"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/32-f4bbde8d-9016-4349-b883-6b704e882de1/passed.db.br",
+        "bytes": 2028959,
+        "sha256": "85346fdceb3722b9b48c1f6b7d26a4d42e73c9f87ab13ffea1140f8d62904fba"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "49c944fe7bb20fdcdbf7130fae9971e1b2a987ed8e4a5470f23d298a0ab2c6ab"
+    },
+    {
+      "file": "src/db/pg-connection.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:57.448Z",
+      "finishedAt": "2026-09-20T06:54:58.408Z",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/33-09388054-449b-4915-b9ff-bd6a6eb66629/output.tap",
+        "bytes": 2045,
+        "sha256": "b857f2889f4413bf79dc2068b9a81d4851060e96617a6dee747523bfbee8e389"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/33-09388054-449b-4915-b9ff-bd6a6eb66629/passed.db.br",
+        "bytes": 2028959,
+        "sha256": "1ff5b68beee6728f71aeb4bbd1a8aa116d69ad42d2dde0d0191b137c10f93a5d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "1d7bec7b0b6e70466ff3eeb7bcf33dde067165f68c5dcf281b0535ad48e2e11b"
+    },
+    {
+      "file": "src/db/postgres.integration.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:58.567Z",
+      "finishedAt": "2026-09-20T06:54:59.642Z",
+      "counts": {
+        "tests": 0,
+        "suites": 3,
+        "pass": 0,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/34-5cdf31e6-8d02-4292-9729-bc7514c92197/output.tap",
+        "bytes": 948,
+        "sha256": "289532c91ea5215901eb610a7f5b2f8cbaff550c88d1d5ba84cdf21a76630327"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/34-5cdf31e6-8d02-4292-9729-bc7514c92197/passed.db.br",
+        "bytes": 2028959,
+        "sha256": "f78d95a8952ad2d48616ceaec1937b57ce796fcf2de49881ff9e4544884dc4fe"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "53da412ad59d7476cfaf7f1a4add0e05aa2fb4755eefca5bcc19ea653c3f44d2"
+    },
+    {
+      "file": "src/db/trust.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:54:59.794Z",
+      "finishedAt": "2026-09-20T06:55:00.922Z",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/35-6513ed70-52e2-44e4-8655-a7da03e14cc4/output.tap",
+        "bytes": 1019,
+        "sha256": "1d7cc34096dd41d49821f292e4c54f02c9e3ef3e4d63a481ecaaa59a05b137ff"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/35-6513ed70-52e2-44e4-8655-a7da03e14cc4/passed.db.br",
+        "bytes": 2029007,
+        "sha256": "9e4a0581b58b9a43bc239a551fe26fab5237b6a10c6a74b0623b9c3a804aeb11"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "4f921ec461d8b77c733d7fd5428ddb3f8427e3181940a6c64bf77d400bba5b57"
+    },
+    {
+      "file": "src/db/workforce-parity.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:01.147Z",
+      "finishedAt": "2026-09-20T06:55:02.589Z",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/36-e45c145c-8b5d-40f0-9d0c-78612f5d8a46/output.tap",
+        "bytes": 2544,
+        "sha256": "109f0985ec9daaab7aede187aebc05c95634fb9639ba98aab540cf70f8624e00"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/36-e45c145c-8b5d-40f0-9d0c-78612f5d8a46/passed.db.br",
+        "bytes": 2028950,
+        "sha256": "ffba18d472cd0444165519e44231a0cc6f3ef57e1f30c61bb521caf17f8fe3e1"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "da40bb94795515f72fdd9a152881178e37f389f5bdc1aacd4ef842161d93f1eb"
+    },
+    {
+      "file": "src/economy/delegation-scale.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:02.742Z",
+      "finishedAt": "2026-09-20T06:55:04.021Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/37-2449d1d0-7e82-466a-9133-21d68a66c9e3/output.tap",
+        "bytes": 1951,
+        "sha256": "0c9bd777312ee8f88b780830bbb92f30023c904ebbb29c10c662bb14cd5996c7"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/37-2449d1d0-7e82-466a-9133-21d68a66c9e3/passed.db.br",
+        "bytes": 2029043,
+        "sha256": "1b55f58df97a6e14f2a3ecdf8093f8371c7fc0227eeaedb6ef2660940c760185"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "2aa0a1225aa470978466e3cccf7544c019880fbfd111a76a8b3fc5a84b82865a"
+    },
+    {
+      "file": "src/economy/discovery.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:04.182Z",
+      "finishedAt": "2026-09-20T06:55:05.443Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/38-14c7b17a-31c7-4c8b-8763-4b1fff7dcf3f/output.tap",
+        "bytes": 1927,
+        "sha256": "44e1694957341afad497931150a89c78f42810c46887b45694c30462afaf2479"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/38-14c7b17a-31c7-4c8b-8763-4b1fff7dcf3f/passed.db.br",
+        "bytes": 2029637,
+        "sha256": "2e9e4d7bd202f95a64558b6e6d5885b532ad2ad7b98e77637a56dbc0b46a4a34"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b7baa7c3b68761069c4c1e9d5bfe414c2b02429882b1ca6ad1b98926be917178"
+    },
+    {
+      "file": "src/economy/economy.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:05.615Z",
+      "finishedAt": "2026-09-20T06:55:10.165Z",
+      "counts": {
+        "tests": 46,
+        "suites": 4,
+        "pass": 46,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/39-4b09c3e7-2f6e-40ad-ad04-0f8d9279a23f/output.tap",
+        "bytes": 29425,
+        "sha256": "fec04b2d853a4d4456f7e1fb70e909b74f997fcbf982f7a37e5c6d63f2e88086"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/39-4b09c3e7-2f6e-40ad-ad04-0f8d9279a23f/passed.db.br",
+        "bytes": 2061011,
+        "sha256": "e9d6149dfcfb045c522d91b13989872f3a44b71dc7b14e41b91a9ff63bf77c43"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "0e14e9f0a46ba2c5379761dccebfc23f6a7e7da2f50dfd251ba63839a3600fe5"
+    },
+    {
+      "file": "src/economy/financial-atomicity.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:10.337Z",
+      "finishedAt": "2026-09-20T06:55:11.721Z",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/40-f6906195-0911-412f-8c88-e5ba6ec023b6/output.tap",
+        "bytes": 2155,
+        "sha256": "72b9c7e2d962e7446e37017a17d7cc5f88493710eebe8c7a3fc8cb858733de96"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/40-f6906195-0911-412f-8c88-e5ba6ec023b6/passed.db.br",
+        "bytes": 2061011,
+        "sha256": "577e3d76b6d64d12b594aa2e90fa72a4fd909b3c00a208c1f19ee068ee29ff60"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "30f35284e02ecc55a64e7398f9cbd9c75ae8449c5b1a832b9d1b13b5ba10fa29"
+    },
+    {
+      "file": "src/economy/hierarchy.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:11.893Z",
+      "finishedAt": "2026-09-20T06:55:13.593Z",
+      "counts": {
+        "tests": 22,
+        "suites": 3,
+        "pass": 22,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/41-de89c8e6-ad9b-4d6e-ba68-1e65c5763a28/output.tap",
+        "bytes": 5293,
+        "sha256": "07dd1849709e912fb1e5c2e353d479e8e22a246347f8f5aabf9c0cd40376055b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/41-de89c8e6-ad9b-4d6e-ba68-1e65c5763a28/passed.db.br",
+        "bytes": 2062305,
+        "sha256": "ca578405bd3577108e28b853c04b36d2c731ab398bee30bc14476881518bf25f"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "d267fddde42fbce7375901414d06ea7e40351cd2b3f303b8656bc69928f9a6d9"
+    },
+    {
+      "file": "src/economy/mission-chat.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:13.783Z",
+      "finishedAt": "2026-09-20T06:55:27.857Z",
+      "counts": {
+        "tests": 10,
+        "suites": 2,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/42-f979a956-4ae2-4e8d-8d17-e8a29a620785/output.tap",
+        "bytes": 8293,
+        "sha256": "a9ad36cf05c8895a7153699853a66440971d859f37c579d4789df42a74cc1c4f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/42-f979a956-4ae2-4e8d-8d17-e8a29a620785/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "ec1f6d4312366859aee2d8bee0cbe1687f478c2d6833977c7f9b14b7f31ba495"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "a5006b1d9556f567aef93eea6047161cf92db4aa52f715c7310c0df6a1eac235"
+    },
+    {
+      "file": "src/economy/payment-concurrency.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:28.032Z",
+      "finishedAt": "2026-09-20T06:55:30.522Z",
+      "counts": {
+        "tests": 2,
+        "suites": 0,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/43-b7e043aa-da12-469e-a0aa-f258bdb276c0/output.tap",
+        "bytes": 750,
+        "sha256": "6df38398d00dd0e6a9d1e1b095acd2d67d1bce33b6c6a16638b2bd65c1cc212b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/43-b7e043aa-da12-469e-a0aa-f258bdb276c0/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "72debfe8187a30b85816fca1de00662dcdd3b3c8a1eae1f6348a8bd5f2dc6eaf"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "58ab0d2e952e22e79005574d30bb2963581260ae5de1e01ee3029b7ee2f44cc6"
+    },
+    {
+      "file": "src/integrations/smtp.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:30.682Z",
+      "finishedAt": "2026-09-20T06:55:31.750Z",
+      "counts": {
+        "tests": 1,
+        "suites": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/44-40c03372-6633-4ef7-ac9b-b666017c2192/output.tap",
+        "bytes": 411,
+        "sha256": "c75c70986e5bfd86abd671e5362beb9a482f78ed8361118589b12281f83ac0e4"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/44-40c03372-6633-4ef7-ac9b-b666017c2192/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "5e67110967652f22bef0544c6935d2001ad267cea5e09968a310cf084cf5455e"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "437a92ce3df0203ce15ecfe4528d6d4dd327aebcb010fcb535a6def20d7bb365"
+    },
+    {
+      "file": "src/launch/checks.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:31.913Z",
+      "finishedAt": "2026-09-20T06:55:33.092Z",
+      "counts": {
+        "tests": 11,
+        "suites": 3,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/45-56f08a00-9f54-44f6-9dcd-418ed1c54f74/output.tap",
+        "bytes": 3218,
+        "sha256": "4d2287a7c4c88ac8cd00d917ecae752bd1311c33853580a7d54d25f61b42baa9"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/45-56f08a00-9f54-44f6-9dcd-418ed1c54f74/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "e9e646b434ae4dff264ca9ffc869f62a016da95d8f6fd02e8e4e267044a5b2a6"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "585c57e281cc79acc0274edf875c1204aa66be0e14a57d31a5a2c0b214a3b646"
+    },
+    {
+      "file": "src/mission/chat-worker.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:33.242Z",
+      "finishedAt": "2026-09-20T06:55:34.869Z",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/46-74f66650-e5dc-46e6-9f8f-340e556f2a4f/output.tap",
+        "bytes": 3978,
+        "sha256": "8088b50d5673e1f769d1a40b9b65c36d21362977a94743fc0dde3d02e5fbe775"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/46-74f66650-e5dc-46e6-9f8f-340e556f2a4f/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "89ffc19f66c3ecbd32db0445ccd2e6482ff77e9703f8ed849725b51bd05beb73"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "2869f2896d113e235154909a834dc6e60c49c3bf48c0529451023f409cf58b7f"
+    },
+    {
+      "file": "src/mission/database-isolation.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:35.029Z",
+      "finishedAt": "2026-09-20T06:55:37.084Z",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/47-5838de78-124b-472f-889e-988f151ce7a9/output.tap",
+        "bytes": 801,
+        "sha256": "ce9e03bec74f0c14b7708703d6eaed7c9fd1ebc3cfa095c4b99ff91a89f37371"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/47-5838de78-124b-472f-889e-988f151ce7a9/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "e140fde73e7ab111a727b18e4e8548ae0b52e87d802acd40ae60e83f5ffd7270"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "3f67defcb0cc0b713b352fa197babf9e4be8819cefa774c3064b6611d37a9d79"
+    },
+    {
+      "file": "src/mission/earning/awin-workflow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:37.245Z",
+      "finishedAt": "2026-09-20T06:55:39.230Z",
+      "counts": {
+        "tests": 32,
+        "suites": 0,
+        "pass": 32,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/48-e67bcc03-370c-4106-9220-6f834f0e195c/output.tap",
+        "bytes": 7967,
+        "sha256": "98580ff4d688c15ffab09b78b46ab5170fd090f5bb986014c8fac380913963e8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/48-e67bcc03-370c-4106-9220-6f834f0e195c/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "57accbf75c25f9bdd14bc11bba201b962b6ea0c0c45f501a8f0fd87213651e4d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "834359527bef6a1e270da42727eb25a85e7bf7b282cdda65fd9f9399ab159452"
+    },
+    {
+      "file": "src/mission/earning/awin.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:39.387Z",
+      "finishedAt": "2026-09-20T06:55:40.525Z",
+      "counts": {
+        "tests": 24,
+        "suites": 0,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/49-66832ac5-4951-40b0-8230-b2395e96dad8/output.tap",
+        "bytes": 5616,
+        "sha256": "94a906c3e6552e8b190b271d76a5f05d462dcb910c322c3173d0b4258c3a05d4"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/49-66832ac5-4951-40b0-8230-b2395e96dad8/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "694dc71e385813494f34d96a65066daf848b9beda4be27642853447f8d8bb532"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "3577b4878e3827c1182fb4980f1a18afcaf1d0d0c98b1e9116c19cffc9449379"
+    },
+    {
+      "file": "src/mission/earning/contra-workflow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:40.695Z",
+      "finishedAt": "2026-09-20T06:55:43.950Z",
+      "counts": {
+        "tests": 150,
+        "suites": 0,
+        "pass": 150,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/50-0c0f5d34-b554-4ed3-af1e-db2cd72235be/output.tap",
+        "bytes": 28481,
+        "sha256": "4c67a11d4aae79e18d764bc0e59efc6f8ad12a7f9ab23ad81960d973a9b11498"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/50-0c0f5d34-b554-4ed3-af1e-db2cd72235be/passed.db.br",
+        "bytes": 2070156,
+        "sha256": "60ca795c2eae00e3a94fe4c6dbba5bf066a11585c31a41eec96fcb75f7bb2db0"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b4afacdd2a0f168c82f1574b40f211a288bf7d530ec9d8234900f3772c1e2bcf"
+    },
+    {
+      "file": "src/mission/earning/fiverr-workflow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:44.127Z",
+      "finishedAt": "2026-09-20T06:55:46.880Z",
+      "counts": {
+        "tests": 119,
+        "suites": 0,
+        "pass": 119,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/51-99403ae6-915e-4654-8f19-a6f65a9a6bec/output.tap",
+        "bytes": 23017,
+        "sha256": "16d2442f71269769fac89325801395007ebc8c32ce56e37d16abf70677b90df4"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/51-99403ae6-915e-4654-8f19-a6f65a9a6bec/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "55c896fd8da0ff43ce41b601452a76bc6b548903fdbe676f8852b97d8c547199"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "310588fbf660a699281e1adfe7f3fd6581a0fbafd9102434e69e2b0205825a84"
+    },
+    {
+      "file": "src/mission/earning/freelancer-settlement.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:47.040Z",
+      "finishedAt": "2026-09-20T06:55:49.384Z",
+      "counts": {
+        "tests": 53,
+        "suites": 0,
+        "pass": 53,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/52-0427e060-74a6-486b-be53-88f52485e0c2/output.tap",
+        "bytes": 11200,
+        "sha256": "ef93430591fade1a3d504a0c5306ae7dffb9aa322be911afd1a066ba6dc12ca8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/52-0427e060-74a6-486b-be53-88f52485e0c2/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "a2f82b8cb325feab946736c62374187168028096ff2ba315c89eaa57bcceb240"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "914a23a66aa6e53682443428e4b97ae53b7516695c6cb3962c1ec154b0320c7c"
+    },
+    {
+      "file": "src/mission/earning/freelancer-workflow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:49.540Z",
+      "finishedAt": "2026-09-20T06:55:51.317Z",
+      "counts": {
+        "tests": 30,
+        "suites": 0,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/53-31983bed-a869-4c7c-accc-bc71e78af2e6/output.tap",
+        "bytes": 7118,
+        "sha256": "3cdb05e1ac66ea2542aa0e2341695f67c987caa3182680666282f168177c4efd"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/53-31983bed-a869-4c7c-accc-bc71e78af2e6/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "e88f98620df1f735cd7d019fa03cda6ea93d8bb1a15f8bf6dfc7f045e2cba332"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "835f7f2d4f4326915abd3f414f6af0f2b0385f2faab75cc7464cd4e73f53421d"
+    },
+    {
+      "file": "src/mission/earning/freelancer.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:51.479Z",
+      "finishedAt": "2026-09-20T06:55:52.610Z",
+      "counts": {
+        "tests": 13,
+        "suites": 0,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/54-980b6544-f284-466d-b89d-102dfce0f5dc/output.tap",
+        "bytes": 3230,
+        "sha256": "05c4df000d38d5c9f165a87a505f25372cbd455169565174cf27fd152fd7ca2c"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/54-980b6544-f284-466d-b89d-102dfce0f5dc/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "2aaa0fffee8ba99ba097665ed760426978e0777bf79b9fd38dc778dbcc56d886"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "c5cc0f1281bb08fb1700afb7f7533b90c26b9371ea52f222cd308f42a6a76acb"
+    },
+    {
+      "file": "src/mission/earning/toptal-workflow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:52.766Z",
+      "finishedAt": "2026-09-20T06:55:56.410Z",
+      "counts": {
+        "tests": 180,
+        "suites": 0,
+        "pass": 180,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/55-52490c76-bd95-43e9-ade8-7ec7cb4fa7ab/output.tap",
+        "bytes": 35484,
+        "sha256": "529643c8972b33f82a92cc2bd2197ffe7131d15a263b1e0f825abb443cb1d2b9"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/55-52490c76-bd95-43e9-ade8-7ec7cb4fa7ab/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "53128ab769253596df8f935ecc1cf8602e046e2d0808b9ef5656032de5f8aa26"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "6d136a3629fcec0b75e0f6831f3eb7e67d96e461bf8539c6a22698de7a9a0983"
+    },
+    {
+      "file": "src/mission/earning/upwork-workflow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:56.558Z",
+      "finishedAt": "2026-09-20T06:55:59.335Z",
+      "counts": {
+        "tests": 105,
+        "suites": 0,
+        "pass": 105,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/56-b49310e0-47db-426b-8f6c-23015e3c123f/output.tap",
+        "bytes": 20349,
+        "sha256": "377942d1fb50d39edf02f8572ca5d69e0838baacadeba5ce87403a7ad09b4e27"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/56-b49310e0-47db-426b-8f6c-23015e3c123f/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "fcd681411f3cb432deeb6163e2e75c15ede2b10d8d6c4855ce1b0fe826e37aad"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "4f40c7e2106ea44c8a935530deb3b8b2882653bf8fba5957b37488564ee51cc8"
+    },
+    {
+      "file": "src/mission/mission-core.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:55:59.484Z",
+      "finishedAt": "2026-09-20T06:56:00.959Z",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/57-159207d0-6fc9-4d14-8b83-ebb889aef327/output.tap",
+        "bytes": 3097,
+        "sha256": "8ab17ef9d098dc26cdba84a73523836e8e02a4bf0245f773b708e2d71521b88b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/57-159207d0-6fc9-4d14-8b83-ebb889aef327/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "39ae4cb1d9061218a4d4a44dab4d5a3d15161e4f0784f398b0a20a00dd48e555"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "815235038a88e821e7217e720c003c8ab66c3361ec99d1dfb32011a66b72b603"
+    },
+    {
+      "file": "src/mission/mission-dashboard-render.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:01.118Z",
+      "finishedAt": "2026-09-20T06:56:04.630Z",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/58-bc68a06a-07f0-4fdb-8c5a-0d255cb6a840/output.tap",
+        "bytes": 3262,
+        "sha256": "1664ae8abdb86e34d92f4f33982deb4f5ff1013521e1601a7c07233468b04af3"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/58-bc68a06a-07f0-4fdb-8c5a-0d255cb6a840/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "6c755fa4a04c3a2b3e908f45d80b59679aefa2f57ba4fb3a20792efa42fca98f"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "260ee36de7d092c2da7619b6388ef37f5a7fbf40a6c148a1e12830bdd9bdfc65"
+    },
+    {
+      "file": "src/mission/mission-financial-atomicity.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:04.779Z",
+      "finishedAt": "2026-09-20T06:56:06.128Z",
+      "counts": {
+        "tests": 24,
+        "suites": 0,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/59-8e572977-d0d7-4524-8d29-ab0fb4730ab0/output.tap",
+        "bytes": 5909,
+        "sha256": "c793e1a54b629fa138ef68bd0c002467f4902fef33942fc24762de8254367d47"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/59-8e572977-d0d7-4524-8d29-ab0fb4730ab0/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "c5e0c4ca84badf79047ba3fbd8cc9d1f4b9b4ed9ed83a7c8604386d9b0b2eafb"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "8057c36b3924b3df0126318034d835d71e77d3afde8a688fc3b27b430aa7144a"
+    },
+    {
+      "file": "src/mission/mission-identity-lock.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:06.281Z",
+      "finishedAt": "2026-09-20T06:56:07.608Z",
+      "counts": {
+        "tests": 9,
+        "suites": 0,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/60-2a93fb49-1a76-40cb-9f99-3eca1821861e/output.tap",
+        "bytes": 2220,
+        "sha256": "a3875fb96343f1a556b2e82139a619c8f502a0be05899faec48576f6df8d475a"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/60-2a93fb49-1a76-40cb-9f99-3eca1821861e/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "2a5c33a7cd1a09b4bc22fd24f1e4dbaa56451938df62e1a372daf16b2a7afcb1"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "1bfa61830b62371311c35bb02ee7f2bf813e24a4c7f3629c2a7ef3f1fade1638"
+    },
+    {
+      "file": "src/mission/mission-payout-verification.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:07.757Z",
+      "finishedAt": "2026-09-20T06:56:08.991Z",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/61-20cf86a6-ab91-41a8-87ec-35faa55329f8/output.tap",
+        "bytes": 2071,
+        "sha256": "6ebf19323dc88c4a2f4a8dabd269a3c9674a9bb048c306ad5187ad984fcdfca9"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/61-20cf86a6-ab91-41a8-87ec-35faa55329f8/passed.db.br",
+        "bytes": 2070156,
+        "sha256": "2582159974e279a3f8a018ec61c9b9b95aec8294b70f390b18e90f4e285853b2"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "42e18efc0a89eb888865721248b51d57a3db2f0da5ea4ccf3e900344de8ee682"
+    },
+    {
+      "file": "src/mission/mission-probe-policy.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:09.144Z",
+      "finishedAt": "2026-09-20T06:56:10.139Z",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/62-55f716c2-e05f-4af2-a41e-061e9c84eb55/output.tap",
+        "bytes": 859,
+        "sha256": "6d8fc83021b690a381e2347dedef1c46164c078eb8efeaaf19850f8646fba155"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/62-55f716c2-e05f-4af2-a41e-061e9c84eb55/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "810a6742f3623a82973ffcd367ae66698e8451d168c5da6a5d86631fdefa1f56"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "80594e5051493d9c778f9fa8b6a4622180f6c88de9a56806cd6c4bb727933496"
+    },
+    {
+      "file": "src/mission/mission-reinvestment.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:10.291Z",
+      "finishedAt": "2026-09-20T06:56:11.550Z",
+      "counts": {
+        "tests": 9,
+        "suites": 0,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/63-43aadba2-b713-44f2-a48f-d49ed7a3132a/output.tap",
+        "bytes": 2259,
+        "sha256": "5310622a5e4ffd6bbaae86e7e9ecbf61f4681d8f3edb405e2860fde3eeb7193a"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/63-43aadba2-b713-44f2-a48f-d49ed7a3132a/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "65e33a2a19c570336b322563038354e66c93d2815767fea30e38161c02e4a5f9"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b07fa4f1cf6aff47793d86f6a5f80feadcd57d04ddf58496e3326c94980b13a8"
+    },
+    {
+      "file": "src/mission/mission-server.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:11.727Z",
+      "finishedAt": "2026-09-20T06:56:14.021Z",
+      "counts": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 41,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/64-fe97367f-68cb-4379-9852-22a17d5a0f8a/output.tap",
+        "bytes": 9577,
+        "sha256": "9a379fa7deb34174f27f6af972fd3f6febb70f3b6afb08a5693f5fd0c99c9434"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/64-fe97367f-68cb-4379-9852-22a17d5a0f8a/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "2d223884496e8f856d7151738ccb62056a3afb7b986c5c5e34652b58eabf3e59"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "aa9c0e40629e2ce67c2165c396a1bb94ae0e493a661c45fb76e87288498af4f3"
+    },
+    {
+      "file": "src/mission/mission-social.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:14.184Z",
+      "finishedAt": "2026-09-20T06:56:15.599Z",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/65-bbce76b9-068a-4fb3-bd23-14abc4cf896b/output.tap",
+        "bytes": 2504,
+        "sha256": "45b14491e26337ce1d050e701b6f9548f94b2b9722c25b741d6b21788719070e"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/65-bbce76b9-068a-4fb3-bd23-14abc4cf896b/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "067863a38cded6557a4807aedc31d993e18d60848dfb7bf06633529950b25ed1"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "bfb7b716c37bafc80a64f2fe3e445ecc75f1e32a78efb9841f40eb9b6805305d"
+    },
+    {
+      "file": "src/mission/mission-treasury.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:15.753Z",
+      "finishedAt": "2026-09-20T06:56:17.069Z",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/66-75446e59-609e-43c8-81dd-a6122b5039cf/output.tap",
+        "bytes": 2813,
+        "sha256": "b73d40b89f8d1fd47e4758dd6e356505d0d3c8a92d1df10a906262797b2bb0b4"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/66-75446e59-609e-43c8-81dd-a6122b5039cf/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "797968a3744448b5db6788e59b593651f3da377cfecbd328109ad0b4522e4c50"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "9dab77888f070f9928d8b5f3664f76059727c39949d4693d941087169e309b0b"
+    },
+    {
+      "file": "src/mission/money-concurrency.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:17.227Z",
+      "finishedAt": "2026-09-20T06:56:20.385Z",
+      "counts": {
+        "tests": 7,
+        "suites": 0,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/67-9e484460-8bf7-4536-aeb2-b3f0d22e4a29/output.tap",
+        "bytes": 1745,
+        "sha256": "d1e152526b5b80bd32ee70e86716e8b9d6b42a8ab76c1d3193db25b4144993fa"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/67-9e484460-8bf7-4536-aeb2-b3f0d22e4a29/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "8787016e649ce6ff2d1eee3b879c6c42a4c817d63ade55fe8a91fc6ae4e3d8d0"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "98ca8d9db87aa451b81336fa1f14322085db2c27f781f519350a3632c505d26b"
+    },
+    {
+      "file": "src/mission/money-stripe.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:20.553Z",
+      "finishedAt": "2026-09-20T06:56:21.752Z",
+      "counts": {
+        "tests": 11,
+        "suites": 0,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/68-e90ed79c-5a7e-434a-9e8c-2dd25830b669/output.tap",
+        "bytes": 2611,
+        "sha256": "f2d18e0b578f27cab00a77f18155e247337fad77820816633f18dbf6bb3f6fb7"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/68-e90ed79c-5a7e-434a-9e8c-2dd25830b669/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "c564aef5178829fe516929b090bdf7d0b46ae5f1949a688252826b5b50c57397"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "f86701b8b5950ce6c1679ee6d7b5dac8ef1cd095696a4ba2f766254565406a52"
+    },
+    {
+      "file": "src/mission/money.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:21.915Z",
+      "finishedAt": "2026-09-20T06:56:25.077Z",
+      "counts": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 41,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/69-39109f92-5644-4e50-81f3-9e9227e83704/output.tap",
+        "bytes": 9581,
+        "sha256": "8fd7532361b747a1318aa74e2962c94d06956e074c58374d122617750482873d"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/69-39109f92-5644-4e50-81f3-9e9227e83704/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "5c6a4db6f5229d8fdbae9f2e707dc42e97a02a037e6085b2dcfafcaf7b545e7f"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "96a2dcee41bfebc7d86d777333297819a91ae03a95e01ffedaedf1d69264ce45"
+    },
+    {
+      "file": "src/mission/registry-sync.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:25.229Z",
+      "finishedAt": "2026-09-20T06:56:28.498Z",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/70-0b25ae67-067a-4b64-a2bc-2aa0e56654cd/output.tap",
+        "bytes": 1223,
+        "sha256": "54afe666a8a63fe664e9e8acb49c5ac9d365883afb83f2428d33fcaae5f8a742"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/70-0b25ae67-067a-4b64-a2bc-2aa0e56654cd/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "2eae60be3fccc63b8cbc7a2505314433a656237c8c626700ed22f4fbe289dac0"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b41882d14a53bfe35f86228dbe42580621b975d19a2a7cecf2c144bad90927c1"
+    },
+    {
+      "file": "src/mission/resource-budgets.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:28.665Z",
+      "finishedAt": "2026-09-20T06:56:30.877Z",
+      "counts": {
+        "tests": 11,
+        "suites": 0,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/71-1a2ee52a-e3f2-42bd-92ba-cbd4dab4c6d0/output.tap",
+        "bytes": 2921,
+        "sha256": "2a561c1161398222a69d398cccb12afe0b88c35860524e52972257d8ac0ba332"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/71-1a2ee52a-e3f2-42bd-92ba-cbd4dab4c6d0/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "98be74a067381269b4644e2ac292cfc9450ba8d468335c25a76ba92f5cf1ec57"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "18ac760bd5aa76de7ef9db4a3f1b4eed85f1823553d1d886eb68917964fe56b5"
+    },
+    {
+      "file": "src/mission/resource-calls.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:31.050Z",
+      "finishedAt": "2026-09-20T06:56:34.215Z",
+      "counts": {
+        "tests": 20,
+        "suites": 0,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/72-796518d5-4acc-45c1-bd57-e2fb6f1552f2/output.tap",
+        "bytes": 5068,
+        "sha256": "f64d10d175780d7a6704154feb4a70516b4761248732c99f4703bb8ba93540b7"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/72-796518d5-4acc-45c1-bd57-e2fb6f1552f2/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "f793d34815426b32a728bb10c3454a47a478988ca3a6b0f90f8154b274c3811a"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "5d4c63c7670f44b6420b44f3bb86c66961df23f7bcc852d1f5e16b93be96f6b6"
+    },
+    {
+      "file": "src/mission/resource-periods.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:34.377Z",
+      "finishedAt": "2026-09-20T06:56:35.777Z",
+      "counts": {
+        "tests": 8,
+        "suites": 0,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/73-182faa69-053c-4b18-960e-2b20a7206ad4/output.tap",
+        "bytes": 2303,
+        "sha256": "5cde0502a5885d83fb1ca58c65d8d068a77a7d599d820040d1b5d2c1d54d0c9f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/73-182faa69-053c-4b18-960e-2b20a7206ad4/passed.db.br",
+        "bytes": 2070155,
+        "sha256": "8b99d9f84a9e35944ff6e40a0f0300b106159341b06df517a515a1de6d0e8716"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "7b7207f911dc7e83dc9b78a102dd93af126536df13afa696b5ce99960e8b8105"
+    },
+    {
+      "file": "src/models/catalog-contract.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:35.938Z",
+      "finishedAt": "2026-09-20T06:56:37.200Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/74-07211549-a013-4474-b1e2-34d7a502e130/output.tap",
+        "bytes": 1640,
+        "sha256": "9c4f2b006f86e4d31efba0fa999106947ab6f7a3273da3e69ba783ee8bbe97cb"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/74-07211549-a013-4474-b1e2-34d7a502e130/passed.db.br",
+        "bytes": 2070138,
+        "sha256": "3016ffcf849639d6fe60083747e03923df710911bdd0923a9d66cbdc8bd69d15"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "80ad95abe518a725cb30800ecae58ace6b6eee72e35da2dc491215254a50480d"
+    },
+    {
+      "file": "src/models/models-api.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:37.362Z",
+      "finishedAt": "2026-09-20T06:56:39.345Z",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/75-7476cb91-607e-401d-b827-2c9e1351cebc/output.tap",
+        "bytes": 6530,
+        "sha256": "ac1e37640b1a2ca4eabebaedd7401e5dc8f28e1a2f8a605d756da727ca09177e"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/75-7476cb91-607e-401d-b827-2c9e1351cebc/passed.db.br",
+        "bytes": 2071096,
+        "sha256": "4ff5584f2ea1f352237965828c81b7e40b6427c0a0f9423abaa29ae82047ed16"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "fd6edb18e3438a9b8fa68337c1fd60b41e2898a1db34a5db43297a8a53704ffa"
+    },
+    {
+      "file": "src/models/provider-hardening.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:56:39.501Z",
+      "finishedAt": "2026-09-20T06:57:44.972Z",
+      "counts": {
+        "tests": 10,
+        "suites": 1,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/76-1b1b6be8-395f-4558-b868-06c762a53fe6/output.tap",
+        "bytes": 2903,
+        "sha256": "fc436d837bb36f181d95c5c91f56f46148405461a948472bfe4fcf54135137e0"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/76-1b1b6be8-395f-4558-b868-06c762a53fe6/passed.db.br",
+        "bytes": 2071812,
+        "sha256": "070717a3d4c120014a112e9175ff29010bfb91597782a4e30f332cd4ba5c894c"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "29ad46486de3db45b3edce383b55741584dcffc7bf807b0677f4d6d201d3e7be"
+    },
+    {
+      "file": "src/models/router.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:57:45.183Z",
+      "finishedAt": "2026-09-20T06:57:46.745Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/77-122a9b65-fccd-4e93-ac2a-88e0dcc303e8/output.tap",
+        "bytes": 1751,
+        "sha256": "3c1812cdc684d7b04ff85eb4b9c3b6a96106a62ea4acd48011cc38f065c0a37e"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/77-122a9b65-fccd-4e93-ac2a-88e0dcc303e8/passed.db.br",
+        "bytes": 2071979,
+        "sha256": "ea4a4c88ce6d544c0ef915b4aaf4a4c2215cbff97e0ed66276d4b14c70543069"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "f37de07b1d3db45609ab7aac24424933938089c5cfa6c5d626c631615f257890"
+    },
+    {
+      "file": "src/orchestrator/executor.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:57:46.920Z",
+      "finishedAt": "2026-09-20T06:57:49.002Z",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/78-7f058065-7804-4ecc-9c09-3c44ebc24dcf/output.tap",
+        "bytes": 1316,
+        "sha256": "f42cc1d140b6ed47b2f308aa19ec9e516143d07bd6c405ce15cced092b765fe5"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/78-7f058065-7804-4ecc-9c09-3c44ebc24dcf/passed.db.br",
+        "bytes": 2073469,
+        "sha256": "9c4f6a3e0c55b88b91851db813fc1b268f20425b565928426044bb11bcf06b21"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "9a9acc3ea69d2ebb0596d03bba40790cec1dce99e90ade6e67e1fa76578c4c28"
+    },
+    {
+      "file": "src/orchestrator/factory-templates.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:57:49.170Z",
+      "finishedAt": "2026-09-20T06:58:21.340Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/79-70732962-65ba-4331-8838-14ba37ae3f4c/output.tap",
+        "bytes": 4519,
+        "sha256": "ee0aa02aaa01b09379c410f8a6c0e5c3ba9fc6dd4963ca9635c231e1e9a49e56"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/79-70732962-65ba-4331-8838-14ba37ae3f4c/passed.db.br",
+        "bytes": 2078991,
+        "sha256": "e7c12789092ab0b3a54cb98ca6dd2ae2336bef5ec616cdd8767d0d476f5608c7"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "7ace5b0c3e0e73775f638ba0c32dea14f78a25765215f8d1064545d301117b9f"
+    },
+    {
+      "file": "src/orchestrator/factory.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:58:21.522Z",
+      "finishedAt": "2026-09-20T06:58:23.184Z",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/80-447fd3cf-7ffd-40ed-8dff-d490617f97a1/output.tap",
+        "bytes": 925,
+        "sha256": "cdc2eedd41c705423665ed3f58663b3e850daf135e2b15fed9f6f7418f084621"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/80-447fd3cf-7ffd-40ed-8dff-d490617f97a1/passed.db.br",
+        "bytes": 2080516,
+        "sha256": "c08a0c14bcc5593d04f157b3f15775fcb082a9ba1db8f898ecfe89523d39993b"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "601e7368b3eded1c262b86c95cf7c34bf23428de04c70508aa9e4762e48b3de3"
+    },
+    {
+      "file": "src/orchestrator/goal-analyzer.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:58:23.353Z",
+      "finishedAt": "2026-09-20T06:58:24.705Z",
+      "counts": {
+        "tests": 14,
+        "suites": 3,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/81-031c2ffe-f6d6-469a-8be4-14064ee5b34f/output.tap",
+        "bytes": 3487,
+        "sha256": "18e9922e1f64337750ff647f7f18cee5bf3ca65f94ce7f515bf10e36517ff95b"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/81-031c2ffe-f6d6-469a-8be4-14064ee5b34f/passed.db.br",
+        "bytes": 2080516,
+        "sha256": "66a7ee839b4eb0c80ca07525494ce9439f42c9dcbc1702158b3c9ebb44dae49c"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b16dfa8f049195f4faf3f66c398b837ff69a76805f568c5cb58ca0a0d11a2fea"
+    },
+    {
+      "file": "src/orchestrator/master-flow.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:58:24.884Z",
+      "finishedAt": "2026-09-20T06:58:47.480Z",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/82-36dc32ed-cb7c-467c-8be7-d1baaf1409cf/output.tap",
+        "bytes": 1399,
+        "sha256": "046708ef4321ea4a04a8f47c6c1ba19d930388777f8edbe0ccf0e49f84995b6f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/82-36dc32ed-cb7c-467c-8be7-d1baaf1409cf/passed.db.br",
+        "bytes": 2085739,
+        "sha256": "6ba11f42fd9be8e0f0c21202f2911693dfa98091ade7b250d99ab2a9d9b337a5"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "8fbafe75eccaec3e5b8568158dc678393f841ed2e4ee927db9477ec25fd5c801"
+    },
+    {
+      "file": "src/orchestrator/owner-entitlement.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:58:47.644Z",
+      "finishedAt": "2026-09-20T06:59:01.147Z",
+      "counts": {
+        "tests": 7,
+        "suites": 3,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/83-67f512b3-fdaa-4a1b-a6fa-a32f35c33724/output.tap",
+        "bytes": 2291,
+        "sha256": "7319a090423751a3999d3eea7c623f87c6598c1f8c03113c29173a2461afd089"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/83-67f512b3-fdaa-4a1b-a6fa-a32f35c33724/passed.db.br",
+        "bytes": 2085481,
+        "sha256": "13e032c20bc1406cdcd31acf0cf9857f61392d164a962cd4d47083f8f2022a1c"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "55b2079f4e5c0caf9e7a94a4ca7bd9c20f6235b4633c9eed80417c5ce458bbed"
+    },
+    {
+      "file": "src/orchestrator/queue.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:59:01.303Z",
+      "finishedAt": "2026-09-20T06:59:32.734Z",
+      "counts": {
+        "tests": 18,
+        "suites": 1,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/84-f855d8f3-319a-4a86-bfcc-a25032787dcc/output.tap",
+        "bytes": 4927,
+        "sha256": "eb8f3b235a99615e13a643678c223efbaf38b62a4490934b0c057909990e8bd8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/84-f855d8f3-319a-4a86-bfcc-a25032787dcc/passed.db.br",
+        "bytes": 2094107,
+        "sha256": "b4ab84a95a428bae0e90f610c3929186b1e1ea8339e9df3d513138022f7d6af3"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "7c523c585194482aaf8139ff98409a44d210a4f737ef92b28edc74f76478577b"
+    },
+    {
+      "file": "src/orchestrator/recovery.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:59:32.892Z",
+      "finishedAt": "2026-09-20T06:59:45.371Z",
+      "counts": {
+        "tests": 2,
+        "suites": 1,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/85-f2c886c5-2b4e-432a-b350-a0f03edc8b24/output.tap",
+        "bytes": 810,
+        "sha256": "5f81ae3a06147c93ad7688e3a3609baaf9f5737643ff98760306bbead25e2c73"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/85-f2c886c5-2b4e-432a-b350-a0f03edc8b24/passed.db.br",
+        "bytes": 2093191,
+        "sha256": "2dd6e3db2a0cc3b40f8386e72d595eef6e489a4f19be14c5040b94acd569a795"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "c140267e8058b46b3ee2e0007e34c02e91c0e2acfaa20082d86a5dce99e64d2a"
+    },
+    {
+      "file": "src/orchestrator/synthesizer.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:59:45.533Z",
+      "finishedAt": "2026-09-20T06:59:46.582Z",
+      "counts": {
+        "tests": 5,
+        "suites": 2,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/86-2c3858df-9210-49ba-a38f-7c786f1bb2e6/output.tap",
+        "bytes": 1345,
+        "sha256": "0eba92fc5d35c580f88be2bc01b377c869b4cc8ea4563dacf04458679c4ad089"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/86-2c3858df-9210-49ba-a38f-7c786f1bb2e6/passed.db.br",
+        "bytes": 2093191,
+        "sha256": "54a6e5bb400eb718eaf0563719acf9e062324bf1fc45a37bc85fa5869c77d7fc"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b245c4307f59b00d8df9744d85036fc20c728c2b2db325644b3c3bfd35707feb"
+    },
+    {
+      "file": "src/orchestrator/tool-stage.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T06:59:46.740Z",
+      "finishedAt": "2026-09-20T07:00:00.882Z",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/87-bb74b429-9311-4262-9b10-eb301008d878/output.tap",
+        "bytes": 1458,
+        "sha256": "a8dc259aa68949b36960ac295c7020b6e41aa24350ffc5e836aa3a248bea9d71"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/87-bb74b429-9311-4262-9b10-eb301008d878/passed.db.br",
+        "bytes": 2093563,
+        "sha256": "eb271190e2f7f70a03743de6685037ea3f8d7d149de2e987c95a2356750f9640"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "1e24996ada021b369c01e06eb568b54e1daff04449aa00725f77d3a45696336e"
+    },
+    {
+      "file": "src/orchestrator/verifier.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:01.035Z",
+      "finishedAt": "2026-09-20T07:00:02.152Z",
+      "counts": {
+        "tests": 11,
+        "suites": 2,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/88-b1f7aa4a-bc8b-4f07-8f05-5e7d09f497d7/output.tap",
+        "bytes": 2375,
+        "sha256": "4dfbc3f43eceb8ec1f5aaca5c4732e039cd15f529cae1ea49e7421cbbad55fd8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/88-b1f7aa4a-bc8b-4f07-8f05-5e7d09f497d7/passed.db.br",
+        "bytes": 2093564,
+        "sha256": "aa84c0f840f032b3942e7547bdbd221e48c68b4e963e6692e287fc1627f514c8"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "29ee15c935784ace74c53b3177bc63f33ee66189b00e982c00b93d4d7987b305"
+    },
+    {
+      "file": "src/push/push.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:02.318Z",
+      "finishedAt": "2026-09-20T07:00:22.092Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/89-1dd3e724-14aa-495d-b85d-f00ed9d20b5a/output.tap",
+        "bytes": 5730,
+        "sha256": "d0096aeded19cc6b164a0d9a3f4360e7d68115e3802d35bbee433a1e9022e7b5"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/89-1dd3e724-14aa-495d-b85d-f00ed9d20b5a/passed.db.br",
+        "bytes": 2103155,
+        "sha256": "9192793e329e3352a0ad58182fc6c7f738974a51af203ba712285fb29da2b889"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "27fd3fa738735ec8d337dfa75a9ca30d8b066c7e8f9e3283140badfc85c2a563"
+    },
+    {
+      "file": "src/realtime/execution-stream.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:22.251Z",
+      "finishedAt": "2026-09-20T07:00:26.368Z",
+      "counts": {
+        "tests": 5,
+        "suites": 2,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/90-857ed298-5444-474a-996c-f97f3c48e020/output.tap",
+        "bytes": 2355,
+        "sha256": "8423bf48a8c39ebaf4312ff37c7816731fff5c72e85babbf5d716bdd64dd8392"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/90-857ed298-5444-474a-996c-f97f3c48e020/passed.db.br",
+        "bytes": 2104223,
+        "sha256": "1ca5795a8cea2514e5c7bd73bed37e09d269501d5a4026dd9487e0589e1658e6"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "39ed59671a2adf01d0cd3461308090aa06a2c2b6c05113036afcaa953ed10abb"
+    },
+    {
+      "file": "src/routes/contact.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:26.519Z",
+      "finishedAt": "2026-09-20T07:00:28.259Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/91-b76f5071-2963-4f25-8870-0368e36ac74b/output.tap",
+        "bytes": 2956,
+        "sha256": "bf9414e0e07366a454a376fad9f8a7f7ce91b8a4eff70a36d3fe6be20dbf4cba"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/91-b76f5071-2963-4f25-8870-0368e36ac74b/passed.db.br",
+        "bytes": 2105973,
+        "sha256": "e8d23e70a952eead38e4f958d33986361ffd555828c6c2511d59766b0d8577b2"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "f9975aa24d05b02a6a0fb19f7c5e7f84d6acf72b708d8d5897bcbd544de0c50d"
+    },
+    {
+      "file": "src/routes/marketplace-world.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:28.445Z",
+      "finishedAt": "2026-09-20T07:00:42.883Z",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/92-911c868d-43a7-40a5-98e4-761edfd0fb63/output.tap",
+        "bytes": 8125,
+        "sha256": "41b6f4ecd8453f560b04546e9373608402ab399e76663d3a5e5d03c420fc687d"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/92-911c868d-43a7-40a5-98e4-761edfd0fb63/passed.db.br",
+        "bytes": 2111284,
+        "sha256": "39c832e797889b493a014d710d6fcf98d0524b2828acfa993b7151270f9951d8"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "4c6af9c3f85f5e3d500e1cafdf20b91217878214a6cb463e1500c7752df3b605"
+    },
+    {
+      "file": "src/routes/public.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:43.047Z",
+      "finishedAt": "2026-09-20T07:00:57.737Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/93-42fe6a52-e08b-4d1a-836f-543d66d98746/output.tap",
+        "bytes": 3666,
+        "sha256": "71476a5f20a22d746fd312535274213181361b9b2c2f5fece42ea8a773856a21"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/93-42fe6a52-e08b-4d1a-836f-543d66d98746/passed.db.br",
+        "bytes": 2111984,
+        "sha256": "837c8b4201ac0ffecbcc66adee0eecdccf88eafe7002a199bb44dda8d58e2053"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "ab960b69ee8ab7c14557d52484ad6c44db2accc125f0f4a71804f446a0923c38"
+    },
+    {
+      "file": "src/routes/workspace.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:00:57.923Z",
+      "finishedAt": "2026-09-20T07:01:14.386Z",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/94-8efa3ce3-4994-41d2-b301-35e4aca65773/output.tap",
+        "bytes": 13332,
+        "sha256": "3ac56c377d67e93a397a4844948de600886611db50a21ea8b885feb961f30bcc"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/94-8efa3ce3-4994-41d2-b301-35e4aca65773/passed.db.br",
+        "bytes": 2115163,
+        "sha256": "ba07ea8088e8d880ab17e93aa4fda63fd248b116bd2bfdc4d8ec0ffe19308cc6"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "de8e12cf85eeca171f4015ff331d2ddd7519766f262266c0efd041738c3a10d3"
+    },
+    {
+      "file": "src/scripts/backup.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:01:14.541Z",
+      "finishedAt": "2026-09-20T07:01:17.299Z",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/95-9307005c-3db1-4548-b07e-ca6c8275943a/output.tap",
+        "bytes": 1325,
+        "sha256": "d89d6703eaeb24acd312c740ff5c70a50741c2cfca0e4485efcb8ec6c531f0c8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/95-9307005c-3db1-4548-b07e-ca6c8275943a/passed.db.br",
+        "bytes": 2115560,
+        "sha256": "00e56bd8931f55a1240c529ef62de6df45886f4660dd6c9d75d1aa7043ea910d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "88b38d622a78199eaf19e4dc300e8102e62ab6f739e1e294c30f9466ea0d8ad4"
+    },
+    {
+      "file": "src/security/attack-surface.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:01:17.459Z",
+      "finishedAt": "2026-09-20T07:01:21.653Z",
+      "counts": {
+        "tests": 14,
+        "suites": 1,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/96-8d9a822d-bb7f-4c69-bb85-0ce16d2b44eb/output.tap",
+        "bytes": 66902,
+        "sha256": "77153593b0b045dbe9f855f4bc3ebad4ea0c0c35cdc1d0165f24c8741ea3ca03"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/96-8d9a822d-bb7f-4c69-bb85-0ce16d2b44eb/passed.db.br",
+        "bytes": 2128234,
+        "sha256": "d0e91ed96b885025a3c1ab3b3893c4efe183dd806bb7d0683c2af67ac2b08f87"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "15277c3a007658ab3a49bb76ab5da752a799300a49240ae40ec294306228ad55"
+    },
+    {
+      "file": "src/security/mission-cash-boundary.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:01:21.813Z",
+      "finishedAt": "2026-09-20T07:01:22.921Z",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/97-edf5ab21-b195-463a-9439-0d905e00dfe2/output.tap",
+        "bytes": 801,
+        "sha256": "d43ec1e2899c7418ffa12041518a693223fe181d44ef8558868b6a81d01cab58"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/97-edf5ab21-b195-463a-9439-0d905e00dfe2/passed.db.br",
+        "bytes": 2128234,
+        "sha256": "c7a51d344f61f71b3393fb0ef5286e6952fb0539b341c2eec78296ac645de52f"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "16491b4103677888a4819c96f226dc4f52844fc38e85a2fe10f23225d70b0373"
+    },
+    {
+      "file": "src/security/password.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:01:23.095Z",
+      "finishedAt": "2026-09-20T07:01:24.398Z",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/98-411f5b48-1356-4265-99ad-482589260747/output.tap",
+        "bytes": 762,
+        "sha256": "6be8aa804b2a6da942c12055ff55f63c4b66064144ae4f79d05cc31b678e4ef1"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/98-411f5b48-1356-4265-99ad-482589260747/passed.db.br",
+        "bytes": 2128233,
+        "sha256": "ca3662ce1ea22a0b12b582a1742c2c3ad069c77506ba3f16747c126428ef7af7"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "6354ff10bca495436a69e9251a9ca388372aded4f71016a0f48e96de6af4ebd4"
+    },
+    {
+      "file": "src/security/role-separation.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:01:24.580Z",
+      "finishedAt": "2026-09-20T07:01:39.285Z",
+      "counts": {
+        "tests": 14,
+        "suites": 6,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/99-a963983d-18c5-48da-a660-79b03b55fbd7/output.tap",
+        "bytes": 11745,
+        "sha256": "6eb534242346b5bffa198f2599d87f02702cbc85c9cd1fbffc53710fb0ec0482"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/99-a963983d-18c5-48da-a660-79b03b55fbd7/passed.db.br",
+        "bytes": 2130356,
+        "sha256": "337489947dec28cc60cc17d5edee85fc59a7482a3d7df0cff4588b7d2f542d17"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "7765625797faa6e9d5d72286df0be43ab0b600e4291d86be37a4e6f71cff25f1"
+    },
+    {
+      "file": "src/security/scan-secrets.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:02:42.097Z",
+      "finishedAt": "2026-09-20T07:02:44.182Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/101-ad5f885f-1cc1-4192-9d37-0dbe611fba0b/output.tap",
+        "bytes": 1290,
+        "sha256": "cc89494e51cd1b640c1d6d7a7251010786764b9dcd9df7e19069b1e9b45415e2"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/101-ad5f885f-1cc1-4192-9d37-0dbe611fba0b/passed.db.br",
+        "bytes": 2130356,
+        "sha256": "a09395ace4d861add39602a6d36b217d21241688ec307f0547cccc75f814ce23"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "9e31a7131d8709a098fafed63bb33aae63abb907fb0246c5fa066c8367cddd2d"
+    },
+    {
+      "file": "src/server/app.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:02:44.342Z",
+      "finishedAt": "2026-09-20T07:02:46.811Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/102-b1cfc03e-d3af-4edf-9b41-369638d68dde/output.tap",
+        "bytes": 4508,
+        "sha256": "5f2048ad9827407301a0534a71d3078aa34dff4b2f193ccde8ba2927b418348f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/102-b1cfc03e-d3af-4edf-9b41-369638d68dde/passed.db.br",
+        "bytes": 2130062,
+        "sha256": "a7dea1c16fe6f92ea4dc84af732e52999959e36c636255ae5f82c84dda563dd9"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "1b464d31c44ca1402608a57012f3ba76e2839c77aab037138a1202a7f5d908eb"
+    },
+    {
+      "file": "src/server/health.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:02:47.015Z",
+      "finishedAt": "2026-09-20T07:02:49.292Z",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/103-66427b1e-aaba-4bd6-9811-50a9b5b709d1/output.tap",
+        "bytes": 4443,
+        "sha256": "16bfb2bd70ea1298cd866fad20539374a2f768c207cec4e3df1f23ea7451af6f"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/103-66427b1e-aaba-4bd6-9811-50a9b5b709d1/passed.db.br",
+        "bytes": 2131017,
+        "sha256": "f72204d86c8cf51a84d9b67b1b9917a8e4d7e747658f55e39bd396f3d8207909"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "72f73af44dca84a67625c9c32c96a5c66e57a4a471ecc7e1f21d1c24e5e51699"
+    },
+    {
+      "file": "src/server/middleware/rate-limit.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:02:49.501Z",
+      "finishedAt": "2026-09-20T07:02:50.744Z",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/104-59b21b87-a1ca-4ff2-a490-7e17b89f9ade/output.tap",
+        "bytes": 831,
+        "sha256": "b30a5a3a0e7e7b7b0650476cab22a19e36a2afc3dfa9f3abf6ffe1520e79eff1"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/104-59b21b87-a1ca-4ff2-a490-7e17b89f9ade/passed.db.br",
+        "bytes": 2131017,
+        "sha256": "569dc2a6b2d6a221e655576d0c7dba6bff195f57b5fa80c1d092602508fadd5c"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "2e9dd707e1e1b8f2f73361f4c1df51a7d25f25ea80593a4595dba979a423eeee"
+    },
+    {
+      "file": "src/testing/checkpoint-runner.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:02:50.914Z",
+      "finishedAt": "2026-09-20T07:03:00.132Z",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/105-1e9cbf83-a338-4eab-91b8-eb180d73a81c/output.tap",
+        "bytes": 3289,
+        "sha256": "b37fed66b6c066889a0fe07cf2a8f5421eee79260d244e012ef20b4ed6126595"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/105-1e9cbf83-a338-4eab-91b8-eb180d73a81c/passed.db.br",
+        "bytes": 2131016,
+        "sha256": "a465d38593e99ec34c33f598cb85b1b30e7a555e6c2b4f6e610365e6e22ecd9d"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "dcd8401ed8c97d6473f41cd49681d82d73a660149c6e015dc0fe02efc27b09b0"
+    },
+    {
+      "file": "src/tools/tools.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:03:00.294Z",
+      "finishedAt": "2026-09-20T07:03:01.723Z",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/106-f96c7276-b170-4f1c-9a28-61831bc6e9e8/output.tap",
+        "bytes": 1955,
+        "sha256": "c77d46cb4a3afb6fb03e32b5e143e1eb6e12479593e52cb49a2d3b0788a90f67"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/106-f96c7276-b170-4f1c-9a28-61831bc6e9e8/passed.db.br",
+        "bytes": 2131157,
+        "sha256": "afc14be756bbec54c030f1a20b4fc1b9f8f574a3db144f46a1cb4a948c29fa01"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "02c6c0a7a8b60e13a0403a4c9412dcc039fc4827e8a3073af6f2d907bf279df0"
+    },
+    {
+      "file": "src/workforce/alerts.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:03:01.891Z",
+      "finishedAt": "2026-09-20T07:03:03.501Z",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/107-4f4c50bd-471b-4520-b30a-90f1a482f41e/output.tap",
+        "bytes": 2166,
+        "sha256": "aeaddd8d1820154027de357d008418e206283e676cda76aa70646c5738d9bb3e"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/107-4f4c50bd-471b-4520-b30a-90f1a482f41e/passed.db.br",
+        "bytes": 2133797,
+        "sha256": "db0168e8f8de16b230d977a97fc7c84e5d5ba4536372cb83e59b0ceda6b27a3a"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "6a145f875a33014949ee13aee111c79eb9eee0fbacd4de321e7c1c116596ddfc"
+    },
+    {
+      "file": "src/workforce/catalog-validation.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:03:03.676Z",
+      "finishedAt": "2026-09-20T07:03:04.896Z",
+      "counts": {
+        "tests": 1,
+        "suites": 0,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/108-6f893b2d-1a4b-424e-aa59-465264245872/output.tap",
+        "bytes": 590,
+        "sha256": "92764c2fbd33a148a5cd1449ad35785718725e23a5f60105eb152b209ca6ea61"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/108-6f893b2d-1a4b-424e-aa59-465264245872/passed.db.br",
+        "bytes": 2133797,
+        "sha256": "4beddefae1db3c1ba76a60e0818ccf15e2144d1d5620d37a2b8f23eb9f8a9df8"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "b685cee73c877baa14a776bed0170246d23d3140c647b8678c3c999ca9894051"
+    },
+    {
+      "file": "src/workforce/earning.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:03:05.062Z",
+      "finishedAt": "2026-09-20T07:03:51.413Z",
+      "counts": {
+        "tests": 12,
+        "suites": 4,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/109-4f42ff7e-6f39-4302-b217-664950e264c4/output.tap",
+        "bytes": 3566,
+        "sha256": "23b0c94ff805e13db00192dd23a5996b057210f5b298d37f5e00bb811f89ef2e"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/109-4f42ff7e-6f39-4302-b217-664950e264c4/passed.db.br",
+        "bytes": 2158545,
+        "sha256": "e1d1c14e3c9b8af109f9cdc0c710329a5ad094d2e1ac609fbd9f4be44d2a6115"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "8d20ff746ef63495fd0880ed14e3c4bc37eeaeddac9d9341dc1d57656d975b6b"
+    },
+    {
+      "file": "src/workforce/execution-cost.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:03:51.577Z",
+      "finishedAt": "2026-09-20T07:04:22.444Z",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/110-0659a123-f015-49ca-a60e-d5c86573ba18/output.tap",
+        "bytes": 1404,
+        "sha256": "2eb7627099837eb41ceb112dff6957be5cd33ce410865b68de31c5a0bc2de83d"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/110-0659a123-f015-49ca-a60e-d5c86573ba18/passed.db.br",
+        "bytes": 2158545,
+        "sha256": "288378d8ca9c765e4032e995a819d080ed0864d4f0f7ac8c7f32e926b465c5c2"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "5d66fdb7f790d09c7b5b3da3ee7d393ee1ee2d4d3862ffe9b370fe47c0a6ed90"
+    },
+    {
+      "file": "src/workforce/execution-integrity.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:04:22.625Z",
+      "finishedAt": "2026-09-20T07:04:52.589Z",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/111-d9e8bacc-2037-4299-8e06-bd451c52b52f/output.tap",
+        "bytes": 1735,
+        "sha256": "e5bbfc03c7a10a0749f5513463be5b8c4de8f84d6a2db007cc3bfc71c397cec7"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/111-d9e8bacc-2037-4299-8e06-bd451c52b52f/passed.db.br",
+        "bytes": 2158545,
+        "sha256": "2558e2b9e077965ec584aa1dd40b1c55f6f6093cd8bedde8d0e45182ae5434ea"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "51249f491de499ac51056e670c2f082a79e464f43e19759134a107c939792073"
+    },
+    {
+      "file": "src/workforce/images.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:04:52.754Z",
+      "finishedAt": "2026-09-20T07:05:05.573Z",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/112-bd12b6fb-2477-4e31-a10a-166902cba87f/output.tap",
+        "bytes": 1668,
+        "sha256": "86e2a95c3b3431c24f5e24102022c100cf4e2c9ca7ff64bdb0d30fa28afb2af8"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/112-bd12b6fb-2477-4e31-a10a-166902cba87f/passed.db.br",
+        "bytes": 2160009,
+        "sha256": "b5190e3b4338c12088f045a267603ef2ad41508e46acf9052cdc628ed6bd7e62"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "df938ea4c06bd024aa5a05a66c330124e0c82aeaf0d3b0153a9a2f7ce5d60ea4"
+    },
+    {
+      "file": "src/workforce/primary.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:05:05.732Z",
+      "finishedAt": "2026-09-20T07:05:18.938Z",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/113-87d305cd-637f-42bb-8ad9-c27730272b78/output.tap",
+        "bytes": 2688,
+        "sha256": "3bd29915565a25631720cbed317f42654731788614f3ea413694ed21b432f9cd"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/113-87d305cd-637f-42bb-8ad9-c27730272b78/passed.db.br",
+        "bytes": 2193750,
+        "sha256": "b043f959f35b09908695e46142906578dbdd46377fd5b0e5ff5b429dceabef55"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "9f413fe41d4d91c532662d22fa7447ed0a083a10bc4fefdf0b8bc4f5596ceb5d"
+    },
+    {
+      "file": "src/workforce/staging.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:05:19.114Z",
+      "finishedAt": "2026-09-20T07:05:49.342Z",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/114-b400ab4e-9e81-4cdd-af46-a421f7d29ae7/output.tap",
+        "bytes": 1842,
+        "sha256": "255e70915091f2ebc31c8fa71a2848299793a97ac2c8e28637328ff6b544985c"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/114-b400ab4e-9e81-4cdd-af46-a421f7d29ae7/passed.db.br",
+        "bytes": 2193750,
+        "sha256": "c10bf028044f19a8a313a725fb17f467f503cf8d1eb7a4376e6a98350b77894f"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "37f4c1d54b01ec66e72414c8db2a73759634cc7e4b6b5fb216c16738450bb3aa"
+    },
+    {
+      "file": "src/workforce/workforce.test.ts",
+      "status": "passed",
+      "startedAt": "2026-09-20T07:05:49.498Z",
+      "finishedAt": "2026-09-20T07:06:27.800Z",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "log": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/115-72e40be8-5c3e-4589-84ab-462ade92ea5d/output.tap",
+        "bytes": 4025,
+        "sha256": "87964539da6f0f0f3ec0e46d81db4cdd34885f24f33f142fca3325d2d19ac801"
+      },
+      "snapshot": {
+        "path": "logs/test-checkpoints/4c731c86d019491304ae9915/115-72e40be8-5c3e-4589-84ab-462ade92ea5d/passed.db.br",
+        "bytes": 2193750,
+        "sha256": "7c113fc9d5cedcaf3d6ebfa79a99511deb08d957c7ff2f5e59e29776686ee0f7"
+      },
+      "snapshotEncoding": "brotli",
+      "snapshotRawHash": "9aa3131f507e371ae4e38cfa2ce60ce2b94c40d9ee59f713e4d1c2e88150bb6d"
+    }
+  ],
+  "runtimeEvidence": {
+    "ignored": true,
+    "originalSnapshotsAndLogsRetained": true,
+    "largeArtifactsCommitted": false,
+    "restorationWarning": "Ignored runtime artifacts are not Git history and may not survive workspace restoration. Use tracked hashes and source SHA; independent GitHub CI artifacts have their own retained source-bound checkpoints and expiry."
+  },
+  "live": {
+    "configured": false,
+    "usdReceiverConfigured": false,
+    "actualEarningsClaimed": false,
+    "fixturesAreNotMoney": true,
+    "deploymentPerformed": false,
+    "withdrawalPerformed": false
+  }
+}

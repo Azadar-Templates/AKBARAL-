@@ -1,6 +1,9 @@
+import { providerChargeRecorded } from './resource-receipts';
+import { looksLikeInstrumentCredential } from './destination-safety';
+import { debit, getWallet } from './treasury';
 import { missionDb, missionId, nowIso, appendMissionAudit, type Row } from './database';
 import { encryptCredential, vaultConfigured, MissionAuthError } from './auth';
-import { currentPolicy, requestApproval, canAgentSpend, dailySpendCents } from './policy';
+import { currentPolicy, requestApproval, decideApproval, canAgentSpend, dailySpendCents } from './policy';
 
 /**
  * AGENT SELF-MANAGEMENT — the infrastructure that lets agents operate real
@@ -38,6 +41,21 @@ export class MissionSelfServiceError extends Error {
     this.name = 'MissionSelfServiceError';
     this.code = code;
     this.statusCode = statusCode;
+  }
+}
+
+/** Called only inside the subject mutation transaction. Queue and subject must
+ * agree; a stale rejection/expiry must never be silently overwritten by a
+ * direct endpoint. The generic route may already have recorded this decision.
+ */
+function synchronizeApproval(subjectType: 'resource' | 'upgrade' | 'tool', subjectId: string, decision: 'approved' | 'rejected', actorId: string, note?: string | null): void {
+  const approvals = missionDb.all<Row>('SELECT * FROM mission_approvals WHERE subject_type = ? AND subject_id = ? AND action = ?', [subjectType, subjectId, `${subjectType}.approve`]);
+  if (!approvals.length) throw new MissionSelfServiceError(409, 'approval record is missing; request owner review again', 'conflict');
+  if (approvals.some(approval => !['pending', decision].includes(String(approval.status)))) throw new MissionSelfServiceError(409, 'approval queue contains a conflicting or expired decision', 'conflict');
+  for (const approval of approvals) {
+    if (approval.status !== 'pending') continue;
+    const result = decideApproval({ id: String(approval.id), decision, decidedBy: actorId, note, actorType: 'owner' });
+    if (!result.ok) throw new MissionSelfServiceError(409, result.reason ?? 'approval decision failed', 'conflict');
   }
 }
 
@@ -117,6 +135,7 @@ export function setToolStatus(key: string, status: 'approved' | 'restricted' | '
 }
 
 export function requestTool(input: { agentId: string; toolKey: string; justification?: string | null; actorId?: string | null }): Row {
+  return missionDb.transaction(() => {
   const tool = getTool(input.toolKey);
   if (!tool) throw new MissionSelfServiceError(404, 'unknown tool — agents may only request catalog entries', 'not_found');
   const id = missionId('tqr');
@@ -135,19 +154,24 @@ export function requestTool(input: { agentId: string; toolKey: string; justifica
     requestApproval({ subjectType: 'tool', subjectId: id, action: 'tool.approve', requestedBy: input.actorId ?? input.agentId, note: `tool request: ${input.toolKey}` });
   }
   return missionDb.get<Row>('SELECT * FROM mission_tool_requests WHERE id = ?', [id])!;
+  });
 }
 
 export function decideToolRequest(input: { id: string; decision: 'approved' | 'rejected'; actorId: string; actorType?: SelfServiceActor }): Row {
+  return missionDb.transaction(() => {
   assertOwnerAction(input.actorType, 'decide a tool request');
   const row = missionDb.get<Row>('SELECT * FROM mission_tool_requests WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'tool request not found', 'not_found');
   if (String(row.status) !== 'requested') throw new MissionSelfServiceError(409, `request already ${row.status}`, 'conflict');
+  if (input.decision === 'approved' && getTool(String(row.tool_key))?.status === 'blocked') throw new MissionSelfServiceError(403, 'tool is blocked by current policy', 'forbidden');
+  synchronizeApproval('tool', input.id, input.decision, input.actorId);
   missionDb.run('UPDATE mission_tool_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', [input.decision, input.actorId, nowIso(), input.id]);
   appendMissionAudit({
     actorType: 'owner', actorId: input.actorId, action: `tool.request_${input.decision}`,
     subjectType: 'tool', subjectId: String(row.tool_key), detail: { agentId: String(row.agent_id) },
   });
   return missionDb.get<Row>('SELECT * FROM mission_tool_requests WHERE id = ?', [input.id])!;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,6 +241,7 @@ export function storeCredential(input: {
   expiresAt?: string | null;
   actorId?: string | null;
 }): CredentialPublic {
+  return missionDb.transaction(() => {
   if (!vaultConfigured()) {
     throw new MissionAuthError(
       503,
@@ -247,6 +272,8 @@ export function storeCredential(input: {
     detail: { provider: input.provider, label: input.label, expiresAt: input.expiresAt ?? null },
   });
   return toPublicCredential(missionDb.get<Row>('SELECT * FROM mission_credentials WHERE id = ?', [id])!);
+
+  });
 }
 
 /** Secrets never leave this surface: values are structurally absent. */
@@ -267,6 +294,7 @@ export function rotateCredential(input: {
   actorId?: string | null;
   verified?: boolean;
 }): CredentialPublic {
+  return missionDb.transaction(() => {
   if (!vaultConfigured()) {
     throw new MissionAuthError(503, 'the credential vault is not configured — rotation is disabled', 'vault_not_configured');
   }
@@ -299,15 +327,20 @@ export function rotateCredential(input: {
     detail: { reason: input.reason ?? null, verified: Boolean(input.verified), hint: encrypted.hint },
   });
   return toPublicCredential(missionDb.get<Row>('SELECT * FROM mission_credentials WHERE id = ?', [input.id])!);
+
+  });
 }
 
 export function revokeCredential(id: string, actorId: string, reason?: string | null, actorType?: SelfServiceActor): CredentialPublic {
+  return missionDb.transaction(() => {
   assertOwnerAction(actorType, 'revoke a credential');
   const row = missionDb.get<Row>('SELECT * FROM mission_credentials WHERE id = ?', [id]);
   if (!row) throw new MissionSelfServiceError(404, 'credential not found', 'not_found');
   missionDb.run(`UPDATE mission_credentials SET status = 'revoked', updated_at = ? WHERE id = ?`, [nowIso(), id]);
   appendMissionAudit({ actorType: 'owner', actorId, action: 'credential.revoked', subjectType: 'credential', subjectId: id, detail: { reason: reason ?? null } });
   return toPublicCredential(missionDb.get<Row>('SELECT * FROM mission_credentials WHERE id = ?', [id])!);
+
+  });
 }
 
 export function credentialRotations(credentialId: string): Row[] {
@@ -338,6 +371,7 @@ export function expiringCredentials(withinDays = 30): Array<CredentialPublic & {
 
 /** Sweep credential status (active → expiring → expired) and audit transitions. */
 export function sweepCredentialStatus(): { updated: number; expired: number } {
+  return missionDb.transaction(() => {
   const rows = missionDb.all<Row>('SELECT * FROM mission_credentials WHERE status != ?', ['revoked']);
   let updated = 0;
   let expired = 0;
@@ -354,11 +388,29 @@ export function sweepCredentialStatus(): { updated: number; expired: number } {
     }
   }
   return { updated, expired };
+
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resources (scoped infrastructure with expiry + usage + maintenance)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Bounded cumulative counters only; never truncate JSON into an invalid value. */
+export function resourceCounters(value: unknown, label: string): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MissionSelfServiceError(400, `${label} must be a counter object`, 'validation_error');
+  const entries = Object.entries(value);
+  if (entries.length > 64) throw new MissionSelfServiceError(400, `${label} has too many counters`, 'validation_error');
+  const result: Record<string, number> = Object.create(null);
+  for (const [key, amount] of entries) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,63}$/.test(key) || ['constructor', 'prototype'].includes(key) || typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > Number.MAX_SAFE_INTEGER) {
+      throw new MissionSelfServiceError(400, `${label} counters must have safe names and finite nonnegative values`, 'validation_error');
+    }
+    result[key] = amount;
+  }
+  if (JSON.stringify(result).length > 8000) throw new MissionSelfServiceError(400, `${label} exceeds the storage limit`, 'validation_error');
+  return result;
+}
 
 export function requestResource(input: {
   agentId: string;
@@ -372,14 +424,18 @@ export function requestResource(input: {
   credentialId?: string | null;
   actorId?: string | null;
 }): Row {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
-  const monthly = Math.round(input.monthlyCostCents ?? 0);
+  const monthly = input.monthlyCostCents ?? 0;
+  const limits = resourceCounters(input.limits ?? {}, 'resource limits');
+  if (!Number.isSafeInteger(monthly) || monthly < 0) throw new MissionSelfServiceError(400, 'resource cost must be nonnegative integer cents', 'validation_error');
+  if (input.expiresAt && !Number.isFinite(Date.parse(input.expiresAt))) throw new MissionSelfServiceError(400, 'invalid resource expiry', 'validation_error');
   const id = missionId('res');
-  const status = monthly > policy.requireApprovalAboveCents ? 'requested' : 'active';
+  const status = monthly >= policy.requireApprovalAboveCents ? 'requested' : 'approved';
   missionDb.run(
     `INSERT INTO mission_resources (id, agent_id, kind, provider, plan, monthly_cost_cents, status, auto_renew, expires_at, limits, credential_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.agentId, input.kind.slice(0, 40), input.provider.slice(0, 80), input.plan ?? null, monthly, status, input.autoRenew ? 1 : 0, input.expiresAt ?? null, input.limits ? JSON.stringify(input.limits) : null, input.credentialId ?? null],
+    [id, input.agentId, input.kind.slice(0, 40), input.provider.slice(0, 80), input.plan ?? null, monthly, status, input.autoRenew ? 1 : 0, input.expiresAt ?? null, JSON.stringify(limits), input.credentialId ?? null],
   );
   if (status === 'requested') {
     requestApproval({ subjectType: 'resource', subjectId: id, action: 'resource.approve', amountCents: monthly, requestedBy: input.actorId ?? input.agentId, note: `${input.provider} ${input.kind}` });
@@ -392,16 +448,22 @@ export function requestResource(input: {
     detail: { kind: input.kind, provider: input.provider, monthlyCostCents: monthly },
   });
   return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [id])!;
+
+  });
 }
 
 export function decideResource(input: { id: string; decision: 'approved' | 'rejected'; actorId: string; note?: string | null; actorType?: SelfServiceActor }): Row {
+  return missionDb.transaction(() => {
   assertOwnerAction(input.actorType, 'approve a resource');
   const row = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
   if (String(row.status) !== 'requested') throw new MissionSelfServiceError(409, `resource is ${row.status}`, 'conflict');
-  missionDb.run('UPDATE mission_resources SET status = ?, updated_at = ? WHERE id = ?', [input.decision === 'approved' ? 'active' : 'retired', nowIso(), input.id]);
+  synchronizeApproval('resource', input.id, input.decision, input.actorId, input.note);
+  missionDb.run('UPDATE mission_resources SET status = ?, updated_at = ? WHERE id = ?', [input.decision === 'approved' ? 'approved' : 'retired', nowIso(), input.id]);
   appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: `resource.${input.decision}`, subjectType: 'resource', subjectId: input.id, detail: { note: input.note ?? null } });
   return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id])!;
+
+  });
 }
 
 export function listResources(agentId?: string): Row[] {
@@ -411,15 +473,27 @@ export function listResources(agentId?: string): Row[] {
 }
 
 export function recordResourceUsage(input: { id: string; usage: Record<string, unknown>; actorType?: 'owner' | 'agent' | 'provider'; actorId?: string | null }): Row {
+  return missionDb.transaction(() => {
   const row = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
-  missionDb.run('UPDATE mission_resources SET usage = ?, updated_at = ? WHERE id = ?', [JSON.stringify(input.usage).slice(0, 8000), nowIso(), input.id]);
+  if (input.actorType === 'agent' && String(row.agent_id) !== input.actorId) throw new MissionSelfServiceError(403, 'resource belongs to another agent', 'forbidden');
+  const incoming = resourceCounters(input.usage, 'resource usage');
+  let previous: Record<string, number>;
+  try { previous = resourceCounters(JSON.parse(String(row.usage ?? '{}')), 'stored resource usage'); }
+  catch { throw new MissionSelfServiceError(409, 'stored resource usage is invalid; owner review is required', 'conflict'); }
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value < (previous[key] ?? 0)) throw new MissionSelfServiceError(409, 'cumulative resource usage cannot decrease or reset a quota', 'conflict');
+  }
+  const merged = resourceCounters({ ...previous, ...incoming }, 'resource usage');
+  missionDb.run('UPDATE mission_resources SET usage = ?, updated_at = ? WHERE id = ?', [JSON.stringify(merged), nowIso(), input.id]);
   appendMissionAudit({
     actorType: input.actorType ?? 'agent', actorId: input.actorId ?? null,
     action: 'resource.usage_recorded', subjectType: 'resource', subjectId: input.id,
     detail: { keys: Object.keys(input.usage) },
   });
   return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id])!;
+
+  });
 }
 
 /** Renewal/maintenance sweep: what expires soon or has lapsed. */
@@ -433,12 +507,15 @@ export function resourceRenewals(withinDays = 30): Array<{ resource: Row; daysUn
 }
 
 export function retireResource(id: string, actorId: string, reason?: string | null, actorType?: SelfServiceActor): Row {
+  return missionDb.transaction(() => {
   assertOwnerAction(actorType, 'retire a resource');
   const row = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [id]);
   if (!row) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
   missionDb.run(`UPDATE mission_resources SET status = 'retired', updated_at = ? WHERE id = ?`, [nowIso(), id]);
   appendMissionAudit({ actorType: 'owner', actorId, action: 'resource.retired', subjectType: 'resource', subjectId: id, detail: { reason: reason ?? null } });
   return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [id])!;
+
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -454,8 +531,10 @@ export function requestUpgrade(input: {
   actorType?: 'owner' | 'agent';
   actorId?: string | null;
 }): { upgrade: Row; budget: ReturnType<typeof canAgentSpend> | null } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
-  const cost = Math.round(input.requestedCostCents ?? 0);
+  const cost = input.requestedCostCents;
+  if (!Number.isSafeInteger(cost) || cost < 0) throw new MissionSelfServiceError(400, 'upgrade cost must be nonnegative integer cents', 'validation_error');
   const walletId = input.walletId ?? missionDb.get<Row>('SELECT id FROM mission_wallets WHERE agent_id = ? AND status = ? LIMIT 1', [input.agentId, 'active'])?.id;
   const budget = walletId
     ? canAgentSpend({ walletId: String(walletId), amountCents: cost, category: 'upgrade', agentId: input.agentId }, policy, dailySpendCents(nowIso()))
@@ -477,13 +556,17 @@ export function requestUpgrade(input: {
     detail: { capability: input.capability, costCents: cost, budgetOk: Boolean(budget?.allowed), reasons: budget?.reasons ?? [] },
   });
   return { upgrade: missionDb.get<Row>('SELECT * FROM mission_upgrades WHERE id = ?', [id])!, budget };
+
+  });
 }
 
 export function decideUpgrade(input: { id: string; decision: 'approved' | 'rejected'; actorId: string; note?: string | null; actorType?: SelfServiceActor }): Row {
+  return missionDb.transaction(() => {
   assertOwnerAction(input.actorType, 'approve an upgrade');
   const row = missionDb.get<Row>('SELECT * FROM mission_upgrades WHERE id = ?', [input.id]);
   if (!row) throw new MissionSelfServiceError(404, 'upgrade not found', 'not_found');
   if (String(row.status) !== 'requested') throw new MissionSelfServiceError(409, `upgrade is ${row.status}`, 'conflict');
+  synchronizeApproval('upgrade', input.id, input.decision, input.actorId, input.note);
   if (input.decision === 'rejected') {
     missionDb.run('UPDATE mission_upgrades SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', ['rejected', input.actorId, nowIso(), input.id]);
   } else {
@@ -491,15 +574,15 @@ export function decideUpgrade(input: { id: string; decision: 'approved' | 'rejec
     // attached, and the debit itself can still be refused by the budget gate.
     const walletId = row.wallet_id ? String(row.wallet_id) : null;
     const cost = Number(row.requested_cost_cents);
+    if (!walletId && cost > 0) throw new MissionSelfServiceError(409, 'a funded wallet is required for this upgrade', 'wallet_required');
     if (walletId && cost > 0) {
       const policy = currentPolicy();
       const decision = canAgentSpend({ walletId, amountCents: cost, category: 'upgrade', agentId: row.agent_id ? String(row.agent_id) : null }, policy, dailySpendCents(nowIso()));
-      if (!decision.allowed) {
+      if (!decision.allowed && !decision.requiresApproval) {
         throw new MissionSelfServiceError(409, `budget check failed at approval time: ${decision.reasons.join('; ')}`, 'policy_denied');
       }
-      const { debit } = require('./treasury') as typeof import('./treasury');
       debit({
-        walletId, amountCents: cost, category: 'upgrade', reference: input.id,
+        walletId, amountCents: cost, category: 'upgrade', reference: input.id, idempotencyKey: `upgrade:${input.id}`,
         memo: `capability upgrade: ${row.capability}`, actorType: 'owner', actorId: input.actorId,
       });
     }
@@ -507,9 +590,12 @@ export function decideUpgrade(input: { id: string; decision: 'approved' | 'rejec
   }
   appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: `upgrade.${input.decision}`, subjectType: 'upgrade', subjectId: input.id, detail: { note: input.note ?? null } });
   return missionDb.get<Row>('SELECT * FROM mission_upgrades WHERE id = ?', [input.id])!;
+
+  });
 }
 
 export function applyUpgrade(id: string, actorId: string, actorType?: SelfServiceActor): Row {
+  return missionDb.transaction(() => {
   assertOwnerAction(actorType, 'apply an upgrade');
   const row = missionDb.get<Row>('SELECT * FROM mission_upgrades WHERE id = ?', [id]);
   if (!row) throw new MissionSelfServiceError(404, 'upgrade not found', 'not_found');
@@ -517,6 +603,8 @@ export function applyUpgrade(id: string, actorId: string, actorType?: SelfServic
   missionDb.run('UPDATE mission_upgrades SET status = ?, applied_at = ? WHERE id = ?', ['applied', nowIso(), id]);
   appendMissionAudit({ actorType: 'owner', actorId, action: 'upgrade.applied', subjectType: 'upgrade', subjectId: id });
   return missionDb.get<Row>('SELECT * FROM mission_upgrades WHERE id = ?', [id])!;
+
+  });
 }
 
 export function listUpgrades(agentId?: string): Row[] {
@@ -641,4 +729,97 @@ export function selfManagementSnapshot(agentId?: string): SelfManagementSnapshot
     },
     requiresExternalActivation: EXTERNAL_ACTIVATION,
   };
+}
+
+/** Owner-recorded provider evidence; this never calls a payment API. */
+export function provisionResource(input: { id: string; walletId?: string; actualCostCents: number; providerRef: string; evidence: string; actorId: string; actorType?: SelfServiceActor }): Row {
+  assertOwnerAction(input.actorType, 'record resource provisioning');
+  return missionDb.transaction(() => {
+    const resource = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
+    if (!resource) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
+    if (!['approved', 'needs_verification'].includes(String(resource.status))) throw new MissionSelfServiceError(409, 'resource must be approved and not already provisioned', 'conflict');
+    const amount = input.actualCostCents;
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > Number(resource.monthly_cost_cents)) throw new MissionSelfServiceError(400, 'actual resource cost exceeds its approved quote or is invalid', 'validation_error');
+    if (looksLikeInstrumentCredential(input.providerRef).unsafe) throw new MissionSelfServiceError(400, 'provisioning reference must not contain payment instruments or credentials', 'unsafe_reference');
+    if (input.providerRef.trim().length < 4 || input.evidence.trim().length < 12) throw new MissionSelfServiceError(400, 'provider reference and provisioning evidence are required', 'verification_required');
+    if (providerChargeRecorded(String(resource.provider), input.providerRef.trim())) throw new MissionSelfServiceError(409, 'provider provisioning reference already recorded', 'duplicate_receipt');
+    const policy = currentPolicy();
+    if (policy.killSwitch) throw new MissionSelfServiceError(409, 'mission kill switch is engaged', 'policy_denied');
+    if (amount > 0) {
+      const wallet = input.walletId ? getWallet(input.walletId) : null;
+      if (!wallet) throw new MissionSelfServiceError(409, 'select a funded mission wallet; customer funds are never used', 'wallet_required');
+      if (wallet.agentId && wallet.agentId !== String(resource.agent_id)) throw new MissionSelfServiceError(403, 'resource cannot spend another agent wallet', 'forbidden');
+      if (wallet.currency !== policy.currency) throw new MissionSelfServiceError(409, 'resource funding currency does not match mission currency', 'currency_mismatch');
+      const gate = canAgentSpend({ walletId: wallet.id, agentId: String(resource.agent_id), amountCents: amount, category: 'expense' }, policy, dailySpendCents(nowIso()));
+      if (!gate.allowed && !gate.requiresApproval) throw new MissionSelfServiceError(409, `resource funding refused: ${gate.reasons.join('; ')}`, 'policy_denied');
+      debit({ walletId: wallet.id, amountCents: amount, category: 'expense', reference: input.id, idempotencyKey: `resource:${input.id}:provision`, actorType: 'owner', actorId: input.actorId, memo: `provider resource ${resource.provider}: ${input.providerRef.trim()}` });
+    }
+    missionDb.run('UPDATE mission_resources SET status = ?, funding_wallet_id = ?, provisioning_ref = ?, provisioned_cost_cents = ?, provisioned_at = ?, updated_at = ? WHERE id = ?', ['active', input.walletId ?? null, input.providerRef.trim(), amount, nowIso(), nowIso(), input.id]);
+    appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: 'resource.provisioned', subjectType: 'resource', subjectId: input.id, detail: { providerRef: input.providerRef.trim(), evidence: input.evidence.trim(), amountCents: amount, fundingWalletId: input.walletId ?? null } });
+    return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id])!;
+  });
+}
+
+/** Owner-controlled metadata binding; no plaintext, purchase or activation. */
+export function bindResourceCredential(input: { id: string; credentialId: string; expectedCredentialId: string | null; reason: string; actorId: string; actorType?: SelfServiceActor }): Row {
+  return missionDb.transaction(() => {
+    assertOwnerAction(input.actorType, 'bind a resource credential');
+    const resource = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id]);
+    if (!resource) throw new MissionSelfServiceError(404, 'resource not found', 'not_found');
+    if (resource.status === 'retired') throw new MissionSelfServiceError(409, 'a retired resource cannot be rebound', 'conflict');
+    const reason = input.reason.trim();
+    if (reason.length < 12 || reason.length > 1000 || looksLikeInstrumentCredential(reason).unsafe) throw new MissionSelfServiceError(400, 'provide a 12–1000 character reason without credentials or payment instruments', 'validation_error');
+    const credential = getCredentialPublic(input.credentialId);
+    if (!credential || !['active', 'expiring'].includes(credential.status) || (credential.expiresAt && (!Number.isFinite(Date.parse(credential.expiresAt)) || Date.parse(credential.expiresAt) <= Date.now()))) throw new MissionSelfServiceError(409, 'replacement credential is unavailable or expired', 'credential_unavailable');
+    if (credential.provider !== String(resource.provider)) throw new MissionSelfServiceError(409, 'replacement credential belongs to another provider', 'credential_provider_mismatch');
+    const previous = resource.credential_id ? String(resource.credential_id) : null;
+    if (previous === credential.id) return resource;
+    if (previous !== input.expectedCredentialId) throw new MissionSelfServiceError(409, 'resource credential binding changed; refresh before retrying', 'conflict');
+    missionDb.run('UPDATE mission_resources SET credential_id = ?, updated_at = ? WHERE id = ?', [credential.id, nowIso(), input.id]);
+    appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: 'resource.credential_bound', subjectType: 'resource', subjectId: input.id, detail: { previousCredentialId: previous, credentialId: credential.id, reason, providerVerified: false } });
+    return missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [input.id])!;
+  });
+}
+
+/** Live readiness, independent of sweeps; never exposes credential plaintext. */
+export function resourceReadiness(id: string, excludeCallId?: string): { usable: boolean; blockers: string[] } {
+  const resource = missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [id]);
+  if (!resource) return { usable: false, blockers: ['resource_not_found'] };
+  const blockers: string[] = [];
+  if (currentPolicy().killSwitch) blockers.push('kill_switch_engaged');
+  if (!resource.agent_id || missionDb.get<Row>('SELECT status FROM mission_agents WHERE id = ?', [String(resource.agent_id)])?.status !== 'active') blockers.push('resource_agent_inactive_or_missing');
+  if (/api/i.test(String(resource.kind)) && !resource.credential_id) blockers.push('credential_not_configured');
+  if (resource.status !== 'active' || !resource.provisioned_at) blockers.push('resource_not_provisioned');
+  if (resource.expires_at && (!Number.isFinite(Date.parse(String(resource.expires_at))) || Date.parse(String(resource.expires_at)) <= Date.now())) blockers.push('resource_expired');
+  if (resource.credential_id) {
+    const credential = getCredentialPublic(String(resource.credential_id));
+    if (!credential || !['active', 'expiring'].includes(credential.status) || (credential.expiresAt && (!Number.isFinite(Date.parse(credential.expiresAt)) || Date.parse(credential.expiresAt) <= Date.now()))) blockers.push('credential_unavailable_or_expired');
+    if (credential && credential.provider !== String(resource.provider)) blockers.push('credential_provider_mismatch');
+  }
+  try {
+    const limits = resourceCounters(JSON.parse(String(resource.limits ?? '{}')), 'resource limits');
+    const usage = resourceCounters(JSON.parse(String(resource.usage ?? '{}')), 'resource usage');
+    const held = pendingResourceUsage(id, excludeCallId);
+    const outstanding = missionDb.all<Row>("SELECT id, status, deadline_at FROM mission_resource_calls WHERE resource_id = ? AND status IN ('dispatched', 'uncertain')", [id]);
+    if (outstanding.some(call => call.id !== excludeCallId && (call.status === 'uncertain' || !call.deadline_at || !Number.isFinite(Date.parse(String(call.deadline_at))) || Date.parse(String(call.deadline_at)) <= Date.now()))) blockers.push('provider_outcome_uncertain');
+    for (const [key, cap] of Object.entries(limits)) {
+      if (usage[key] === undefined) blockers.push(`quota_usage_unreported:${key}`);
+      else if (usage[key] >= cap) blockers.push(`quota_exhausted:${key}`);
+      else if (usage[key] + (held[key] ?? 0) >= cap) blockers.push(`quota_reserved:${key}`);
+    }
+  } catch { blockers.push('invalid_usage_or_limits'); }
+  return { usable: blockers.length === 0, blockers };
+}
+
+/** Only unfinished calls hold capacity. There is intentionally no timeout-based
+ * release for dispatched calls: a lost response does not prove zero usage. */
+export function pendingResourceUsage(resourceId: string, excludeCallId?: string): Record<string, number> {
+  const rows = missionDb.all<Row>("SELECT id, reserved_usage FROM mission_resource_calls WHERE resource_id = ? AND status IN ('reserved', 'dispatched', 'uncertain')", [resourceId]);
+  const held: Record<string, number> = Object.create(null);
+  for (const row of rows) {
+    if (row.id === excludeCallId) continue;
+    const counters = resourceCounters(JSON.parse(String(row.reserved_usage)), 'reserved usage');
+    for (const [key, value] of Object.entries(counters)) held[key] = (held[key] ?? 0) + value;
+  }
+  return resourceCounters(held, 'total reserved usage');
 }

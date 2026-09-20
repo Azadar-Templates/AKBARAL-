@@ -1,3 +1,4 @@
+import { confirmPayoutVerification, PAYOUT_VERIFICATION_CHECKS } from './payout-verification';
 /**
  * ZA141251SA — treasury, revenue-honesty, payout and self-management tests.
  *
@@ -56,6 +57,7 @@ import {
   applyUpgrade,
   createService,
   decideResource,
+  provisionResource,
   decideToolRequest,
   decideUpgrade,
   expiringCredentials,
@@ -282,6 +284,8 @@ test('payout slots are exactly four, configurable without handing over credentia
 
   const verified = verifyPayoutSlot(1, OWNER);
   assert.equal(String(verified.status), 'active', 'owner verification activates the slot');
+  assert.throws(() => requestPayout({ slot: 1, amountCents: 1000, idempotencyKey: 'status-only-denied' }), /not verified/);
+  confirmPayoutVerification({ slot: 1, ownerId: OWNER, checks: Object.fromEntries(PAYOUT_VERIFICATION_CHECKS.map(check => [check.key, true])), attestation: 'Synthetic owner confirmation for unit tests only; no actual payment destination.' });
   assert.equal(String(listPayoutSlots().find((slot) => Number(slot.slot) === 2)?.status), 'pending_verification', 'slot 2 was configured but not verified');
   assert.equal(String(listPayoutSlots().find((slot) => Number(slot.slot) === 4)?.status), 'unconfigured', 'slot 4 is untouched');
 });
@@ -457,7 +461,10 @@ test('agents manage resources and upgrades inside their budget, with audit trail
   assert.equal(String(resource.status), 'requested', 'a costly resource needs owner approval');
   assert.throws(() => decideResource({ id: String(resource.id), decision: 'approved', actorId: 'agt_a', actorType: 'agent' }), (error: unknown) => error instanceof MissionSelfServiceError && error.code === 'forbidden', 'an agent cannot approve its own resource request');
   const approved = decideResource({ id: String(resource.id), decision: 'approved', actorId: OWNER });
-  assert.equal(String(approved.status), 'active');
+  assert.equal(String(approved.status), 'approved', 'approval alone is not actual provisioning');
+  const treasuryWallet = missionDb.get<Row>("SELECT id FROM mission_wallets WHERE kind = 'mission' LIMIT 1")!;
+  const provisioned = provisionResource({ id: String(resource.id), walletId: String(treasuryWallet.id), actualCostCents: 100, providerRef: 'synthetic-resource-invoice', evidence: 'Synthetic provisioned resource fixture; no provider contacted.', actorId: OWNER });
+  assert.equal(String(provisioned.status), 'active');
   const withUsage = recordResourceUsage({ id: String(resource.id), usage: { monthlyRequests: 1_234, costCents: 42 }, actorId: OWNER });
   assert.equal(JSON.parse(String(withUsage.usage)).monthlyRequests, 1_234);
   assert.equal(listResources('agt_a').some((entry) => String(entry.id) === String(resource.id)), true);

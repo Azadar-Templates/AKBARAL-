@@ -176,6 +176,10 @@ export class ModelRouter {
       const startedAt = Date.now();
       try {
         const result = await provider.chat(decision.model, messages);
+        // D10: the cost used to be computed ONLY for the model_runs row while
+        // callers read `result.usage.costCents` (never set → 0 posted to the
+        // execution ledger). Compute once, record AND return on the result.
+        const costCents = estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0);
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
@@ -185,9 +189,12 @@ export class ModelRouter {
           latencyMs: result.latencyMs,
           inputTokens: result.inputTokens ?? null,
           outputTokens: result.outputTokens ?? null,
-          costCents: estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0),
+          costCents,
         });
-        return result;
+        return {
+          ...result,
+          usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costCents },
+        };
       } catch (error) {
         lastError = error;
         lastAttemptError = error;
@@ -264,6 +271,9 @@ export class ModelRouter {
         const result = provider.streamChat
           ? await provider.streamChat(decision.model, messages, onToken)
           : await streamViaChat(provider, decision.model, messages, onToken);
+        // D10: same usage-attachment as complete() — streaming callers get
+        // the real cost on the result too.
+        const costCents = estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0);
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
@@ -273,9 +283,12 @@ export class ModelRouter {
           latencyMs: result.latencyMs,
           inputTokens: result.inputTokens ?? null,
           outputTokens: result.outputTokens ?? null,
-          costCents: estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0),
+          costCents,
         });
-        return result;
+        return {
+          ...result,
+          usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costCents },
+        };
       } catch (error) {
         lastError = error;
         lastAttemptError = error;

@@ -229,7 +229,7 @@ function renderOverview(overview) {
   cards.append(
     card('Agents', overview.agents.total, `${overview.agents.custom} created in-mission · ${overview.agents.registry} from the registry`),
     card('Hierarchy depth', overview.agents.maxDepth, `cap ${overview.policy.maxDepth}`),
-    card('Realized revenue', money(overview.revenue.windows.lifetimeCents, currency), 'verified receipts only'),
+    card('Legacy reported revenue', money(overview.revenue.windows.lifetimeCents, currency), 'verified receipts only'),
     card('Treasury balance', money(treasury.totalBalanceCents, currency), `${overview.treasury.wallets.length} wallets`),
     card('Today (verified)', money(overview.revenue.windows.todayCents, currency)),
     card('Last 30 days', money(overview.revenue.windows.last30DaysCents, currency)),
@@ -309,7 +309,7 @@ function renderAgentReport(report) {
     card('Children', report.agent.childCount),
     card('Status', report.agent.status),
     card('Wallet balance', report.wallet ? money(report.wallet.balanceCents, currency) : 'no wallet'),
-    card('Realized revenue', money(revenue.realizedCents, currency), 'verified receipts'),
+    card('Legacy reported revenue', money(revenue.realizedCents, currency), 'verified receipts'),
     card('Contracted', money(revenue.contractedCents, currency)),
     card('Expected', money(revenue.expectedCents, currency)),
     card('Audit entries', report.audit.entries, report.audit.lastAction || ''),
@@ -319,6 +319,10 @@ function renderAgentReport(report) {
   if (canMutate()) {
     host.appendChild(renderAgentControls(report));
   }
+
+  const conversation = el('section', { class: 'control-block', 'aria-label': 'Private agent messages' });
+  host.appendChild(conversation);
+  void renderAgentMessages(conversation, report.agent.slug);
 
   host.appendChild(el('h3', { text: 'Children (delegation)' }));
   host.appendChild(table([
@@ -393,6 +397,131 @@ function renderAgentReport(report) {
   ], report.upgrades, 'No upgrades requested.'));
 }
 
+async function renderAgentChatControls(host, slug) {
+  if (!canMutate()) return;
+  const base = `/agents/${encodeURIComponent(slug)}`;
+  const [settings, resources, wallets] = await Promise.all([api(`${base}/chat-config`), api('/resources'), api('/wallets')]);
+  const config = settings.config || {};
+  const form = el('form', { class: 'stack-form' });
+  form.append(el('h4', { text: 'Automatic replies — explicit owner opt-in' }), el('p', { text: 'Only future owner messages are eligible. Google receives the message text; no tools or payment commands are available. A separately enabled private worker, active policy, scoped credential, quota and funded budget are required. Worker liveness and provider access are not verified here.' }));
+  const enabled = el('select', { name: 'enabled', 'aria-label': 'Automatic replies enabled' }, [el('option', { value: 'false', text: 'Disabled' }), el('option', { value: 'true', text: 'Enable future owner-message jobs' })]);
+  enabled.value = config.enabled ? 'true' : 'false';
+  const resource = el('select', { name: 'resourceId', required: '', 'aria-label': 'Assigned Google resource' }, [el('option', { value: '', text: 'Choose this agent’s Google resource' }), ...(resources.resources || []).filter(row => row.agent_id === settings.agentId && row.provider === 'google').map(row => el('option', { value: row.id, text: `${row.id} — ${row.status}` }))]);
+  resource.value = config.resourceId || '';
+  const wallet = el('select', { name: 'walletId', required: '', 'aria-label': 'Assigned funded wallet' }, [el('option', { value: '', text: 'Choose this agent’s wallet' }), ...(wallets.wallets || []).filter(row => row.agentId === settings.agentId).map(row => el('option', { value: row.id, text: `${row.label} — ${row.currency}` }))]);
+  wallet.value = config.walletId || '';
+  form.append(enabled, resource, wallet, el('p', { text: 'Fixed model: gemini-2.5-flash. Internal reservations are not a provider-enforced billing ceiling.' }));
+  for (const [name, label, min, max, fallback] of [['maxInputBytes', 'Maximum message bytes', 128, 48000, 2000], ['maxOutputTokens', 'Maximum output tokens', 64, 4096, 1024], ['maxCostCents', 'Maximum reserved cost in minor units', 1, 1000000, '']]) {
+    form.appendChild(el('label', {}, [label, el('input', { name, type: 'number', min, max, step: 1, required: '', value: config[name] ?? fallback, 'aria-label': label })]));
+  }
+  const basis = el('textarea', { name: 'costBasis', required: '', minlength: 12, maxlength: 1000, 'aria-label': 'Owner-reviewed cost basis', placeholder: 'Record your reviewed pricing/cap assumptions. This is not a financial receipt.' });
+  basis.value = config.costBasis || '';
+  form.append(basis, el('button', { type: 'submit', text: 'Save reply configuration' }));
+  let saving = false;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !guardMutation() || !form.reportValidity()) return;
+    if (enabled.value === 'true' && !confirm('Enable future owner-message jobs? An enabled worker can send their text to Google and incur provider charges within the configured request limits. Review pricing and provider billing caps first.')) return;
+    saving = true; form.querySelector('button').disabled = true;
+    try {
+      await api(`${base}/chat-config`, { method: 'POST', body: { enabled: enabled.value === 'true', resourceId: resource.value, walletId: wallet.value, model: 'gemini-2.5-flash', maxInputBytes: Number(form.elements.maxInputBytes.value), maxOutputTokens: Number(form.elements.maxOutputTokens.value), maxCostCents: Number(form.elements.maxCostCents.value), costBasis: basis.value } });
+      banner('Reply configuration saved. This does not activate a provider or prove a live worker.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+    finally { saving = false; form.querySelector('button').disabled = false; }
+  });
+  const jobs = el('div', { class: 'table-wrap' });
+  const next = el('button', { type: 'button', text: 'Older reply jobs', hidden: true });
+  const refresh = el('button', { type: 'button', text: 'Refresh reply jobs' });
+  let rows = [], cursor = null, loading = false;
+  const loadJobs = async (reset = false) => {
+    if (loading) return;
+    loading = true; next.disabled = true; refresh.disabled = true;
+    try {
+      const result = await api(`${base}/chat-jobs?limit=50${!reset && cursor ? `&before=${cursor}` : ''}`);
+      if (reset) rows = [];
+      const seen = new Set(rows.map(row => row.id));
+      rows.push(...result.jobs.filter(row => !seen.has(row.id)));
+      cursor = result.nextCursor;
+      jobs.replaceChildren(table([{ label: 'Job', key: 'id', wrap: true }, { label: 'State', key: 'status' }, { label: 'Reason', key: 'reason', wrap: true }, { label: 'Resource call', key: 'call_id', wrap: true }], rows, 'No automatic reply jobs recorded.'));
+      next.hidden = !cursor;
+    } finally { loading = false; next.disabled = false; refresh.disabled = false; }
+  };
+  next.addEventListener('click', () => { void loadJobs().catch(error => banner(error.message, 'error')); });
+  refresh.addEventListener('click', () => { void loadJobs(true).catch(error => banner(error.message, 'error')); });
+  host.replaceChildren(form, el('p', { class: 'muted small', text: 'Blocked/interrupted jobs are never automatically retried. Review their call under Tools → Resource calls; reconcile actual usage and financial evidence separately. No reply is fabricated for an interrupted job.' }), jobs, next, refresh);
+  await loadJobs(true);
+}
+
+async function renderAgentMessages(host, slug) {
+  host.replaceChildren(el('h3', { text: 'Owner / agent messages' }), el('p', { class: 'muted small', text: 'Stored private correspondence, not simulated agent replies. Text does not execute commands or move money. Use the explicit owner controls for actions.' }));
+  const transcript = el('div', { class: 'table-wrap', 'aria-live': 'polite' });
+  host.appendChild(transcript);
+  const messages = [];
+  let cursor = 0;
+  const refresh = el('button', { type: 'button', class: 'small', text: 'Refresh / load next messages' });
+  let loading = null;
+  const load = async () => {
+    if (loading) return loading;
+    refresh.disabled = true;
+    loading = (async () => {
+      try {
+        const result = await api(`/agents/${encodeURIComponent(slug)}/messages?after=${cursor}`);
+        const seen = new Set(messages.map(message => message.seq));
+        for (const message of result.messages) {
+          if (!seen.has(message.seq)) { messages.push(message); seen.add(message.seq); }
+        }
+        cursor = result.nextCursor;
+        transcript.replaceChildren(table([
+          { label: 'When', render: row => when(row.created_at) },
+          { label: 'From', key: 'actor_type' },
+          { label: 'Message', key: 'body', wrap: true },
+        ], messages, 'No messages yet. No agent response is fabricated.'));
+        refresh.textContent = result.hasMore ? 'Load next page' : 'Refresh messages';
+      } catch (error) { banner(error.message, 'error'); }
+    })();
+    try { await loading; } finally { loading = null; refresh.disabled = false; }
+  };
+  refresh.addEventListener('click', load);
+  host.appendChild(refresh);
+  if (canMutate()) {
+    const control = el('button', { type: 'button', class: 'small', text: 'Configure automatic replies', 'data-chat-config': slug });
+    const settings = el('section', { class: 'control-block', 'aria-label': 'Automatic reply configuration' });
+    control.addEventListener('click', async () => {
+      if (!guardMutation() || control.disabled) return;
+      control.disabled = true;
+      try { await renderAgentChatControls(settings, slug); } catch (error) { banner(error.message, 'error'); }
+      finally { control.disabled = false; }
+    });
+    host.append(control, settings);
+  }
+  if (canMutate()) {
+    const form = el('form', { class: 'stack-form' });
+    const input = el('textarea', { name: 'message', maxlength: 12000, required: '', 'aria-label': 'Message to this agent', placeholder: 'Send a private message. Never paste credentials.' });
+    form.append(input, el('button', { type: 'submit', text: 'Send owner message' }));
+    let attempt = null;
+    let sending = false;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (sending || !guardMutation()) return;
+      if (!attempt || attempt.message !== input.value) attempt = { message: input.value, idempotencyKey: crypto.randomUUID() };
+      sending = true;
+      input.readOnly = true;
+      form.querySelector('button').disabled = true;
+      try {
+        await api(`/agents/${encodeURIComponent(slug)}/messages`, { method: 'POST', body: attempt });
+        input.value = '';
+        attempt = null;
+        if (loading) await loading;
+        await load();
+        banner('Owner message stored. Await an actual agent reply; no command was executed.', 'ok');
+      } catch (error) { banner(error.message, 'error'); }
+      finally { sending = false; input.readOnly = false; form.querySelector('button').disabled = false; }
+    });
+    host.appendChild(form);
+  }
+  await load();
+}
+
 async function loadTab(tab) {
   try {
     if (tab === 'overview') {
@@ -401,6 +530,8 @@ async function loadTab(tab) {
       renderOverview(overview);
     }
     if (tab === 'agents') await loadAgents();
+    if (tab === 'customer-work') await loadCustomerWork();
+    if (tab === 'money') await loadVerifiedCash();
     if (tab === 'treasury') await loadTreasury();
     if (tab === 'publishing') await loadPublishing();
     if (tab === 'approvals') await loadApprovals();
@@ -718,10 +849,10 @@ async function loadTreasury() {
     card('Total balance', money(totals.totalBalanceCents, currency)),
     card('Mission treasury', money(totals.missionBalanceCents, currency)),
     card('Agent wallets', money(totals.agentBalancesCents, currency)),
-    card('Realized revenue', money(totals.realizedRevenueCents, currency)),
+    card('Legacy reported revenue', money(totals.realizedRevenueCents, currency)),
     card('Pending revenue', money(totals.pendingRevenueCents, currency), 'contracted + expected'),
     card('Expenses', money(totals.totalExpensesCents, currency)),
-    card('Settled payouts', money(totals.settledPayoutsCents, currency)),
+    card('Legacy reported payouts', money(totals.settledPayoutsCents, currency)),
     card('Spend today', money(treasury.treasury.daily.spentTodayCents, currency), `cap ${money(treasury.treasury.daily.policyDailyCapCents, currency)}`),
   );
 
@@ -795,7 +926,11 @@ async function loadTreasury() {
       canMutate() && String(row.status) === 'pending_approval'
         ? el('button', { class: 'small', text: 'Reject', 'data-payout': String(row.id), 'data-decision': 'rejected' }) : null,
       canMutate() && ['approved', 'sent'].includes(String(row.status))
-        ? el('button', { class: 'small', text: 'Mark settled', 'data-settle': String(row.id) }) : null,
+        ? el('button', { class: 'small', text: 'Record settled', 'data-settle': String(row.id), 'data-state': 'settled' }) : null,
+      canMutate() && String(row.status) === 'approved'
+        ? el('button', { class: 'small', text: 'Record sent', 'data-settle': String(row.id), 'data-state': 'sent' }) : null,
+      canMutate() && ['approved', 'sent'].includes(String(row.status))
+        ? el('button', { class: 'small danger', text: 'Record failure / return reservation', 'data-settle': String(row.id), 'data-state': 'failed' }) : null,
     ]),
   }));
   replace('#payouts', table([
@@ -803,7 +938,9 @@ async function loadTreasury() {
     { label: 'Slot', key: 'slot' },
     { label: 'Amount', render: (row) => money(row.amount_cents, currency) },
     { label: 'Status', render: (row) => pill(String(row.status), row.status === 'settled' ? 'ok' : row.status === 'failed' ? 'bad' : 'warn') },
-    { label: 'Settlement ref', render: (row) => row.settlement_ref || '—' },
+    { label: 'Source wallet', render: (row) => row.source_wallet_id || 'Legacy: ledger reconciliation required' },
+    { label: 'Authorized destination', render: (row) => { try { const d = JSON.parse(row.destination_snapshot || '{}'); return [d.providerRef || d.maskedAccount || 'Unbound legacy request', d.currency || row.currency].join(' · '); } catch { return 'Invalid snapshot — review required'; } } },
+    { label: 'Settlement ref / failure evidence', render: (row) => row.settlement_ref || row.failure_reason || '—' },
     { label: 'Actions', render: (row) => row.actions },
   ], payoutRows, 'No payouts requested.'));
 
@@ -819,11 +956,12 @@ async function loadTreasury() {
   }));
   $$('#payouts button[data-settle]').forEach((button) => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
-    const reference = window.prompt('Provider settlement reference (required — never invent one):');
-    if (!reference) return;
+    const status = button.getAttribute('data-state');
+    const reference = window.prompt(status === 'failed' ? 'Provider failure evidence/reason (required). This returns only the internal reservation; it does not refund a bank transfer:' : 'Actual provider transfer reference (required). This records evidence only; it does not send money:');
+    if (!reference?.trim()) return;
     try {
-      await api(`/payouts/${button.getAttribute('data-settle')}/settle`, { method: 'POST', body: { status: 'settled', settlementRef: reference } });
-      banner('Payout settled against the provider reference.', 'ok');
+      await api(`/payouts/${button.getAttribute('data-settle')}/settle`, { method: 'POST', body: { status, ...(status === 'failed' ? { failureReason: reference.trim() } : { settlementRef: reference.trim() }) } });
+      banner(`Payout evidence recorded as ${status}. No external payment was initiated here.`, 'ok');
       await loadTreasury();
     } catch (error) { banner(error.message, 'error'); }
   }));
@@ -902,6 +1040,9 @@ async function loadApprovals() {
 }
 
 async function loadTools() {
+  $('#credential-form').hidden = !canMutate();
+  if (!canMutate()) replace('#resource-periods', el('p', { text: 'Owner sign-in is required to review resource billing periods.' }));
+  if (!canMutate()) replace('#resource-calls', el('p', { text: 'Owner sign-in is required to review resource calls.' }));
   const [tools, credentials, resources, services] = await Promise.all([
     api('/tools'), api('/credentials'), api('/resources'), api('/services'),
   ]);
@@ -948,6 +1089,7 @@ async function loadTools() {
     { label: 'Provider', key: 'provider' },
     { label: 'Label', key: 'label' },
     { label: 'Masked', key: 'maskedHint' },
+    { label: 'Local permissions', render: row => (row.scope || []).join(', ') || 'None recorded' },
     { label: 'Env var', render: (row) => row.envVar || '—' },
     { label: 'Status', render: (row) => pill(String(row.status), String(row.status) === 'active' ? 'ok' : 'warn') },
     { label: 'Expires', render: (row) => (row.expiresAt ? `${when(row.expiresAt)} (${row.daysUntilExpiry} d)` : '—') },
@@ -984,7 +1126,29 @@ async function loadTools() {
     { label: 'Status', key: 'status' },
     { label: 'Renews', render: (row) => when(row.renews_at) },
     { label: 'Expires', render: (row) => when(row.expires_at) },
+    { label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
+    { label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
+    { label: 'Billing periods', render: row => canMutate() ? el('button', { class: 'small', text: 'Review periods', 'data-resource-periods': row.id }) : 'Owner-only' },
+    { label: 'Quota calls', render: row => canMutate() ? el('button', { class: 'small', text: 'Review calls', 'data-resource-calls': row.id }) : 'Owner-only' },
+    { label: 'Credential binding', render: row => canMutate() && row.status !== 'retired' ? el('button', { class: 'small', text: 'Bind credential', 'data-bind-credential': row.id }) : (row.credential_id || 'Not bound') },
+    { label: 'Action', render: (row) => canMutate() && ['approved', 'needs_verification'].includes(row.status) ? el('button', { class: 'small', text: 'Record provisioning', 'data-provision': row.id }) : '—' },
   ], resources.resources, 'No resources requested.'));
+  $$('#resources button[data-resource-periods]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourcePeriods(resources.resources.find(row => row.id === button.getAttribute('data-resource-periods'))); } catch (error) { banner(error.message, 'error'); }
+  }));
+  $$('#resources button[data-resource-calls]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourceCalls(resources.resources.find(row => row.id === button.getAttribute('data-resource-calls'))); } catch (error) { banner(error.message, 'error'); }
+  }));
+  $$('#resources button[data-bind-credential]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourceCredentialBinding(resources.resources.find(row => row.id === button.getAttribute('data-bind-credential'))); } catch (error) { banner(error.message, 'error'); }
+  }));
+  $$('#resources button[data-provision]').forEach(button => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await renderResourceProvision(resources.resources.find(row => row.id === button.getAttribute('data-provision'))); } catch (error) { banner(error.message, 'error'); }
+  }));
 
   replace('#services', table([
     { label: 'Service', key: 'name' },
@@ -993,6 +1157,236 @@ async function loadTools() {
     { label: 'Source', render: (row) => row.health_source || '—' },
     { label: 'Checked', render: (row) => when(row.last_checked_at) },
   ], services.services, 'No services registered.'));
+}
+
+async function renderResourcePeriods(resource) {
+  if (!resource || !canMutate()) return;
+  const host = $('#resource-periods');
+  const history = el('div', { class: 'table-wrap' });
+  const older = el('button', { type: 'button', text: 'Older billing periods', hidden: true });
+  const refresh = el('button', { type: 'button', text: 'Refresh billing history' });
+  let cursor = null, rows = [], loading = null;
+  const load = async (reset = false) => {
+    if (loading) { await loading; return load(reset); }
+    older.disabled = true; refresh.disabled = true;
+    loading = (async () => {
+      try {
+        const result = await api(`/resources/${resource.id}/periods?limit=50${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`);
+        if (reset) rows = [];
+        const seen = new Set(rows.map(row => row.id));
+        rows.push(...result.periods.filter(row => !seen.has(row.id)));
+        cursor = result.nextCursor;
+        history.replaceChildren(table([{ label: 'Start', render: row => when(row.period_start) }, { label: 'End', render: row => when(row.period_end) }, { label: 'Archived usage', key: 'previous_usage', wrap: true }, { label: 'Starting usage', key: 'starting_usage', wrap: true }, { label: 'Actual charge', render: row => money(row.actual_cost_cents, row.currency) }, { label: 'Evidence', key: 'evidence', wrap: true }], rows, 'No evidenced renewal periods recorded.'));
+        older.hidden = !cursor;
+      } finally { loading = null; older.disabled = false; refresh.disabled = false; }
+    })();
+    return loading;
+  };
+  host.replaceChildren(el('h3', { text: `Billing periods — ${resource.provider}` }), el('p', { class: 'muted small', text: 'An auto-renew flag is intent, not a purchase. Record only an actual current provider period. Resolve all quota and financial holds first. Prior usage is archived; no provider is contacted and no external payment is executed.' }), history, older, refresh);
+  older.addEventListener('click', () => { void load().catch(error => banner(error.message, 'error')); });
+  refresh.addEventListener('click', () => { void load(true).catch(error => banner(error.message, 'error')); });
+  await load(true);
+  if (resource.status !== 'active' || !resource.provisioned_at || !resource.expires_at) {
+    host.appendChild(el('p', { text: 'A previously provisioned, non-retired resource with a known prior expiry is required before a renewed period can be recorded.' }));
+    return;
+  }
+  const [wallets, policy] = await Promise.all([api('/wallets'), api('/policy')]);
+  const currency = policy.policy.currency;
+  const limits = typeof resource.limits === 'string' ? JSON.parse(resource.limits) : (resource.limits || {});
+  const form = el('form', { class: 'stack-form' });
+  form.append(el('h4', { text: 'Record a renewed current period' }), el('p', { text: `Prior expiry: ${when(resource.expires_at)} UTC. Enter provider period dates in your browser’s local time. Accounting currency: ${currency}. No cost or starting usage is assumed.` }));
+  form.append(el('label', {}, ['Provider period start', el('input', { name: 'periodStart', type: 'datetime-local', required: '', 'aria-label': 'Provider period start' })]), el('label', {}, ['Provider period end', el('input', { name: 'periodEnd', type: 'datetime-local', required: '', 'aria-label': 'Provider period end' })]));
+  const wallet = el('select', { name: 'walletId', 'aria-label': 'Renewal funding wallet' }, [el('option', { value: '', text: 'Choose funded mission wallet (required for a charge)' }), ...wallets.wallets.filter(row => row.currency === currency && (!row.agentId || row.agentId === resource.agent_id)).map(row => el('option', { value: row.id, text: `${row.label} — ${money(row.balanceCents, currency)}` }))]);
+  form.append(wallet, el('input', { name: 'actualCostCents', type: 'number', min: 0, max: resource.monthly_cost_cents, step: 1, required: '', 'aria-label': 'Actual renewal charge in minor units' }));
+  const counters = Object.keys(limits).sort().map(key => {
+    const cap = el('input', { type: 'number', min: 0, step: 'any', value: limits[key], required: '', 'aria-label': `New ${key} limit` });
+    const usage = el('input', { type: 'number', min: 0, step: 'any', required: '', 'aria-label': `Starting ${key} usage` });
+    form.append(el('label', {}, [`Provider ${key} limit for this period`, cap]), el('label', {}, [`Actual starting ${key} usage`, usage]));
+    return { key, cap, usage };
+  });
+  form.append(el('input', { name: 'providerRef', required: '', minlength: 4, maxlength: 200, 'aria-label': 'Renewal charge reference' }), el('textarea', { name: 'evidence', required: '', minlength: 12, maxlength: 2000, 'aria-label': 'Provider period evidence without secrets' }), el('button', { type: 'submit', text: 'Record evidenced renewal — no purchase' }));
+  let saving = false, attempt = null;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !guardMutation() || !form.reportValidity()) return;
+    saving = true; form.querySelector('button').disabled = true;
+    try {
+      const body = { expectedExpiresAt: resource.expires_at, periodStart: new Date(form.elements.periodStart.value).toISOString(), periodEnd: new Date(form.elements.periodEnd.value).toISOString(), actualCostCents: Number(form.elements.actualCostCents.value), currency, ...(wallet.value ? { walletId: wallet.value } : {}), limits: Object.fromEntries(counters.map(row => [row.key, Number(row.cap.value)])), startingUsage: Object.fromEntries(counters.map(row => [row.key, Number(row.usage.value)])), providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value };
+      const signature = JSON.stringify(body);
+      if (!attempt || attempt.signature !== signature) attempt = { signature, key: crypto.randomUUID() };
+      await api(`/resources/${resource.id}/periods`, { method: 'POST', body: { ...body, idempotencyKey: attempt.key } });
+      form.replaceWith(el('p', { text: 'Evidenced period and private accounting recorded; previous usage archived. No purchase or external payment executed.' }));
+      await load(true); await loadTools();
+      banner('Provider period recorded, not purchased or independently verified.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+    finally { saving = false; form.querySelector('button').disabled = false; }
+  });
+  host.appendChild(form);
+}
+
+async function renderResourceCalls(resource) {
+  if (!resource || !canMutate()) return;
+  const host = $('#resource-calls');
+  const transcript = el('div', { class: 'table-wrap' });
+  const editor = el('div');
+  const next = el('button', { type: 'button', text: 'Load older calls', hidden: true });
+  const refresh = el('button', { type: 'button', text: 'Refresh calls' });
+  host.replaceChildren(el('h3', { text: `Resource calls — ${resource.provider}` }), el('p', { class: 'muted small', text: 'Cancel only unstarted reservations. Reconcile unknown outcomes using actual provider usage evidence, never guessed zero usage. These controls never call a provider or execute external payments/refunds. Usage reconciliation and financial receipt accounting are separate.' }), transcript, next, refresh, editor);
+  let rows = [], cursor = null, loading = null;
+  const load = async (reset = false) => {
+    if (loading) { await loading; return load(reset); }
+    next.disabled = true; refresh.disabled = true;
+    loading = (async () => {
+    try {
+      const payload = await api(`/resources/${encodeURIComponent(resource.id)}/calls?limit=50${!reset && cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`);
+      if (reset) rows = [];
+      const seen = new Set(rows.map(row => row.id));
+      rows.push(...payload.calls.filter(row => !seen.has(row.id)));
+      cursor = payload.nextCursor;
+      transcript.replaceChildren(table([
+        { label: 'Call', key: 'id', wrap: true }, { label: 'State', key: 'status' },
+        { label: 'Reserved quota', render: row => JSON.stringify(row.reservedUsage) },
+        { label: 'Actual usage', render: row => row.actualUsage ? JSON.stringify(row.actualUsage) : 'Unknown / not reconciled' },
+        { label: 'Financial exposure', render: row => row.budget ? `${row.budget.status}: ${row.budget.reservedCents} ${row.budget.currency} minor units reserved; actual ${row.budget.actualCents ?? 'unknown'}` : 'Quota-only call; no financial hold' },
+        { label: 'Deadline', render: row => when(row.deadlineAt) },
+        { label: 'Provider reference', render: row => row.providerRef || 'No receipt' },
+        { label: 'Evidence', key: 'evidence', wrap: true },
+        { label: 'Owner action', render: row => {
+          if (row.status === 'reserved') {
+            const button = el('button', { type: 'button', class: 'small', text: 'Cancel unstarted', 'data-cancel-call': row.id });
+            button.addEventListener('click', async () => {
+              if (!guardMutation() || button.disabled) return;
+              button.disabled = true;
+              try { await api(`/resources/${resource.id}/calls/${row.id}/cancel`, { method: 'POST', body: {} }); await load(true); banner('Unstarted quota hold cancelled. No provider call or money movement.', 'ok'); }
+              catch (error) { banner(error.message, 'error'); }
+              finally { button.disabled = false; }
+            });
+            return button;
+          }
+          if (['dispatched', 'uncertain'].includes(row.status)) {
+            const button = el('button', { type: 'button', class: 'small', text: 'Reconcile usage', 'data-reconcile-call': row.id });
+            button.addEventListener('click', () => editReceipt(row));
+            return button;
+          }
+          if (row.budget?.status === 'held' && ['succeeded', 'failed'].includes(row.status)) {
+            const button = el('button', { type: 'button', class: 'small', text: 'Record charge evidence', 'data-record-call-cost': row.id });
+            button.addEventListener('click', () => editCost(row));
+            return button;
+          }
+          return 'Final record';
+        } },
+      ], rows, 'No provider-call reservations recorded.'));
+      next.hidden = !cursor;
+    } finally { loading = null; next.disabled = false; refresh.disabled = false; }
+    })();
+    return loading;
+  };
+  const editReceipt = call => {
+    if (!guardMutation()) return;
+    const form = el('form', { class: 'stack-form' });
+    form.appendChild(el('h4', { text: `Actual usage receipt — ${call.id}` }));
+    const outcome = el('select', { name: 'outcome', required: '', 'aria-label': 'Actual provider outcome' }, [el('option', { value: '', text: 'Choose evidenced outcome' }), el('option', { value: 'succeeded', text: 'Provider operation succeeded' }), el('option', { value: 'failed', text: 'Provider operation failed (usage may still be incurred)' })]);
+    form.appendChild(outcome);
+    const counters = Object.keys(call.reservedUsage).sort().map(key => {
+      const input = el('input', { type: 'number', min: 0, step: 'any', required: '', 'aria-label': `Actual ${key}` });
+      form.appendChild(el('label', {}, [`Actual ${key} (from provider evidence)`, input]));
+      return { key, input };
+    });
+    form.append(el('input', { name: 'providerRef', required: '', minlength: 4, maxlength: 200, 'aria-label': 'Provider usage reference' }), el('textarea', { name: 'evidence', required: '', minlength: 12, maxlength: 2000, 'aria-label': 'Usage evidence without secrets' }), el('button', { type: 'submit', text: 'Record actual usage evidence' }));
+    let saving = false;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (saving || !guardMutation()) return;
+      if (!form.reportValidity()) return;
+      saving = true; form.querySelector('button').disabled = true;
+      try {
+        const actualUsage = Object.fromEntries(counters.map(({ key, input }) => [key, Number(input.value)]));
+        await api(`/resources/${resource.id}/calls/${call.id}/reconcile`, { method: 'POST', body: { outcome: outcome.value, actualUsage, providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value } });
+        editor.replaceChildren(el('p', { text: 'Usage evidence recorded. No provider verification, payment or refund was performed.' }));
+        await load(true);
+      } catch (error) { banner(error.message, 'error'); }
+      finally { saving = false; form.querySelector('button').disabled = false; }
+    });
+    editor.replaceChildren(form);
+  };
+  const editCost = call => {
+    if (!guardMutation()) return;
+    const form = el('form', { class: 'stack-form' });
+    form.append(el('h4', { text: `Financial receipt — ${call.id}` }), el('p', { text: `This records an evidenced charge in the private ${call.budget.currency} ledger and releases the financial hold. It does not pay a provider. Do not substitute a token estimate for a financial receipt.` }), el('input', { name: 'actualCostCents', type: 'number', min: 0, step: 1, required: '', 'aria-label': 'Actual charge in minor units' }), el('input', { name: 'providerRef', required: '', minlength: 4, maxlength: 200, 'aria-label': 'Provider charge reference' }), el('textarea', { name: 'evidence', required: '', minlength: 12, maxlength: 2000, 'aria-label': 'Financial evidence without secrets' }), el('button', { type: 'submit', text: 'Record evidenced charge — no external payment' }));
+    let saving = false;
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (saving || !guardMutation() || !form.reportValidity()) return;
+      saving = true; form.querySelector('button').disabled = true;
+      try {
+        await api(`/resources/${resource.id}/calls/${call.id}/record-cost`, { method: 'POST', body: { actualCostCents: Number(form.elements.actualCostCents.value), providerRef: form.elements.providerRef.value, evidence: form.elements.evidence.value } });
+        editor.replaceChildren(el('p', { text: 'Owner-evidenced charge recorded in the private ledger. No external payment executed.' }));
+        await load(true);
+      } catch (error) { banner(error.message, 'error'); }
+      finally { saving = false; form.querySelector('button').disabled = false; }
+    });
+    editor.replaceChildren(form);
+  };
+  next.addEventListener('click', () => { void load().catch(error => banner(error.message, 'error')); });
+  refresh.addEventListener('click', () => { void load(true).catch(error => banner(error.message, 'error')); });
+  await load(true);
+}
+
+async function renderResourceCredentialBinding(resource) {
+  if (!resource || !canMutate()) return;
+  const credentials = (await api('/credentials')).credentials;
+  const form = el('form', { class: 'stack-form' });
+  form.appendChild(el('h3', { text: `Bind stored credential — ${resource.provider}` }));
+  form.appendChild(el('p', { class: 'muted small', text: 'Select a credential already stored in the vault. This changes only its resource binding, not provider verification, provisioning or quota usage. Never paste a secret into the reason.' }));
+  const select = el('select', { name: 'credentialId', required: '', 'aria-label': 'Stored provider credential' }, [el('option', { value: '', text: 'Choose a current same-provider credential' })]);
+  for (const credential of credentials.filter(row => row.provider === resource.provider && ['active', 'expiring'].includes(row.status) && (!row.expiresAt || Date.parse(row.expiresAt) > Date.now()))) {
+    select.appendChild(el('option', { value: credential.id, text: `${credential.label} · ${credential.status}` }));
+  }
+  form.append(select, el('textarea', { name: 'reason', minlength: 12, maxlength: 1000, required: '', 'aria-label': 'Binding reason without secrets' }), el('button', { type: 'submit', text: 'Record credential binding' }));
+  let saving = false;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (saving || !guardMutation()) return;
+    saving = true;
+    form.querySelector('button').disabled = true;
+    try {
+      const body = { ...Object.fromEntries(new FormData(form)), expectedCredentialId: resource.credential_id || null };
+      await api(`/resources/${resource.id}/credential`, { method: 'POST', body });
+      replace('#resource-credential', el('p', { text: 'Credential binding recorded. This is not provider verification or a purchase.' }));
+      await loadTools();
+    } catch (error) { banner(error.message, 'error'); }
+    finally { saving = false; form.querySelector('button').disabled = false; }
+  });
+  replace('#resource-credential', form);
+}
+
+async function renderResourceProvision(resource) {
+  if (!resource) return;
+  const wallets = (await api('/wallets')).wallets;
+  const form = el('form', { class: 'stack-form' });
+  form.appendChild(el('h3', { text: `Record provider provisioning — ${resource.provider}` }));
+  form.appendChild(el('p', { class: 'muted small', text: 'Record only an actual provider invoice/subscription and evidence. This posts the verified expense from a mission wallet; it does not purchase a resource or call a payment provider. Never enter credentials here.' }));
+  const select = el('select', { name: 'walletId', 'aria-label': 'Funding mission wallet' }, [el('option', { value: '', text: 'Choose funding wallet (required for paid resources)' })]);
+  for (const wallet of wallets) select.appendChild(el('option', { value: wallet.id, text: `${wallet.label} · ${money(wallet.balanceCents, wallet.currency)}` }));
+  form.appendChild(select);
+  form.appendChild(el('label', {}, ['Actual cost, in minor units', el('input', { name: 'actualCostCents', type: 'number', min: 0, max: resource.monthly_cost_cents, step: 1, value: resource.monthly_cost_cents, required: '' })]));
+  form.appendChild(el('label', {}, ['Provider invoice/subscription reference', el('input', { name: 'providerRef', minlength: 4, required: '', autocomplete: 'off' })]));
+  form.appendChild(el('label', {}, ['Provisioning evidence (no secrets)', el('textarea', { name: 'evidence', minlength: 12, required: '' })]));
+  form.appendChild(el('button', { type: 'submit', text: 'Record funded provisioning evidence' }));
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!guardMutation()) return;
+    const body = Object.fromEntries(new FormData(form));
+    body.actualCostCents = Number(body.actualCostCents);
+    if (!body.walletId) delete body.walletId;
+    try {
+      await api(`/resources/${resource.id}/provision`, { method: 'POST', body });
+      replace('#resource-provision', el('p', { class: 'muted small', text: 'Provisioning evidence and expense recorded. Credential/quota readiness is shown separately.' }));
+      await loadTools();
+      banner('Provisioning recorded; no external purchase was initiated.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+  });
+  replace('#resource-provision', form);
 }
 
 async function loadPolicy() {
@@ -1162,10 +1556,14 @@ function wire() {
     } catch (error) { banner(error.message, 'error'); }
   });
 
+  let storingCredential = false;
   $('#credential-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!guardMutation()) return;
-    const data = new FormData(event.target);
+    if (storingCredential || !guardMutation()) return;
+    const form = event.target;
+    if (!form.reportValidity()) return;
+    storingCredential = true; form.querySelector('button').disabled = true;
+    const data = new FormData(form);
     try {
       await api('/credentials', {
         method: 'POST',
@@ -1173,14 +1571,16 @@ function wire() {
           provider: data.get('provider'),
           label: data.get('label'),
           secret: data.get('secret'),
+          scope: data.get('scope') === 'model.call' ? ['model.call'] : [],
           expiresAt: data.get('expiresAt') || undefined,
           envVar: data.get('envVar') || undefined,
         },
       });
-      banner('Credential stored encrypted. Its value will never be displayed.', 'ok');
-      event.target.reset();
+      banner('Credential stored encrypted. Its value will never be displayed. Local permission does not activate or verify a provider.', 'ok');
+      form.reset();
       await loadTools();
     } catch (error) { banner(error.message, 'error'); }
+    finally { storingCredential = false; form.querySelector('button').disabled = false; }
   });
 
   $('#policy-form').addEventListener('submit', async (event) => {
@@ -1242,3 +1642,81 @@ async function boot() {
 }
 
 document.addEventListener('DOMContentLoaded', boot);
+
+
+async function loadVerifiedCash() {
+  const target = $('#verified-cash-summary');
+  target.replaceChildren();
+  if (!canMutate()) { target.textContent = 'Verified cash controls require the mission owner session.'; return; }
+  const data = await api('/money');
+  const accounts = data.accounts || [];
+  const currency = accounts[0]?.currency || 'USD';
+  target.append(
+    card('Verified available', money(accounts.reduce((n,a) => n + Number(a.available_cents),0),currency)),
+    card('Held / uncertain', money(accounts.reduce((n,a) => n + Number(a.held_cents),0),currency)),
+    card('Integrity', data.ledger.ok ? 'Verified' : 'FAILED'),
+    card('Execution', data.killSwitch ? 'FROZEN' : 'Policy gated'),
+    card('Activation', 'NOT LIVE-VERIFIED'),
+  );
+  target.append(el('p',{text:'Blocked until real payment connection testing, lawful earning connectors, vendor billing adapters and real opportunity assignments are complete. Legacy usage receipts do not prove cash payment.'}));
+  $('#verified-cash-operations').replaceChildren(el('pre',{text:JSON.stringify(data.operations,null,2)}));
+  $('#verified-cash-data').textContent=JSON.stringify(data,null,2);
+}
+const moneyForm = $('#money-command-form');
+if(moneyForm) moneyForm.addEventListener('submit',async(event)=>{
+  event.preventDefault(); const form = new FormData(moneyForm); const status = $('#money-command-result');
+  try {
+    const action=String(form.get('action')); const payload=JSON.parse(String(form.get('payload')));
+    if(action==='dispatch' && !window.confirm('Dispatch this approved operation to the configured real payment provider?')) return;
+    const result=await api(`/money/${action}`,{method:'POST',body:payload});
+    status.textContent=JSON.stringify(result);await loadVerifiedCash();
+  } catch(error) {status.textContent=error.message || 'Action refused';}
+});
+
+
+// Customer acquisition is a human-controlled commercial workflow, not a lead counter.
+let customerFieldSequence = 0;
+function customerField(form,label,name,type='text',options=[]) {
+  const id=`customer-field-${++customerFieldSequence}`;
+  const node=el(type==='textarea'?'textarea':type==='select'?'select':'input',{id,name,required:'required',...(type==='select'||type==='textarea'?{}:{type})});
+  if(type==='select') for(const option of options)node.appendChild(el('option',{value:option,text:option}));
+  if(type==='number'){node.min='1';node.max='1000000';node.step='1';}
+  if(type==='textarea')node.maxLength=131072;
+  form.appendChild(el('label',{for:id,text:label}));form.appendChild(node);return node;
+}
+function customerOutput(host,value){const box=el('textarea',{'aria-label':'Prepared artifact — not sent',readonly:'readonly',rows:'12'});box.value=typeof value==='string'?value:JSON.stringify(value,null,2);host.appendChild(box);}
+function customerForm(host,title,command,setup,toBody,after){
+  const form=el('form',{class:'control-block','aria-label':title});form.appendChild(el('h3',{text:title}));setup(form);const button=el('button',{type:'submit',text:title});form.appendChild(button);host.appendChild(form);
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!guardMutation())return;button.disabled=true;try{const result=await api(`/customer-work/${command}`,{method:'POST',body:toBody(new FormData(form))});await after(result.result);}catch(error){banner(error.message,'error');}finally{button.disabled=false;}});return form;
+}
+async function loadCustomerWork(){
+  const host=$('#customer-work');host.replaceChildren();$('#customer-detail').replaceChildren();
+  if(!canMutate()){host.appendChild(el('p',{text:'Owner sign-in required. Access links cannot view customer briefs.'}));return;}
+  const data=await api('/customer-work');host.appendChild(el('p',{text:data.note}));
+  host.appendChild(table([{label:'Capability (not a live offer)',key:'title'},{label:'Customer need',key:'customer',wrap:true},{label:'Deliverables',key:'deliverables',wrap:true},{label:'Limits',key:'limit'}],data.offers));
+  host.appendChild(el('h3',{text:'Reviewed customer-acquisition mechanisms — not acquired leads'}));
+  host.appendChild(table([{label:'Category',key:'category'},{label:'Where customers come from',key:'customerOrigin',wrap:true},{label:'Value to deliver',key:'value',wrap:true},{label:'Actual payment event',key:'paymentGeneration',wrap:true},{label:'Settlement gate',key:'settlement',wrap:true},{label:'Human ownership / approval',key:'human',wrap:true},{label:'Automation boundary',key:'automation',wrap:true}],data.channelInventory??[],'No channel inventory loaded.'));
+  const services=data.offers.map(x=>x.id);
+  customerForm(host,'Prepare unpublished listing','listing',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Owner-proposed USD cents — not earnings','quoteCents','number');},f=>({serviceId:f.get('serviceId'),quoteCents:Number(f.get('quoteCents'))}),result=>customerOutput(host,result.text));
+  customerForm(host,'Preview on my own authorized sample','preview',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Non-sensitive sample input','input','textarea');const config=customerField(form,'Configuration JSON: required fields + uniqueKey, or null for HTML','configuration','textarea');config.value='null';customerField(form,'I have the data rights','dataRightsReviewed','checkbox');customerField(form,'This sample contains no sensitive data','nonSensitiveDataOnly','checkbox');},f=>({serviceId:f.get('serviceId'),input:f.get('input'),configuration:JSON.parse(f.get('configuration')),dataRightsReviewed:f.has('dataRightsReviewed'),nonSensitiveDataOnly:f.has('nonSensitiveDataOnly')}),result=>{customerOutput(host,result.classification);customerOutput(host,result.artifact);});
+  customerForm(host,'Record an explicit customer request','record',form=>{
+    form.appendChild(el('p',{text:'Owner-reviewed declarations only, not independently verified demand. Use the originating platform customer ID; never import scraped contacts. For direct referrals, use your actual contact reference; map it to the authenticated Contra client only after an owner identity review.'}));
+    customerField(form,'Service','serviceId','select',services);customerField(form,'Original channel','origin','select',['direct','fiverr','upwork','contra']);
+    for(const [label,name] of [['Customer reference (not credentials)','customerRef'],['Actual incoming request reference','sourceRef'],['Human review reference','reviewRef']])customerField(form,label,name);
+    customerField(form,'Request observed at','observedAt','datetime-local');customerField(form,'Contact permission expires (maximum 7 days)','consentExpiresAt','datetime-local');customerField(form,'Actual client brief','brief','textarea');customerField(form,'Owner-proposed USD cents','quoteCents','number');const config=customerField(form,'Configuration JSON, or null for HTML','configuration','textarea');config.value='null';
+    for(const [label,name] of [['I reviewed an explicit real request','explicitRequestReviewed'],['The recipient permits this reply','contactPermissionReviewed'],['The purpose is lawful','lawfulPurposeReviewed'],['The client has authorized data use and retention','dataRightsReviewed'],['Only non-sensitive data will be supplied','nonSensitiveDataOnly'],['The proposed automation is permitted','automationPermissionReviewed']])customerField(form,label,name,'checkbox');
+  },f=>{const body=Object.fromEntries(f);body.quoteCents=Number(body.quoteCents);body.configuration=JSON.parse(body.configuration);body.observedAt=new Date(body.observedAt).toISOString();body.consentExpiresAt=new Date(body.consentExpiresAt).toISOString();for(const key of ['explicitRequestReviewed','contactPermissionReviewed','lawfulPurposeReviewed','dataRightsReviewed','nonSensitiveDataOnly','automationPermissionReviewed'])body[key]=f.has(key);return body;},async result=>{await loadCustomerWork();await loadCustomerDetail(result.id);});
+  host.appendChild(el('h3',{text:`Requests (latest ${data.limit}; total records ${data.totalRecords}, not a verified customer count)`}));
+  host.appendChild(table([{label:'Record',key:'id'},{label:'Evidence stage',key:'stage'},{label:'Proposed price, not revenue',render:r=>money(r.proposedUsdCents)},{label:'Verified received USD, not spendable balance',render:r=>money(r.receivedNetUsdCents)},{label:'Open',render:r=>{const b=el('button',{type:'button',text:'Review request'});b.addEventListener('click',()=>loadCustomerDetail(r.id).catch(e=>banner(e.message,'error')));return b;}}],data.requests,'No customer requests recorded. No demand or earnings are inferred.'));
+}
+async function loadCustomerDetail(id){
+  const host=$('#customer-detail');host.replaceChildren();const data=await api(`/customer-work/${encodeURIComponent(id)}`),d=data.request;
+  host.appendChild(el('h3',{text:`Request ${id}`}));host.appendChild(el('p',{text:`${data.progress.stage}. ${data.progress.note}`}));
+  host.appendChild(el('p',{text:'Exact proposed contract scope — copy into the actual agreement; its hash must match the existing connector:'}));customerOutput(host,d.scope_text);customerOutput(host,d.scope_hash);
+  if(d.response)customerOutput(host,d.response);if(d.artifact)customerOutput(host,d.artifact);
+  customerForm(host,'Prepare one manual reply','response',()=>{},()=>({requestId:id}),result=>customerOutput(host,result.content));
+  customerForm(host,'Bind actual authenticated contract','bind',form=>{customerField(form,'Existing connector','connector','select',['fiverr','upwork','contra']);customerField(form,'Existing authorized work ID','workId');customerField(form,'Direct-contact identity mapping review (required if references differ)','identityReviewRef').removeAttribute('required');},f=>({requestId:id,connector:f.get('connector'),workId:f.get('workId'),identityReviewRef:f.get('identityReviewRef')||undefined}),()=>loadCustomerDetail(id));
+  customerForm(host,'Produce authorized client work','produce',form=>customerField(form,'Client-authorized non-sensitive input','input','textarea'),f=>({requestId:id,input:f.get('input')}),()=>loadCustomerDetail(id));
+  customerForm(host,'Approve exact artifact for manual handoff','approve',form=>{customerField(form,'Human quality review reference','qualityRef');},f=>({requestId:id,artifactHash:d.artifact_hash,qualityRef:f.get('qualityRef')}),result=>{customerOutput(host,result.instruction);customerOutput(host,result.content);});
+  customerForm(host,'Stop contact and future work','stop',form=>customerField(form,'Opt-out or rejection evidence reference','reasonRef'),f=>({requestId:id,reasonRef:f.get('reasonRef')}),()=>loadCustomerDetail(id));
+}

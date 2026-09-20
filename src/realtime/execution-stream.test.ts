@@ -112,7 +112,7 @@ describe('SSE-only free-tier mode (AKBARAL_REALTIME_TRANSPORT=sse)', () => {
       await reader.cancel().catch(() => undefined);
     } finally {
       api.server.closeAllConnections?.();
-      await new Promise<void>((resolve) => api.server.close(() => resolve()));
+      await api.close();
       db.run('DELETE FROM users WHERE email = ?', [`sse-early-${sseSuffix}@akbaral.test`]);
     }
   });
@@ -157,7 +157,7 @@ describe('SSE-only free-tier mode (AKBARAL_REALTIME_TRANSPORT=sse)', () => {
       assert.ok(sawLog, `the persisted log must stream over SSE (got: ${received.slice(0, 120)})`);
     } finally {
       api.server.closeAllConnections?.();
-      await new Promise<void>((resolve) => api.server.close(() => resolve()));
+      await api.close();
       db.run('DELETE FROM users WHERE email = ? OR email = ?', [`sse-owner-${sseSuffix}@akbaral.test`, `sse-foreign-${sseSuffix}@akbaral.test`]);
     }
   });

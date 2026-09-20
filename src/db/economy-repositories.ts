@@ -1,3 +1,4 @@
+import { financialTransaction } from './financial-transaction';
 import { db, type SqlValue } from './database';
 import { createId } from './id';
 
@@ -53,7 +54,10 @@ export interface EconomyPolicyRow {
 export function getEconomyPolicy(): EconomyPolicyRow {
   const row = db.get<EconomyPolicyRow>("SELECT * FROM economy_policy WHERE id = 'global'");
   if (!row) {
-    db.run("INSERT OR IGNORE INTO economy_policy (id) VALUES ('global')");
+    // D9: fresh policy rows start at the 4,001-agent scale cap (existing rows
+    // still on the shipped default are moved by migration 0019; owner-tuned
+    // caps are never touched by either path).
+    db.run("INSERT OR IGNORE INTO economy_policy (id, max_economy_agents) VALUES ('global', 5000)");
     return db.get<EconomyPolicyRow>("SELECT * FROM economy_policy WHERE id = 'global'")!;
   }
   return row;
@@ -115,6 +119,7 @@ export interface OpportunityRow {
   time_hours: number;
   risk_level: string;
   platform_rules: string | null;
+  platform_key: string | null;
   probability: number;
   expected_net_cents: number;
   roi: number | null;
@@ -139,6 +144,7 @@ export function insertOpportunity(input: {
   riskLevel: string;
   probability: number;
   platformRules?: string | null;
+  platformKey?: string | null;
   estimateBasis?: string;
 }): { id: string; duplicate: boolean } {
   const existing = db.get<{ id: string }>('SELECT id FROM economy_opportunities WHERE source_url_hash = ?', [input.sourceUrlHash]);
@@ -147,11 +153,11 @@ export function insertOpportunity(input: {
   db.run(
     `INSERT INTO economy_opportunities
        (id, source_url_hash, source_url, category, title, summary, expected_revenue_cents, expected_cost_cents,
-        time_hours, risk_level, platform_rules, probability, estimate_basis, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered')`,
+        time_hours, risk_level, platform_rules, platform_key, probability, estimate_basis, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered')`,
     [id, input.sourceUrlHash, input.sourceUrl, input.category, input.title, input.summary ?? null,
       input.expectedRevenueCents, input.expectedCostCents, input.timeHours, input.riskLevel,
-      input.platformRules ?? null, input.probability, input.estimateBasis ?? 'category_default'],
+      input.platformRules ?? null, input.platformKey ?? null, input.probability, input.estimateBasis ?? 'category_default'],
   );
   return { id, duplicate: false };
 }
@@ -198,13 +204,14 @@ export interface ExecutionRow {
 }
 
 export function insertExecution(input: { opportunityId: string; agentSlug: string; timeoutMs: number; maxAttempts?: number }): { id: string; created: boolean } {
-  const key = `opp:${input.opportunityId}:live`;
-  const existing = db.get<ExecutionRow>('SELECT * FROM economy_executions WHERE idempotency_key = ?', [key]);
-  if (existing && !['completed', 'failed', 'cancelled', 'timed_out'].includes(existing.status)) {
-    return { id: existing.id, created: false };
-  }
-  // A settled execution may be retried by bumping the round inside the key.
-  const round = existing ? Number(existing.idempotency_key.split('#')[1] || 0) + 1 : 0;
+  return financialTransaction(db, 'economy', () => {
+  const history = db.all<ExecutionRow>('SELECT * FROM economy_executions WHERE opportunity_id = ?', [input.opportunityId]);
+  const live = history.find(row => ['authorized', 'running'].includes(row.status));
+  if (live) return { id: live.id, created: false };
+  const round = history.reduce((max, row) => {
+    const value = Number(row.idempotency_key.split('#')[1] ?? 0);
+    return Math.max(max, Number.isSafeInteger(value) ? value : 0);
+  }, -1) + 1;
   const id = createId('eco_exe');
   db.run(
     `INSERT INTO economy_executions (id, opportunity_id, agent_slug, idempotency_key, status, attempts, max_attempts, timeout_at)
@@ -213,6 +220,7 @@ export function insertExecution(input: { opportunityId: string; agentSlug: strin
       new Date(Date.now() + input.timeoutMs).toISOString()],
   );
   return { id, created: true };
+  });
 }
 
 export function getExecution(id: string): ExecutionRow | undefined {
@@ -451,16 +459,20 @@ export function postLedger(input: {
   refId: string;
   policyDecision?: string | null;
 }): { id: string; duplicate: boolean } {
-  if (input.amountCents === 0) return { id: '', duplicate: true };
-  const existing = db.get<{ id: string }>('SELECT id FROM economy_ledger WHERE ref_id = ?', [input.refId]);
-  if (existing) return { id: existing.id, duplicate: true };
-  const id = createId('eco_lgr');
-  db.run(
-    `INSERT INTO economy_ledger (id, agent_slug, direction, category, amount_cents, purpose, ref_type, ref_id, policy_decision)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.agentSlug ?? null, input.direction, input.category, input.amountCents, input.purpose, input.refType, input.refId, input.policyDecision ?? null],
-  );
-  return { id, duplicate: false };
+  return financialTransaction(db, 'economy', () => {
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents < 0) throw new Error('ledger amount must be nonnegative integer cents');
+    if (input.amountCents === 0) return { id: '', duplicate: true };
+    const existing = db.get<{ id: string }>('SELECT id FROM economy_ledger WHERE ref_id = ?', [input.refId]);
+    if (existing) return { id: existing.id, duplicate: true };
+    const id = createId('eco_lgr');
+    db.run(
+      `INSERT INTO economy_ledger (id, agent_slug, direction, category, amount_cents, purpose, ref_type, ref_id, policy_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.agentSlug ?? null, input.direction, input.category, input.amountCents, input.purpose, input.refType, input.refId, input.policyDecision ?? null],
+    );
+    return { id, duplicate: false };
+
+  });
 }
 
 export function listLedger(limit = 100): LedgerRow[] {

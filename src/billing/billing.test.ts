@@ -170,10 +170,10 @@ describe('Milestone 8: trial/credits/billing', () => {
         process.env[key] = value;
       }
     }
+    await api.close();
     db.close();
     await modelFixture.close();
     await paymentFixture.close();
-    await api.close();
   });
 
   function authHeaders(userToken: string): Record<string, string> {

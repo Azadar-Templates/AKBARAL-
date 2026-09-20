@@ -265,6 +265,7 @@ describe('ZA141251SA agent economy', () => {
   });
 
   it('completes a real execution through a real provider endpoint, records EXPECTED (not received) revenue', async () => {
+    process.env.AKBARAL_PAGE_FETCH_ENDPOINT = searchFixture.url;
     process.env.OPENAI_API_KEY = 'economy-fixture-key';
     process.env.OPENAI_BASE_URL = `${modelFixture.url}/v1`;
     try {

@@ -1,0 +1,104 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "arena/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+      - run: npm ci
+      - name: Types and secret-handling gate
+        run: |
+          npm run typecheck
+          npm run scan:secrets
+      - name: Full SQLite suite (includes mission, isolation, billing and workforce)
+        run: npm test -- --prune-working-copies --compress-snapshots
+      - name: Preserve SQLite checkpoint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-checkpoints-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            logs/test-checkpoints/**/checkpoint.json
+            logs/test-checkpoints/**/output.tap
+            logs/test-checkpoints/**/passed.db
+            logs/test-checkpoints/**/passed.db.br
+            logs/test-checkpoints/**/passed.db.gz
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: PostgreSQL platform and workforce parity
+        run: npm run test:pg
+      - name: Standalone mission PostgreSQL parity
+        run: npm run mission:pg-check
+      - name: Verified mission cash on native PostgreSQL, including multi-process contention
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres createuser --superuser runner
+          sudo -u postgres createdb --owner=runner mission_cash
+          sudo -u postgres createdb --owner=runner mission_cash_race
+          sudo -u postgres createdb --owner=runner mission_cash_registry
+          sudo -u postgres createdb --owner=runner mission_freelancer
+          sudo -u postgres createdb --owner=runner mission_freelancer_settlement
+          sudo -u postgres createdb --owner=runner mission_customer_work
+          sudo -u postgres createdb --owner=runner mission_toptal
+          sudo -u postgres createdb --owner=runner mission_contra
+          sudo -u postgres createdb --owner=runner mission_fiverr
+          sudo -u postgres createdb --owner=runner mission_upwork
+          sudo -u postgres createdb --owner=runner mission_awin
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash?host=/var/run/postgresql' npx tsx --test src/mission/money.test.ts
+          MONEY_CONCURRENCY_DATABASE_URL='postgres://runner@localhost/mission_cash_race?host=/var/run/postgresql' npx tsx --test src/mission/money-concurrency.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_awin?host=/var/run/postgresql' npx tsx --test src/mission/earning/awin-workflow.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_freelancer?host=/var/run/postgresql' npx tsx --test src/mission/earning/freelancer-workflow.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_freelancer_settlement?host=/var/run/postgresql' npx tsx --test src/mission/earning/freelancer-settlement.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_customer_work?host=/var/run/postgresql' npx tsx --test src/mission/earning/customer-work.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_toptal?host=/var/run/postgresql' npx tsx --test src/mission/earning/toptal-workflow.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_contra?host=/var/run/postgresql' npx tsx --test src/mission/earning/contra-workflow.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_fiverr?host=/var/run/postgresql' npx tsx --test src/mission/earning/fiverr-workflow.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_upwork?host=/var/run/postgresql' npx tsx --test src/mission/earning/upwork-workflow.test.ts
+          REGISTRY_PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash_registry?host=/var/run/postgresql' npx tsx --test src/mission/registry-sync.test.ts
+      - name: Private mission Chromium desktop and mobile-viewport checks
+        env:
+          MISSION_BROWSER_NPM_RUNTIME: "true"
+          MISSION_BROWSER_EVIDENCE_DIR: logs/browser/ci
+        run: npm run mission:browser-check
+      - name: Preserve browser screenshots and source fingerprint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            logs/browser/ci/*.png
+            logs/browser/ci/result.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Production Webpack build with PostgreSQL runtime assets
+        run: npm run build:webpack
+      - name: Verify compiled PostgreSQL JSON translation behavior
+        run: node scripts/verify-compiled-pg.mjs
+      - name: Exercise the compiled PostgreSQL worker, not just TypeScript sources
+        run: node scripts/pg-test-server.mjs --run node dist/src/db/migrate.js --status
+
+# No production secrets, external model/payment calls, deploys, autonomy or
+# fabricated live proof. All databases and financial evidence above are test
+# fixtures on the runner; docker publication remains a separate workflow.

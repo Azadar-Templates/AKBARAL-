@@ -20,9 +20,11 @@ import { createToolsRouter } from './routes/tools';
 import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createEconomyRouter } from './routes/economy';
+import { createWorkforceRouter } from './routes/workforce';
 import { createOwnerRouter } from './routes/owner';
 import { syncConfiguredOwnerIdentity } from './auth/owner-identity';
 import { economyScheduler } from './economy/operations';
+import { workforceScheduler } from './workforce/scheduler';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createWorldRouter } from './routes/world';
 import { createPublicRouter } from './routes/public';
@@ -121,6 +123,10 @@ export function createApiServer(): ApiServer {
   // owner enables autonomous operation (kill switch checked every tick).
   economyScheduler.start();
 
+  // Workforce scheduler: multi-category continuous operation for the 4,000+
+  // agent workforce (same idle-unless-enabled + kill-switch contract).
+  workforceScheduler.start();
+
   app.set('trust proxy', env.trustProxy);
   app.use(securityHeaders);
   app.use(cacheHeaders);
@@ -203,6 +209,8 @@ export function createApiServer(): ApiServer {
   app.use('/api/owner', createOwnerRouter());
   // ZA141251SA private agent economy — owner/super_admin only, invisible to users.
   app.use('/api/economy', createEconomyRouter());
+  // 4,000+ agent workforce — owner/super_admin only, invisible to users.
+  app.use('/api/workforce', createWorkforceRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
   app.use('/api/world', createWorldRouter());
   // Public read-only catalog (powers the /agents directory page; platform agents only)
@@ -235,7 +243,11 @@ export function createApiServer(): ApiServer {
       });
     },
     async close(): Promise<void> {
+      // Stop all polling owned by this API before callers close the database.
       automationScheduler.stop();
+      executionQueue.stop();
+      economyScheduler.stop();
+      workforceScheduler.stop();
       stream.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },

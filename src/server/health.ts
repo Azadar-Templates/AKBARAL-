@@ -39,7 +39,7 @@ export function checkMigrationsCurrent(migrationsDir?: string): HealthCheck {
     const applied = new Set(
       (db.all('SELECT name FROM _migrations') as Array<{ name: string }>).map((row) => row.name),
     );
-    const dir = migrationsDir ?? path.resolve(process.cwd(), 'db/migrations');
+    const dir = migrationsDir ?? path.resolve(process.cwd(), 'db', db.engine === 'postgres' ? 'migrations-pg' : 'migrations');
     if (!fs.existsSync(dir)) {
       return { name: 'migrations', ok: false, detail: 'migrations directory missing' };
     }
@@ -74,8 +74,10 @@ function checkQueueWorker(): HealthCheck {
     const stats = executionQueue.stats();
     return {
       name: 'execution_queue',
-      ok: typeof stats.activeWorkers === 'number',
-      detail: `activeWorkers=${stats.activeWorkers}`,
+      // activeWorkers counts busy jobs, not a live poller: both a healthy
+      // idle queue and a stopped queue can report zero. Check the lifecycle.
+      ok: executionQueue.isStarted && Number.isSafeInteger(stats.activeWorkers) && stats.activeWorkers >= 0,
+      detail: `started=${executionQueue.isStarted}, activeWorkers=${stats.activeWorkers}`,
     };
   } catch (error) {
     return { name: 'execution_queue', ok: false, detail: error instanceof Error ? error.message : String(error) };
@@ -146,8 +148,10 @@ export function prometheusMetrics(): string {
   lines.push('# HELP akbaral_queue_active_workers Busy execution workers.');
   lines.push('# TYPE akbaral_queue_active_workers gauge');
 
-  const dbSize = count("SELECT page_count * page_size AS c FROM pragma_page_count(), pragma_page_size()");
-  gauge('akbaral_db_size_bytes', 'SQLite database size in bytes.', dbSize);
+  const dbSize = count(db.engine === 'postgres'
+    ? 'SELECT pg_database_size(current_database()) AS c'
+    : 'SELECT page_count * page_size AS c FROM pragma_page_count(), pragma_page_size()');
+  gauge('akbaral_db_size_bytes', 'Database size in bytes.', dbSize);
 
   const httpWindow = db.get<{ count: number; avg: number }>(
     "SELECT COUNT(*) AS count, COALESCE(AVG(value), 0) AS avg FROM system_metrics WHERE metric = 'http_request_duration_ms' AND recorded_at >= ?",

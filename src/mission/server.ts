@@ -1,3 +1,21 @@
+import { CustomerWork, type CustomerRequestInput } from './earning/customer-work';
+import { configuredToptalWorkflow } from './earning/toptal-workflow';
+import { configuredContraWorkflow } from './earning/contra-workflow';
+import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
+import { configuredUpworkWorkflow } from './earning/upwork-workflow';
+import { FreelancerError } from './earning/freelancer';
+import { configuredFreelancerWorkflow, configuredFreelancerSettlementWorkflow } from './earning/freelancer-workflow';
+import { AwinError } from './earning/awin';
+import { configuredAwinWorkflow } from './earning/awin-workflow';
+import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
+import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
+import { configuredMoneyProvider } from './money-stripe';
+import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
+import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
+import { recordResourceCallCost } from './resource-budgets';
+import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
+import { bindResourceCredential } from './self-management';
+import { appendAgentMessage, listAgentMessages } from './messaging';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -64,7 +82,6 @@ import {
   setPayoutSlotStatus,
   settlePayout,
   treasurySummary,
-  verifyPayoutSlot,
   verifyLedger,
   type Wallet,
   getWallet,
@@ -78,6 +95,8 @@ import {
   MissionSelfServiceError,
   credentialRotations,
   decideResource,
+  provisionResource,
+  resourceReadiness,
   decideToolRequest,
   decideUpgrade,
   applyUpgrade,
@@ -219,12 +238,12 @@ function requireOwner(context: RequestContext, mutation = false): SessionContext
 }
 
 /** Agent-scoped authorization for the self-management surface. */
-function requireAgent(context: RequestContext, agentSlugOrId: string | null): { agentId: string; actorId: string; actorType: 'agent' } {
+function requireAgent(context: RequestContext, agentSlugOrId: string | null, readOnly=false): { agentId: string; actorId: string; actorType: 'agent' } {
   // One enforcement point for every agent-initiated mutation (work, tools,
   // resources, services, upgrades, expenses): an agent that is not 'active'
   // cannot act. Pausing is therefore a real brake, not a label.
   const assertActive = (agent: AgentRow): void => {
-    if (String(agent.status) !== 'active') {
+    if (!readOnly && String(agent.status) !== 'active') {
       throw new HttpProblem(409, `agent ${agent.slug} is ${agent.status} — an operator paused it, so it cannot act until it is resumed`, 'agent_not_active');
     }
   };
@@ -343,6 +362,237 @@ async function handleApi(
     return Number.isFinite(value) ? value : fallback;
   };
 
+  if (head === 'customer-work') {
+    const actor: MoneyActor = {kind:'owner',id:requireOwner(context,method !== 'GET').owner.id};
+    const work = new CustomerWork();
+    if(method === 'GET' && rest.length === 0){json(res,200,work.overview(actor));return true;}
+    if(method === 'GET' && rest.length === 1){json(res,200,work.detail(actor,rest[0]));return true;}
+    if(method !== 'POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if(rest.length !== 1) throw new HttpProblem(404,'unknown customer-work command','not_found');
+    let result: unknown;
+    switch(rest[0]){
+      case 'listing': result=work.listing(actor,param('serviceId','')!,num('quoteCents'));break;
+      case 'preview': result=work.preview(actor,param('serviceId','')!,param('input','')!,body.configuration??null,body.dataRightsReviewed===true,body.nonSensitiveDataOnly===true);break;
+      case 'record': result=work.record(actor,body as unknown as CustomerRequestInput);break;
+      case 'response': result=work.response(actor,param('requestId','')!);break;
+      case 'stop': result=work.stop(actor,param('requestId','')!,param('reasonRef','')!);break;
+      case 'bind': result=work.bind(actor,param('requestId','')!,param('connector','')!,param('workId','')!,param('identityReviewRef')??undefined);break;
+      case 'produce': result=work.produce(actor,param('requestId','')!,param('input','')!);break;
+      case 'approve': result=work.approve(actor,param('requestId','')!,param('artifactHash','')!,param('qualityRef','')!);break;
+      default: throw new HttpProblem(404,'unknown customer-work command','not_found');
+    }
+    json(res,200,{result});return true;
+  }
+
+  if (head === 'toptal') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredToptalWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Toptal command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('periodId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('periodId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Toptal command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'contra') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredContraWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Contra command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('projectId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('projectId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Contra command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'fiverr') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredFiverrWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Fiverr command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('orderId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('orderId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Fiverr command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'upwork') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredUpworkWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Upwork command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('contractId','')!, param('milestoneId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('contractId','')!, param('milestoneId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Upwork command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'freelancer') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    assertMoneyOwner(actor);
+    const workflow = configuredFreelancerWorkflow(), settlement = configuredFreelancerSettlementWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, { ...workflow.overview(actor), settlement: settlement.status(actor) }); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'discover': result = await workflow.discover(actor, param('query','')!, num('offset')); break;
+      case 'authorize-account': {
+        if (!Array.isArray(body.checks) || !body.checks.every(c => typeof c === 'string')) throw new HttpProblem(400, 'compliance checks required', 'invalid_input');
+        result = await workflow.authorizeAccount(actor, { agentId: param('agentId','')!, reference: param('reference','')!, expiresAt: param('expiresAt','')!, checks: body.checks as string[] }); break;
+      }
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('projectId','')!, param('bidId','')!, param('milestoneId','')!, param('scopeReference','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!); break;
+      case 'deliver': result = await workflow.deliver(actor, param('workId','')!); break;
+      case 'reconcile-delivery': result = await workflow.reconcileDelivery(actor, param('workId','')!, param('fileId','')!); break;
+      case 'sync-milestone': result = await workflow.syncMilestone(actor, param('workId','')!); break;
+      case 'observe-payout': result = await settlement.observePayout(actor, param('payoutId','')!); break;
+      case 'authorize-historical-settlement': result = settlement.authorizeHistoricalWork(actor, param('workId','')!); break;
+      case 'reconcile-payout': result = await settlement.reconcilePayout(actor, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await settlement.reconcileReversal(actor, param('payoutId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Freelancer command', 'not_found');
+    }
+    json(res, 200, { result: result ?? null }); return true;
+  }
+
+  if (head === 'awin') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    assertMoneyOwner(actor);
+    const workflow = configuredAwinWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'discover': result = await workflow.discover(actor); break;
+      case 'assign': result = await workflow.assign(actor, { agentId: param('agentId','')!, opportunityId: param('opportunityId','')!, destinationUrl: param('destinationUrl','')! }); break;
+      case 'refresh-assignment': result = await workflow.refreshAssignment(actor, param('assignmentId','')!); break;
+      case 'revoke': result = workflow.revoke(actor, param('assignmentId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('assignmentId','')!, { key: param('idempotencyKey','')!, title: param('title','')!, body: param('body','')! }); break;
+      case 'prepare': result = await workflow.prepare(actor, param('publicationId','')!); break;
+      case 'approve-publication': result = workflow.approvePublication(actor, param('publicationId','')!, param('contentHash','')!); break;
+      case 'publish': result = await workflow.publish(actor, param('publicationId','')!); break;
+      case 'reconcile-publication': result = await workflow.reconcilePublication(actor, param('publicationId','')!); break;
+      case 'sync': {
+        if (!Array.isArray(body.ids) || !body.ids.every(id => typeof id === 'string')) throw new HttpProblem(400, 'transaction IDs required', 'invalid_input');
+        result = await workflow.sync(actor, param('publicationId','')!, body.ids as string[]); break;
+      }
+      case 'scan': result = await workflow.scan(actor, param('publicationId','')!, param('startDate','')!, param('endDate','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcilePayout(actor, param('paymentId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('paymentId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Awin command', 'not_found');
+    }
+    json(res, 200, { result: result ?? null }); return true;
+  }
+
+  if (head === 'money') {
+    if (method === 'GET') {
+      let agentId:string|undefined;
+      if(context.session){const session=requireOwner(context);assertMoneyOwner({kind:'owner',id:session.owner.id});}
+      else agentId=requireAgent(context,url.searchParams.get('agentId'),true).agentId;
+      const action=rest[0];
+      if(action&& !['ledger','operations','jobs'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
+      const data=action==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200),agentId)}:
+        action==='operations'?{operations:listMoneyOperations(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
+        action==='jobs'?{jobs:listEarningJobs(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
+        agentId?agentMoneyOverview(agentId):moneyOverview();
+      json(res,200,data);return true;
+    }
+    let actor: MoneyActor;
+    if (context.session) actor={kind:'owner',id:requireOwner(context,true).owner.id};
+    else { const bound=requireAgent(context,param('agentId')); actor={kind:'agent',id:bound.agentId}; }
+    if(method!=='POST')throw new HttpProblem(405,'use POST for money mutations','method_not_allowed');
+    const action=rest[0];
+    let result: unknown;
+    try {
+    if(action==='bootstrap')result=bootstrapMoneyAgents(actor);
+    else if(action==='opportunities')result=approveOpportunity(actor,{title:param('title','')!,evidenceUrl:param('evidenceUrl','')!,activity:param('activity','')!,provider:param('provider','')!});
+    else if(action==='revoke-opportunity')result=revokeOpportunity(actor,param('id','')!);
+    else if(action==='grants')result=setMoneyGrant(actor,param('agentId','')!,{spendLimitCents:num('spendLimitCents'),delegationCents:num('delegationCents'),canCreate:body.canCreate===true,expiresAt:param('expiresAt','')!,status:param('status')==='revoked'?'revoked':'active',opportunityId:param('opportunityId')??undefined,autoAllocateCents:num('autoAllocateCents')});
+    else if(action==='allocate')result=allocateCash(actor,param('agentId','')!,num('amountCents'),param('idempotencyKey','')!);
+    else if(action==='freeze')result=freezeCash(actor,param('accountId','')!,body.frozen!==false);
+    else if(action==='request')result=requestMoney(actor,{kind:param('kind') as 'expense'|'withdrawal',agentId:param('agentId')??undefined,provider:param('provider','')!,destination:param('destination','')!,category:param('category','')!,amountCents:num('amountCents'),maxCostCents:num('maxCostCents'),idempotencyKey:param('idempotencyKey','')!});
+    else if(action==='cancel')result=cancelMoney(actor,param('id','')!);
+    else if(action==='decide')result=decideMoney(actor,param('id','')!,body.approve===true);
+    else if(action==='receipt'){assertMoneyOwner(actor);result=await verifyMoneyReceipt(actor,configuredMoneyProvider(),param('externalId','')!);}
+    else if(action==='dispatch')result=await dispatchMoney(actor,configuredMoneyProvider(),param('id','')!);
+    else if(action==='reconcile'){assertMoneyOwner(actor);result=await reconcileMoney(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='reconcile-earning'){assertMoneyOwner(actor);result=await reconcileEarningPayment(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='earn')result=queueEarning(actor,param('agentId','')!,param('idempotencyKey','')!,param('costOperationId')??undefined);
+    else throw new HttpProblem(404,'unknown money action','not_found');
+    } catch(error) {
+      appendMissionAudit({actorType:actor.kind,actorId:actor.id,action:'money.action_refused',subjectType:'verified_cash',subjectId:action,detail:{code:error instanceof MoneyError?error.code:'internal_error'}});
+      throw error;
+    }
+    json(res,200,{result:result??null});return true;
+  }
+  // Legacy entries are owner-reported accounting, not verified external cash.
+  // Refuse HTTP paths that previously accepted a note as payment confirmation.
+  if (method !== 'GET' && ((head==='wallets' && rest[1]==='fund') ||
+      (head==='revenue' && param('status')==='received') || head==='expenses' ||
+      (head==='payouts' && ['settle','decide'].includes(rest[1])) ||
+      (head==='work' && rest[1]==='status' && param('status')==='paid'))) {
+    requireRead(context);
+    throw new HttpProblem(409,'Use /api/money: provider-verified cash is required; legacy notes cannot fund or settle real payments.','provider_verification_required');
+  }
+
   switch (head) {
     // ── Session ─────────────────────────────────────────────────────────────
     case 'session': {
@@ -411,18 +661,22 @@ async function handleApi(
       if (method === 'POST' && rest[0] && rest[1] === 'decide') {
         const session = requireOwner(context, true);
         const decision = param('decision', '') === 'approved' ? 'approved' : 'rejected';
-        const result = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
-        if (!result.ok) throw new HttpProblem(result.status === 'not_found' ? 404 : 409, result.reason ?? 'approval not actionable', result.status === 'not_found' ? 'not_found' : 'conflict');
-        // Approving an EXPENSE approval must pay the expense: the queue is a
-        // real control surface, not a status toggle that strands the request.
-        const subject = result.approval
-          ? { type: String(result.approval.subject_type), id: String(result.approval.subject_id) }
-          : null;
-        if (subject?.type === 'expense') {
-          const expense = decideExpense({ id: subject.id, decision , actorId: session.owner.id, note: param('note'), actorType: 'owner' });
-          json(res, 200, { ...result, expense });
-          return true;
-        }
+        const result = missionDb.transaction(() => {
+          const decisionResult = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
+          if (!decisionResult.ok) throw new HttpProblem(decisionResult.status === 'not_found' ? 404 : 409, decisionResult.reason ?? 'approval not actionable', decisionResult.status === 'not_found' ? 'not_found' : 'conflict');
+          const subject = decisionResult.approval;
+          if(decision==='approved' && (['expense','payout'].includes(String(subject?.subject_type)) || (subject?.subject_type==='upgrade' && Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[String(subject.subject_id)])?.requested_cost_cents)>0))) throw new HttpProblem(409,'Legacy approvals cannot move verified cash; use /api/money.','provider_verification_required');
+          if (subject?.subject_type === 'expense') {
+            return { ...decisionResult, expense: decideExpense({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
+          }
+          if (subject?.subject_type === 'payout') {
+            return { ...decisionResult, payout: decidePayout({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
+          }
+          if (subject?.subject_type === 'resource') return { ...decisionResult, resource: decideResource({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
+          if (subject?.subject_type === 'upgrade') return { ...decisionResult, upgrade: decideUpgrade({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
+          if (subject?.subject_type === 'tool') return { ...decisionResult, toolRequest: decideToolRequest({ id: String(subject.subject_id), decision, actorId: session.owner.id, actorType: 'owner' }) };
+          return decisionResult;
+        });
         json(res, 200, result);
         return true;
       }
@@ -472,7 +726,7 @@ async function handleApi(
         // Root-agent creation (owner only). Without this, a POST here used to
         // fall through to the LIST handler and answer 200 with a page of
         // agents — a silent fake success. Creation is real: policy gates,
-        // contract, funded wallet, audit entry.
+        // contract, unfunded accounting subledger, audit entry.
         const session = requireOwner(context, true);
         const created = createRootAgent({
           name: param('name', '') ?? '',
@@ -502,6 +756,39 @@ async function handleApi(
         return true;
       }
       const slug = rest[0];
+      if (rest[1] === 'chat-config' || rest[1] === 'chat-jobs') {
+        const session = requireOwner(context, method !== 'GET');
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (rest.length !== 2) throw new HttpProblem(404, 'chat route not found', 'not_found');
+        if (method === 'GET' && rest[1] === 'chat-jobs') {
+          json(res, 200, listAgentChatJobs(agent.id, Number(url.searchParams.get('before') ?? Number.MAX_SAFE_INTEGER), Number(url.searchParams.get('limit') ?? 50)));
+          return true;
+        }
+        if (method === 'GET') {
+          json(res, 200, { agentId: agent.id, config: agentChatConfig(agent.id), workerLivenessVerified: false, providerActivated: false });
+          return true;
+        }
+        if (method === 'POST' && rest[1] === 'chat-config') {
+          json(res, 200, { config: configureAgentChat(agent.id, body as unknown as AgentChatConfig, { actorType: 'owner', actorId: session.owner.id }), providerActivated: false });
+          return true;
+        }
+        throw new HttpProblem(405, 'unsupported chat operation', 'method_not_allowed');
+      }
+      if (rest[1] === 'messages') {
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (!context.session && (context.link?.link.scope !== 'agent:self' || context.link.agentId !== agent.id)) throw new HttpProblem(403, 'this conversation belongs to another agent', 'forbidden');
+        if (method === 'GET') {
+          json(res, 200, listAgentMessages(agent.id, Number(url.searchParams.get('after') ?? 0), Number(url.searchParams.get('limit') ?? 100)));
+          return true;
+        }
+        if (method === 'POST') {
+          const actor = context.session ? { actorType: 'owner' as const, actorId: requireOwner(context, true).owner.id } : requireAgent(context, slug);
+          json(res, 201, appendAgentMessage({ agentId: agent.id, actorType: actor.actorType, actorId: actor.actorId, body: param('message', '')!, idempotencyKey: param('idempotencyKey', '')!, replyTo: param('replyTo') }));
+          return true;
+        }
+      }
       if (rest[1] === undefined) {
         const agent = findAgentBySlug(slug);
         if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
@@ -550,15 +837,15 @@ async function handleApi(
       }
       if (rest[1] === 'children' && method === 'POST') {
         // Controlled sub-agent creation: contract + limits + audit, or refused.
-        const session = requireOwner(context, true);
+        const actor=context.session?{actorId:requireOwner(context,true).owner.id,actorType:'owner' as const}:requireAgent(context,slug);
         const created = createSubAgent({
           parentSlug: slug,
           name: param('name', '') ?? '',
           specialization: param('specialization', '') ?? '',
           activityKey: param('activity', 'general') ?? 'general',
           budgetCents: num('budgetCents'),
-          actorId: session.owner.id,
-          actorType: 'owner',
+          actorId: actor.actorId,
+          actorType: actor.actorType,
         });
         json(res, 201, created);
         return true;
@@ -654,9 +941,40 @@ async function handleApi(
     // ── Resources ───────────────────────────────────────────────────────────
     case 'resources': {
       requireRead(context);
+      if (rest[1] === 'periods') {
+        const session = requireOwner(context, method !== 'GET');
+        const actor = { actorType: 'owner' as const, actorId: session.owner.id };
+        if (rest.length !== 2) throw new HttpProblem(404, 'resource period route not found', 'not_found');
+        if (method === 'GET') json(res, 200, listResourcePeriods(rest[0], actor, { before: url.searchParams.get('before') ?? undefined, limit: Number(url.searchParams.get('limit') ?? 50) }));
+        else if (method === 'POST') json(res, 200, recordResourcePeriod(rest[0], body as unknown as ResourcePeriodInput, actor));
+        else throw new HttpProblem(405, 'unsupported resource period operation', 'method_not_allowed');
+        return true;
+      }
+      if (rest[1] === 'calls') {
+        const session = requireOwner(context, method !== 'GET');
+        const actor = { actorType: 'owner' as const, actorId: session.owner.id };
+        if (method === 'GET' && rest.length === 2) {
+          json(res, 200, listOwnerResourceCalls(rest[0], actor, { before: url.searchParams.get('before') ?? undefined, limit: Number(url.searchParams.get('limit') ?? 50) }));
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'cancel') {
+          json(res, 200, { call: cancelOwnerResourceCall(rest[0], rest[2], actor), moneyMoved: false, providerCalled: false });
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'record-cost') {
+          json(res, 200, recordResourceCallCost(rest[0], rest[2], actor, { actualCostCents: body.actualCostCents as number, providerRef: param('providerRef', '')!, evidence: param('evidence', '')! }));
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'reconcile') {
+          if (body.outcome !== 'succeeded' && body.outcome !== 'failed') throw new HttpProblem(400, 'choose the actual provider outcome', 'validation_error');
+          json(res, 200, reconcileOwnerResourceCall(rest[0], rest[2], actor, { outcome: body.outcome, actualUsage: body.actualUsage as Record<string, number>, providerRef: param('providerRef', '')!, evidence: param('evidence', '')! }));
+          return true;
+        }
+        throw new HttpProblem(404, 'resource call route not found', 'not_found');
+      }
       if (method === 'GET') {
         const expiring = url.searchParams.get('expiring');
-        json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined), expiring: expiring === '1' });
+        json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined).map(row => ({ ...row, readiness: resourceReadiness(String(row.id)) })), expiring: expiring === '1' });
         return true;
       }
       if (rest.length === 0 && method === 'POST') {
@@ -677,13 +995,24 @@ async function handleApi(
         return true;
       }
       if (rest[1] === 'usage' && method === 'POST') {
-        requireAgent(context, param('agentSlug'));
-        json(res, 200, { resource: recordResourceUsage({ id: rest[0], usage: (body.usage as Record<string, unknown>) ?? {}, actorId: context.session?.owner.id ?? null }) });
+        const agent = requireAgent(context, param('agentSlug'));
+        json(res, 200, { resource: recordResourceUsage({ id: rest[0], usage: (body.usage as Record<string, unknown>) ?? {}, actorType: context.session ? 'owner' : 'agent', actorId: context.session?.owner.id ?? agent.agentId }) });
         return true;
       }
       if (rest[1] === 'decide' && method === 'POST') {
         const session = requireOwner(context, true);
         json(res, 200, { resource: decideResource({ id: rest[0], decision: param('decision') === 'approved' ? 'approved' : 'rejected', actorId: session.owner.id, note: param('note') }) });
+        return true;
+      }
+      if (rest[1] === 'provision' && method === 'POST') {
+        const session = requireOwner(context, true);
+        json(res, 200, { resource: provisionResource({ id: rest[0], walletId: param('walletId') ?? undefined, actualCostCents: num('actualCostCents'), providerRef: param('providerRef', '')!, evidence: param('evidence', '')!, actorId: session.owner.id }), accounting:'legacy_owner_reported',providerVerified:false,externalPaymentExecuted:false });
+        return true;
+      }
+      if (rest[1] === 'credential' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const resource = bindResourceCredential({ id: rest[0], credentialId: param('credentialId', '')!, expectedCredentialId: param('expectedCredentialId') ?? null, reason: param('reason', '')!, actorId: session.owner.id, actorType: 'owner' });
+        json(res, 200, { resource, readiness: resourceReadiness(String(resource.id)), providerVerified: false });
         return true;
       }
       if (rest[1] === 'retire' && method === 'POST') {
@@ -739,11 +1068,13 @@ async function handleApi(
       }
       if (rest[1] === 'decide' && method === 'POST') {
         const session = requireOwner(context, true);
+        if(param('decision')!=='rejected' && Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[rest[0]])?.requested_cost_cents)>0)throw new HttpProblem(409,'Paid upgrades require provider-verified money operations.','provider_verification_required');
         json(res, 200, { upgrade: decideUpgrade({ id: rest[0], decision: param('decision') === 'approved' ? 'approved' : 'rejected', actorId: session.owner.id, note: param('note') }) });
         return true;
       }
       if (rest[1] === 'apply' && method === 'POST') {
         const session = requireOwner(context, true);
+        if(Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[rest[0]])?.requested_cost_cents)>0)throw new HttpProblem(409,'Legacy approval is not verified payment.','provider_verification_required');
         json(res, 200, { upgrade: applyUpgrade(rest[0], session.owner.id) });
         return true;
       }
@@ -992,8 +1323,7 @@ async function handleApi(
           json(res, 200, { slot: confirmed.slot, verification: confirmed.verification, status: payoutSlotVerificationStatus(slotNumber) });
           return true;
         }
-        json(res, 200, { slot: verifyPayoutSlot(slotNumber, session.owner.id), warning: 'this activation path records no evidence — use the verification flow to confirm the control checks and attestation' });
-        return true;
+        throw new HttpProblem(400, 'destination verification requires control checks and a signed attestation', 'verification_required');
       }
       if (rest[1] === 'verification' && rest[2] === 'start' && method === 'POST') {
         json(res, 200, {
@@ -1328,7 +1658,8 @@ function createRootAgent(input: {
   budgetCents: number;
   missionRole: 'worker' | 'supervisor' | 'director';
   actorId: string;
-}): { agent: Row; contract: Row; wallet: Wallet } {
+}): { agent: Row; contract: Row; wallet: Wallet; cashAccount:Row } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
   if (!policy.allowAgentCreation) throw new HttpProblem(403, 'agent creation is disabled by policy', 'policy_denied');
   if (policy.killSwitch) throw new HttpProblem(409, 'the mission kill switch is engaged', 'policy_denied');
@@ -1366,6 +1697,7 @@ function createRootAgent(input: {
       ],
     );
     const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    provisionMoneyAgent(agentId,input.actorId);
     appendMissionAudit({
       actorType: 'owner',
       actorId: input.actorId,
@@ -1378,7 +1710,9 @@ function createRootAgent(input: {
       agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
+      cashAccount:cashAccount(agentId),
     };
+  });
   });
 }
 
@@ -1394,7 +1728,8 @@ function createSubAgent(input: {
   budgetCents: number;
   actorId: string;
   actorType: 'owner' | 'agent';
-}): { agent: Row; contract: Row; wallet: Wallet } {
+}): { agent: Row; contract: Row; wallet: Wallet; cashAccount:Row } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
   const parent = findAgentBySlug(input.parentSlug);
   if (!parent) throw new HttpProblem(404, 'parent agent not found', 'not_found');
@@ -1442,6 +1777,7 @@ function createSubAgent(input: {
       ],
     );
     const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    provisionMoneyAgent(agentId,input.actorId,input.actorType==='agent'?String(parent.id):undefined,input.actorType==='agent'?input.budgetCents:0);
     appendMissionAudit({
       actorType: input.actorType,
       actorId: input.actorId,
@@ -1454,7 +1790,9 @@ function createSubAgent(input: {
       agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
+      cashAccount:cashAccount(agentId),
     };
+  });
   });
 }
 
@@ -1489,12 +1827,18 @@ export function createMissionServer(): http.Server {
         const status =
           error instanceof HttpProblem ? error.status
             : error instanceof MissionAuthError ? error.statusCode
+              : error instanceof FreelancerError ? (error.code === 'freelancer_rate_limited' ? 429 : 409)
+              : error instanceof AwinError ? (error.code === 'awin_rate_limited' ? 429 : 409)
+              : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
                 : error instanceof MissionSelfServiceError ? error.statusCode
                   : 500;
         const code =
           error instanceof HttpProblem ? error.code
             : error instanceof MissionAuthError ? error.code
+              : error instanceof FreelancerError ? error.code
+              : error instanceof AwinError ? error.code
+              : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code
                 : error instanceof MissionSelfServiceError ? error.code
                   : 'internal_error';

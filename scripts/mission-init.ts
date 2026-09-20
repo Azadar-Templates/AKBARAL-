@@ -24,6 +24,7 @@ import {
   verifyMissionAudit,
   type Row,
 } from '../src/mission/database';
+import { displayDatabaseTarget } from '../src/db/display-target';
 import { EXTERNAL_ACTIVATION, seedTools } from '../src/mission/self-management';
 import { PROHIBITION_STATEMENTS, currentPolicy, ensurePolicy } from '../src/mission/policy';
 import { ownerCount, provisionOwner, vaultConfigured } from '../src/mission/auth';
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
   const env = missionEnv();
   process.stdout.write('\nZA141251SA — mission system bootstrap\n');
   process.stdout.write('═'.repeat(72) + '\n');
-  line('database', env.databaseUrl);
+  line('database', displayDatabaseTarget(env.databaseUrl));
   line('bind host (default)', env.bindHost);
   line('port (default)', String(env.port));
   line('session secret', process.env.ZA141251SA_SESSION_SECRET ? 'configured' : 'NOT configured (login refuses to issue a session)');

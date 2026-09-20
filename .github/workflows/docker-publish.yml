@@ -102,24 +102,7 @@ jobs:
 
       - name: Verify compiled PostgreSQL json_extract fix in image
         run: |
-          docker run --rm \
-            -e FIX="::json->>'" \
-            -e BUG='::json->>"' \
-            "${{ env.IMAGE }}:${{ github.sha }}" node -e '
-              const fs = require("fs");
-              const code = fs.readFileSync("/app/dist/src/db/database.js", "utf8");
-              if (!code.includes(process.env.FIX)) {
-                console.error("FAIL: single-quoted json_extract translation missing from compiled image");
-                process.exit(1);
-              }
-              if (code.includes(process.env.BUG)) {
-                console.error("FAIL: old double-quoted json_extract translation still present in compiled image");
-                process.exit(1);
-              }
-              const line = code.split("\\n").find((l) => l.includes(process.env.FIX));
-              console.log("image verification OK - fix line compiled in image:");
-              console.log(line.trim());
-            '
+          docker run --rm "${{ env.IMAGE }}:${{ github.sha }}" node scripts/verify-compiled-pg.mjs
 
       - name: Make package public (idempotent; public repo => public image)
         run: |

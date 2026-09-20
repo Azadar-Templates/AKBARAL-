@@ -5,6 +5,10 @@ import { createApiServer, type ApiServer } from '../app';
 import { db, createUser } from '../db';
 import { syncAgentRegistry } from '../agents/registry';
 import { buildOwnerDashboard } from '../business/owner-analytics';
+import { executionQueue } from '../orchestrator/queue';
+import { automationScheduler } from '../automation/scheduler';
+import { economyScheduler } from '../economy/operations';
+import { workforceScheduler } from '../workforce/scheduler';
 import { clearRateLimitBuckets } from '../server/middleware/rate-limit';
 
 /**
@@ -235,4 +239,30 @@ describe('owner console: real data, never fabricated', () => {
     }
     assert.ok(ownerId, 'owner account exists for the audit trail');
   });
+});
+
+
+it('API close stops every scheduler it starts, including across restart', async (t) => {
+  await server.close();
+  assert.equal(executionQueue.isStarted, false, 'no queue polling after API close');
+  assert.equal(automationScheduler.isStarted, false);
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const queueTick = t.mock.method(executionQueue as unknown as { tick(): void }, 'tick', () => {});
+  const automationTick = t.mock.method(automationScheduler, 'tick', () => {});
+  const economyTick = t.mock.method(economyScheduler, 'tick', async () => ({ acted: false, notes: [] }));
+  const workforceTick = t.mock.method(workforceScheduler, 'tick', async () => ({ acted: false, notes: [] }));
+  const restarted = createApiServer();
+  try {
+    t.mock.timers.tick(60_000);
+    const ticks = [queueTick, automationTick, economyTick, workforceTick];
+    assert.ok(ticks.every(tick => tick.mock.callCount() > 0), 'every scheduler starts again');
+    await restarted.close();
+    const stoppedCounts = ticks.map(tick => tick.mock.callCount());
+    t.mock.timers.tick(120_000);
+    assert.deepEqual(ticks.map(tick => tick.mock.callCount()), stoppedCounts, 'closed API cannot schedule more database work');
+    assert.equal(executionQueue.isStarted, false);
+    assert.equal(automationScheduler.isStarted, false);
+  } finally {
+    await restarted.close();
+  }
 });

@@ -87,9 +87,9 @@ describe('Milestone 6: Agent Factory', () => {
         db.run('DELETE FROM agents WHERE id = ?', [String(agent.id)]);
       }
     }
+    await api.close();
     db.close();
     await fixture.close();
-    await api.close();
   });
 
   it('searches the registry matrix for template candidates', async () => {
