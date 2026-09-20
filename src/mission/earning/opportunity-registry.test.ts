@@ -77,7 +77,8 @@ it('ranking is factual: top is paid_research_data / software_development, not mi
 
 it('permitted autonomous classes require paymentVerifiable and service mapping',()=>{
   const permitted = permittedAutonomousClasses();
-  assert.ok(permitted.length >= 5 && permitted.length <= 8);
+  // after legitimate expansion (ai_implementation, automation_services, consulting_advisory) permitted grows from 7 to ~10
+  assert.ok(permitted.length >= 5 && permitted.length <= 12, `permitted ${permitted.length} out of 5-12`);
   for(const o of permitted){
     assert.equal(o.autonomousPermitted,true);
     assert.equal(o.paymentVerifiable,true);

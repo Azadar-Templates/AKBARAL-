@@ -3,6 +3,8 @@ import { OpportunityDiscovery, type InboundOpportunityInput, type PermittedFeedI
 import { OPPORTUNITY_REGISTRY, rankedOpportunities, permittedAutonomousClasses } from './earning/opportunity-registry';
 import { autonomousDiscover, discoveryRankingSnapshot, pursuitInfrastructureStatus, canAssignExclusively, servicesForClass } from './earning/autonomous-discovery';
 import * as EarningEngine from './earning/earning-engine';
+import * as PlatformConnectors from './earning/platform-connectors';
+import * as PlatformDiscovery from './earning/platform-discovery';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -498,6 +500,38 @@ async function handleApi(
       json(res,200,{opportunity: row});return true;
     }
     throw new HttpProblem(404,'unknown discovery command','not_found');
+  }
+
+  if (head === 'platforms') {
+    const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200,{platforms: PlatformDiscovery.listPlatforms(Number(url.searchParams.get('limit')??100)), connectors: PlatformConnectors.listConnectors().slice(0,60)});
+      return true;
+    }
+    if(method==='GET' && rest[0]==='connectors'){
+      requireRead(context);
+      json(res,200,{earningSources: PlatformConnectors.earningSources(), infrastructure: PlatformConnectors.infrastructureConnectors().slice(0,20), paymentRails: PlatformConnectors.paymentRails()});
+      return true;
+    }
+    if(method==='GET' && rest[1]==='status'){
+      requireRead(context);
+      const p = PlatformDiscovery.getPlatform(rest[0]);
+      if(!p) throw new HttpProblem(404,'platform not found','not_found');
+      json(res,200,{platform: p, log: missionDb.all<Row>('SELECT * FROM mission_platform_discovery_log WHERE platform_id=? ORDER BY created_at DESC LIMIT 20',[rest[0]])});
+      return true;
+    }
+    if(method!=='POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if(rest[0]==='discover'){
+      json(res,201,{platform: PlatformDiscovery.discoverPlatform({id:String(body.id??''), label:String(body.label??''), kind: body.kind as any, opportunityClass: body.opportunityClass? String(body.opportunityClass): undefined, officialUrl:String(body.officialUrl??''), evidence:String(body.evidence??''), payoutVerifiable:Boolean(body.payoutVerifiable), apiPermitted:Boolean(body.apiPermitted), humanOnlyActions: Array.isArray(body.humanOnlyActions)? body.humanOnlyActions as string[]: []})});
+      return true;
+    }
+    if(rest[0]==='qualify'){ json(res,200,{platform: PlatformDiscovery.qualifyPlatform(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='policy-review'){ json(res,200,{platform: PlatformDiscovery.submitForPolicyReview(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='payment-ready'){ json(res,200,{platform: PlatformDiscovery.markPaymentVerificationReady(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='permit'){ json(res,200,{platform: PlatformDiscovery.permitPlatform(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='activate'){ json(res,200,{platform: PlatformDiscovery.activatePlatform(String(body.id??rest[1]??''), actor)}); return true; }
+    throw new HttpProblem(404,'unknown platform command','not_found');
   }
 
   if (head === 'earning-engine') {
@@ -2096,6 +2130,7 @@ export async function startMissionServer(options: { port?: number; host?: string
   ensurePolicy(env.currency);
   seedTools();
   ensurePayoutSlots();
+  try{ PlatformDiscovery.seedPlatforms(); }catch{}
   const host = options.host ?? env.bindHost;
   const port = options.port ?? env.port;
   const server = createMissionServer();
