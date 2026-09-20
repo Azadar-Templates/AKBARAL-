@@ -1,5 +1,7 @@
 # AKBARAL! current source of truth
 
+> **Latest: 2026-09-20 Upwork checkpoint.** Implementation `c1b20c0` is pushed, preserving the newer recovery/Freelancer history and the requested `07f59b0` ancestor. Current-source full regression: **1,280/1,280**, with **105/105** fresh native PostgreSQL Upwork tests; GitHub verify passed for c1b20c0. Live Upwork remains blocked. See [implementation and exact live gates](UPWORK_CONNECTOR.md) and [verification provenance](UPWORK_VERIFICATION_2026-09-20.json). Earlier dated counts and GitHub-auth blockers below are retained historical records, not the latest status.
+
 > Implementation continued after the reconstruction checkpoint. See [implementation progress](IMPLEMENTATION_PROGRESS.md) for subsequent fixes, measured tests, and remaining work; the dated evidence below is retained, not silently rewritten.
 
 **As of 2026-09-19 (UTC).** This document supersedes older reports **for current status**, without deleting their historical evidence. It distinguishes code, historical claims, current tests and production proof. Supporting appendices: [complete recovered commit chronology](PROJECT_HISTORY.md), [source inventory](SOURCE_INVENTORY.md).
@@ -259,3 +261,28 @@ and final documentation remain local pending GitHub reconnection. No final
 remote CI success, live provider activation, real income or deployment is claimed.
 The exact account/contract/approved-work/remittance/receiving-adapter live blockers
 remain listed in FREELANCER_SETTLEMENT.md; credentials alone do not activate them.
+
+
+## Upwork paid-work phase (2026-09-20)
+
+194-entry inventory reviewed; Awin/Freelancer excluded. Upwork is conditional on
+approved internal API use, authentic eligible identity, lawful client assistance
+and durable retention permission—not an instant new-account earning path.
+Owner-reviewed real work, exact manual-delivery readback, provider payment and
+payout references, independent actual net USD receipt and atomic mission-ledger
+admission form the implemented safe workflow. Pending provider balances or any
+fixture cannot become income. Owner-only reference APIs and the limited official
+read probe do not implement live identity/funding/payment adapters.
+
+Full normal-exit SQLite regression: 1,280 passes / 112 files / 114 suites; fresh
+native PG Upwork: 105 passes, no skips. Types, backend build, secret scan, focused
+regression and GitHub verification passed for source c1b20c0. Compact lossless
+evidence, including every original snapshot byte hash, is documented in
+UPWORK_CONNECTOR.md. Earlier verification artifacts remain untouched.
+
+Factory remains disabled. Owner has no selected receiving provider; none was
+assumed. Actual approved work/account permissions, authoritative provider and
+independent USD-receiving adapters, verified fees/currency/settlement/reversals and
+legal retention remain live gates. No live earnings, spending, withdrawal or
+production deployment is claimed. Existing CI image publication is not hosting
+or live-provider proof.

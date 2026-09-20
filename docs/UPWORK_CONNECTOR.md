@@ -138,3 +138,63 @@ secret scan and whitespace checks pass. Native migrations ran on a new database,
 not the previous populated fixture database. These are synthetic tests, not
 provider or banking validation. Full current-source regression follows this
 implementation checkpoint; the earlier 1,174 result is previous-source evidence.
+
+### Final current-source verification
+
+Implementation source **c1b20c0** is committed and pushed on the session branch;
+the previously unpushed Freelancer/recovery checkpoints are also preserved and
+now pushed. The fresh normal-exit full regression passed **1,280/1,280 tests,
+112 files, 114 suites**, with no failures, cancellations or skips. Fingerprint:
+`19dae33e2424ff37e1e938cb9c013efe436e0a8ef12ad8df3b3134237d82fde9`.
+A second runner invocation validated saved hashes without replaying any tests.
+GitHub [verify run 35490153950](https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35490153950)
+succeeded for that exact implementation commit. The existing Docker publishing
+workflow also succeeded; publishing an image is not a production deployment.
+
+See [the verification manifest](UPWORK_VERIFICATION_2026-09-20.json) for per-file
+counts, evidence hashes, 269 focused SQLite passes, 105 fresh native PostgreSQL
+passes and build/type/secret gates. Documentation-only commits after c1b20c0 do
+not change the tested application fingerprint.
+
+#### Evidence preservation under constrained storage
+
+Canonical compact evidence is at
+`logs/test-checkpoints/19dae33e2424ff37e1e938cb9/evidence.tar.br`
+(97,221,174 bytes; SHA-256
+`09833e2e26f3f0f3d14e53fad371157430b708aac88b51c07f1c88dc46f91a6d`).
+Logs and the exact checkpoint JSON are retained beside it. These runtime evidence
+files follow the repository's ignored-log convention, not Git binary commits.
+
+The archive contains `upwork-evidence-cas/`: manifest, codec and hash-addressed
+Brotli chunks. It retains all 3,170 captured original files, including the 113
+checkpoint snapshots, SQLite fixtures and the stopped fresh native PG cluster.
+To avoid storing many near-identical compressed SQLite images, those snapshots
+are chunked after decoding and deterministically reencoded at Brotli quality 5.
+**Every reconstructed original file byte hash was verified after extracting the
+finished archive.** Original RAM files, previous checkpoints, failed DBs and logs
+were not deleted or rewritten. The oversized first archive and interrupted
+compression attempt are not substituted for this verified artifact.
+
+For recovery, first verify the outer SHA-256, then Brotli-decode and untar into a
+fresh scratch directory. With the recorded Node/Brotli versions, run:
+
+```sh
+node /scratch/upwork-evidence-cas/codec.mjs verify /scratch/upwork-evidence-cas
+node /scratch/upwork-evidence-cas/codec.mjs restore /scratch/upwork-evidence-cas /fresh-output
+```
+
+Restore only into a new directory; the codec refuses overwriting files. The
+checkpoint keeps its original `/dev/shm/upwork-full-c1b20c0` paths. After recovery,
+restore that directory to its original location **only if absent**, retaining the
+checkpoint bytes unchanged. Resume/validate with the original source/config:
+
+```sh
+TMPDIR=/dev/shm node scripts/test-resumable.mjs --all \
+  --run-dir /dev/shm/upwork-full-c1b20c0 \
+  --prune-working-copies --compress-snapshots
+```
+
+A completed checkpoint validates without replay. Do not restart completed tests
+because an unrelated tool or archival attempt was interrupted. Disk remains
+constrained (about 34 MiB free after preservation); use RAM-backed new tests and
+never remove protected evidence to make space.
