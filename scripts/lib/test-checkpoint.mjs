@@ -133,6 +133,20 @@ async function command(args, options, attempt, state, save) {
   }
 }
 
+/** Optional disk-safe retention: discard only a closed, completed test's mutable
+ * copy after its immutable verification snapshot and TAP log have been hashed.
+ * Failed/interrupted DBs, snapshots, logs, source and production artifacts stay.
+ */
+export function pruneCompletedWorkingCopy(attempt) {
+  const working = path.resolve(attempt.database);
+  const saved = path.resolve(attempt.snapshot ?? '');
+  if (attempt.status !== 'passed' || path.basename(working) !== 'working.db' ||
+      path.basename(saved) !== 'passed.db' || path.dirname(working) !== path.dirname(saved) ||
+      !fs.lstatSync(working).isFile() || fs.lstatSync(working).isSymbolicLink()) throw new Error('Not a disposable completed test copy');
+  if (fileDigest(saved) !== attempt.snapshotHash || fileDigest(attempt.log) !== attempt.logHash) throw new Error('Completed evidence is corrupted; refusing cleanup');
+  fs.unlinkSync(working);
+}
+
 /** Immutable successful DB snapshots keep failed/interrupted writes out of retries.
  * Only test-owned databases under directory are created; existing DBs are never reset.
  */
@@ -169,6 +183,7 @@ export async function runBatch(options) {
         attempt.finishedAt = new Date().toISOString();
         if (file === '__bootstrap__') state.bootstrap = attempt;
         save();
+        if (options.pruneWorkingCopies) pruneCompletedWorkingCopy(attempt);
         options.onCheckpoint?.(summarize(state));
         return attempt;
       } catch (error) {

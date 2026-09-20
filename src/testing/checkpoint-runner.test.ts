@@ -131,3 +131,23 @@ it('failure annotations preserve resume location without allowing multiline work
   assert.equal(result.annotation.includes('::warning::'), false);
   assert.match(failureDiagnostic(path.join(root, 'missing'), 'synthetic fallback').annotation, /synthetic fallback/);
 });
+
+it('opt-in pruning preserves every verified snapshot/log and resumes without replaying completed tests', async () => {
+  const f=fixture();await runBatch({...f.options,pruneWorkingCopies:true});
+  for(const a of [f.state().bootstrap,...f.state().attempts]) {
+    assert.equal(fs.existsSync(a.database),false);assert.equal(fs.existsSync(a.snapshot),true);assert.equal(fs.existsSync(a.log),true);
+  }
+  const result=await runBatch({...f.options,batchSize:2,pruneWorkingCopies:true});assert.equal(result.pass,3);
+  assert.equal((await runBatch({...f.options,pruneWorkingCopies:true})).pass,3);assert.equal(f.state().attempts.length,3);
+});
+it('pruning retains failed-run databases and refuses cleanup when immutable evidence is corrupt', async () => {
+  const f=fixture(true);await runBatch({...f.options,pruneWorkingCopies:true});
+  await assert.rejects(runBatch({...f.options,pruneWorkingCopies:true}),/timed_out/);
+  assert.equal(fs.existsSync(f.state().attempts[1].database),true);
+  const g=fixture();await runBatch(g.options);const a=g.state().attempts[0];
+  fs.appendFileSync(a.log,'changed fixture evidence');
+  const {pruneCompletedWorkingCopy}=require('../../scripts/lib/test-checkpoint.mjs') as typeof import('../../scripts/lib/test-checkpoint.mjs');
+  assert.throws(()=>pruneCompletedWorkingCopy(a),/corrupted/);assert.equal(fs.existsSync(a.database),true);
+  assert.throws(()=>pruneCompletedWorkingCopy({...a,status:'failed'}),/Not a disposable/);
+  assert.throws(()=>pruneCompletedWorkingCopy({...a,database:a.snapshot}),/Not a disposable/);assert.equal(fs.existsSync(a.snapshot),true);
+});

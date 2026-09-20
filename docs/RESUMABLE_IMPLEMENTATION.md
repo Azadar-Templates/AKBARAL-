@@ -53,3 +53,13 @@ At an interruption-safe checkpoint report only:
 - Commit SHA
 - Tests passed (batch or whole suite, labelled accurately)
 - Next exact task
+
+### Optional disk-safe verification retention
+
+Use `npm test -- --prune-working-copies` on storage-constrained sandboxes.
+After each test subprocess has completed successfully, the runner saves its
+immutable `passed.db` and TAP hashes/checkpoint, verifies them again, and removes
+only that subprocess's redundant mutable `working.db`. Failed/interrupted DBs,
+all verification snapshots, logs, checkpoint metadata and source are preserved.
+Resume still checks every snapshot/log hash and skips completed tests. This flag
+changes retention of disposable copies only, not test coverage or pass criteria.

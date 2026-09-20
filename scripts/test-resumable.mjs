@@ -40,7 +40,7 @@ if (args.includes('--status')) {
   }
 } else {
   try {
-    const result = await runBatch({ root, directory, fingerprint: sourceFingerprint, files, batchSize, timeoutMs,
+    const result = await runBatch({ root, directory, fingerprint: sourceFingerprint, files, batchSize, timeoutMs, pruneWorkingCopies: args.includes('--prune-working-copies'),
       bootstrapArgs: ['--import', 'tsx', 'src/db/migrate.ts'],
       testArgs: file => ['--import', 'tsx', '--test', '--test-concurrency=1', '--test-force-exit', file],
       checkFingerprint: () => { if (fingerprint() !== sourceFingerprint) throw new Error('Sources/configuration changed during the run; refusing a mixed-source checkpoint'); },
