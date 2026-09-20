@@ -148,8 +148,12 @@ and provider confirmation. Customer money remains separate from mission cash.
 - Fresh isolated native PostgreSQL **18.4: 180/180**, Unix socket only, cleanly
   stopped; database and logs retained under ignored `logs/toptal/native/`.
 - TypeScript check, backend compilation, secret scan and whitespace checks pass.
-- Full source-bound resumable regression and GitHub CI: pending at the initial
-  implementation checkpoint; final results will be appended after completion.
+- Full source-bound regression: **1,732/1,732**, 115 files, 114 suites, zero
+  final failures/cancellations/skips, normal exit. Source implementation: `ec8b11e`.
+- GitHub [verify 35495309440](https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35495309440)
+  passed at that source: full SQLite, native PostgreSQL/cash contention, desktop
+  and mobile-viewport browser checks, production build and compiled PG worker.
+  Docker publication also passed; neither result is a deployment or live earning.
 
 All test identities, work, timesheets, clients and money are synthetic. The fixture
 `20,000 - 0 - 300 - 100 = 19,600 cents` is an arithmetic test, not a fee quote,
@@ -166,3 +170,38 @@ without replacing any earlier connector or regression lane. Downloaded native
 PostgreSQL test binaries are outside the repository at `/home/user/toptal-test-tools`;
 this avoids a public binary-library string triggering the source secret scanner.
 No secret value was exposed and no scanner policy was weakened.
+
+
+### Source-bound checkpoint and interruption recovery
+
+Fingerprint: `4c731c86d019491304ae99152b453b0f38615254a2702c50d5ba9b404e375198`.
+[Tracked verification provenance](TOPTAL_VERIFICATION_2026-09-20.json) includes
+per-file test counts, exact log/compressed snapshot hashes, bootstrap evidence,
+native results, source SHA, failed-attempt provenance and CI/artifact identities.
+All local logs, snapshots and native test database are retained; generated artifacts
+remain ignored, not large Git additions. Runtime files can be absent after a
+workspace restoration even when their tracked provenance survives. CI artifacts
+are independently source-bound and expire on the date recorded in the provenance;
+they are not byte-identical replacements for local snapshots.
+
+The first full attempt stopped **after preserving 100/115 passed files** because
+in-repository TMPDIR held tsx-generated copies of existing synthetic DSN fixtures.
+Only that disposable compiled cache was relocated outside the repository; all
+347 file hashes matched before/after, and original DBs, snapshots and logs were
+untouched. No source, allowlist or scanner policy changed. With an external TMPDIR,
+the same source-bound run resumed at the unfinished scanner test, then completed
+all 115 files. The failed attempt remains in the checkpoint and provenance.
+A subsequent completed-run invocation validated evidence without replaying tests;
+the checkpoint byte hash remained unchanged.
+
+To inspect or reuse the **same source and dependency configuration**:
+
+```sh
+node scripts/test-resumable.mjs --status
+TMPDIR=/home/user/toptal-test-tmp node scripts/test-resumable.mjs --all --prune-working-copies --compress-snapshots
+```
+
+Changed source/configuration needs a new fingerprint; never reset source or delete
+old verification evidence to force checkpoint reuse. Full run logs and cache
+relocation audit are under `logs/toptal/`. Final documentation changes do not
+alter the verified implementation fingerprint.
