@@ -136,3 +136,14 @@ Private bootstrap and DB diagnostics now redact PostgreSQL userinfo, all query o
 **Current preview supersedes the earlier stale-runtime warning:** guarded refresh at 19:09:27 UTC onto verified tree `7298227` / code `3ca0c23`, after an integrity-checked online DB backup and session-configuration comparison. Managed process `akbaral-public-platform-36076c94`; web 3000/API 4000. **36/36 local HTTP checks**, readiness now `started=true, activeWorkers=0`; ten financial tables unchanged by row/content hashes. Same users/registry/database/session secret, no reseed/reset. External E2B access remains traffic-token gated, standalone mission is not running, and the actual runtime still has seven required launch blockers. See the audit's current-runtime section and retained manifest. Next: final private-server HTTP regression, exact remote/CI check and bounded readiness report.
 
 Final focused private HTTP check: **33/33** pass after all audit fixes (`logs/readiness-audit/final-mission-server-02.log`). Current tree has 101 test files; no new full integrated-suite/browser run is claimed from the overlapping focused batches. All five demonstrated audit defects are fixed; the current preview preserves financial/session state and runs the verified code. Follow-up commits after deployed tree `7298227` are documentation-only. **Production remains blocked by seven actual runtime configuration checks.** Next exact action is to inspect Verify for the final pushed checkpoint, not repeat completed work; then obtain operator-owned deployment/provider/private-mission configuration and live proofs. Full boundary: `READINESS_AUDIT_2026_09_19.md`.
+
+## Real earning workforce phase 1 (2026-09-20)
+
+See [REAL_EARNING_WORKFORCE.md](REAL_EARNING_WORKFORCE.md) for the pre-coding
+194-entry inventory audit, official provider references, credential requirements,
+and explicit remaining work. The isolated Awin publisher API client now has
+fixture-tested program discovery, fresh relationship checks, tracking-link
+creation and attributed transaction lookup. This is not an end-to-end earning
+connector: no durable assignment/delivery/settlement integration, no live calls,
+no verified income, no cash writes, and no earning adapter registered in the
+money worker. Existing spending and withdrawal controls are unchanged.
