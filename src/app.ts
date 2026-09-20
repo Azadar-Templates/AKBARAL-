@@ -243,7 +243,11 @@ export function createApiServer(): ApiServer {
       });
     },
     async close(): Promise<void> {
+      // Stop all polling owned by this API before callers close the database.
       automationScheduler.stop();
+      executionQueue.stop();
+      economyScheduler.stop();
+      workforceScheduler.stop();
       stream.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },

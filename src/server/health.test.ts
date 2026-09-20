@@ -68,8 +68,8 @@ describe('Milestone 10: health, readiness and metrics', () => {
 
   after(async () => {
     db.run('DELETE FROM users WHERE email LIKE ?', [`m10-%${suffix}@akbaral.test`]);
-    db.close();
     await api.close();
+    db.close();
   });
 
   it('liveness probe actually checks the database (no fake ok)', async () => {

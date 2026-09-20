@@ -180,3 +180,14 @@ Brotli form instead of consuming another four GiB; no existing snapshot is
 rewritten or deleted. The plain SQLite image hash is verified before temporary
 capture cleanup and again on restore. This follows the user's preservation rule
 rather than deleting old verification evidence to make room.
+
+Normal completion additionally exposed an API shutdown defect previously hidden
+by forced exits: `createApiServer().close()` stopped automation polling but left
+execution-queue, economy and workforce timers running after callers closed the
+SQLite connection. The owner-console suite reproduced `database is not open`;
+a new shutdown/restart regression failed before the fix and passed afterward
+(13/13 console tests). API close now stops all four polling loops. Eight HTTP
+fixture teardowns close their API before the database, not afterward. This does
+not claim to abort/drain already-running external work or authorize new work.
+The 26-file interrupted normal-run checkpoint and its failed database/log are
+retained; changed API source requires final verification on a new fingerprint.

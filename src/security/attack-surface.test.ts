@@ -85,8 +85,8 @@ describe('Milestone 9: attack surface', () => {
     // (agents owned by these users flip to ownerless via ON DELETE SET NULL).
     db.run('DELETE FROM users WHERE email LIKE ?', [`m9-%${suffix}@akbaral.test`]);
     delete process.env.BILLING_WEBHOOK_SECRET;
-    db.close();
     await api.close();
+    db.close();
   });
 
   // ------------------------------------------------------------ token auth ---
