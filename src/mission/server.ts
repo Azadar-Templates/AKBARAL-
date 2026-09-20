@@ -1,5 +1,7 @@
 import { CustomerWork, type CustomerRequestInput } from './earning/customer-work';
 import { OpportunityDiscovery, type InboundOpportunityInput, type PermittedFeedItem } from './earning/opportunity-discovery';
+import { OPPORTUNITY_REGISTRY, rankedOpportunities, permittedAutonomousClasses } from './earning/opportunity-registry';
+import { autonomousDiscover, discoveryRankingSnapshot, pursuitInfrastructureStatus, canAssignExclusively, servicesForClass } from './earning/autonomous-discovery';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -453,6 +455,40 @@ async function handleApi(
       requireRead(context);
       const rows = discovery.list(Number(url.searchParams.get('limit') ?? 20));
       json(res,200,{opportunities: rows, count: rows.length, verifiedCustomerCount:0, note:'Discovered opportunities are not revenue; only verified USD settlement counts.'});return true;
+    }
+    // Inventory & autonomous infrastructure — factual, no income claim
+    if (method==='GET' && rest[0]==='inventory' && rest.length===1) {
+      requireRead(context);
+      const ranked = rankedOpportunities();
+      json(res,200,{totalClasses: ranked.length, inventory: ranked.map(o=> ({key:o.key,label:o.label,overallScore:o.overallScore,status:o.status,autonomousPermitted:o.autonomousPermitted,paymentVerifiable:o.paymentVerifiable,exclusivelyAssignable:o.exclusivelyAssignable,services:servicesForClass(o.key),integrations:o.integrations.slice(0,6),representativePlatforms:o.representativePlatforms})), note:'Integrations are infrastructure, not earning claims; no listing is a job; no estimate is revenue.'});return true;
+    }
+    if (method==='GET' && rest[0]==='ranking' && rest.length===1) {
+      requireRead(context);
+      json(res,200,{ranking: discoveryRankingSnapshot(Number(url.searchParams.get('limit') ?? 10))});return true;
+    }
+    if (method==='GET' && rest[0]==='permitted' && rest.length===1) {
+      requireRead(context);
+      const permitted = permittedAutonomousClasses();
+      json(res,200,{permitted, count: permitted.length, note:'Only these classes may be autonomously pursued with existing verified-money chain; others require owner account + payout verification.'});return true;
+    }
+    if (method==='GET' && rest[0]==='infrastructure' && rest.length===1) {
+      requireRead(context);
+      json(res,200,pursuitInfrastructureStatus());return true;
+    }
+    if (rest[0]==='autonomous' && method==='POST') {
+      const resolveActor = (): MoneyActor => {
+        if (context.session) return {kind:'owner', id: requireOwner(context, method!=='GET').owner.id};
+        if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+        if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+        throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+      };
+      const actor = resolveActor();
+      const result = autonomousDiscover(actor, Number(body.limit ?? 20));
+      json(res,200,{result});return true;
+    }
+    if (rest[0]==='can-assign' && method==='GET' && rest.length===2) {
+      requireRead(context);
+      json(res,200,canAssignExclusively(String(rest[1])));return true;
     }
     if (method==='GET' && rest.length===1) {
       requireRead(context);
