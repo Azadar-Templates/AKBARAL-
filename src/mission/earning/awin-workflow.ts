@@ -36,6 +36,7 @@ function minor(decimal: string): number {
 async function bounded<T>(operation: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try { return await Promise.race([operation(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new MoneyError('awin_provider_timeout')), 30000); })]); }
+  catch { throw new MoneyError('awin_external_provider_unverified'); }
   finally { clearTimeout(timer); }
 }
 
@@ -63,7 +64,7 @@ export class AwinWorkflow {
   private opportunity(a: Row) { return get('mission_awin_opportunities', String(a.opportunity_id)); }
   private async propertyProof(publisherId: string) {
     const provider = this.publisher(), key = origin(provider.propertyKey);
-    const proof = structuredClone(await bounded(() => provider.verifyProperty(publisherId)));
+    const proof = await bounded(async () => structuredClone(await provider.verifyProperty(publisherId)));
     const expiry = Date.parse(proof.expiresAt);
     if (proof.propertyKey !== key || proof.publisherId !== publisherId || proof.permitted !== true || proof.incrementalCostCents !== 0 ||
       !Number.isFinite(expiry) || expiry <= Date.now() || expiry > Date.now() + 86400000) deny('blocked_property_unverified');
@@ -216,7 +217,7 @@ export class AwinWorkflow {
     assertMoneyOwner(actor); const j = this.job(publicationId);
     if (!['publishing', 'unknown_publish', 'published'].includes(String(j.state))) deny('publication_not_dispatched');
     if (origin(this.publisher().propertyKey) !== this.assignment(String(j.assignment_id)).property_key) deny('property_mismatch');
-    const proof = await bounded(() => this.publisher().lookup(publicationId));
+    const proof = await bounded(async () => structuredClone(await this.publisher().lookup(publicationId)));
     return db.transaction(() => { assertMoneyOwner(actor); return this.recordPublication(publicationId, proof); });
   }
   private review(actor: MoneyActor, ref: string) {
@@ -289,7 +290,7 @@ export class AwinWorkflow {
     let proof: AwinSettlementProof;
     const provider: MoneyProvider = { id: LEDGER_PROVIDER, supports: () => false, pay: async () => deny('outbound_payment_forbidden'), lookup: async () => deny('outbound_payment_forbidden'),
       verifyReceipt: async () => {
-        proof = structuredClone(await bounded(() => receiver.verify({ publisherId, paymentId, externalId })));
+        proof = await bounded(async () => structuredClone(await receiver.verify({ publisherId, paymentId, externalId })));
         if (proof.state !== 'settled' || proof.rail !== receiver.rail || proof.receivingAccount !== receiver.receivingAccount || proof.externalId !== externalId || proof.publisherId !== publisherId || proof.paymentId !== paymentId) deny('settlement_unconfirmed');
         const a = this.assignment(String(rows[0].assignment_id));
         return { externalId: receiptId, amountCents: cents(proof.netCents, true), currency: proof.currency, kind: 'earning', agentId: String(a.agent_id), availableBalanceCents: cents(proof.availableBalanceCents) };
@@ -341,7 +342,7 @@ export class AwinWorkflow {
     if (!payout?.net_cents || payout.rail !== receiver.rail || payout.receiving_account !== receiver.receivingAccount) deny('original_settlement_missing');
     const receiptId = 'reversal:' + sha256(JSON.stringify([receiver.rail, receiver.receivingAccount, reversalExternalId]));
     const provider: MoneyProvider = { id: LEDGER_PROVIDER, supports: () => false, pay: async () => deny('outbound_payment_forbidden'), lookup: async () => deny('outbound_payment_forbidden'), verifyReceipt: async () => {
-      const proof = await bounded(() => receiver.verifyReversal({ originalExternalId: String(payout.external_id), reversalExternalId }));
+      const proof = await bounded(async () => structuredClone(await receiver.verifyReversal({ originalExternalId: String(payout.external_id), reversalExternalId })));
       if (proof.state !== 'settled' || proof.rail !== receiver.rail || proof.receivingAccount !== receiver.receivingAccount || proof.originalExternalId !== payout.external_id || proof.reversalExternalId !== reversalExternalId || proof.currency !== currentPolicy().currency) deny('reversal_unconfirmed');
       return { externalId: receiptId, kind: 'reversal', originalExternalId: String(payout.receipt_id), amountCents: cents(proof.amountCents, true), currency: proof.currency };
     } };

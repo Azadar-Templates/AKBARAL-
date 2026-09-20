@@ -304,3 +304,16 @@ it('event order and evidence versions preserve the actual observed lifecycle', a
   assert.equal(db.all('SELECT * FROM mission_awin_evidence').length,2);
   assert.equal(require('../database').verifyMissionAudit().ok,true);
 });
+it('redacts external adapter transport errors on property, publication lookup and reversal paths', async () => {
+  const verify=publisher.verifyProperty;
+  publisher.verifyProperty=async()=>{throw Error('fixture-sensitive-provider-body');};
+  await assert.rejects(assigned(),{message:'awin_external_provider_unverified'});
+  publisher.verifyProperty=verify;
+  const j=await paidJob();
+  publisher.lookup=async()=>{throw Error('fixture-sensitive-provider-body');};
+  await assert.rejects(w.reconcilePublication(owner,String(j.id)),{message:'awin_external_provider_unverified'});
+  await w.reconcilePayout(owner,'77','fixture-transfer');
+  receiver.verifyReversal=async()=>{throw Error('fixture-sensitive-provider-body');};
+  await assert.rejects(w.reconcileReversal(owner,'77','fixture-reversal'),{message:'awin_external_provider_unverified'});
+  assert.equal(balance(),450);
+});

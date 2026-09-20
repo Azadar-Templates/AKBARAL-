@@ -156,7 +156,7 @@ opportunity bindings, immutable owner-reviewed publication, commission evidence,
 ordered lifecycle events, payout/reversal deduplication and durable API limits.
 The existing verified-cash engine atomically accepts only independently confirmed
 settlement through trusted server adapters. Owner API commands are implemented;
-139 SQLite/API/cash/IPC/security tests and 31 native PostgreSQL workflow tests pass.
+140 SQLite/API/cash/IPC/security tests and 32 native PostgreSQL workflow tests pass.
 
 The owner selected no publishing property and no receiving provider. Neither
 concrete adapter is installed: live publication and settlement stay BLOCKED.

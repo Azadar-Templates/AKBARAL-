@@ -55,7 +55,8 @@ provider restrictions and official Awin endpoint references still apply.
   commission evidence freezes all mission cash for review; it does not invent a
   reversal. Only independently confirmed reversals debit the ledger.
 - Shared durable 20-request/minute rolling budget and persistent 429 cooldown
-  across production clients/workers. The global budget is intentionally stricter
+  across production clients/workers. External property, lookup and reversal
+  transport failures are redacted without retaining raw error bodies/causes. The global budget is intentionally stricter
   than Awin's per-user limit. Workers do not share credential values in the DB.
 
 ## Lifecycle and blocked states
@@ -158,14 +159,19 @@ All new provider responses, accounts, sites, projects, commissions and money
 in tests are explicitly fictional fixtures in disposable databases. No live
 provider/API/money test was run.
 
-- 31 new workflow tests: every lifecycle stage, ownership, expiry, publication
+- 32 new workflow tests: every lifecycle stage, ownership, expiry, publication
   approval, concurrency, missing/mismatched evidence, pending/uncertain cash,
   idempotency, net fees, cumulative reversals, held-cash liability and rate limits.
 - Existing 24 Awin client tests retained.
-- 139 combined SQLite/API/cash/IPC/security tests passed.
-- 31 workflow tests passed on **native PostgreSQL 18.4**, using a local Unix
+- 140 combined SQLite/API/cash/IPC/security tests passed.
+- 32 workflow tests passed on **native PostgreSQL 18.4**, using a local Unix
   socket and disposable database. Native PostgreSQL coverage is added to CI.
 - Typecheck, backend compilation, secret scan and diff checks passed.
+- Full local regression at `6d81ef5`: 1,064 tests / 108 files passed before the
+  final external-adapter error-redaction regression was added. That regression
+  failed before the fix; all 140 focused tests and 32 native PG tests pass after it.
+- Optional Awin configuration stays commented in `.env.example`; the deployment
+  scanner regression is fixed without making provider credentials mandatory.
 
 The PGlite socket harness failed after an intentional unique-constraint error,
 then returned inconsistent later results. This is **not** counted as a PG pass;
