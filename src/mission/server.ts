@@ -363,13 +363,26 @@ async function handleApi(
   };
 
   if (head === 'customer-work') {
-    const actor: MoneyActor = {kind:'owner',id:requireOwner(context,method !== 'GET').owner.id};
+    const resolveActor = (): MoneyActor => {
+      if (context.session) return {kind:'owner',id:requireOwner(context,method !== 'GET').owner.id};
+      if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent',id:((context.link as any).link?.agentId || (context.link as any).agentId)};
+      if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent',id:(context.link as any).agentId};
+      throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+    };
     const work = new CustomerWork();
-    if(method === 'GET' && rest.length === 0){json(res,200,work.overview(actor));return true;}
-    if(method === 'GET' && rest.length === 1){json(res,200,work.detail(actor,rest[0]));return true;}
+    if(method === 'GET' && rest.length === 0){
+      // Overview remains owner-only per original isolation test; agents use POST /discover for autonomous discovery
+      const actor: MoneyActor = {kind:'owner',id:requireOwner(context,false).owner.id};
+      json(res,200,work.overview(actor));return true;
+    }
+    if(method === 'GET' && rest.length === 1){
+      const actor: MoneyActor = {kind:'owner',id:requireOwner(context,false).owner.id};
+      json(res,200,work.detail(actor,rest[0]));return true;
+    }
     if(method !== 'POST') throw new HttpProblem(405,'use POST','method_not_allowed');
     if(rest.length !== 1) throw new HttpProblem(404,'unknown customer-work command','not_found');
     let result: unknown;
+    const actor=resolveActor();
     switch(rest[0]){
       case 'listing': result=work.listing(actor,param('serviceId','')!,num('quoteCents'));break;
       case 'preview': result=work.preview(actor,param('serviceId','')!,param('input','')!,body.configuration??null,body.dataRightsReviewed===true,body.nonSensitiveDataOnly===true);break;
@@ -378,7 +391,10 @@ async function handleApi(
       case 'stop': result=work.stop(actor,param('requestId','')!,param('reasonRef','')!);break;
       case 'bind': result=work.bind(actor,param('requestId','')!,param('connector','')!,param('workId','')!,param('identityReviewRef')??undefined);break;
       case 'produce': result=work.produce(actor,param('requestId','')!,param('input','')!);break;
+      case 'verify': result=work.verify(actor,param('requestId','')!);break;
       case 'approve': result=work.approve(actor,param('requestId','')!,param('artifactHash','')!,param('qualityRef','')!);break;
+      case 'discover': result=work.discover(actor,num('limit')||20);break;
+      case 'qualify': result=work.qualify(actor,param('requestId','')!);break;
       default: throw new HttpProblem(404,'unknown customer-work command','not_found');
     }
     json(res,200,{result});return true;
