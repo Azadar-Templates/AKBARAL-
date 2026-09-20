@@ -272,15 +272,59 @@ The owner has no approved publishing property and no receiving provider. Neither
 was invented or configured. No real customer, listing publication, paid order,
 external delivery, earnings, spending, withdrawal or deployment is claimed.
 
-## Verification at implementation checkpoint
+## Final verification
 
 - Focused SQLite: **179/179** (82 customer/service tests, 42 HTTP, 14 dashboard DOM,
   41 money tests). Includes a complete synthetic customer → useful generated
   validator → Contra payment → independently verified fixture receipt → ledger,
   plus negative paths, no duplicate credit, uncertainty and reversals.
 - TypeScript check, backend compilation, JavaScript syntax and secret scan pass.
-- Fresh native PostgreSQL and source-bound full regression: final results to be
-  recorded after this implementation checkpoint. CI adds a separate native
-  `mission_customer_work` database without replacing any existing test lane.
+- Fresh isolated native PostgreSQL **18.4: 82/82**, final source, database
+  `customer_272189c_fixture`, Unix socket only, cleanly stopped. Earlier iteration
+  fixtures/logs are retained, not overwritten or relabeled as final-source evidence.
+- Full source-bound regression: **1,817/1,817**, 116 files, 114 suites, zero failures,
+  cancellations or skips; normal exit. Implementation source: `272189c`.
+- [GitHub verify 35497234718](https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35497234718)
+  passed at that implementation source: full SQLite, native PostgreSQL/cash
+  contention, existing desktop/mobile mission browser checks, production build and
+  compiled PostgreSQL worker. New customer controls also have focused DOM tests.
+  A fresh `mission_customer_work` native database is added without replacing any
+  existing test lane. Docker publication passed too; neither is a deployment.
 - All identities, customers, orders and money in tests are synthetic and isolated.
   Their successful execution is not live customer acquisition or actual revenue.
+
+
+## Provenance and resume safety
+
+[Tracked verification provenance](CUSTOMER_WORK_VERIFICATION_2026-09-20.json)
+records the implementation SHA, source fingerprint, per-file counts, log/snapshot
+hashes, native result and CI artifact identities. All history is preserved; the
+six earlier connector implementations and shared money source are unchanged.
+Historical evidence was not removed. The standard runner prunes only its redundant
+working copies after retaining verified compressed snapshots; final logs and
+native fixture databases remain available.
+
+Fingerprint: `d0c3bc35da2beaa34874d5d885c32000d5de1d4a3eb13000e11f4fbca0af477e`.
+The full run completed without retrying any file. Completed-run reuse verified
+retained evidence without replaying tests; the checkpoint byte hash was unchanged.
+Use an **external TMPDIR** so generated fixture caches are not scanned as source:
+
+```sh
+node scripts/test-resumable.mjs --status
+TMPDIR=/home/user/customer-work-test-tmp node scripts/test-resumable.mjs --all --prune-working-copies --compress-snapshots
+```
+
+This reuses evidence only for matching source/dependencies/configuration. Never
+reset code or delete prior checkpoints to force reuse. Ignored runtime evidence
+lives under `logs/customer-work/` and `logs/test-checkpoints/`; it may not survive
+workspace restoration even though tracked provenance survives. CI artifacts are
+independent source-bound evidence with the expiry recorded in the JSON, not
+byte-identical copies of local snapshots.
+
+For the JSON service, a configuration example is
+`{"required":["id","name"],"uniqueKey":"id"}`. Supply your own authorized input;
+do not invent a customer to try it. HTML requires configuration `null`. The output
+is a JSON artifact envelope containing report, input hash and, for the JSON service,
+the reusable files. The owner reviews/exports those actual files for the agreed
+manual delivery. The private API/dashboard does not publish the package or send it
+to a customer. Account eligibility and genuine demand remain real external steps.
