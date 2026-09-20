@@ -9,6 +9,11 @@ import * as GlobalDiscovery from './earning/global-discovery';
 import * as Allocator from './earning/workload-allocator';
 import * as Scheduler from './earning/continuous-scheduler';
 import * as CommandCenter from './earning/owner-command-center';
+import * as ProviderReadiness from './earning/provider-capability-registry';
+import * as Eligibility from './earning/opportunity-eligibility';
+import * as ConnectorContracts from './earning/connector-execution-contracts';
+import * as ExecutionPipeline from './earning/execution-pipeline';
+import * as SettlementVerification from './earning/settlement-verification';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -624,6 +629,142 @@ async function handleApi(
     requireRead(context);
     json(res,200, CommandCenter.buildCommandCenter());
     return true;
+  }
+
+  if (head === 'provider-readiness') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const kind = url.searchParams.get('kind') ?? undefined;
+      if (url.searchParams.get('summary')==='1') json(res,200, ProviderReadiness.providerReadinessSummary());
+      else json(res,200, { readiness: kind ? ProviderReadiness.listProviderReadiness(kind) : ProviderReadiness.listProviderReadiness(), summary: ProviderReadiness.providerReadinessSummary() });
+      return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const r = ProviderReadiness.getProviderReadiness(rest[0]);
+      if (!r) throw new HttpProblem(404,'provider not found','not_found');
+      json(res,200,{readiness: r}); return true;
+    }
+    // Eligible: returns whether provider's connector is ready for assignment
+    if (method==='GET' && rest.length===2 && rest[1]==='eligible') {
+      const r = ProviderReadiness.getProviderReadiness(rest[0]);
+      if (!r) throw new HttpProblem(404,'provider not found','not_found');
+      const eligible = r.status==='ready';
+      json(res,200,{providerId: rest[0], eligible, readiness: r, blockers: eligible?[]: r.ownerActions}); return true;
+    }
+    if (method==='POST' && rest[1]==='failure') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      void actor;
+      const cat = String(body.category ?? 'transient') as any;
+      const row = ProviderReadiness.recordProviderFailure(rest[0], {code: String(body.code ?? 'unknown'), category: cat, detail: body.detail? String(body.detail): undefined, retryAfterMs: body.retryAfterMs? Number(body.retryAfterMs): undefined});
+      json(res,201,{failure: row}); return true;
+    }
+    if (method==='POST' && rest[1]==='recover') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      void actor;
+      const n = ProviderReadiness.clearProviderFailures(rest[0]);
+      json(res,200,{recovered: n}); return true;
+    }
+    throw new HttpProblem(404,'unknown provider-readiness command','not_found');
+  }
+
+  if (head === 'eligibility') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const registryKey = String(url.searchParams.get('registryKey') ?? body.registryKey ?? '');
+      const platformId = String(url.searchParams.get('platformId') ?? body.platformId ?? '');
+      if (!registryKey) throw new HttpProblem(400,'registryKey required','validation_error');
+      json(res,200, Eligibility.eligibilityDecision(registryKey, platformId||undefined)); return true;
+    }
+    if (method==='GET' && rest[0]==='opportunities') {
+      json(res,200, Eligibility.listEligibleOpportunities(Number(url.searchParams.get('limit')??20))); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const dec = Eligibility.canAssignExclusivelyWithGate(rest[0]);
+      json(res,200, dec); return true;
+    }
+    throw new HttpProblem(404,'unknown eligibility command','not_found');
+  }
+
+  if (head === 'connector-contracts') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      json(res,200,{contracts: ConnectorContracts.listConnectorContracts(), count: ConnectorContracts.listConnectorContracts().length}); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const c = ConnectorContracts.getConnectorContract(rest[0]);
+      if (!c) throw new HttpProblem(404,'contract not found','not_found');
+      json(res,200,{contract: c}); return true;
+    }
+    throw new HttpProblem(404,'unknown connector-contracts command','not_found');
+  }
+
+  if (head === 'executions') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const filter: Record<string,string> = {};
+      const oppId = url.searchParams.get('opportunityId');
+      const agentId = url.searchParams.get('agentId');
+      const state = url.searchParams.get('state');
+      if (oppId) filter.opportunityId = oppId;
+      if (agentId) filter.agentId = agentId;
+      if (state) filter.state = state;
+      json(res,200,{executions: ExecutionPipeline.listExecutions(filter as any), health: ExecutionPipeline.executionPipelineHealth()}); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const row = missionDb.get<Row>('SELECT * FROM mission_earning_executions WHERE id=?', [rest[0]]);
+      if (!row) throw new HttpProblem(404,'execution not found','not_found');
+      json(res,200,{execution: row}); return true;
+    }
+    if (method!=='POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if (rest[0]==='health') { json(res,200, ExecutionPipeline.executionPipelineHealth()); return true; }
+    if (rest[0]==='retry-due') { json(res,200,{retried: ExecutionPipeline.retryDueExecutions(Number(body.limit ?? 10))}); return true; }
+    if (rest[0]==='start') {
+      const actor = context.session ? {kind:'owner', id: requireOwner(context,true).owner.id} as MoneyActor : (()=>{ const a=requireAgent(context, String(body.agentId ?? ''), false); return {kind:'agent', id:a.agentId} as MoneyActor })();
+      void actor;
+      const row = ExecutionPipeline.startExecution({opportunityId: String(body.opportunityId ?? ''), agentId: String(body.agentId ?? (actor.kind==='agent'? actor.id: '')), connectorId: body.connectorId ? String(body.connectorId): undefined, scopeHash: body.scopeHash ? String(body.scopeHash): undefined});
+      json(res,201,{execution: row}); return true;
+    }
+    if (rest[0]==='complete') {
+      const row = ExecutionPipeline.completeExecution(String(body.executionId ?? ''), {delivered: Boolean(body.delivered), evidenceHash: body.evidenceHash ? String(body.evidenceHash): undefined});
+      json(res,200,{execution: row}); return true;
+    }
+    if (rest[0]==='verify') {
+      const verifiers = Array.isArray(body.verifiers) ? body.verifiers as Array<{agentId:string; confidence:number; passed:boolean}> : [];
+      const result = ExecutionPipeline.verifyExecution(String(body.executionId ?? ''), verifiers);
+      json(res,200, result); return true;
+    }
+    if (rest[0]==='provider-confirm') {
+      const row = ExecutionPipeline.confirmProviderPayment(String(body.executionId ?? ''), String(body.providerRef ?? ''), {grossCents: Number(body.grossCents), feesCents: Number(body.feesCents ?? 0), netCents: Number(body.netCents)});
+      json(res,200,{execution: row}); return true;
+    }
+    if (rest[0]==='settle') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const row = ExecutionPipeline.settleExecution({executionId: String(body.executionId ?? ''), actor, rail: String(body.rail ?? ''), externalId: String(body.externalId ?? ''), grossCents: Number(body.grossCents), feeCents: Number(body.feeCents ?? 0), netCents: Number(body.netCents), providerRef: body.providerRef ? String(body.providerRef): undefined});
+      json(res,200,{execution: row}); return true;
+    }
+    if (rest[0]==='fail') {
+      const row = ExecutionPipeline.failExecutionWithRetry(String(body.executionId ?? ''), String(body.code ?? 'unknown'), String(body.category ?? 'transient') as any);
+      json(res,200,{execution: row}); return true;
+    }
+    throw new HttpProblem(404,'unknown executions command','not_found');
+  }
+
+  if (head === 'settlement-verifications') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const oppId = url.searchParams.get('opportunityId') ?? undefined;
+      json(res,200,{verifications: SettlementVerification.listSettlementVerifications(oppId ?? undefined)}); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const rows = SettlementVerification.listSettlementVerifications(rest[0]);
+      json(res,200,{verifications: rows}); return true;
+    }
+    if (method==='POST' && rest[0]==='verify') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = SettlementVerification.verifySettlementAgainstProvider({opportunityId: String(body.opportunityId ?? ''), rail: String(body.rail ?? ''), externalId: String(body.externalId ?? ''), providerRef: body.providerRef ? String(body.providerRef): null, grossCents: Number(body.grossCents), feeCents: Number(body.feeCents ?? 0), netCents: Number(body.netCents), executionId: body.executionId ? String(body.executionId): null, actor});
+      json(res,201,result); return true;
+    }
+    throw new HttpProblem(404,'unknown settlement-verifications command','not_found');
   }
 
   if (head === 'earning-engine') {

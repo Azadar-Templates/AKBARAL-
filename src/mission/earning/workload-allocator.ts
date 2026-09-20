@@ -196,6 +196,19 @@ export function allocateBestAgent(opportunityId: string): { agent: Row | null; s
   // Only allocate for lockable states
   const state = String(opp!.verification_state);
   if (!['discovered','qualified','legitimacy_verified'].includes(state)) return { agent:null, score:null, reason:`not_allocatable_state:${state}` };
+  // Eligibility + activation gating (human-required, platform readiness)
+  try {
+    const { isOpportunityEligibleForAssignment } = require('./opportunity-eligibility') as typeof import('./opportunity-eligibility');
+    const dec = isOpportunityEligibleForAssignment(opp!);
+    if (!dec.eligible) return { agent: null, score: null, reason: `not_eligible:${dec.reason}` };
+  } catch { /* fallback: if eligibility module missing */ }
+  // Provider readiness gate: blocked connectors never allocated
+  try {
+    const { getProviderReadiness } = require('./provider-capability-registry') as typeof import('./provider-capability-registry');
+    const connectorId = String(opp!.platform ?? '').toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,40);
+    const readiness = getProviderReadiness(connectorId);
+    if (readiness && readiness.status==='blocked') return { agent: null, score: null, reason: 'provider_blocked_per_tos' };
+  } catch {}
 
   const agents = allActiveAgents();
   let best: AllocationScore | null = null;

@@ -12,6 +12,8 @@ import { currentPolicy } from '../policy';
 import * as EarningEngine from './earning-engine';
 import * as GlobalDiscovery from './global-discovery';
 import * as Allocator from './workload-allocator';
+import * as ExecutionPipeline from './execution-pipeline';
+import * as ProviderReadiness from './provider-capability-registry';
 
 function deny(code: string): never { throw new MoneyError(`scheduler_${code}` as any); }
 
@@ -74,8 +76,13 @@ export function tickScheduler(actor: MoneyActor): TickResult {
   const cycle = Number(state.last_cycle ?? 0) + 1;
   const tickId = missionId('tick');
   const startedAt = nowIso();
-  db.run('INSERT INTO mission_scheduler_ticks (id, cycle, started_at, status, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rate_limited) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+  // Idempotent tick insert — if cycle already exists (concurrent tick), skip
+  const inserted = db.run('INSERT OR IGNORE INTO mission_scheduler_ticks (id, cycle, started_at, status, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rate_limited) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [tickId, cycle, startedAt, 'running', 0,0,0,0,0,0,0,0,0,0,0]);
+  if (inserted.changes === 0) {
+    tickRunning = false;
+    deny('tick_cycle_already_exists');
+  }
 
   let discovered = 0, qualified = 0, matched = 0, locked = 0, executing = 0, verified = 0, settled = 0, failed = 0, retried = 0, expired = 0, rateLimited = 0, reinvested = 0, scaled = 0;
   let detail = '';
@@ -108,49 +115,78 @@ export function tickScheduler(actor: MoneyActor): TickResult {
       }
     }
 
-    // ── 3. Abandoned work: unlock stale locks (>2h) so other agents can retry
-    const abandoned = db.all<Row>('SELECT id, locked_at FROM mission_earning_engine_opportunities WHERE verification_state IN (\'assigned\',\'executing\') AND locked_at IS NOT NULL');
+    // ── 3. Abandoned work: unlock stale locks (>2h) with CAS audit + retry
+    const abandoned = db.all<Row>('SELECT id, locked_at, version FROM mission_earning_engine_opportunities WHERE verification_state IN (\'assigned\',\'executing\') AND locked_at IS NOT NULL');
     for (const r of abandoned) {
       const lockedAt = Date.parse(String((r as any).locked_at));
       if (Number.isFinite(lockedAt) && nowMs - lockedAt > 2*3600*1000) {
         try {
-          // Owner action required for unlock, but scheduler can force via audit if policy allows
-          db.run('UPDATE mission_earning_engine_opportunities SET locked_by=NULL, locked_at=NULL, verification_state=\'qualified\', updated_at=?, version=version+1 WHERE id=?', [nowIso(), String(r.id)]);
-          retried++;
+          const ver = Number((r as any).version ?? 0);
+          const changes = db.run('UPDATE mission_earning_engine_opportunities SET locked_by=NULL, locked_at=NULL, verification_state=\'qualified\', updated_at=?, version=version+1 WHERE id=? AND version=?', [nowIso(), String(r.id), ver]);
+          if (changes.changes>0) {
+            appendMissionAudit({actorType:'system', action:'scheduler.abandoned_unlocked', subjectType:'earning_opportunity', subjectId: String(r.id), detail:{lockedAt: String((r as any).locked_at)}});
+            retried++;
+          }
         } catch {}
       }
     }
+    // ── 3b. Retry-due executions (exponential backoff, durable)
+    try { const due = ExecutionPipeline.retryDueExecutions(5); if (due.length) retried += due.length; } catch {}
 
-    // ── 4. MATCH → LOCK → EXECUTE for top pending opportunities (allocator already considers workload)
+    // ── 4. MATCH → LOCK → EXECUTE for top pending opportunities (allocator + execution pipeline with durable idempotency + human gate)
     const batch = Allocator.allocateBatch(5);
     for (const { opportunity: opp, agent } of batch) {
       if (!agent) continue;
       const oppId = String(opp.id);
       let agentId = String((agent as any).id);
-      // Materialize virtual agent into real persisted agent (bounded)
       if (agentId.startsWith('virtual-')) {
         const real = Allocator.materializeVirtualAgent(agentId);
-        if (!real) continue; // cap reached or creation disabled → owner action
+        if (!real) continue;
         agentId = String(real.id);
       }
-      // Must be still lockable
+      // Durable execution via pipeline (idempotent, gated on human/ToS/credentials)
       try {
-        EarningEngine.lockOpportunityExclusive(oppId, agentId);
-        locked++; matched++;
-      } catch (e) {
-        const code = String((e as any)?.code ?? (e as any)?.message ?? '');
-        if (/already_locked|already_assigned|duplicate/i.test(code)) { /* idempotency guard */ continue; }
-        if (/rate_limited/i.test(code)) { rateLimited++; continue; }
-        // Not lockable state → skip
-        continue;
-      }
-      try {
-        EarningEngine.scheduleWork(oppId, agentId);
-        executing++;
-      } catch (e) {
-        const code = String((e as any)?.code ?? '');
-        if (/kill_switch/i.test(code)) throw e;
-      }
+        const connectorHint = String(opp.platform ?? '').toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,40) || String(opp.registry_key ?? '').toLowerCase();
+        // Prefer pipeline which does lock+schedule+execution row creation with eligibility + readiness checks
+        try {
+          EarningEngine.lockOpportunityExclusive(oppId, agentId);
+          locked++; matched++;
+        } catch (e) {
+          const code = String((e as any)?.code ?? (e as any)?.message ?? '');
+          if (/already_locked|already_assigned|duplicate/i.test(code)) { continue; }
+          if (/rate_limited/i.test(code)) {
+            rateLimited++;
+            try {
+              const conn = String(opp.platform ?? 'generic');
+              ProviderReadiness.recordProviderFailure(conn.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,40), {code: code.slice(0,120), category:'rate_limit', detail: `scheduler tick ${cycle} rate-limited on ${oppId}`});
+            } catch {}
+            continue;
+          }
+          continue;
+        }
+        try {
+          EarningEngine.scheduleWork(oppId, agentId);
+          executing++;
+        } catch (e) {
+          const code = String((e as any)?.code ?? '');
+          if (/kill_switch/i.test(code)) throw e;
+        }
+        // Durably record execution for retry/backoff/audit (idempotent)
+        try {
+          ExecutionPipeline.startExecution({opportunityId: oppId, agentId, connectorId: connectorHint});
+          // If startExecution succeeded but opportunity already executing, it returns existing row
+        } catch (pe) {
+          const pcode = String((pe as any)?.code ?? (pe as any)?.message ?? '');
+          if (/human_only|provider_blocked|provider_not_configured/i.test(pcode)) {
+            // Human-required: leave as assigned but do not count as executing; scheduler will surface as blocked
+            continue;
+          }
+          if (/spending_denied/i.test(pcode)) {
+            retried++;
+            continue;
+          }
+        }
+      } catch { continue; }
     }
 
     // ── 5. VERIFY → (simulated) DELIVER → MONITOR PAYMENT → RECONCILE
