@@ -1,6 +1,7 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { env, validateEnvironment, EnvConfigError } from './env';
 import { redactSecrets, safeProviderErrorMessage } from './secrets';
 import { INTEGRATION_DEFINITIONS, getConfigStatus } from './credentials';
@@ -42,6 +43,16 @@ describe('env', () => {
     assert.equal(typeof env.sessionSecret, 'string');
     assert.ok(env.sessionSecret.length >= 32);
     assert.notEqual(env.sessionSecret, 'change-me-in-production');
+  });
+
+  it('uses the default retry delay for absent/blank values but preserves explicit zero', () => {
+    for (const [value, expected] of [[undefined,2000],['',2000],['   ',2000],['0',0],['125',125],['bad',2000],['60001',2000],['-1',2000]] as const) {
+      const childEnv: NodeJS.ProcessEnv = { ...process.env, DOTENV_CONFIG_PATH: '__nonexistent_config_fixture__' };
+      if (value === undefined) delete childEnv.AKBARAL_EXECUTION_RETRY_BASE_DELAY_MS;
+      else childEnv.AKBARAL_EXECUTION_RETRY_BASE_DELAY_MS = value;
+      const output = execFileSync(process.execPath, ['--import','tsx','-e',"process.stdout.write(JSON.stringify(require('./src/config/env').env.executionRetryBaseDelayMs))"], { env: childEnv, encoding: 'utf8' });
+      assert.equal(JSON.parse(output), expected, `retry configuration ${JSON.stringify(value)}`);
+    }
   });
 
   it('validates mandatory configuration and rejects bad values', () => {

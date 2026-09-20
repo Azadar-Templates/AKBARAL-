@@ -182,3 +182,21 @@ remain BLOCKED.** No real accounts/jobs were provisioned, no live delivery/payou
 occurred, no worker/deployment was activated and no mission cash was credited.
 153 focused fixture tests passed; native PostgreSQL passed 19 Freelancer tests
 and 39 shared-money tests (one existing SQLite-only bulk test skipped on PG).
+
+### Final regression follow-up: retry-default defect
+
+The expanded full suite exposed the previously intermittent automation retry
+failure again. Isolated failure evidence showed attempt 2 starting only 52 ms
+after attempt 1 failed: `resolveIntEnv` parsed an absent/blank value with
+`Number('')`, producing zero instead of the intended 2,000 ms backoff. A fresh
+process regression first failed, then passed after distinguishing missing values
+from explicit zero. All 13 configuration tests and 18 automation tests passed
+against an isolated copy of the retained pre-failure test snapshot. No assertion
+was removed or timeout enlarged. This fixes runtime defaults, not just timing
+in the test. New source fingerprint requires a new final suite.
+
+The earlier run's disk exhaustion was handled by deleting only redundant mutable
+`working.db` copies of already-passed fixtures after validating their saved
+snapshot hashes. Immutable `passed.db` snapshots, TAP logs, checkpoint metadata,
+failed-run evidence and all repository code remain intact. Completed tests were
+resumed until the independently reproduced configuration failure above.
