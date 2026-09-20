@@ -137,3 +137,61 @@ accounts, prohibited income categories, authority/work/payout races, physical
 movement dedup, uncertainty and independent reversals. The isolated native server
 was shut down cleanly. Full current-source regression follows this checkpoint;
 Upwork's earlier 1,280 result is not claimed as Fiverr verification.
+
+## Final verification and preserved evidence
+
+Implementation **96a399f** is committed and pushed on `arena/01a0ba0a-akbaral`,
+descending from `537716c`. Awin/Freelancer/Upwork source and migrations are unchanged.
+The full new-source normal-exit regression passed **1,400/1,400 tests, 113 files,
+114 suites**, with no failures, skips or cancellations. Fingerprint:
+`bef678df0e91506f5e9af6d76b0f4e4745a0f0b77dae5a23e3b6f9f50f33496a`.
+A subsequent runner invocation validated saved evidence without replaying tests.
+
+GitHub [verify run 35491545336](https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35491545336)
+succeeded for the exact implementation commit. Existing Docker image publication
+also succeeded; that is not a production deployment or live-money verification.
+See [per-file provenance](FIVERR_VERIFICATION_2026-09-20.json). Later documentation
+changes do not change this application fingerprint.
+
+All new captured RAM fixture evidence is retained in:
+`logs/test-checkpoints/bef678df0e91506f5e9af6d76b/fiverr-evidence.tar.xz`
+(12,689,704 bytes; SHA-256
+`d3f554d11639c248a612af3c61ef9caab60387c634c0b29b773a282bc7f94a7d`).
+The exact checkpoint, independent logs, archive manifest and codec are beside it,
+following the ignored runtime-log convention rather than committing binaries.
+No prior snapshots, failed databases, source or history were deleted or rewritten.
+
+The archive contains **2,069 captured original files**, including all **114**
+bootstrap/test snapshots and the cleanly stopped native PostgreSQL fixture.
+Snapshots are decoded for compression across images, then restored using the
+original Brotli quality-5 encoding. The codec reconstructs one file at a time:
+every original file byte hash was checked by reading the finished archive and
+reconstructing the original encoding. This is lossless storage, not regenerated
+or substituted test evidence. Originals remain available in RAM as well.
+
+Recovery (check the outer archive and codec hashes against the tracked manifest
+first; use the recorded Node/Brotli versions and `xz`):
+
+```sh
+node logs/test-checkpoints/bef678df0e91506f5e9af6d76b/fiverr-evidence-codec.mjs \
+  verify logs/test-checkpoints/bef678df0e91506f5e9af6d76b/fiverr-evidence.tar.xz
+node logs/test-checkpoints/bef678df0e91506f5e9af6d76b/fiverr-evidence-codec.mjs \
+  restore logs/test-checkpoints/bef678df0e91506f5e9af6d76b/fiverr-evidence.tar.xz /new-empty-output
+```
+
+The restore destination must not exist. The codec refuses overwrite and reconstructs
+compressed snapshots directly; do not expand every decoded database with plain
+`tar` on this storage-constrained machine. Preserve original checkpoint paths:
+restore `/dev/shm/fiverr-full-96a399f` only if absent, then use the original source
+and configuration to validate/resume:
+
+```sh
+TMPDIR=/dev/shm/fiverr-full-temp node scripts/test-resumable.mjs --all \
+  --run-dir /dev/shm/fiverr-full-96a399f \
+  --prune-working-copies --compress-snapshots
+```
+
+A completed checkpoint validates without rerunning completed files. Root disk has
+about 20 MiB free after preservation; new tests need storage planning, not deletion
+of protected evidence. No live work, provider payment, USD settlement or mission
+income was represented by these fixtures. Live blockers above remain unchanged.

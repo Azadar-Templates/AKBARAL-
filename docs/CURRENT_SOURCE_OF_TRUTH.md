@@ -1,5 +1,7 @@
 # AKBARAL! current source of truth
 
+> **Latest: 2026-09-20 Fiverr checkpoint.** Human-assisted Fiverr source `96a399f` is pushed, preserving remote starting point `537716c` and all prior history. Full current-source regression: **1,400/1,400**, fresh native PostgreSQL Fiverr: **119/119**; GitHub verify passed for 96a399f. Awin, Freelancer and Upwork implementations are unchanged. Live Fiverr remains disabled; no earnings claimed. See [selection, policy limits, workflow and live blockers](FIVERR_CONNECTOR.md) and [verification provenance](FIVERR_VERIFICATION_2026-09-20.json). Earlier dated sections remain historical records.
+
 > **Latest: 2026-09-20 Upwork checkpoint.** Implementation `c1b20c0` is pushed, preserving the newer recovery/Freelancer history and the requested `07f59b0` ancestor. Current-source full regression: **1,280/1,280**, with **105/105** fresh native PostgreSQL Upwork tests; GitHub verify passed for c1b20c0. Live Upwork remains blocked. See [implementation and exact live gates](UPWORK_CONNECTOR.md) and [verification provenance](UPWORK_VERIFICATION_2026-09-20.json). Earlier dated counts and GitHub-auth blockers below are retained historical records, not the latest status.
 
 > Implementation continued after the reconstruction checkpoint. See [implementation progress](IMPLEMENTATION_PROGRESS.md) for subsequent fixes, measured tests, and remaining work; the dated evidence below is retained, not silently rewritten.
@@ -286,3 +288,26 @@ independent USD-receiving adapters, verified fees/currency/settlement/reversals 
 legal retention remain live gates. No live earnings, spending, withdrawal or
 production deployment is claimed. Existing CI image publication is not hosting
 or live-provider proof.
+
+
+## Fiverr human-assisted paid-work phase (2026-09-20)
+
+Reviewed the entire 194-entry inventory; selected Fiverr seller, not its affiliate
+program, after checking official AI, order, payment, export and USD-payout rules.
+Human account/platform operation and customized professional work are permitted
+within their terms; no seller API, botting, scraping or automatic withdrawals are
+assumed. A real independent buyer's prepaid fixed order must reach actual reviewed
+delivery, authenticated completed/cleared payment, completely attributed payout,
+and independently verified net USD receipt before atomic mission-wallet admission.
+
+The default verifier/receiver factory is disabled. The owner still has no selected
+USD receiving provider. Missing legitimate accounts, actual work/client permission,
+authenticated lawful evidence and independent banking integration are live gates,
+not requests to bypass policy or fabricate funds. Existing spend controls remain.
+
+Source 96a399f: 199 focused SQLite passes, 119 fresh native PostgreSQL passes,
+1,400 full normal-exit regression passes, types/backend/secrets and GitHub verify
+passed. Compact evidence restores all 2,069 captured original files by exact byte
+hash; previous protected source/history/database/snapshot/log evidence remains.
+See FIVERR_CONNECTOR.md and FIVERR_VERIFICATION_2026-09-20.json for recovery and
+per-file provenance. Existing CI image publication is not deployment or income.
