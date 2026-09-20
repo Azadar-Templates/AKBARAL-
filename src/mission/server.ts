@@ -1,3 +1,5 @@
+import { AwinError } from './earning/awin';
+import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
@@ -352,6 +354,35 @@ async function handleApi(
     const value = Number(body[key]);
     return Number.isFinite(value) ? value : fallback;
   };
+
+  if (head === 'awin') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    assertMoneyOwner(actor);
+    const workflow = configuredAwinWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'discover': result = await workflow.discover(actor); break;
+      case 'assign': result = await workflow.assign(actor, { agentId: param('agentId','')!, opportunityId: param('opportunityId','')!, destinationUrl: param('destinationUrl','')! }); break;
+      case 'refresh-assignment': result = await workflow.refreshAssignment(actor, param('assignmentId','')!); break;
+      case 'revoke': result = workflow.revoke(actor, param('assignmentId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('assignmentId','')!, { key: param('idempotencyKey','')!, title: param('title','')!, body: param('body','')! }); break;
+      case 'prepare': result = await workflow.prepare(actor, param('publicationId','')!); break;
+      case 'approve-publication': result = workflow.approvePublication(actor, param('publicationId','')!, param('contentHash','')!); break;
+      case 'publish': result = await workflow.publish(actor, param('publicationId','')!); break;
+      case 'reconcile-publication': result = await workflow.reconcilePublication(actor, param('publicationId','')!); break;
+      case 'sync': {
+        if (!Array.isArray(body.ids) || !body.ids.every(id => typeof id === 'string')) throw new HttpProblem(400, 'transaction IDs required', 'invalid_input');
+        result = await workflow.sync(actor, param('publicationId','')!, body.ids as string[]); break;
+      }
+      case 'scan': result = await workflow.scan(actor, param('publicationId','')!, param('startDate','')!, param('endDate','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcilePayout(actor, param('paymentId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('paymentId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Awin command', 'not_found');
+    }
+    json(res, 200, { result: result ?? null }); return true;
+  }
 
   if (head === 'money') {
     if (method === 'GET') {
@@ -1638,6 +1669,7 @@ export function createMissionServer(): http.Server {
         const status =
           error instanceof HttpProblem ? error.status
             : error instanceof MissionAuthError ? error.statusCode
+              : error instanceof AwinError ? (error.code === 'awin_rate_limited' ? 429 : 409)
               : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
                 : error instanceof MissionSelfServiceError ? error.statusCode
@@ -1645,6 +1677,7 @@ export function createMissionServer(): http.Server {
         const code =
           error instanceof HttpProblem ? error.code
             : error instanceof MissionAuthError ? error.code
+              : error instanceof AwinError ? error.code
               : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code
                 : error instanceof MissionSelfServiceError ? error.code

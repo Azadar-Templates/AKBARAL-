@@ -68,20 +68,26 @@ const limits = new Map<string, { starts: number[]; blockedUntil: number }>();
 const MAX_BYTES = 2 * 1024 * 1024;
 const WINDOW_MS = 60000;
 
+export interface AwinClientDependencies { fetch?: typeof fetch; now?: () => number; beforeRequest?: () => void; onRateLimit?: (delayMs: number) => void }
+
 export class AwinPublisherClient {
   readonly publisherId: string;
   #token: string;
   #key: string;
   #fetch: typeof fetch;
   #now: () => number;
+  #beforeRequest?: () => void;
+  #onRateLimit?: (delayMs: number) => void;
   constructor(config: { publisherId: string; accessToken: string },
-    dependencies: { fetch?: typeof fetch; now?: () => number } = {}) {
+    dependencies: AwinClientDependencies = {}) {
     this.publisherId = id(config.publisherId);
     if (typeof config.accessToken !== 'string' || !/^[A-Za-z0-9._~+\/-]+=*$/.test(config.accessToken) || config.accessToken.length > 8192) fail('awin_credentials_required');
     this.#token = config.accessToken;
     this.#key = createHash('sha256').update(this.#token).digest('hex');
     this.#fetch = dependencies.fetch ?? globalThis.fetch;
     this.#now = dependencies.now ?? Date.now;
+    this.#beforeRequest = dependencies.beforeRequest;
+    this.#onRateLimit = dependencies.onRateLimit;
   }
 
   #reserveRequest(): void {
@@ -99,6 +105,7 @@ export class AwinPublisherClient {
     const combined = AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]);
     if (combined.aborted) throw new AwinError('awin_cancelled');
     this.#reserveRequest();
+    this.#beforeRequest?.();
     // Caller must bind this to current owner/assignment/freeze/approval checks.
     mutation?.authorize();
     if (combined.aborted) throw new AwinError('awin_cancelled');
@@ -114,6 +121,7 @@ export class AwinPublisherClient {
         const duration = retry && /^\d+$/.test(retry) ? Number(retry) * 1000 : retry ? Date.parse(retry) - this.#now() : NaN;
         const delay = Number.isSafeInteger(duration) && duration > 0 ? Math.max(WINDOW_MS, duration) : WINDOW_MS;
         limits.get(this.#key)!.blockedUntil = this.#now() + delay;
+        this.#onRateLimit?.(delay);
         throw new AwinError('awin_rate_limited', !!mutation, delay);
       }
       if (response.status === 401 || response.status === 403) throw new AwinError('awin_access_denied');
@@ -153,6 +161,18 @@ export class AwinPublisherClient {
       }), row => row.advertiserId), signal);
   }
 
+  /** Fresh authorized relationship check; never treats catalog terms as eligibility. */
+  async assertEligible(input: { advertiserId: string; destinationUrl: string }, signal?: AbortSignal): Promise<void> {
+    const advertiserId = id(input.advertiserId), destination = https(input.destinationUrl);
+    await this.#request(`/publishers/${this.publisherId}/programmedetails`, { advertiserId, relationship: 'joined' }, value => {
+      const info = object(object(value).programmeInfo);
+      if (id(info.id) !== advertiserId || info.membershipStatus !== 'Joined' || info.deeplinkEnabled !== true ||
+        (info.linkStatus !== undefined && info.linkStatus !== 'online')) fail('awin_program_not_eligible');
+      const domains = array(info.validDomains).map(domain => text(object(domain).domain).toLowerCase());
+      if (!domains.includes(destination.hostname.toLowerCase())) fail('awin_destination_not_allowed');
+    }, signal);
+  }
+
   async createTrackingLink(input: { advertiserId: string; destinationUrl: string; clickRef: string },
     authorizeMutation: () => void, signal?: AbortSignal): Promise<{ state: 'link_created_not_published'; url: string }> {
     const advertiserId = id(input.advertiserId);
@@ -162,15 +182,7 @@ export class AwinPublisherClient {
     const clickRef = input.clickRef;
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(clickRef)) fail('awin_invalid_click_ref');
     if (typeof authorizeMutation !== 'function') fail('awin_authorization_required');
-    // Re-fetch membership for every mutation; the joined discovery list is not authority.
-    await this.#request(`/publishers/${this.publisherId}/programmedetails`, { advertiserId, relationship: 'joined' }, value => {
-      const info = object(object(value).programmeInfo);
-      if (id(info.id) !== advertiserId || info.membershipStatus !== 'Joined' || info.deeplinkEnabled !== true ||
-        (info.linkStatus !== undefined && info.linkStatus !== 'online')) fail('awin_program_not_eligible');
-      const domains = array(info.validDomains).map(domain => text(object(domain).domain).toLowerCase());
-      if (!domains.includes(destination.hostname.toLowerCase())) fail('awin_destination_not_allowed');
-      return true;
-    }, signal);
+    await this.assertEligible({ advertiserId, destinationUrl: destination.href }, signal);
     return this.#request(`/publishers/${this.publisherId}/linkbuilder/generate`, {}, value => {
       const url = https(object(value).url);
       if (url.href.includes(this.#token) || url.href.includes(encodeURIComponent(this.#token)) ||
@@ -188,11 +200,28 @@ export class AwinPublisherClient {
     if (!Array.isArray(input.ids) || !input.ids.length || input.ids.length > 100) fail('awin_invalid_transaction_batch');
     const ids = input.ids.map(id);
     unique(ids, value => value);
+    return this.#transactions(input, { ids: ids.join(','), timezone: 'UTC' }, ids, signal);
+  }
+
+  async transactionsForWindow(input: { advertiserId: string; clickRef: string; startDate: string; endDate: string }, signal?: AbortSignal) {
+    const start = Date.parse(input.startDate), end = Date.parse(input.endDate);
+    if (![input.startDate, input.endDate].every(s => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(s)) ||
+      !Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 31 * 86400000) fail('awin_invalid_date_window');
+    return this.#transactions(input, { advertiserId: id(input.advertiserId), startDate: input.startDate,
+      endDate: input.endDate, timezone: 'UTC', dateType: 'transaction' }, null, signal);
+  }
+
+  async #transactions(input: { advertiserId: string; clickRef: string }, query: Record<string, string>, ids: string[] | null, signal?: AbortSignal) {
     const advertiserId = id(input.advertiserId), clickRef = text(input.clickRef, 64);
-    return this.#request(`/publishers/${this.publisherId}/transactions`, { ids: ids.join(','), timezone: 'UTC' }, value => {
-      const transactions = unique(array(value).map((item): AwinTransactionEvidence => {
+    return this.#request(`/publishers/${this.publisherId}/transactions`, query, value => {
+      const selected = array(value).filter(item => {
+        const row = object(item);
+        if (id(row.publisherId) !== this.publisherId || id(row.advertiserId) !== advertiserId) fail('awin_transaction_identity_mismatch');
+        return ids !== null || object(row.clickRefs).clickRef === clickRef;
+      });
+      const transactions = unique(selected.map((item): AwinTransactionEvidence => {
         const row = object(item), transactionId = id(row.id);
-        if (!ids.includes(transactionId) || id(row.publisherId) !== this.publisherId || id(row.advertiserId) !== advertiserId ||
+        if ((ids !== null && !ids.includes(transactionId)) || id(row.publisherId) !== this.publisherId || id(row.advertiserId) !== advertiserId ||
           object(row.clickRefs).clickRef !== clickRef) fail('awin_transaction_identity_mismatch');
         const status = row.commissionStatus;
         if (status !== 'pending' && status !== 'approved' && status !== 'declined' && status !== 'deleted') return fail();
@@ -208,14 +237,14 @@ export class AwinPublisherClient {
           paidToPublisher: row.paidToPublisher as boolean, paymentId, observedAt: new Date(this.#now()).toISOString(),
           treasurySettlement: 'unverified' as const, cashCreditEligible: false as const };
       }), row => row.transactionId);
-      return { transactions, unreturnedIds: ids.filter(requested => !transactions.some(row => row.transactionId === requested)) };
+      return { transactions, unreturnedIds: (ids ?? []).filter(requested => !transactions.some(row => row.transactionId === requested)) };
     }, signal);
   }
 }
 
 /** Explicit opt-in; credentials never fall back to customer/platform configuration. */
-export function configuredAwinClient(env: Readonly<Record<string, string | undefined>> = process.env): AwinPublisherClient | null {
+export function configuredAwinClient(env: Readonly<Record<string, string | undefined>> = process.env, dependencies: AwinClientDependencies = {}): AwinPublisherClient | null {
   if (env.ZA141251SA_AWIN_ENABLED !== 'true') return null;
   if (!env.ZA141251SA_AWIN_PUBLISHER_ID || !env.ZA141251SA_AWIN_ACCESS_TOKEN) fail('awin_credentials_required');
-  return new AwinPublisherClient({ publisherId: env.ZA141251SA_AWIN_PUBLISHER_ID!, accessToken: env.ZA141251SA_AWIN_ACCESS_TOKEN! });
+  return new AwinPublisherClient({ publisherId: env.ZA141251SA_AWIN_PUBLISHER_ID!, accessToken: env.ZA141251SA_AWIN_ACCESS_TOKEN! }, dependencies);
 }

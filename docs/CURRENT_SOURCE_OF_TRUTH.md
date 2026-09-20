@@ -147,3 +147,19 @@ creation and attributed transaction lookup. This is not an end-to-end earning
 connector: no durable assignment/delivery/settlement integration, no live calls,
 no verified income, no cash writes, and no earning adapter registered in the
 money worker. Existing spending and withdrawal controls are unchanged.
+
+## Awin durable workflow phase 2 (2026-09-20)
+
+[AWIN_WORKFLOW.md](AWIN_WORKFLOW.md) supersedes the phase 1 internal workflow
+limitations above. Migration 0018 adds permanent exclusive account/property/
+opportunity bindings, immutable owner-reviewed publication, commission evidence,
+ordered lifecycle events, payout/reversal deduplication and durable API limits.
+The existing verified-cash engine atomically accepts only independently confirmed
+settlement through trusted server adapters. Owner API commands are implemented;
+139 SQLite/API/cash/IPC/security tests and 31 native PostgreSQL workflow tests pass.
+
+The owner selected no publishing property and no receiving provider. Neither
+concrete adapter is installed: live publication and settlement stay BLOCKED.
+Provider-specific adapter implementation, actual credentials/eligibility and
+explicit live verification remain required. There is no real earning, cash,
+account signup/KYC, paid deployment or unattended workforce activation claim.

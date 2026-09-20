@@ -245,6 +245,24 @@ export async function verifyMoneyReceipt(actor:MoneyActor,provider:MoneyProvider
   if(receipt.externalId!==externalId) deny('receipt_identity_mismatch');
   return acceptReceipt(provider,receipt);
 }
+/** Trusted workflow bridge, not an HTTP evidence endpoint. Revalidates durable provenance
+ * under the cash lock and atomically records both workflow state and the existing ledger.
+ * The provider must independently verify actual receiving-account settlement.
+ */
+export async function verifyBoundMoneyReceipt(actor: MoneyActor, provider: MoneyProvider, externalId: string,
+  bind: (receipt: CashReceipt) => Row | undefined) {
+  assertMoneyOwner(actor); text(externalId);
+  const receipt = await provider.verifyReceipt(externalId);
+  if (receipt.externalId !== externalId) deny('receipt_identity_mismatch');
+  return db.transaction(() => {
+    assertMoneyOwner(actor);
+    const job = bind(receipt);
+    if (receipt.kind === 'earning' && !job) deny('earning_provenance_required');
+    const result = acceptReceipt(provider, receipt, job);
+    if (job && receipt.kind === 'earning') db.run("UPDATE mission_earning_jobs SET state='completed',provider_ref=?,updated_at=? WHERE id=?", [receipt.externalId, nowIso(), job.id]);
+    return result;
+  });
+}
 export function moneyOperation(id:string):Row {
   const op=db.get<Row>('SELECT * FROM mission_money_operations WHERE id=?',[id]);
   if(!op) deny('money_operation_missing');return op;

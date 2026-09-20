@@ -775,3 +775,23 @@ test('paid legacy upgrade approval aliases and apply cannot masquerade as verifi
   assert.equal(missionDb.get<Row>('SELECT status FROM mission_upgrades WHERE id=?',[id])!.status,'requested');
   assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,0);
 });
+
+
+test('Awin routes are owner-only and cannot accept caller-invented publishing or settlement proof', async () => {
+  const previous = process.env.ZA141251SA_AWIN_ENABLED;
+  process.env.ZA141251SA_AWIN_ENABLED = 'false';
+  try {
+    assert.equal((await api('/api/awin')).status,401);
+    const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+    const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Awin fixture denial'});
+    assert.equal((await api('/api/awin',{headers:{'x-mission-link':link.token}})).status,401);
+    const view=await owner('/api/awin');assert.equal(view.status,200);
+    assert.deepEqual(view.body.blocked,['credentials','property_not_configured','settlement_not_configured']);
+    const proof=await owner('/api/awin/reconcile-payout',{method:'POST',body:JSON.stringify({paymentId:'77',externalId:'invented',state:'settled',netCents:99999,propertyVerified:true})});
+    assert.equal(proof.status,409);assert.equal(proof.body.error.code,'awin_blocked_settlement_not_configured');
+    const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+    const discovery=await owner('/api/awin/discover',{method:'POST',body:'{}'});
+    assert.equal(discovery.status,409);
+    assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+  } finally { if(previous===undefined)delete process.env.ZA141251SA_AWIN_ENABLED;else process.env.ZA141251SA_AWIN_ENABLED=previous; }
+});

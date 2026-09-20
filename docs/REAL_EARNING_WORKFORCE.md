@@ -104,7 +104,13 @@ Commission amounts remain decimal evidence, not rounded ledger cents. Even
 `treasurySettlement=unverified`. Approved/paid commission is not independently
 verified net money in a mission-controlled receiving account.
 
-## Explicitly unfinished — do not describe this as the complete connector
+## Phase 1 historical gaps (superseded in part by phase 2)
+
+See [AWIN_WORKFLOW.md](AWIN_WORKFLOW.md) for the implemented durable workflow,
+owner API, ledger integration and current live-activation blockers. The list below
+records the phase 1 boundary, not the current implementation status.
+
+### Original phase 1 remaining work
 
 1. Durable mission-only account identity and exclusive primary binding, provider
    opportunity claims, evidence provenance/expiry, owner review and scope checks.
