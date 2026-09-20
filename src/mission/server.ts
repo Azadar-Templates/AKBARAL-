@@ -1,4 +1,5 @@
 import { CustomerWork, type CustomerRequestInput } from './earning/customer-work';
+import { OpportunityDiscovery, type InboundOpportunityInput, type PermittedFeedItem } from './earning/opportunity-discovery';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -398,6 +399,68 @@ async function handleApi(
       default: throw new HttpProblem(404,'unknown customer-work command','not_found');
     }
     json(res,200,{result});return true;
+  }
+
+  if (head === 'discovery') {
+    const discovery = new OpportunityDiscovery();
+    // Inbound ingestion is public: real customer-initiated request with explicit consent.
+    // No owner session required; validated and deduplicated, never counted as revenue.
+    if (rest[0]==='ingest-inbound' && method==='POST') {
+      const input = body as unknown as InboundOpportunityInput;
+      const result = discovery.ingestInbound(input);
+      json(res,201,{result, note:'Inbound opportunity retained with source/evidence/dedup; not revenue. Await qualification and owner promotion.'});return true;
+    }
+    if (rest[0]==='ingest-feed' && method==='POST') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const items = Array.isArray(body.items) ? body.items as PermittedFeedItem[] : [];
+      const result = discovery.ingestPermittedFeed(actor, items);
+      json(res,200,{result});return true;
+    }
+    // discover / qualify allow agent autonomously when permitted
+    if (rest[0]==='discover' && method==='POST') {
+      const resolveActor = (): MoneyActor => {
+        if (context.session) return {kind:'owner', id: requireOwner(context, method!=='GET').owner.id};
+        if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+        if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+        throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+      };
+      const actor = resolveActor();
+      const result = discovery.discover(actor, Number(body.limit ?? 20));
+      json(res,200,{result});return true;
+    }
+    if (rest[0]==='qualify' && method==='POST') {
+      const resolveActor = (): MoneyActor => {
+        if (context.session) return {kind:'owner', id: requireOwner(context,true).owner.id};
+        if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+        if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+        throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+      };
+      const actor = resolveActor();
+      const result = discovery.qualify(actor, String(body.id ?? body.opportunityId ?? ''));
+      json(res,200,{result});return true;
+    }
+    if (rest[0]==='promote' && method==='POST') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = discovery.promote(actor, String(body.id ?? body.opportunityId ?? ''), body.identityReviewRef? String(body.identityReviewRef): undefined);
+      json(res,201,{result});return true;
+    }
+    if (rest[0]==='dismiss' && method==='POST') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = discovery.dismiss(actor, String(body.id ?? body.opportunityId ?? ''), String(body.reasonRef ?? 'owner_dismissed'));
+      json(res,200,{result});return true;
+    }
+    if (method==='GET' && rest.length===0) {
+      requireRead(context);
+      const rows = discovery.list(Number(url.searchParams.get('limit') ?? 20));
+      json(res,200,{opportunities: rows, count: rows.length, verifiedCustomerCount:0, note:'Discovered opportunities are not revenue; only verified USD settlement counts.'});return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      requireRead(context);
+      const row = discovery.get(String(rest[0]));
+      if(!row) throw new HttpProblem(404,'opportunity not found','not_found');
+      json(res,200,{opportunity: row});return true;
+    }
+    throw new HttpProblem(404,'unknown discovery command','not_found');
   }
 
   if (head === 'toptal') {
