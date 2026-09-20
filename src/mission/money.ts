@@ -188,6 +188,9 @@ function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt,earnedJob?:Row
     const fp=sha256(JSON.stringify([receipt.externalId,receipt.amountCents,receipt.currency,receipt.kind,receipt.agentId??null,receipt.operationId??null,receipt.originalExternalId??null]));
     const old=db.get<Row>('SELECT * FROM mission_money_receipts WHERE provider=? AND external_id=?',[provider.id,receipt.externalId]);
     if(old){ if(old.fingerprint!==fp && old.fingerprint!==sha256(JSON.stringify(Object.fromEntries(Object.entries(receipt).filter(([key])=>key!=='availableBalanceCents'))))) deny('receipt_conflict');return {duplicated:true}; }
+    // Bank movement keys are globally scoped across receiving connectors, not
+    // provider-local IDs. Two adapters must not book the same physical movement.
+    if (/^(incoming|reversal):[a-f0-9]{64}$/.test(receipt.externalId) && db.get('SELECT provider FROM mission_money_receipts WHERE external_id=? AND provider<>?',[receipt.externalId,provider.id])) deny('receiving_transfer_already_booked');
     const treasury=ensureCashAccount();
     // Standing mission objective: new earnings must be independently settled in USD.
     // Preserve historical receipts/refunds/reversals; never relabel or estimate FX.

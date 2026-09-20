@@ -805,8 +805,12 @@ test('Freelancer is owner-only, disabled by default, and rejects invented payout
     assert.equal((await api('/api/freelancer',{headers:{'x-mission-link':link.token}})).status,401);
     const view=await owner('/api/freelancer');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
     const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
-    for(const command of ['bid','accept-award','withdraw','reconcile-payout']) {
+    for(const command of ['bid','accept-award','withdraw']) {
       const response=await owner(`/api/freelancer/${command}`,{method:'POST',body:JSON.stringify({state:'settled',netCents:99999,currency:'USD'})});assert.equal(response.status,404);
+    }
+    for(const command of ['observe-payout','reconcile-payout','reconcile-reversal']) {
+      const response=await owner(`/api/freelancer/${command}`,{method:'POST',body:JSON.stringify({payoutId:'fixture',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true})});
+      assert.equal(response.status,409);assert.equal(response.body.error.code,'freelancer_payout_adapter_not_configured');
     }
     const discovery=await owner('/api/freelancer/discover',{method:'POST',body:JSON.stringify({query:'software'})});assert.equal(discovery.status,409);
     assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);

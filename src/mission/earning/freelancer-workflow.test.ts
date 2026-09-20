@@ -5,6 +5,9 @@ process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${pa
 process.env.ZA141251SA_SESSION_SECRET='fixture-only-freelancer-session-not-live';
 import { before,beforeEach,after,it } from 'node:test';
 import assert from 'node:assert/strict';
+// The synchronous PG bridge unrefs its worker. Keep the test process alive until
+// every registered test and teardown finishes; --test-force-exit alone can hide truncation.
+const testLiveness = setInterval(() => {}, 1000);
 import { FreelancerClient } from './freelancer';
 import { freelancerFixture } from './freelancer.fixtures';
 const {missionDb:db,applyMissionMigrations,verifyMissionAudit}=require('../database') as typeof import('../database');
@@ -14,7 +17,7 @@ const {updatePolicy,setKillSwitch}=require('../policy') as typeof import('../pol
 import type { Row } from '../database';
 const owner={kind:'owner' as const,id:'fixture-owner'},agent='fixture-agent',other='fixture-other';
 let fixture:ReturnType<typeof freelancerFixture>,w:InstanceType<typeof FreelancerWorkflow>;
-const tables=['mission_freelancer_events','mission_freelancer_work','mission_freelancer_accounts','mission_freelancer_projects','mission_freelancer_api_requests','mission_freelancer_api_cooldown','mission_earning_jobs','mission_money_receipts','mission_cash_liabilities','mission_cash_entries','mission_money_transfers','mission_money_operations','mission_money_grants','mission_money_opportunities','mission_cash_accounts'];
+const tables=['mission_freelancer_payout_items','mission_freelancer_payouts','mission_freelancer_settlement_evidence','mission_freelancer_events','mission_freelancer_work','mission_freelancer_accounts','mission_freelancer_projects','mission_freelancer_api_requests','mission_freelancer_api_cooldown','mission_earning_jobs','mission_money_receipts','mission_cash_liabilities','mission_cash_entries','mission_money_transfers','mission_money_operations','mission_money_grants','mission_money_opportunities','mission_cash_accounts'];
 before(()=>{applyMissionMigrations();db.run("INSERT INTO mission_owner (id,email,password_hash,role,status) VALUES (?,'fixture-freelancer@example.test','fixture','owner','active')",[owner.id]);for(const id of [agent,other])db.run("INSERT INTO mission_agents (id,slug,name,role_key,depth,generation,status,mission_role,origin_platform) VALUES (?,?,'Synthetic identity','specialist',0,'custom','active','worker','fixture')",[id,id]);});
 beforeEach(()=>{
   setKillSwitch(false,owner.id);for(const table of tables)db.run(`DELETE FROM ${table}`);
@@ -22,7 +25,7 @@ beforeEach(()=>{
   for(const id of [agent,other])m.setMoneyGrant(owner,id,{spendLimitCents:0,delegationCents:0,canCreate:false,expiresAt:new Date(Date.now()+86400000).toISOString(),status:'active'});
   fixture=freelancerFixture();w=new FreelancerWorkflow(fixture.client);
 });
-after(()=>db.close());
+after(()=>{try {db.close();} finally {clearInterval(testLiveness);}});
 const authorization=(agentId=agent)=>({agentId,reference:'fixture-only manual eligibility review',expiresAt:new Date(Date.now()+3600000).toISOString(),checks:[...FREELANCER_COMPLIANCE_CHECKS]});
 async function assigned(){await w.authorizeAccount(owner,authorization());return w.assign(owner,'2','3','4','fixture-only client scope and AI-permission review');}
 async function prepared(){const row=await assigned();const draft=w.draft(owner,String(row.id),'Fixture-only patch / test report. No real paid work.');return w.approve(owner,String(row.id),String(draft.content_hash));}
@@ -124,4 +127,41 @@ it('late stale milestone observations cannot overwrite a newer dispute',async()=
   }}));
   const stale=slow.syncMilestone(owner,id);await entered;fixture.f.milestone.status='disputed';await w.syncMilestone(owner,id);release();
   await assert.rejects(stale,/stale_observation/);assert.equal(db.get<Row>('SELECT state FROM mission_freelancer_work WHERE id=?',[id])!.state,'provider_review_required');
+});
+
+async function uncertainDelivery() {
+  const row=await prepared();let createdAt='';fixture.f.beforeUpload=()=>{createdAt=new Date().toISOString();};fixture.f.failUpload=true;await w.deliver(owner,String(row.id));fixture.f.failUpload=false;
+  const proof={userId:'1',projectId:'2',fileId:'5',fromUserId:'1',toUserId:'9',state:'stored' as const,fileName:`delivery-${row.content_hash}.txt`,bytes:Buffer.byteLength(String(row.content)),contentHash:String(row.content_hash),createdAt,verifiedAt:new Date().toISOString()};
+  const reader={userId:'1',verify:async()=>structuredClone(proof) as typeof proof|null};
+  const recovery=new FreelancerWorkflow(fixture.client,reader);return {row,proof,reader,recovery};
+}
+it('uncertain uploads recover by actual provider byte-hash readback, never by resending',async()=>{
+  const {row,recovery}=await uncertainDelivery();w.revokeAccount(owner);setKillSwitch(true,owner.id);
+  assert.equal((await recovery.reconcileDelivery(owner,String(row.id),'5')).state,'delivered');
+  assert.equal(fixture.f.uploads,1);assert.equal(m.ensureCashAccount().available_cents,0);
+  await assert.rejects(recovery.deliver(owner,String(row.id)),/policy_blocked/);
+});
+it('unconfigured, absent and mismatched file readback stays blocked with no new POST',async()=>{
+  const {row,proof,reader,recovery}=await uncertainDelivery();
+  await assert.rejects(w.reconcileDelivery(owner,String(row.id),'5'),/file_readback_not_configured/);
+  proof.contentHash='different';await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/file_readback_unconfirmed/);
+  reader.verify=async()=>null;await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/file_readback_unconfirmed/);
+  assert.equal(fixture.f.uploads,1);assert.equal(db.get<Row>('SELECT state FROM mission_freelancer_work WHERE id=?',[row.id])!.state,'delivery_review_required');
+});
+for(const field of ['userId','projectId','fromUserId','toUserId','fileId','fileName'] as const)it(`stored file ${field} must match the exact approved delivery`,async()=>{
+  const {row,proof,recovery}=await uncertainDelivery();proof[field]='99';await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/file_readback_unconfirmed/);assert.equal(fixture.f.uploads,1);
+});
+it('old or future files and stale verification cannot stand in for this dispatch',async()=>{
+  const {row,proof,recovery}=await uncertainDelivery();proof.createdAt='2000-01-01T00:00:00Z';await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/dispatch_window/);
+  proof.createdAt=new Date(Date.now()+60000).toISOString();await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/dispatch_window/);
+  proof.createdAt=new Date().toISOString();proof.verifiedAt='2000-01-01T00:00:00Z';await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/stale_readback/);
+});
+it('a changed approval during file readback cannot be recovered into an authorized delivery',async()=>{
+  const {row,proof,reader,recovery}=await uncertainDelivery();reader.verify=async()=>{db.run('UPDATE mission_freelancer_work SET approved_hash=NULL WHERE id=?',[row.id]);return structuredClone(proof);};
+  await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/delivery_changed/);assert.equal(fixture.f.uploads,1);
+});
+it('raw readback errors are redacted and file IDs cannot become arbitrary URLs',async()=>{
+  const {row,reader,recovery}=await uncertainDelivery();reader.verify=async()=>{throw Error('fixture-sensitive-provider-body');};
+  await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'5'),/freelancer_external_verification_unavailable/);
+  await assert.rejects(recovery.reconcileDelivery(owner,String(row.id),'https://example.test'),/invalid_file_id/);assert.equal(fixture.f.uploads,1);
 });

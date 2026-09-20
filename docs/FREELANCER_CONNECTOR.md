@@ -1,5 +1,9 @@
 # Freelancer: human-assisted USD work connector — phase 1
 
+> **Phase 2 supersedes the unimplemented readback/payout/bridge limitations below:**
+> [FREELANCER_SETTLEMENT.md](FREELANCER_SETTLEMENT.md). Safe verification controls
+> and owner commands now exist; concrete adapters and live activation remain blocked.
+
 2026-09-20. **Implemented and fixture-tested through bounded file delivery and
 milestone observation. NOT an end-to-end paid-work or live-money deployment.**
 No real account, contract, work delivery, payout or settlement was exercised.

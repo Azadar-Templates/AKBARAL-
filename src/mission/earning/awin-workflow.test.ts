@@ -6,6 +6,9 @@ process.env.ZA141251SA_DATABASE_URL = process.env.PG_TEST_DATABASE_URL || `file:
 process.env.ZA141251SA_SESSION_SECRET = 'fixture-only-awin-session-not-live';
 import { before, beforeEach, after, it } from 'node:test';
 import assert from 'node:assert/strict';
+// The synchronous PG bridge unrefs its worker. Keep the test process alive until
+// every registered test and teardown finishes; --test-force-exit alone can hide truncation.
+const testLiveness = setInterval(() => {}, 1000);
 import { AwinPublisherClient } from './awin';
 import type { AwinPublishingProvider, AwinSettlementProvider, AwinSettlementProof, PublicationProof, PropertyProof } from './awin-contracts';
 const { applyMissionMigrations, missionDb: db } = require('../database') as typeof import('../database');
@@ -60,7 +63,7 @@ beforeEach(() => {
   receiver = { rail: 'fixture-bank', receivingAccount: 'fixture-mission-account', verify: async () => { receiveCalls++; return structuredClone(settlementProof); }, verifyReversal: async input => ({ rail: 'fixture-bank', receivingAccount: 'fixture-mission-account', ...input, state: 'settled', amountCents: 450, currency: 'USD' }) };
   client = api(); w = new AwinWorkflow(client, publisher, receiver);
 });
-after(() => db.close());
+after(() => {try {db.close();} finally {clearInterval(testLiveness);}});
 async function assigned() {
   const leads = await w.discover(owner);
   assert.equal(leads[0].state, 'discovered');

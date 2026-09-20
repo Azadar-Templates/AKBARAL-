@@ -1,5 +1,5 @@
 import { FreelancerError } from './earning/freelancer';
-import { configuredFreelancerWorkflow } from './earning/freelancer-workflow';
+import { configuredFreelancerWorkflow, configuredFreelancerSettlementWorkflow } from './earning/freelancer-workflow';
 import { AwinError } from './earning/awin';
 import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
@@ -360,8 +360,8 @@ async function handleApi(
   if (head === 'freelancer') {
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
     assertMoneyOwner(actor);
-    const workflow = configuredFreelancerWorkflow();
-    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    const workflow = configuredFreelancerWorkflow(), settlement = configuredFreelancerSettlementWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, { ...workflow.overview(actor), settlement: settlement.status(actor) }); return true; }
     if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
     let result: unknown;
     switch (rest[0]) {
@@ -375,7 +375,12 @@ async function handleApi(
       case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
       case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!); break;
       case 'deliver': result = await workflow.deliver(actor, param('workId','')!); break;
+      case 'reconcile-delivery': result = await workflow.reconcileDelivery(actor, param('workId','')!, param('fileId','')!); break;
       case 'sync-milestone': result = await workflow.syncMilestone(actor, param('workId','')!); break;
+      case 'observe-payout': result = await settlement.observePayout(actor, param('payoutId','')!); break;
+      case 'authorize-historical-settlement': result = settlement.authorizeHistoricalWork(actor, param('workId','')!); break;
+      case 'reconcile-payout': result = await settlement.reconcilePayout(actor, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await settlement.reconcileReversal(actor, param('payoutId','')!, param('reversalExternalId','')!); break;
       default: throw new HttpProblem(404, 'unknown Freelancer command', 'not_found');
     }
     json(res, 200, { result: result ?? null }); return true;

@@ -5,6 +5,9 @@ process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${pa
 process.env.ZA141251SA_SESSION_SECRET='isolated-cash-tests-only-not-a-production-secret';
 import { before, beforeEach, after, it } from 'node:test';
 import assert from 'node:assert/strict';
+// The synchronous PG bridge unrefs its worker. Keep the test process alive until
+// every registered test and teardown finishes; --test-force-exit alone can hide truncation.
+const testLiveness = setInterval(() => {}, 1000);
 const {applyMissionMigrations,missionDb:db,verifyMissionAudit}=require('./database') as typeof import('./database');
 const m=require('./money') as typeof import('./money');
 const {updatePolicy,setKillSwitch}=require('./policy') as typeof import('./policy');
@@ -29,7 +32,7 @@ beforeEach(()=>{
   m.approveOpportunity(owner,{title:'Synthetic opportunity ONLY for deterministic tests',evidenceUrl:'https://example.test/fixture',activity:'software_development',provider:provider.id});grant();grant(b);
   sends=0;response={state:'completed',providerRef:randomUUID(),actualCents:100};
 });
-after(()=>db.close());
+after(()=>{try {db.close();} finally {clearInterval(testLiveness);}});
 it('starts at zero; neither owner notes nor legacy wallets supply real cash',()=>{
   assert.equal(m.ensureCashAccount().available_cents,0);assert.equal(m.cashAccount(a).available_cents,0);
   assert.throws(()=>request(),/insufficient_real_funds/);
@@ -308,5 +311,17 @@ it('USD admission preserves idempotent historical foreign receipts and verified 
   await m.verifyMoneyReceipt(owner,provider,'legacy-refund');assert.equal(m.cashAccount(a).available_cents,50);
   receipt={externalId:'legacy-reversal',amountCents:100,currency:'EUR',kind:'reversal',originalExternalId:'legacy-income'};
   await m.verifyMoneyReceipt(owner,provider,'legacy-reversal');assert.equal(m.moneyOverview().killSwitch,true);
+  assert.equal(m.verifyCashLedger().ok,true);
+});
+
+it('receiving movement keys cannot be credited again through another connector',async()=>{
+  const key='incoming:'+createHash('sha256').update('fixture-rail-account-movement').digest('hex');
+  await earn(1000,key);
+  const otherProvider={...provider,id:'other-fixture-receiver'};
+  const op=m.approveOpportunity(owner,{title:'Second isolated fixture',evidenceUrl:'https://example.test/other-fixture',activity:'software_development',provider:otherProvider.id});
+  grant(a,{opportunityId:String(op.id)});
+  await assert.rejects(m.verifyMoneyReceipt(owner,otherProvider,key),/receiving_transfer_already_booked/);
+  assert.equal(m.cashAccount('treasury').available_cents,1000);
+  assert.equal((await m.verifyMoneyReceipt(owner,provider,key)).duplicated,true);
   assert.equal(m.verifyCashLedger().ok,true);
 });

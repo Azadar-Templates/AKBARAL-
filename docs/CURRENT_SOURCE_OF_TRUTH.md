@@ -209,3 +209,23 @@ runs remain evidence, not successful-suite claims. All final immutable snapshots
 and TAP/checkpoint evidence are retained; redundant completed working copies
 were removed to leave usable sandbox disk space. No production data/code was
 removed. No new paid-work earnings or live settlement occurred.
+
+## Recovery and Freelancer settlement phase 2 (2026-09-20)
+
+Recovery preserved newer `07f59b0`; `9cbbb9d` is intact in its ancestry. Git fsck,
+origin matching and current-source checkpoint validation succeeded. The retained
+1,102-test regression was already complete; no tests were unnecessarily rerun.
+No disk cleanup was needed on recovery (4.6 GiB free). The previous disk-full and
+retry-default failures were already handled without resetting source/history.
+
+[FREELANCER_SETTLEMENT.md](FREELANCER_SETTLEMENT.md) describes the new read-only
+file-byte verification contract/recovery, authoritative payout itemization,
+independent USD receiving proof, atomic net-cash bridge, globally deduplicated
+physical movement keys, bounded verified reversals and review/freezes. Runtime
+adapters remain absent/blocked; no automatic bidding, acceptance, fee-bearing
+actions or withdrawals were added. No real funds/provider calls were involved.
+227 focused tests passed; native PostgreSQL completed 155 passes with one
+existing SQLite-only bulk fixture skipped. Normal native execution was used after
+forced-exit runs proved capable of truncating counts; incomplete runs are not
+accepted as verification. Types/backend/secrets passed. Final changed-source
+integrated regression follows this implementation checkpoint.
