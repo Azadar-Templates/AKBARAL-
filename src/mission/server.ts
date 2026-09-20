@@ -2,6 +2,7 @@ import { CustomerWork, type CustomerRequestInput } from './earning/customer-work
 import { OpportunityDiscovery, type InboundOpportunityInput, type PermittedFeedItem } from './earning/opportunity-discovery';
 import { OPPORTUNITY_REGISTRY, rankedOpportunities, permittedAutonomousClasses } from './earning/opportunity-registry';
 import { autonomousDiscover, discoveryRankingSnapshot, pursuitInfrastructureStatus, canAssignExclusively, servicesForClass } from './earning/autonomous-discovery';
+import * as EarningEngine from './earning/earning-engine';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -497,6 +498,128 @@ async function handleApi(
       json(res,200,{opportunity: row});return true;
     }
     throw new HttpProblem(404,'unknown discovery command','not_found');
+  }
+
+  if (head === 'earning-engine') {
+    // 17-component HIGH-VALUE USD MODE — owner dashboard + verified payout
+    const resolveMoneyActor = (): MoneyActor => {
+      if(context.session) return {kind:'owner', id: requireOwner(context, method!=='GET').owner.id};
+      if(context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+      if(context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+      throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+    };
+    const ownerActor = (): MoneyActor => ({kind:'owner', id: requireOwner(context,true).owner.id});
+    // GET /api/earning-engine/dashboard — owner ledger + opportunity states
+    if(method==='GET' && rest[0]==='dashboard'){
+      requireRead(context);
+      json(res,200,EarningEngine.ownerDashboard()); return true;
+    }
+    if(method==='GET' && rest[0]==='analytics'){
+      requireRead(context);
+      json(res,200,EarningEngine.earningsAnalytics()); return true;
+    }
+    if(method==='GET' && rest[0]==='roi'){
+      requireRead(context);
+      json(res,200,{roi: EarningEngine.listROI()}); return true;
+    }
+    if(method==='GET' && rest[0]==='learnings'){
+      requireRead(context);
+      json(res,200,{learnings: EarningEngine.listLearnings(String(url.searchParams.get('registryKey')??'' ) || undefined)}); return true;
+    }
+    if(method==='GET' && rest[0]==='opportunities'){
+      requireRead(context);
+      json(res,200,{opportunities: EarningEngine.listEngineOpportunities(Number(url.searchParams.get('limit')??20))}); return true;
+    }
+    if(method==='GET' && rest[0]==='earnings' && rest[1]){
+      requireRead(context);
+      json(res,200,EarningEngine.getAgentEarnings(rest[1])); return true;
+    }
+    if(method==='GET' && rest.length===2){
+      requireRead(context);
+      const row = EarningEngine.getEngineOpportunity(rest[0]);
+      if(!row) throw new HttpProblem(404,'opportunity not found','not_found');
+      json(res,200,{opportunity: row, score: EarningEngine.scoreOpportunity(rest[0])}); return true;
+    }
+    if(method!=='POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    // POST /api/earning-engine/discover
+    if(rest[0]==='discover'){
+      const actor = resolveMoneyActor();
+      const expiry = String(body.opportunityExpiry ?? new Date(Date.now()+ 7*24*3600*1000).toISOString());
+      const result = EarningEngine.discoverOpportunity({
+        registryKey: String(body.registryKey??''),
+        provider: String(body.provider??''),
+        platform: String(body.platform??''),
+        grossCents: Number(body.grossCents),
+        expectedFeesCents: Number(body.expectedFeesCents ?? 0),
+        expectedCostsCents: Number(body.expectedCostsCents ?? 0),
+        paymentMethod: String(body.paymentMethod??''),
+        settlementEvidence: String(body.settlementEvidence??''),
+        opportunityExpiry: expiry,
+        evidenceJson: body.evidenceJson as Record<string,unknown>|undefined,
+        source: body.source as any,
+        brief: body.brief? String(body.brief): undefined,
+      });
+      void actor;
+      json(res,201,{result}); return true;
+    }
+    if(rest[0]==='match' && rest[1]){
+      json(res,200,EarningEngine.matchBestAgent(rest[1], body.candidateAgentIds as string[]|undefined)); return true;
+    }
+    if(rest[0]==='lock' && rest[1]){
+      const actor = resolveMoneyActor();
+      // actor must be owner or the agent being locked
+      const agentId = String(body.agentId ?? (actor.kind==='agent'? actor.id : ''));
+      if(!agentId) throw new HttpProblem(400,'agentId required','validation_error');
+      json(res,200,{result: EarningEngine.lockOpportunityExclusive(rest[1], agentId)}); return true;
+    }
+    if(rest[0]==='unlock' && rest[1]){
+      const actor = ownerActor();
+      EarningEngine.unlockOpportunity(rest[1], actor);
+      json(res,200,{result:{unlocked:true}}); return true;
+    }
+    if(rest[0]==='schedule' && rest[1]){
+      const actor = resolveMoneyActor();
+      const agentId = String(body.agentId ?? (actor.kind==='agent'? actor.id : ''));
+      json(res,200,{result: EarningEngine.scheduleWork(rest[1], agentId)}); return true;
+    }
+    if(rest[0]==='verify' && rest[1]){
+      const verifiers = (Array.isArray(body.verifiers)? body.verifiers: []) as Array<{agentId:string; confidence:number; passed:boolean}>;
+      json(res,200,{result: EarningEngine.verifyWorkMultiAgent(rest[1], verifiers)}); return true;
+    }
+    if(rest[0]==='provider-confirm' && rest[1]){
+      json(res,200,{result: EarningEngine.verifyProviderPayment(rest[1], {
+        providerRef: String(body.providerRef??''),
+        grossCents: Number(body.grossCents),
+        feesCents: Number(body.feesCents ?? 0),
+        netCents: Number(body.netCents),
+        evidenceUrl: body.evidenceUrl? String(body.evidenceUrl): undefined,
+      })}); return true;
+    }
+    if(rest[0]==='reconcile' && rest[1]){
+      const actor = ownerActor();
+      json(res,200,{result: EarningEngine.reconcileSettlement(rest[1], actor, {
+        externalId: String(body.externalId??''),
+        rail: String(body.rail??''),
+        grossCents: Number(body.grossCents),
+        feeCents: Number(body.feeCents ?? 0),
+        netCents: Number(body.netCents),
+      })}); return true;
+    }
+    if(rest[0]==='fail' && rest[1]){
+      json(res,200,{result: EarningEngine.recordFailure(rest[1], String(body.reason??'unspecified'))}); return true;
+    }
+    if(rest[0]==='scale'){
+      const actor = ownerActor();
+      void actor;
+      const result = EarningEngine.scaleWinningClass(String(body.registryKey??''), String(body.sourceOpportunityId??''), String(body.parentAgentId??''), String(body.newAgentName??''));
+      if((result as any).skipped) json(res,409,{result}); else json(res,201,{result});
+      return true;
+    }
+    if(rest[0]==='register-class'){
+      const actor = ownerActor();
+      json(res,201,{result: EarningEngine.registerNewOpportunityClass(actor, body as any)}); return true;
+    }
+    throw new HttpProblem(404,'unknown earning-engine command','not_found');
   }
 
   if (head === 'toptal') {
