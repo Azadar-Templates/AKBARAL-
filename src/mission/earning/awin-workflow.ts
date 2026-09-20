@@ -299,7 +299,7 @@ export class AwinWorkflow {
       return await verifyBoundMoneyReceipt(actor, provider, receiptId, () => {
         const current = this.payoutRows(publisherId, paymentId), payout = db.get<Row>('SELECT * FROM mission_awin_payouts WHERE publisher_id=? AND payment_id=?', [publisherId, paymentId])!;
         if (!current.length || !Array.isArray(proof.lines) || current.length !== proof.lines.length || new Set(proof.lines.map(l => l.transactionId)).size !== current.length) deny('incomplete_payout');
-        if (!['USD','EUR','GBP','CAD','AUD'].includes(proof.currency) || proof.currency !== currentPolicy().currency) deny('settlement_currency_mismatch');
+        if (proof.currency !== 'USD' || proof.currency !== currentPolicy().currency) deny('settlement_currency_mismatch');
         let total = 0;
         const a = this.assignment(String(current[0].assignment_id));
         for (const row of current) {

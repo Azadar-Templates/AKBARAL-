@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${path.join(os.tmpdir(),`mission-cash-${randomUUID()}.db`)}`;
@@ -281,4 +281,32 @@ it('an unresolved provider deficit blocks spending even if freeze flags became s
   // Simulate stale administrative state from an older process; debt remains authoritative.
   db.run('UPDATE mission_cash_accounts SET frozen=0');setKillSwitch(false,owner.id);
   assert.throws(()=>request(),/unresolved_provider_liability/);assert.equal(m.verifyCashLedger().ok,true);
+});
+it('new earnings remain USD-only even if mission policy is configured in a foreign currency',async()=>{
+  updatePolicy({currency:'EUR'},owner.id);
+  db.run("UPDATE mission_cash_accounts SET currency='EUR'");
+  receipt={externalId:'foreign-only-fixture',amountCents:100,currency:'EUR',kind:'earning',agentId:a};
+  await assert.rejects(m.verifyMoneyReceipt(owner,provider,'foreign-only-fixture'),/currency_mismatch/);
+  assert.equal(db.all('SELECT * FROM mission_money_receipts').length,0);
+  assert.equal(m.ensureCashAccount().available_cents,0);
+});
+
+it('USD admission preserves idempotent historical foreign receipts and verified refunds/reversals',async()=>{
+  // Construct isolated pre-policy EUR history, not a conversion or live balance.
+  await earn(1000,'legacy-income');m.allocateCash(owner,a,100,'legacy-allocation');
+  const op=request();await m.dispatchMoney(owner,provider,String(op.id));
+  updatePolicy({currency:'EUR'},owner.id);
+  db.run("UPDATE mission_cash_accounts SET currency='EUR'");
+  db.run("UPDATE mission_money_operations SET currency='EUR'");
+  const legacy:CashReceipt={externalId:'legacy-income',amountCents:1000,currency:'EUR',kind:'earning',agentId:a};
+  const fingerprint=createHash('sha256').update(JSON.stringify([legacy.externalId,1000,'EUR','earning',a,null,null])).digest('hex');
+  db.run('UPDATE mission_money_receipts SET fingerprint=? WHERE external_id=?',[fingerprint,'legacy-income']);
+  receipt=legacy;const before=m.cashAccount('treasury').available_cents;
+  assert.equal((await m.verifyMoneyReceipt(owner,provider,'legacy-income')).duplicated,true);
+  assert.equal(m.cashAccount('treasury').available_cents,before);
+  receipt={externalId:'legacy-refund',amountCents:50,currency:'EUR',kind:'refund',operationId:String(op.id)};
+  await m.verifyMoneyReceipt(owner,provider,'legacy-refund');assert.equal(m.cashAccount(a).available_cents,50);
+  receipt={externalId:'legacy-reversal',amountCents:100,currency:'EUR',kind:'reversal',originalExternalId:'legacy-income'};
+  await m.verifyMoneyReceipt(owner,provider,'legacy-reversal');assert.equal(m.moneyOverview().killSwitch,true);
+  assert.equal(m.verifyCashLedger().ok,true);
 });

@@ -189,7 +189,9 @@ function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt,earnedJob?:Row
     const old=db.get<Row>('SELECT * FROM mission_money_receipts WHERE provider=? AND external_id=?',[provider.id,receipt.externalId]);
     if(old){ if(old.fingerprint!==fp && old.fingerprint!==sha256(JSON.stringify(Object.fromEntries(Object.entries(receipt).filter(([key])=>key!=='availableBalanceCents'))))) deny('receipt_conflict');return {duplicated:true}; }
     const treasury=ensureCashAccount();
-    if(receipt.currency!==treasury.currency) deny('currency_mismatch');
+    // Standing mission objective: new earnings must be independently settled in USD.
+    // Preserve historical receipts/refunds/reversals; never relabel or estimate FX.
+    if(receipt.currency!==treasury.currency || (receipt.kind==='earning' && receipt.currency!=='USD')) deny('currency_mismatch');
     if(receipt.availableBalanceCents!==undefined && receipt.kind==='earning') {
       cents(receipt.availableBalanceCents);
       const booked=Number(db.get<Row>('SELECT COALESCE(SUM(available_cents+held_cents),0) AS n FROM mission_cash_accounts WHERE currency=?',[receipt.currency])?.n??0);
