@@ -5,6 +5,10 @@ import { autonomousDiscover, discoveryRankingSnapshot, pursuitInfrastructureStat
 import * as EarningEngine from './earning/earning-engine';
 import * as PlatformConnectors from './earning/platform-connectors';
 import * as PlatformDiscovery from './earning/platform-discovery';
+import * as GlobalDiscovery from './earning/global-discovery';
+import * as Allocator from './earning/workload-allocator';
+import * as Scheduler from './earning/continuous-scheduler';
+import * as CommandCenter from './earning/owner-command-center';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -532,6 +536,94 @@ async function handleApi(
     if(rest[0]==='permit'){ json(res,200,{platform: PlatformDiscovery.permitPlatform(String(body.id??rest[1]??''), actor)}); return true; }
     if(rest[0]==='activate'){ json(res,200,{platform: PlatformDiscovery.activatePlatform(String(body.id??rest[1]??''), actor)}); return true; }
     throw new HttpProblem(404,'unknown platform command','not_found');
+  }
+
+  if (head === 'global-discovery') {
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200,{categories: GlobalDiscovery.GLOBAL_CATEGORIES, candidates: GlobalDiscovery.GENERIC_CANDIDATES.slice(0,20), runs: GlobalDiscovery.listGlobalDiscoveryRuns(5)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='discover'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = GlobalDiscovery.runGlobalDiscoveryCycle(actor, Number(body.limit ?? 6));
+      json(res,201,{result, note:'Generic discovery beyond 57 connectors; each source independently classified before use'});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='ingest'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const src = body as unknown as GlobalDiscovery.GenericSource;
+      json(res,201,{platform: GlobalDiscovery.ingestGenericSource(actor, {id:String(src.id), label:String(src.label), category:String(src.category), opportunityClass: src.opportunityClass? String(src.opportunityClass): undefined, officialUrl:String(src.officialUrl), evidence:String(src.evidence), payoutVerifiable:Boolean(src.payoutVerifiable), apiPermitted:Boolean(src.apiPermitted), humanOnlyActions: Array.isArray(src.humanOnlyActions)? src.humanOnlyActions as string[]: []})});
+      return true;
+    }
+    throw new HttpProblem(404,'unknown global-discovery command','not_found');
+  }
+
+  if (head === 'allocator') {
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200, Allocator.allocatorStatus());
+      return true;
+    }
+    if(method==='POST' && rest[0]==='allocate' && rest[1]){
+      requireRead(context);
+      const result = Allocator.allocateBestAgent(String(rest[1]));
+      json(res,200,{result});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='batch'){
+      requireRead(context);
+      json(res,200,{assignments: Allocator.allocateBatch(Number(body.limit ?? 5))});
+      return true;
+    }
+    if(method==='GET' && rest[0]==='idle'){
+      requireRead(context);
+      json(res,200,{idle: Allocator.idleAgents().slice(0,20), count: Allocator.idleAgents().length});
+      return true;
+    }
+    throw new HttpProblem(404,'unknown allocator command','not_found');
+  }
+
+  if (head === 'scheduler') {
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200,{state: Scheduler.schedulerStatus(), ticks: Scheduler.listSchedulerTicks(5)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='tick'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      json(res,200,{result: Scheduler.tickScheduler(actor)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='enable'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      json(res,200,{state: Scheduler.enableScheduler(actor)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='disable'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      json(res,200,{state: Scheduler.disableScheduler(actor)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='start-auto'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      Scheduler.startAutoScheduler(actor, Number(body.intervalMs ?? 60000));
+      json(res,200,{state: Scheduler.schedulerStatus(), note:'Auto scheduler started; ticks every intervalMs'});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='stop-auto'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      Scheduler.stopAutoScheduler(actor);
+      json(res,200,{state: Scheduler.schedulerStatus()});
+      return true;
+    }
+    throw new HttpProblem(404,'unknown scheduler command','not_found');
+  }
+
+  if (head === 'command-center') {
+    requireRead(context);
+    json(res,200, CommandCenter.buildCommandCenter());
+    return true;
   }
 
   if (head === 'earning-engine') {
