@@ -200,3 +200,12 @@ The earlier run's disk exhaustion was handled by deleting only redundant mutable
 snapshot hashes. Immutable `passed.db` snapshots, TAP logs, checkpoint metadata,
 failed-run evidence and all repository code remain intact. Completed tests were
 resumed until the independently reproduced configuration failure above.
+
+Final code checkpoint **`65adbef`**: **1,102/1,102 tests passed**, 110/110 files,
+114 suites, zero failures/cancellations/skips/TODOs. Fingerprint
+`c0c96627e8500ec2973f17df0a73e2682a66f1b81c87b78017fa1ef96258359d`.
+Final suite completed after the actual retry-default fix; old interrupted/failed
+runs remain evidence, not successful-suite claims. All final immutable snapshots
+and TAP/checkpoint evidence are retained; redundant completed working copies
+were removed to leave usable sandbox disk space. No production data/code was
+removed. No new paid-work earnings or live settlement occurred.

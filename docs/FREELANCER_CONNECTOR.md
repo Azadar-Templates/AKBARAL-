@@ -148,3 +148,15 @@ accepted/funded/foreign/disputed contract gates, exclusivity, expiry/revocation,
 artifact hashes/limits, concurrent claims, crash/lost-response handling, final
 kill/freeze checks, secret redaction, provider clearing≠cash, and owner-only API.
 All fixture data is explicitly synthetic and isolated from production balances.
+
+## Final integrated verification
+
+Code checkpoint `65adbef` passed **1,102 tests / 110 files / 114 suites**, with
+zero failures, cancellations, skips or TODOs. The final resumable fingerprint is
+`c0c96627e8500ec2973f17df0a73e2682a66f1b81c87b78017fa1ef96258359d`.
+This includes the Freelancer, USD-only cash, owner API, existing workforce and
+customer/mission isolation regressions. A separately reproduced missing-env
+retry-backoff defect was fixed before this final run; configuration tests (13)
+and automation tests (18) also passed in isolation. No testing used live provider
+money. GitHub Verify for this code checkpoint was still running at the last
+check; successful image publication is not deployment or live readiness.
