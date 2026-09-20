@@ -191,3 +191,33 @@ fixture teardowns close their API before the database, not afterward. This does
 not claim to abort/drain already-running external work or authorize new work.
 The 26-file interrupted normal-run checkpoint and its failed database/log are
 retained; changed API source requires final verification on a new fingerprint.
+
+### Preserving the 86 completed normal-exit files
+
+The next normal run reached **86 passing files / 995 assertions** before exposing
+a remaining **test-fixture-only** teardown issue: two realtime tests called the
+underlying HTTP server's `close()` instead of `ApiServer.close()`. Their five
+assertions passed, but leaked API polling caused a post-test closed-database error.
+The two cleanup calls now use `await api.close()`; no assertion, production code,
+configuration, dependency or runner code changed in this correction.
+
+Rather than restart 86 completed files, an audited evidence fork was created:
+
+- Original fingerprint:
+  `f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf`.
+- Corrected fingerprint:
+  `f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0`.
+- Recomputing the **entire original fingerprint** with only the pending test's
+  bytes restored from `56efb47` matched exactly. This verified every other
+  source/configuration/environment/dependency fingerprint input was unchanged.
+- The exact diff was checked to be only those two cleanup calls, and the edited
+  test had not completed. All 86 original TAP/snapshot hashes and decoded SQLite
+  hashes were checked; no completed test imports that pending test module.
+- A new checkpoint references the original unchanged artifacts and records their
+  original source fingerprint. The old checkpoint, failed working DB and logs
+  remain untouched. Audit receipt:
+  `logs/test-checkpoints/f43de898877c5eb8de24bb29/recovery.json`.
+- The runner's strict fingerprint validation was **not disabled or weakened**.
+  It resumed at the corrected realtime file: **5/5 passed**, then continued the
+  remaining files. This narrow pending-test-only evidence reuse does not permit
+  reusing old passes after changing runtime code, config or completed tests.
