@@ -530,6 +530,7 @@ async function loadTab(tab) {
       renderOverview(overview);
     }
     if (tab === 'agents') await loadAgents();
+    if (tab === 'customer-work') await loadCustomerWork();
     if (tab === 'money') await loadVerifiedCash();
     if (tab === 'treasury') await loadTreasury();
     if (tab === 'publishing') await loadPublishing();
@@ -1671,3 +1672,51 @@ if(moneyForm) moneyForm.addEventListener('submit',async(event)=>{
     status.textContent=JSON.stringify(result);await loadVerifiedCash();
   } catch(error) {status.textContent=error.message || 'Action refused';}
 });
+
+
+// Customer acquisition is a human-controlled commercial workflow, not a lead counter.
+let customerFieldSequence = 0;
+function customerField(form,label,name,type='text',options=[]) {
+  const id=`customer-field-${++customerFieldSequence}`;
+  const node=el(type==='textarea'?'textarea':type==='select'?'select':'input',{id,name,required:'required',...(type==='select'||type==='textarea'?{}:{type})});
+  if(type==='select') for(const option of options)node.appendChild(el('option',{value:option,text:option}));
+  if(type==='number'){node.min='1';node.max='1000000';node.step='1';}
+  if(type==='textarea')node.maxLength=131072;
+  form.appendChild(el('label',{for:id,text:label}));form.appendChild(node);return node;
+}
+function customerOutput(host,value){const box=el('textarea',{'aria-label':'Prepared artifact — not sent',readonly:'readonly',rows:'12'});box.value=typeof value==='string'?value:JSON.stringify(value,null,2);host.appendChild(box);}
+function customerForm(host,title,command,setup,toBody,after){
+  const form=el('form',{class:'control-block','aria-label':title});form.appendChild(el('h3',{text:title}));setup(form);const button=el('button',{type:'submit',text:title});form.appendChild(button);host.appendChild(form);
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!guardMutation())return;button.disabled=true;try{const result=await api(`/customer-work/${command}`,{method:'POST',body:toBody(new FormData(form))});await after(result.result);}catch(error){banner(error.message,'error');}finally{button.disabled=false;}});return form;
+}
+async function loadCustomerWork(){
+  const host=$('#customer-work');host.replaceChildren();$('#customer-detail').replaceChildren();
+  if(!canMutate()){host.appendChild(el('p',{text:'Owner sign-in required. Access links cannot view customer briefs.'}));return;}
+  const data=await api('/customer-work');host.appendChild(el('p',{text:data.note}));
+  host.appendChild(table([{label:'Capability (not a live offer)',key:'title'},{label:'Customer need',key:'customer',wrap:true},{label:'Deliverables',key:'deliverables',wrap:true},{label:'Limits',key:'limit'}],data.offers));
+  host.appendChild(el('h3',{text:'Reviewed customer-acquisition mechanisms — not acquired leads'}));
+  host.appendChild(table([{label:'Category',key:'category'},{label:'Where customers come from',key:'customerOrigin',wrap:true},{label:'Value to deliver',key:'value',wrap:true},{label:'Actual payment event',key:'paymentGeneration',wrap:true},{label:'Settlement gate',key:'settlement',wrap:true},{label:'Human ownership / approval',key:'human',wrap:true},{label:'Automation boundary',key:'automation',wrap:true}],data.channelInventory??[],'No channel inventory loaded.'));
+  const services=data.offers.map(x=>x.id);
+  customerForm(host,'Prepare unpublished listing','listing',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Owner-proposed USD cents — not earnings','quoteCents','number');},f=>({serviceId:f.get('serviceId'),quoteCents:Number(f.get('quoteCents'))}),result=>customerOutput(host,result.text));
+  customerForm(host,'Preview on my own authorized sample','preview',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Non-sensitive sample input','input','textarea');const config=customerField(form,'Configuration JSON: required fields + uniqueKey, or null for HTML','configuration','textarea');config.value='null';customerField(form,'I have the data rights','dataRightsReviewed','checkbox');customerField(form,'This sample contains no sensitive data','nonSensitiveDataOnly','checkbox');},f=>({serviceId:f.get('serviceId'),input:f.get('input'),configuration:JSON.parse(f.get('configuration')),dataRightsReviewed:f.has('dataRightsReviewed'),nonSensitiveDataOnly:f.has('nonSensitiveDataOnly')}),result=>{customerOutput(host,result.classification);customerOutput(host,result.artifact);});
+  customerForm(host,'Record an explicit customer request','record',form=>{
+    form.appendChild(el('p',{text:'Owner-reviewed declarations only, not independently verified demand. Use the originating platform customer ID; never import scraped contacts. For direct referrals, use your actual contact reference; map it to the authenticated Contra client only after an owner identity review.'}));
+    customerField(form,'Service','serviceId','select',services);customerField(form,'Original channel','origin','select',['direct','fiverr','upwork','contra']);
+    for(const [label,name] of [['Customer reference (not credentials)','customerRef'],['Actual incoming request reference','sourceRef'],['Human review reference','reviewRef']])customerField(form,label,name);
+    customerField(form,'Request observed at','observedAt','datetime-local');customerField(form,'Contact permission expires (maximum 7 days)','consentExpiresAt','datetime-local');customerField(form,'Actual client brief','brief','textarea');customerField(form,'Owner-proposed USD cents','quoteCents','number');const config=customerField(form,'Configuration JSON, or null for HTML','configuration','textarea');config.value='null';
+    for(const [label,name] of [['I reviewed an explicit real request','explicitRequestReviewed'],['The recipient permits this reply','contactPermissionReviewed'],['The purpose is lawful','lawfulPurposeReviewed'],['The client has authorized data use and retention','dataRightsReviewed'],['Only non-sensitive data will be supplied','nonSensitiveDataOnly'],['The proposed automation is permitted','automationPermissionReviewed']])customerField(form,label,name,'checkbox');
+  },f=>{const body=Object.fromEntries(f);body.quoteCents=Number(body.quoteCents);body.configuration=JSON.parse(body.configuration);body.observedAt=new Date(body.observedAt).toISOString();body.consentExpiresAt=new Date(body.consentExpiresAt).toISOString();for(const key of ['explicitRequestReviewed','contactPermissionReviewed','lawfulPurposeReviewed','dataRightsReviewed','nonSensitiveDataOnly','automationPermissionReviewed'])body[key]=f.has(key);return body;},async result=>{await loadCustomerWork();await loadCustomerDetail(result.id);});
+  host.appendChild(el('h3',{text:`Requests (latest ${data.limit}; total records ${data.totalRecords}, not a verified customer count)`}));
+  host.appendChild(table([{label:'Record',key:'id'},{label:'Evidence stage',key:'stage'},{label:'Proposed price, not revenue',render:r=>money(r.proposedUsdCents)},{label:'Verified received USD, not spendable balance',render:r=>money(r.receivedNetUsdCents)},{label:'Open',render:r=>{const b=el('button',{type:'button',text:'Review request'});b.addEventListener('click',()=>loadCustomerDetail(r.id).catch(e=>banner(e.message,'error')));return b;}}],data.requests,'No customer requests recorded. No demand or earnings are inferred.'));
+}
+async function loadCustomerDetail(id){
+  const host=$('#customer-detail');host.replaceChildren();const data=await api(`/customer-work/${encodeURIComponent(id)}`),d=data.request;
+  host.appendChild(el('h3',{text:`Request ${id}`}));host.appendChild(el('p',{text:`${data.progress.stage}. ${data.progress.note}`}));
+  host.appendChild(el('p',{text:'Exact proposed contract scope — copy into the actual agreement; its hash must match the existing connector:'}));customerOutput(host,d.scope_text);customerOutput(host,d.scope_hash);
+  if(d.response)customerOutput(host,d.response);if(d.artifact)customerOutput(host,d.artifact);
+  customerForm(host,'Prepare one manual reply','response',()=>{},()=>({requestId:id}),result=>customerOutput(host,result.content));
+  customerForm(host,'Bind actual authenticated contract','bind',form=>{customerField(form,'Existing connector','connector','select',['fiverr','upwork','contra']);customerField(form,'Existing authorized work ID','workId');customerField(form,'Direct-contact identity mapping review (required if references differ)','identityReviewRef').removeAttribute('required');},f=>({requestId:id,connector:f.get('connector'),workId:f.get('workId'),identityReviewRef:f.get('identityReviewRef')||undefined}),()=>loadCustomerDetail(id));
+  customerForm(host,'Produce authorized client work','produce',form=>customerField(form,'Client-authorized non-sensitive input','input','textarea'),f=>({requestId:id,input:f.get('input')}),()=>loadCustomerDetail(id));
+  customerForm(host,'Approve exact artifact for manual handoff','approve',form=>{customerField(form,'Human quality review reference','qualityRef');},f=>({requestId:id,artifactHash:d.artifact_hash,qualityRef:f.get('qualityRef')}),result=>{customerOutput(host,result.instruction);customerOutput(host,result.content);});
+  customerForm(host,'Stop contact and future work','stop',form=>customerField(form,'Opt-out or rejection evidence reference','reasonRef'),f=>({requestId:id,reasonRef:f.get('reasonRef')}),()=>loadCustomerDetail(id));
+}

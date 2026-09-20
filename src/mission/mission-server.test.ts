@@ -884,3 +884,18 @@ test('Toptal is owner/bearer protected, has no live proof adapters, and exposes 
   assert.equal((await owner('/api/toptal/inspect/extra',{method:'POST',body:'{}'})).status,404);
   assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
 });
+
+test('customer work is owner-only, cannot send/spend/import proof, and produces labelled local samples',async()=>{
+  assert.equal((await api('/api/customer-work')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Synthetic customer privacy denial'});
+  assert.equal((await api('/api/customer-work',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/customer-work/record',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/customer-work');assert.equal(view.status,200);assert.equal(view.body.totalRecords,0);assert.equal(view.body.publishingEnabled,false);assert.equal(view.body.automaticOutreach,false);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const action of ['send','scrape','publish','create-account','import-proof','credit','withdraw'])assert.equal((await owner(`/api/customer-work/${action}`,{method:'POST',body:JSON.stringify({state:'settled',netCents:100000})})).status,404);
+  const listing=await owner('/api/customer-work/listing',{method:'POST',body:JSON.stringify({serviceId:'html-release-check',quoteCents:20000})});assert.equal(listing.status,200);assert.equal(listing.body.result.published,false);
+  const sample=await owner('/api/customer-work/preview',{method:'POST',body:JSON.stringify({serviceId:'html-release-check',input:'<title>Owner supplied sample</title>',configuration:null,dataRightsReviewed:true,nonSensitiveDataOnly:true})});assert.equal(sample.status,200);assert.equal(sample.body.result.classification,'owner_supplied_sample_not_customer_work');
+  assert.equal((await owner('/api/customer-work/record',{method:'POST',body:JSON.stringify({customerRef:'invented',paid:true})})).status,409);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+});

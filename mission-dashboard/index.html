@@ -44,6 +44,7 @@
         <nav class="tabs" id="tabs" aria-label="Mission sections">
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
+          <button data-tab="customer-work" class="tab">Customers &amp; work</button>
           <button data-tab="money" class="tab">Verified cash</button>
           <button data-tab="treasury" class="tab">Legacy accounting &amp; destinations</button>
           <button data-tab="publishing" class="tab">Publishing</button>
@@ -54,6 +55,13 @@
         </nav>
 
         <div id="banner" class="banner" hidden></div>
+
+        <section data-panel="customer-work" class="panel" hidden>
+          <h2>Real customer → real work → verified USD</h2>
+          <p class="muted">Private owner workbench. Offers are unpublished capabilities, inquiries are owner declarations, and quotes are not revenue. No automatic outreach, account creation or payments.</p>
+          <div id="customer-work"></div>
+          <div id="customer-detail"></div>
+        </section>
 
         <section data-panel="overview" class="panel">
           <div class="cards" id="overview-cards"></div>

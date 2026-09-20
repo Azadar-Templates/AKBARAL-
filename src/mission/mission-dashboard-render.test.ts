@@ -12,6 +12,7 @@ function consoleFixture() {
   const resource = { id: 'resource-fixture', agent_id: 'agent-fixture', provider: 'google', status: 'approved', monthly_cost_cents: 100, readiness: { usable: false, blockers: ['resource_not_provisioned'] } };
   const wallet = { id: 'wallet-fixture', label: 'Synthetic reserve', currency: 'USD', balanceCents: 1000, budgetCents: 1000, spentCents: 0, agentId: 'agent-fixture', kind: 'reserve', status: 'active' };
   const payloads: Record<string, unknown> = {
+    '/api/customer-work': {offers:[{id:'html-release-check',title:'<img src=x onerror=alert(1)>',customer:'Website owner',deliverables:'Offline report',limit:'128 KiB'}],requests:[],limit:200,totalRecords:0,note:'No inferred customers or earnings'},
     '/api/treasury': { treasury: { currency: 'USD', totals: { totalBalanceCents: 1000 }, daily: {} } },
     '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
     '/api/agents/agent-fixture/chat-config': { agentId: 'agent-fixture', config: null, workerLivenessVerified: false },
@@ -32,7 +33,7 @@ function consoleFixture() {
     }
     return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls, renderAgentChatControls, renderResourcePeriods, wire };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadCustomerWork, loadCustomerDetail, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls, renderAgentChatControls, renderResourcePeriods, wire };`);
   dom.window.fixture.state.token = 'synthetic-dom-session';
   return { dom, win: dom.window, requests, resource };
 }
@@ -299,4 +300,12 @@ it('hidden owner forms remain visually hidden when their layout class declares d
     assert.equal(form.hidden, true);
     assert.equal(win.getComputedStyle(form).display, 'none');
   } finally { dom.window.close(); }
+});
+
+
+it('customer workbench labels unpublished offers and empty demand without executing listing text',async()=>{
+ const {dom,win,requests}=consoleFixture();try{await win.fixture.loadCustomerWork();const host=win.document.querySelector('#customer-work');assert.match(host.textContent,/No customer requests/);assert.match(host.textContent,/unpublished listing/);assert.equal(host.querySelector('img'),null);const form=host.querySelector('form[aria-label="Prepare unpublished listing"]');form.elements.quoteCents.value='20000';form.dispatchEvent(new win.Event('submit',{bubbles:true,cancelable:true}));await new Promise(resolve=>setImmediate(resolve));assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/customer-work/listing');assert.equal(requests[0].body.quoteCents,20000);}finally{dom.window.close();}
+});
+it('customer briefs and acquisition controls are not requested for read-only access links',async()=>{
+ const {dom,win,requests}=consoleFixture();try{win.fixture.state.token='';win.fixture.state.link='synthetic-read-only';win.fetch=()=>{throw new Error('must not request private customers');};await win.fixture.loadCustomerWork();assert.match(win.document.querySelector('#customer-work').textContent,/Owner sign-in required/);assert.equal(win.document.querySelector('#customer-work form'),null);assert.equal(requests.length,0);}finally{dom.window.close();}
 });

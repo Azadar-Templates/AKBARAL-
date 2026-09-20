@@ -1,3 +1,4 @@
+import { CustomerWork, type CustomerRequestInput } from './earning/customer-work';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -360,6 +361,28 @@ async function handleApi(
     const value = Number(body[key]);
     return Number.isFinite(value) ? value : fallback;
   };
+
+  if (head === 'customer-work') {
+    const actor: MoneyActor = {kind:'owner',id:requireOwner(context,method !== 'GET').owner.id};
+    const work = new CustomerWork();
+    if(method === 'GET' && rest.length === 0){json(res,200,work.overview(actor));return true;}
+    if(method === 'GET' && rest.length === 1){json(res,200,work.detail(actor,rest[0]));return true;}
+    if(method !== 'POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if(rest.length !== 1) throw new HttpProblem(404,'unknown customer-work command','not_found');
+    let result: unknown;
+    switch(rest[0]){
+      case 'listing': result=work.listing(actor,param('serviceId','')!,num('quoteCents'));break;
+      case 'preview': result=work.preview(actor,param('serviceId','')!,param('input','')!,body.configuration??null,body.dataRightsReviewed===true,body.nonSensitiveDataOnly===true);break;
+      case 'record': result=work.record(actor,body as unknown as CustomerRequestInput);break;
+      case 'response': result=work.response(actor,param('requestId','')!);break;
+      case 'stop': result=work.stop(actor,param('requestId','')!,param('reasonRef','')!);break;
+      case 'bind': result=work.bind(actor,param('requestId','')!,param('connector','')!,param('workId','')!,param('identityReviewRef')??undefined);break;
+      case 'produce': result=work.produce(actor,param('requestId','')!,param('input','')!);break;
+      case 'approve': result=work.approve(actor,param('requestId','')!,param('artifactHash','')!,param('qualityRef','')!);break;
+      default: throw new HttpProblem(404,'unknown customer-work command','not_found');
+    }
+    json(res,200,{result});return true;
+  }
 
   if (head === 'toptal') {
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
