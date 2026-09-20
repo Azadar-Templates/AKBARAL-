@@ -1,3 +1,4 @@
+import { configuredUpworkWorkflow } from './earning/upwork-workflow';
 import { FreelancerError } from './earning/freelancer';
 import { configuredFreelancerWorkflow, configuredFreelancerSettlementWorkflow } from './earning/freelancer-workflow';
 import { AwinError } from './earning/awin';
@@ -356,6 +357,31 @@ async function handleApi(
     const value = Number(body[key]);
     return Number.isFinite(value) ? value : fallback;
   };
+
+  if (head === 'upwork') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredUpworkWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Upwork command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('contractId','')!, param('milestoneId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('contractId','')!, param('milestoneId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Upwork command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
 
   if (head === 'freelancer') {
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };

@@ -816,3 +816,20 @@ test('Freelancer is owner-only, disabled by default, and rejects invented payout
     assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
   } finally {if(previous===undefined)delete process.env.ZA141251SA_FREELANCER_ENABLED;else process.env.ZA141251SA_FREELANCER_ENABLED=previous;}
 });
+
+test('Upwork is owner/bearer protected, has no live proof adapters, and exposes no financial actuation', async()=>{
+  assert.equal((await api('/api/upwork')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Upwork synthetic denial'});
+  assert.equal((await api('/api/upwork',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/upwork/inspect',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/upwork');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const command of ['bid','accept-offer','release-milestone','withdraw','pay','buy-connects','import-proof']){
+    assert.equal((await owner(`/api/upwork/${command}`,{method:'POST',body:'{}'})).status,404);
+  }
+  const fake={contractId:'synthetic',milestoneId:'synthetic',workId:'synthetic',payoutId:'synthetic',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true};
+  for(const command of ['inspect','observe-payout','reconcile-payout','reconcile-reversal'])assert.equal((await owner(`/api/upwork/${command}`,{method:'POST',body:JSON.stringify(fake)})).status,409);
+  assert.equal((await owner('/api/upwork/inspect/extra',{method:'POST',body:'{}'})).status,404);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+});
