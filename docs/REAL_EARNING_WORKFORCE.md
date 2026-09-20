@@ -168,3 +168,13 @@ The cash test file creates its own isolated database by default. Do not supply
 production database URLs or credentials to test commands. Passing fixtures
 proves local contract/control behavior only, not provider compatibility against
 an authenticated account, production readiness, or profitability.
+
+## Standing objective update — 2026-09-20
+
+The later [REAL_MONEY_OBJECTIVE.md](REAL_MONEY_OBJECTIVE.md) supersedes roadmap
+priority: actual useful USD paid work comes before additional affiliate-only
+expansion. The [Freelancer phase-1 connector](FREELANCER_CONNECTOR.md) now supplies
+human-assisted awarded-project delivery and provider evidence controls, **not**
+a complete payout/settlement integration. No inventory count has become a count
+of approved accounts, executable jobs or earning agents. All unconfigured stages
+remain blocked, and no real earnings have occurred.

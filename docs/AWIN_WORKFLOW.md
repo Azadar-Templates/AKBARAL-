@@ -178,3 +178,13 @@ then returned inconsistent later results. This is **not** counted as a PG pass;
 the same tests, including the constraint violation, passed on native PostgreSQL.
 Native PG is the required financial-workflow regression environment. No existing
 constraint or financial guard was weakened to make the harness pass.
+
+### Standing USD-only earnings policy (2026-09-20)
+
+The later [real-money objective](REAL_MONEY_OBJECTIVE.md) restricts **new** Awin
+settlement credit to independently verified USD. Earlier references to supported
+same-currency batches are now subject to this USD-only admission requirement.
+No FX estimate or non-USD treasury configuration bypasses it; historical valid
+receipts/refunds/reversals are preserved. The final `dcef7cd` Awin-only checkpoint
+completed 1,066 local tests and GitHub Verify 35483943820 succeeded. These are
+historical Awin results, not proof of a live payout or of later connector changes.

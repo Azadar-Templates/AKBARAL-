@@ -163,3 +163,22 @@ concrete adapter is installed: live publication and settlement stay BLOCKED.
 Provider-specific adapter implementation, actual credentials/eligibility and
 explicit live verification remain required. There is no real earning, cash,
 account signup/KYC, paid deployment or unattended workforce activation claim.
+
+## Real-money-only objective and paid-work expansion (2026-09-20)
+
+[REAL_MONEY_OBJECTIVE.md](REAL_MONEY_OBJECTIVE.md) is the standing earnings
+policy. `df0d31c` enforces USD-only **new** earning receipts centrally and in
+Awin settlement, retaining historical receipt/refund/reversal compatibility.
+The prior `dcef7cd` Awin checkpoint passed 1,066 local tests and its GitHub
+Verify run 35483943820 subsequently completed successfully.
+
+[FREELANCER_CONNECTOR.md](FREELANCER_CONNECTOR.md) records the new human-assisted
+USD fixed-price work pathway: provider discovery, accepted/funded contract
+checks, durable exclusive account/work bindings, expiring owner review,
+immutable hash-approved text delivery, uncertain-effect protection and read-only
+milestone evidence. Owner API only, no autonomous bidding or work generation.
+**Partial connector: payout, independent USD settlement and mission cash bridge
+remain BLOCKED.** No real accounts/jobs were provisioned, no live delivery/payout
+occurred, no worker/deployment was activated and no mission cash was credited.
+153 focused fixture tests passed; native PostgreSQL passed 19 Freelancer tests
+and 39 shared-money tests (one existing SQLite-only bulk test skipped on PG).

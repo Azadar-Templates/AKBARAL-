@@ -1,3 +1,5 @@
+import { FreelancerError } from './earning/freelancer';
+import { configuredFreelancerWorkflow } from './earning/freelancer-workflow';
 import { AwinError } from './earning/awin';
 import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
@@ -354,6 +356,30 @@ async function handleApi(
     const value = Number(body[key]);
     return Number.isFinite(value) ? value : fallback;
   };
+
+  if (head === 'freelancer') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    assertMoneyOwner(actor);
+    const workflow = configuredFreelancerWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'discover': result = await workflow.discover(actor, param('query','')!, num('offset')); break;
+      case 'authorize-account': {
+        if (!Array.isArray(body.checks) || !body.checks.every(c => typeof c === 'string')) throw new HttpProblem(400, 'compliance checks required', 'invalid_input');
+        result = await workflow.authorizeAccount(actor, { agentId: param('agentId','')!, reference: param('reference','')!, expiresAt: param('expiresAt','')!, checks: body.checks as string[] }); break;
+      }
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('projectId','')!, param('bidId','')!, param('milestoneId','')!, param('scopeReference','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!); break;
+      case 'deliver': result = await workflow.deliver(actor, param('workId','')!); break;
+      case 'sync-milestone': result = await workflow.syncMilestone(actor, param('workId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Freelancer command', 'not_found');
+    }
+    json(res, 200, { result: result ?? null }); return true;
+  }
 
   if (head === 'awin') {
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
@@ -1669,6 +1695,7 @@ export function createMissionServer(): http.Server {
         const status =
           error instanceof HttpProblem ? error.status
             : error instanceof MissionAuthError ? error.statusCode
+              : error instanceof FreelancerError ? (error.code === 'freelancer_rate_limited' ? 429 : 409)
               : error instanceof AwinError ? (error.code === 'awin_rate_limited' ? 429 : 409)
               : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
@@ -1677,6 +1704,7 @@ export function createMissionServer(): http.Server {
         const code =
           error instanceof HttpProblem ? error.code
             : error instanceof MissionAuthError ? error.code
+              : error instanceof FreelancerError ? error.code
               : error instanceof AwinError ? error.code
               : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code

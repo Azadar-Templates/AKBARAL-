@@ -56,10 +56,12 @@ jobs:
           sudo -u postgres createdb --owner=runner mission_cash
           sudo -u postgres createdb --owner=runner mission_cash_race
           sudo -u postgres createdb --owner=runner mission_cash_registry
+          sudo -u postgres createdb --owner=runner mission_freelancer
           sudo -u postgres createdb --owner=runner mission_awin
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash?host=/var/run/postgresql' npx tsx --test src/mission/money.test.ts
           MONEY_CONCURRENCY_DATABASE_URL='postgres://runner@localhost/mission_cash_race?host=/var/run/postgresql' npx tsx --test src/mission/money-concurrency.test.ts
           PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_awin?host=/var/run/postgresql' npx tsx --test src/mission/earning/awin-workflow.test.ts
+          PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_freelancer?host=/var/run/postgresql' npx tsx --test src/mission/earning/freelancer-workflow.test.ts
           REGISTRY_PG_TEST_DATABASE_URL='postgres://runner@localhost/mission_cash_registry?host=/var/run/postgresql' npx tsx --test src/mission/registry-sync.test.ts
       - name: Private mission Chromium desktop and mobile-viewport checks
         env:

@@ -795,3 +795,20 @@ test('Awin routes are owner-only and cannot accept caller-invented publishing or
     assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
   } finally { if(previous===undefined)delete process.env.ZA141251SA_AWIN_ENABLED;else process.env.ZA141251SA_AWIN_ENABLED=previous; }
 });
+
+test('Freelancer is owner-only, disabled by default, and rejects invented payouts or automated bids', async () => {
+  const previous=process.env.ZA141251SA_FREELANCER_ENABLED;process.env.ZA141251SA_FREELANCER_ENABLED='false';
+  try {
+    assert.equal((await api('/api/freelancer')).status,401);
+    const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+    const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Freelancer fixture denial'});
+    assert.equal((await api('/api/freelancer',{headers:{'x-mission-link':link.token}})).status,401);
+    const view=await owner('/api/freelancer');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+    const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+    for(const command of ['bid','accept-award','withdraw','reconcile-payout']) {
+      const response=await owner(`/api/freelancer/${command}`,{method:'POST',body:JSON.stringify({state:'settled',netCents:99999,currency:'USD'})});assert.equal(response.status,404);
+    }
+    const discovery=await owner('/api/freelancer/discover',{method:'POST',body:JSON.stringify({query:'software'})});assert.equal(discovery.status,409);
+    assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+  } finally {if(previous===undefined)delete process.env.ZA141251SA_FREELANCER_ENABLED;else process.env.ZA141251SA_FREELANCER_ENABLED=previous;}
+});
