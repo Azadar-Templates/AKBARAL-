@@ -300,6 +300,9 @@ export function checkActivity(activityKey: string, policy: MissionPolicy): Activ
   return { allowed: true, reasons };
 }
 
+export const ALLOWED_EXPENSE_CATEGORIES = ['api', 'compute', 'hosting', 'domain', 'storage', 'tool', 'software', 'expense', 'upgrade', 'fee', 'execution'] as const;
+export type AllowedExpenseCategory = (typeof ALLOWED_EXPENSE_CATEGORIES)[number];
+
 export interface SpendRequest {
   walletId: string;
   amountCents: number;
@@ -334,6 +337,15 @@ export function canAgentSpend(request: SpendRequest, policy: MissionPolicy, dail
   const reasons: string[] = [];
   const amount = request.amountCents;
   if (!Number.isSafeInteger(amount) || amount <= 0) return { allowed: false, requiresApproval: false, reasons: ['amount_must_be_positive'], dailySpentCents, policyRemainingCents: policy.maxDailySpendCents - dailySpentCents };
+  if (!(ALLOWED_EXPENSE_CATEGORIES as readonly string[]).includes(String(request.category))) {
+    return {
+      allowed: false,
+      requiresApproval: false,
+      reasons: [`category_not_allowed: must be one of ${ALLOWED_EXPENSE_CATEGORIES.join(', ')} (got ${String(request.category)})`],
+      dailySpentCents,
+      policyRemainingCents: policy.maxDailySpendCents - dailySpentCents,
+    };
+  }
 
   const wallet = missionDb.get<WalletRow>('SELECT * FROM mission_wallets WHERE id = ?', [request.walletId]);
   if (!wallet) return { allowed: false, requiresApproval: false, reasons: ['wallet_not_found'], dailySpentCents, policyRemainingCents: policy.maxDailySpendCents - dailySpentCents };
