@@ -83,6 +83,8 @@ import {
   configurePayoutSlot,
   createWallet,
   decidePayout,
+  ensureAgentWallets,
+  ensureMissionTreasury,
   ensurePayoutSlots,
   listApprovals,
   listExpenses,
@@ -98,6 +100,7 @@ import {
   settlePayout,
   treasurySummary,
   verifyLedger,
+  withdrawalStatusForPayout,
   type Wallet,
   getWallet,
   walletForAgent,
@@ -1140,7 +1143,21 @@ async function handleApi(
     }
     case 'treasury': {
       requireRead(context);
-      json(res, 200, { treasury: treasurySummary(), wallets: listWallets(), ledgerIntegrity: verifyLedger() });
+      try{ ensureMissionTreasury(); ensureAgentWallets(); }catch{}
+      json(res, 200, {
+        treasury: treasurySummary(),
+        wallets: listWallets(),
+        ledgerIntegrity: verifyLedger(),
+        walletArchitecture: {
+          missionTreasury: ensureMissionTreasury(),
+          agentWalletCount: Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets WHERE kind IN ('agent','worker')`)?.c ?? 0),
+          totalWallets: Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets`)?.c ?? 0),
+          payoutSlots: ensurePayoutSlots(),
+          withdrawalLifecycle: 'REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID or FAILED',
+          atomicProtection: 'All ledger movements are in missionDb.transaction with SAVEPOINT nesting, hash-chained seq/idempotency payout:reserve / payout:refund prevents double withdrawal; FAILED restores via credit adjustment.',
+          separation: 'Mission wallets/ledger (mission.db) are separate from AKBARAL! customer funds (platform DB). Agent wallets hold 0 until verified revenue sweep; treasury aggregates only received verified revenue.',
+        },
+      });
       return true;
     }
     case 'ledger': {
@@ -1693,7 +1710,17 @@ async function handleApi(
     case 'wallets': {
       requireRead(context);
       if (method === 'GET') {
-        json(res, 200, { wallets: listWallets() });
+        // Ensure wallets exist lazily on first read so the dashboard never shows 0 for active agents due to a missed migration.
+        try{ ensureMissionTreasury(); ensureAgentWallets(); }catch{}
+        json(res, 200, { wallets: listWallets(), treasury: treasurySummary(), walletArchitecture: { agentWalletCount: Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets WHERE kind IN ('agent','worker')`)?.c ?? 0), treasuryWallet: listWallets('mission')[0] ?? null, ledgerIntegrity: verifyLedger(), note: 'ZA141251SA wallet architecture: per-agent wallets + central Mission Treasury (mission_wallets) + hash-chained mission_ledger. Separate from AKBARAL! customer funds (platform DB).' } });
+        return true;
+      }
+      if (rest[0] === 'ensure' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const result = ensureAgentWallets();
+        // Audit already inside ensureAgentWallets; add API-level audit as well
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'wallet.ensure_requested', subjectType: 'wallet', subjectId: 'ensure', detail: result });
+        json(res, 200, { ...result, treasury: ensureMissionTreasury(), wallets: listWallets() });
         return true;
       }
 
@@ -1892,10 +1919,32 @@ async function handleApi(
       }
       break;
     }
+    case 'withdraw': {
+      requireRead(context);
+      if (method === 'GET') {
+        const payouts = listPayouts(Number(url.searchParams.get('limit') ?? 100)).map(row => ({ ...row, withdrawalStatus: withdrawalStatusForPayout(row) }));
+        json(res, 200, { payouts, withdrawals: payouts, note: 'Withdrawal lifecycle: REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID or FAILED. VERIFYING is payout-destination verification; APPROVED atomically debits the treasury (payout:reserve); FAILED restores via payout:refund.' });
+        return true;
+      }
+      if (method === 'POST' && rest.length === 0) {
+        const session = requireOwner(context, true);
+        const created = requestPayout({
+          slot: Number(body.slot ?? 0),
+          amountCents: num('amountCents'),
+          idempotencyKey: param('idempotencyKey', `pay-${Date.now()}`)!,
+          requestedBy: session.owner.id,
+          memo: param('memo'),
+        });
+        json(res, 201, { payout: created, withdrawalStatus: withdrawalStatusForPayout(created), withdrawal: created });
+        return true;
+      }
+      break;
+    }
     case 'payouts': {
       requireRead(context);
       if (method === 'GET') {
-        json(res, 200, { payouts: listPayouts(Number(url.searchParams.get('limit') ?? 100)) });
+        const payouts = listPayouts(Number(url.searchParams.get('limit') ?? 100)).map(row => ({ ...row, withdrawalStatus: withdrawalStatusForPayout(row) }));
+        json(res, 200, { payouts, note: 'Withdrawal lifecycle: REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID or FAILED. Only verified destinations, atomic debit (payout:reserve), restore on FAILED (payout:refund).' });
         return true;
       }
       if (rest.length === 0 && method === 'POST') {
@@ -2363,11 +2412,14 @@ export async function startMissionServer(options: { port?: number; host?: string
   ensurePolicy(env.currency);
   seedTools();
   ensurePayoutSlots();
+  try{ ensureMissionTreasury(); }catch{}
+  try{ ensureAgentWallets(); }catch{}
   try{ PlatformDiscovery.seedPlatforms(); }catch{}
   // Runtime foundation — fail-safe seeds (idempotent, no fake revenue, no credentials)
   try{ ProviderReadiness.seedProviderReadiness(); }catch{}
   try{ Allocator.ensureCatalogPersisted(); }catch{}
   try{ Scheduler.schedulerStatus(); }catch{} // ensures mission_scheduler_state row exists disabled=0
+  try{ const s = Scheduler.schedulerStatus(); if (s.enabled) Scheduler.disableScheduler({kind:'owner', id:'system-startup'} as any); }catch{}
   const host = options.host ?? env.bindHost;
   const port = options.port ?? env.port;
   const server = createMissionServer();

@@ -763,6 +763,47 @@ export function ensurePayoutSlots(): Array<Row> {
   });
 }
 
+/**
+ * ZA141251SA wallet architecture — ensure the central Mission Treasury exists.
+ * Idempotent, never fabricates a balance (0 cents), never imports legacy funds.
+ */
+export function ensureMissionTreasury(): Wallet {
+  const existing = listWallets('mission')[0];
+  if (existing) return existing;
+  return createWallet({ kind: 'mission', label: 'Mission treasury' });
+}
+
+/**
+ * Ensure every active agent has an individual internal wallet/ledger.
+ * Idempotent: creates a 0-balance wallet only where missing, never funds it.
+ * Returns counts for reporting and audit.
+ */
+export function ensureAgentWallets(): { created: number; totalActive: number; totalWallets: number } {
+  return missionDb.transaction(() => {
+    ensureMissionTreasury();
+    const active = missionDb.all<Row>(`SELECT id, slug, name FROM mission_agents WHERE status = 'active'`);
+    let created = 0;
+    for (const agent of active) {
+      const id = String(agent.id);
+      if (!walletForAgent(id)) {
+        ensureAgentWallet(id, `${String(agent.name ?? agent.slug)} wallet`);
+        created += 1;
+      }
+    }
+    const totalWallets = Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets WHERE kind IN ('agent','worker')`)?.c ?? 0);
+    if (created > 0) {
+      appendMissionAudit({
+        actorType: 'system',
+        action: 'wallet.ensure_agent_wallets',
+        subjectType: 'wallet',
+        subjectId: 'agent_wallets',
+        detail: { created, totalActive: active.length, totalWallets },
+      });
+    }
+    return { created, totalActive: active.length, totalWallets };
+  });
+}
+
 export function listPayoutSlots(): Array<Row> {
   return missionDb.all<Row>('SELECT * FROM mission_payout_slots ORDER BY slot ASC');
 }
@@ -1120,6 +1161,34 @@ export function settlePayout(input: {
 
 export function listPayouts(limit = 100): Row[] {
   return missionDb.all<Row>('SELECT * FROM mission_payouts ORDER BY created_at DESC LIMIT ?', [limit]);
+}
+
+/**
+ * ZA141251SA withdrawal lifecycle — maps internal payout status to the
+ * spec-required withdrawal statuses. The internal values are kept for
+ * backward compatibility; this mapping presents them as the required
+ * REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID / FAILED flow.
+ */
+export const WITHDRAWAL_STATUS_MAP: Record<string, string> = {
+  pending_approval: 'REQUESTED',
+  verifying: 'VERIFYING',
+  approved: 'APPROVED',
+  sent: 'PROCESSING',
+  settled: 'PAID',
+  failed: 'FAILED',
+  rejected: 'FAILED',
+};
+
+export function withdrawalStatusForPayout(row: Row): string {
+  return WITHDRAWAL_STATUS_MAP[String(row.status)] ?? String(row.status).toUpperCase();
+}
+
+export function withdrawalStatuses(): string[] {
+  return ['REQUESTED', 'VERIFYING', 'APPROVED', 'PROCESSING', 'PAID', 'FAILED'];
+}
+
+export function isWithdrawalTerminal(status: string): boolean {
+  return status === 'PAID' || status === 'FAILED';
 }
 
 export function listApprovals(status?: string): Row[] {

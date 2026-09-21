@@ -34,6 +34,22 @@ export function discoverOpportunity(input: EngineOpportunityInput): Row {
   if(!checkActivity('software_development', policy).allowed && !checkActivity('research_and_analysis', policy).allowed) deny('activity_not_allowed');
   const cls = OPPORTUNITY_REGISTRY.find(c=>c.key===input.registryKey);
   if(!cls) deny('unknown_registry_key');
+  // ── Route-specific genuine-evidence guard for direct_client_research / paid_research_data ──
+  // No synthetic client/opportunity: lawfulPurposeRef + datasetSha256 + evidenceUrl + non-sensitive flag are mandatory.
+  // This is D2-D4 of the activation procedure; D1 (payout slot) is checked at settlement.
+  if (input.registryKey === 'paid_research_data') {
+    const ej: any = input.evidenceJson;
+    if (!ej || typeof ej.lawfulPurposeRef !== 'string' || ej.lawfulPurposeRef.trim().length < 8) deny('lawful_purpose_required');
+    if (!ej || typeof ej.datasetSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(String(ej.datasetSha256).trim())) deny('dataset_sha256_required');
+    if (!ej || typeof ej.evidenceUrl !== 'string' || !/^https:\/\//.test(String(ej.evidenceUrl).trim())) deny('evidence_url_required');
+    if (ej.nonSensitiveDataOnly !== true) deny('non_sensitive_required');
+    if (typeof ej.dataRightsReviewed !== 'boolean' || ej.dataRightsReviewed !== true) deny('data_rights_required');
+    // Prevent synthetic provider/evidenceUrl markers
+    const blockedMarkers = ['synthetic','fixture','fake','example.com','test-'];
+    const lowerProvider = String(input.provider).toLowerCase();
+    const lowerEvidence = String(ej.evidenceUrl).toLowerCase();
+    if (blockedMarkers.some(m => lowerProvider.includes(m) || lowerEvidence.includes(m))) deny('synthetic_provider_or_evidence');
+  }
   // Validate 17 required fields are supplied or derived from registry
   const gross = input.grossCents;
   if(!Number.isSafeInteger(gross) || gross<=0 || gross>10000000) deny('invalid_gross');
@@ -178,6 +194,17 @@ export function scheduleWork(opportunityId:string, agentId:string): Row {
   if(!opp) deny('opportunity_missing');
   if(String(opp!.exclusive_agent_id)!==agentId) deny('not_assigned_agent');
   if(String(opp!.verification_state)!=='assigned') deny('not_assigned_state');
+  // D1-D5 fail-closed for paid_research_data: block execution while payout slot unconfigured (re-check D2-D4 evidence)
+  if (String(opp!.registry_key) === 'paid_research_data') {
+    const payoutActive = db.get<Row>("SELECT slot FROM mission_payout_slots WHERE status='active' LIMIT 1");
+    if (!payoutActive) deny('payout_slot_not_verified');
+    let ej: any = {};
+    try { ej = JSON.parse(String(opp!.evidence_json)); } catch {}
+    const inner = ej.evidenceJson ?? ej ?? {};
+    if (!inner.lawfulPurposeRef || String(inner.lawfulPurposeRef).trim().length < 8) deny('lawful_purpose_required');
+    if (!inner.datasetSha256 || !/^[a-f0-9]{64}$/i.test(String(inner.datasetSha256).trim())) deny('dataset_sha256_required');
+    if (inner.nonSensitiveDataOnly !== true) deny('non_sensitive_required');
+  }
   // Check spending limits via canAgentSpend if costs >0
   // For engine, costs are expected_costs_cents; actual work cost is via resource budgets
   db.run('UPDATE mission_earning_engine_opportunities SET verification_state=\'executing\', updated_at=?, version=version+1 WHERE id=?',[nowIso(), opportunityId]);
@@ -229,6 +256,16 @@ export function reconcileSettlement(opportunityId:string, actor:MoneyActor, sett
   if(!opp) deny('opportunity_missing');
   if(String(opp!.verification_state)!=='payment_confirmed') deny('payment_not_confirmed');
   if(!settlement.externalId || !settlement.rail) deny('invalid_settlement');
+  // Payout-slot fail-closed for direct_client_research / paid_research_data: no verified slot → no settlement credit.
+  // This is D1 + D5 of the activation procedure; settlement is refused while mission_payout_slots are unconfigured.
+  if (String(opp!.registry_key) === 'paid_research_data') {
+    const payoutActive = db.get<Row>("SELECT slot FROM mission_payout_slots WHERE status='active' LIMIT 1");
+    if (!payoutActive) deny('payout_slot_not_verified');
+    // ExternalId/providerRef must be non-synthetic for this route
+    const blockedMarkers = ['synthetic','fixture','fake','example'];
+    const lowerExt = String(settlement.externalId).toLowerCase();
+    if (blockedMarkers.some(m => lowerExt.includes(m))) deny('synthetic_external_id');
+  }
   // Verify via payout-verification pattern: settlement must be externally verifiable
   // Here we require externalId length and rail in allowed list
   const allowedRails = ['bank','stripe','paypal','payoneer','wise','ach','sepa','wire'];

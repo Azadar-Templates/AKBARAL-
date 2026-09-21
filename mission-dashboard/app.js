@@ -533,6 +533,7 @@ async function loadTab(tab) {
     if (tab === 'customer-work') await loadCustomerWork();
     if (tab === 'money') await loadVerifiedCash();
     if (tab === 'treasury') await loadTreasury();
+    if (tab === 'withdraw') await loadWithdraw();
     if (tab === 'publishing') await loadPublishing();
     if (tab === 'approvals') await loadApprovals();
     if (tab === 'tools') await loadTools();
@@ -983,6 +984,168 @@ async function loadTreasury() {
     { label: 'Memo', render: (row) => row.memo || '—', wrap: true },
     { label: 'Balance after', render: (row) => money(row.balanceAfter, currency) },
   ], ledger.entries, 'No ledger entries yet.'));
+}
+
+async function loadWithdraw() {
+  const [treasury, slots, payouts, ledger, wallets] = await Promise.all([
+    api('/treasury'), api('/payout-slots'), api('/withdraw?limit=100').catch(() => api('/payouts?limit=100')),
+    api('/ledger?limit=50'), api('/wallets'),
+  ]);
+  const currency = treasury.treasury.currency;
+  const totals = treasury.treasury.totals;
+  const available = Number(totals.missionBalanceCents ?? 0);
+  const cards = $('#withdraw-summary');
+  if (cards) {
+    cards.innerHTML = '';
+    cards.append(
+      card('Verified treasury (withdrawable)', money(totals.missionBalanceCents, currency), 'Only received + verifier counts'),
+      card('Agent wallets (non-withdrawable until swept)', money(totals.agentBalancesCents, currency), 'Swept to treasury on receipt'),
+      card('Total verified balance', money(totals.totalBalanceCents, currency)),
+      card('Pending revenue (not withdrawable)', money(totals.pendingRevenueCents, currency), 'expected + contracted'),
+      card('Ledger integrity', treasury.ledgerIntegrity ? (treasury.ledgerIntegrity.ok ? 'Verified' : 'FAILED') : 'Verified'),
+      card('Withdrawable now', money(available, currency), available === 0 ? 'No verified funds yet' : 'Verified only'),
+    );
+  }
+  const hint = $('#withdraw-balance-hint');
+  if (hint) hint.textContent = `Verified treasury available for withdrawal: ${money(available, currency)}. Unverified/expected/contracted/synthetic cannot be withdrawn.`;
+  const notice = $('#withdraw-notice');
+  const hasVerifiedSlot = (slots.verification || []).some((v) => v.verification?.status === 'verified' && v.payable);
+  const allUnconfigured = (slots.slots || []).every((s) => String(s.status) === 'unconfigured');
+  if (notice) {
+    if (allUnconfigured) {
+      notice.textContent = 'No verified payout destination yet — internal verified balance can still accumulate. Configure a destination below (masked/provider reference only) and verify it before withdrawing.';
+      notice.className = 'banner warn';
+      notice.hidden = false;
+    } else if (!hasVerifiedSlot) {
+      notice.textContent = 'No payable (verified) slot — add/verify a destination before withdrawing. Balance accumulation continues; no account is required at setup.';
+      notice.className = 'banner warn';
+      notice.hidden = false;
+    } else {
+      notice.hidden = true;
+    }
+  }
+  const verificationBySlot = new Map((slots.verification || []).map((e) => [Number(e.slot), e]));
+  const slotRows = (slots.slots || []).map((slot) => {
+    const v = verificationBySlot.get(Number(slot.slot));
+    return {
+      ...slot,
+      verificationStatus: v?.verification?.status || 'none',
+      expires: v?.expiresAt ? new Date(v.expiresAt).toLocaleDateString() : '—',
+      blockers: v?.blockers?.length ? v.blockers.join('; ') : '—',
+      actions: el('span', {}, [
+        canMutate() ? el('button', { class: 'small', text: 'Verify / re-verify', 'data-action': 'verify', 'data-slot': String(slot.slot) }) : null,
+        canMutate() && v?.verification?.status === 'verified' ? el('button', { class: 'small', text: 'Revoke verification', 'data-action': 'revoke', 'data-slot': String(slot.slot) }) : null,
+        canMutate() ? el('button', { class: 'small', text: 'Pause', 'data-action': 'pause', 'data-slot': String(slot.slot) }) : null,
+      ]),
+    };
+  });
+  replace('#withdraw-slots', table([
+    { label: 'Slot', key: 'slot' },
+    { label: 'Label', key: 'label' },
+    { label: 'Type', render: (r) => r.destination_type || '—' },
+    { label: 'Provider ref', render: (r) => r.provider_ref || '—' },
+    { label: 'Masked destination', render: (r) => r.masked_account || '—' },
+    { label: 'Status', render: (r) => pill(String(r.status), r.status === 'active' ? 'ok' : 'warn') },
+    { label: 'Verification', render: (r) => pill(String(r.verificationStatus), r.verificationStatus === 'verified' ? 'ok' : 'warn') },
+    { label: 'Expires', key: 'expires' },
+    { label: 'Blockers', key: 'blockers' },
+    { label: 'Min payout', render: (r) => money(r.min_payout_cents, currency) },
+    { label: 'Actions', render: (r) => r.actions },
+  ], slotRows, 'Payout slots unavailable.'));
+  const wHost = $('#withdraw-slot-verification');
+  if (wHost) {
+    wHost.innerHTML = '';
+    const slot = state.verifyingSlot;
+    if (slot) {
+      const checks = (slots.checks || []).filter((c) => c.required || (c.requiresProviderRef && (slots.slots || []).find((e) => Number(e.slot) === Number(slot))?.provider_ref));
+      const form = el('form', { class: 'stack-form' });
+      form.appendChild(el('h3', { text: `Verify payout destination — slot ${slot}` }));
+      form.appendChild(el('p', { class: 'muted small', text: `Stored only as a provider reference or a masked description. A verification is valid for ${slots.validityDays} days.` }));
+      const boxes = [];
+      for (const check of checks) {
+        const input = el('input', { type: 'checkbox', id: `w-check-${check.key}`, name: check.key });
+        boxes.push(input);
+        form.appendChild(el('label', { class: 'checkbox' }, [input, el('span', { text: `${check.label}${check.required ? '' : ' (when a provider reference is set)'}` })]));
+      }
+      const evidence = el('input', { name: 'evidenceRef', placeholder: 'evidence reference' });
+      const attestation = el('textarea', { name: 'attestation', rows: '3', placeholder: 'I control this destination... (40+ characters)' });
+      form.appendChild(el('label', {}, [el('span', { text: 'Evidence reference' }), evidence]));
+      form.appendChild(el('label', {}, [el('span', { text: 'Attestation (40+ characters, stored verbatim)' }), attestation]));
+      const submit = el('button', { type: 'submit', text: 'Confirm verification' });
+      const cancel = el('button', { type: 'button', class: 'ghost', text: 'Cancel' });
+      form.appendChild(el('span', { class: 'actions' }, [submit, cancel]));
+      cancel.addEventListener('click', () => { state.verifyingSlot = null; wHost.innerHTML = ''; });
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault(); if (!guardMutation()) return;
+        const body = { checks: {}, attestation: attestation.value };
+        for (const b of boxes) body.checks[b.name] = b.checked;
+        if (evidence.value) body.evidenceRef = evidence.value;
+        try { await api(`/payout-slots/${slot}/verification/confirm`, { method: 'POST', body }); state.verifyingSlot = null; banner(`Slot ${slot} verified: now payable (payouts still need owner approval).`, 'ok'); await loadWithdraw(); } catch (err) { banner(err.message, 'error'); }
+      });
+      wHost.appendChild(form);
+    }
+  }
+  $$('#withdraw-slots button[data-action]').forEach((b) => b.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    const slot = Number(b.getAttribute('data-slot'));
+    const action = b.getAttribute('data-action');
+    try {
+      if (action === 'verify') { state.verifyingSlot = slot; await loadWithdraw(); banner(`Slot ${slot}: confirm every control check and sign the attestation to verify it.`, 'ok'); return; }
+      if (action === 'revoke') { const reason = window.prompt('Why is this payout destination being revoked? (slot paused immediately)'); if (!reason) return; await api(`/payout-slots/${slot}/verification/revoke`, { method: 'POST', body: { reason } }); banner(`Slot ${slot}: verification revoked and slot paused.`, 'ok'); }
+      else { await api(`/payout-slots/${slot}/status`, { method: 'POST', body: { status: 'paused' } }); banner(`Slot ${slot} paused.`, 'ok'); }
+      await loadWithdraw();
+    } catch (err) { banner(err.message, 'error'); }
+  }));
+  const list = payouts.payouts || payouts.withdrawals || [];
+  const rows = list.map((row) => ({
+    ...row,
+    withdrawalStatus: row.withdrawalStatus || ({ pending_approval: 'REQUESTED', verifying: 'VERIFYING', approved: 'APPROVED', sent: 'PROCESSING', settled: 'PAID', failed: 'FAILED', rejected: 'FAILED' }[String(row.status)] || String(row.status).toUpperCase()),
+    actions: el('span', {}, [
+      canMutate() && String(row.status) === 'pending_approval' ? el('button', { class: 'small', text: 'Approve', 'data-payout': String(row.id), 'data-decision': 'approved' }) : null,
+      canMutate() && String(row.status) === 'pending_approval' ? el('button', { class: 'small', text: 'Reject', 'data-payout': String(row.id), 'data-decision': 'rejected' }) : null,
+      canMutate() && ['approved', 'sent'].includes(String(row.status)) ? el('button', { class: 'small', text: 'Record settled', 'data-settle': String(row.id), 'data-state': 'settled' }) : null,
+      canMutate() && String(row.status) === 'approved' ? el('button', { class: 'small', text: 'Record sent', 'data-settle': String(row.id), 'data-state': 'sent' }) : null,
+      canMutate() && ['approved', 'sent'].includes(String(row.status)) ? el('button', { class: 'small danger', text: 'Record failure / return reservation', 'data-settle': String(row.id), 'data-state': 'failed' }) : null,
+    ]),
+  }));
+  replace('#withdrawals', table([
+    { label: 'Requested', render: (r) => when(r.created_at) },
+    { label: 'Slot', key: 'slot' },
+    { label: 'Amount', render: (r) => money(r.amount_cents, currency) },
+    { label: 'Withdrawal status', render: (r) => pill(String(r.withdrawalStatus), String(r.withdrawalStatus) === 'PAID' ? 'ok' : String(r.withdrawalStatus) === 'FAILED' ? 'bad' : 'warn') },
+    { label: 'Payout status', render: (r) => pill(String(r.status), String(r.status) === 'settled' ? 'ok' : String(r.status) === 'failed' ? 'bad' : 'warn') },
+    { label: 'Source wallet', render: (r) => r.source_wallet_id || 'Legacy' },
+    { label: 'Authorized destination', render: (r) => { try { const d = JSON.parse(r.destination_snapshot || '{}'); return [d.providerRef || d.maskedAccount || 'Unbound', d.currency || r.currency].join(' · '); } catch { return 'Invalid snapshot'; } } },
+    { label: 'Settlement ref / failure evidence', render: (r) => r.settlement_ref || r.failure_reason || '—' },
+    { label: 'Actions', render: (r) => r.actions },
+  ], rows, 'No withdrawals requested. Verified balance can accumulate without a payout slot; use the destination form when ready.'));
+  $$('#withdrawals button[data-payout]').forEach((b) => b.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    try { await api(`/payouts/${b.getAttribute('data-payout')}/decide`, { method: 'POST', body: { decision: b.getAttribute('data-decision') } }); banner('Withdrawal decision recorded. Atomic reserve: payout:reserve on APPROVED; refund on FAILED.', 'ok'); await loadWithdraw(); } catch (e) { banner(e.message, 'error'); }
+  }));
+  $$('#withdrawals button[data-settle]').forEach((b) => b.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    const st = b.getAttribute('data-state');
+    const ref = window.prompt(st === 'failed' ? 'Provider failure evidence/reason (required). This returns only the internal reservation; it does not refund a bank transfer:' : 'Actual provider transfer reference (required). This records evidence only; it does not send money:');
+    if (!ref?.trim()) return;
+    try { await api(`/payouts/${b.getAttribute('data-settle')}/settle`, { method: 'POST', body: { status: st, ...(st === 'failed' ? { failureReason: ref.trim() } : { settlementRef: ref.trim() }) } }); banner(`Withdrawal evidence recorded as ${st}. Atomic: ${st === 'failed' ? 'restored via payout:refund' : 'reserved via payout:reserve'}. No external payment was initiated here.`, 'ok'); await loadWithdraw(); } catch (e) { banner(e.message, 'error'); }
+  }));
+  replace('#withdraw-wallets', table([
+    { label: 'Wallet', key: 'label' },
+    { label: 'Kind', key: 'kind' },
+    { label: 'Balance', render: (r) => money(r.balanceCents, currency) },
+    { label: 'Budget', render: (r) => money(r.budgetCents, currency) },
+    { label: 'Spent', render: (r) => money(r.spentCents, currency) },
+    { label: 'Status', key: 'status' },
+  ], wallets.wallets, 'No wallets yet. Every active agent has a wallet; treasury aggregates verified earnings.'));
+  replace('#withdraw-ledger', table([
+    { label: 'When', render: (r) => when(r.createdAt) },
+    { label: 'Direction', render: (r) => pill(r.direction, r.direction === 'credit' ? 'ok' : 'warn') },
+    { label: 'Amount', render: (r) => money(r.amountCents, currency) },
+    { label: 'Category', key: 'category' },
+    { label: 'Memo', render: (r) => r.memo || '—', wrap: true },
+    { label: 'Balance after', render: (r) => money(r.balanceAfter, currency) },
+  ], ledger.entries, 'No ledger entries yet. All movements are hash-chained and audited.'));
 }
 
 async function loadApprovals() {
@@ -1553,6 +1716,48 @@ function wire() {
       banner('Payout requested — it needs an owner approval before funds move.', 'ok');
       event.target.reset();
       await loadTreasury();
+    } catch (error) { banner(error.message, 'error'); }
+  });
+
+  $('#withdraw-slot-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!guardMutation()) return;
+    const data = new FormData(event.target);
+    const body = { slot: Number(data.get('slot')) };
+    for (const key of ['label', 'destinationType', 'holderName', 'maskedAccount', 'providerRef']) {
+      if (data.get(key)) body[key] = data.get(key);
+    }
+    if (data.get('minPayoutCents') !== null && data.get('minPayoutCents') !== '') body.minPayoutCents = Number(data.get('minPayoutCents'));
+    try {
+      await api(`/payout-slots/${body.slot}`, { method: 'POST', body });
+      banner('Withdraw destination saved (masked/provider reference only). Verify it before requesting a withdrawal — no raw account is stored.', 'ok');
+      event.target.reset();
+      await loadWithdraw();
+    } catch (error) { banner(error.message, 'error'); }
+  });
+
+  $('#withdraw-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!guardMutation()) return;
+    const data = new FormData(event.target);
+    const slot = Number(data.get('slot'));
+    const amountCents = Number(data.get('amountCents'));
+    if (!Number.isFinite(amountCents) || amountCents <= 0) { banner('Enter a positive amount (verified balance only).', 'error'); return; }
+    try {
+      // Prefer the explicit /withdraw endpoint (same atomic guard as /payouts) — fallback to /payouts if the server version is older.
+      try {
+        const result = await api('/withdraw', { method: 'POST', body: { slot, amountCents, memo: data.get('memo') || undefined, idempotencyKey: `withdraw-${Date.now()}` } });
+        banner(`Withdrawal ${result.withdrawalStatus || 'REQUESTED'} — needs owner approval; atomically reserved (payout:reserve) on approval. Balance remains while slots are unconfigured.`, 'ok');
+      } catch (withdrawError) {
+        if (withdrawError.code === 'unknown' || String(withdrawError.message).includes('not found')) throw withdrawError;
+        // If /withdraw is not recognised, fall back to legacy /payouts which enforces the same verification + atomic guards.
+        if (String(withdrawError.message).includes('404') || String(withdrawError.message).includes('not found')) {
+          await api('/payouts', { method: 'POST', body: { slot, amountCents, memo: data.get('memo') || undefined, idempotencyKey: `dash-withdraw-${Date.now()}` } });
+          banner('Withdrawal requested (via payouts) — it needs an owner approval before funds move. Atomic deduct/freeze on approval.', 'ok');
+        } else throw withdrawError;
+      }
+      event.target.reset();
+      await loadWithdraw();
     } catch (error) { banner(error.message, 'error'); }
   });
 

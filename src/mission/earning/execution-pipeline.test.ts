@@ -37,7 +37,7 @@ after(()=> missionDb.close());
 
 describe('execution → verification → settlement pipeline (durable, idempotent, retry/backoff)', ()=> {
   it('startExecution creates idempotent execution row and locks opportunity', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Corp', platform:'Direct Client Research', grossCents:50000, expectedFeesCents:5000, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Corp', platform:'Direct Client Research', grossCents:50000, expectedFeesCents:5000, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-pipe1', datasetSha256:'a'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/pipe-corp', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     // Pipeline start is idempotent — first creates, second returns same
     const e1:any = ExecutionPipeline.startExecution({opportunityId:String(opp.id), agentId:agentA, connectorId:'direct_client_research'});
@@ -47,7 +47,7 @@ describe('execution → verification → settlement pipeline (durable, idempoten
   });
 
   it('complete + verify requires 2 verifiers at 0.85', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Corp2', platform:'Direct Client Research', grossCents:52000, expectedFeesCents:5200, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Corp2', platform:'Direct Client Research', grossCents:52000, expectedFeesCents:5200, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-pipe2', datasetSha256:'b'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/pipe-corp2', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     const exec:any = ExecutionPipeline.startExecution({opportunityId:String(opp.id), agentId:agentA, connectorId:'direct_client_research'});
     ExecutionPipeline.completeExecution(String(exec.id), {delivered:true});
@@ -60,7 +60,7 @@ describe('execution → verification → settlement pipeline (durable, idempoten
   });
 
   it('provider confirm and independent settlement → settlement_verified and ledger credit', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Corp3', platform:'Direct Client Research', grossCents:48000, expectedFeesCents:4800, expectedCostsCents:800, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Corp3', platform:'Direct Client Research', grossCents:48000, expectedFeesCents:4800, expectedCostsCents:800, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-pipe3', datasetSha256:'c'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/pipe-corp3', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     const exec:any = ExecutionPipeline.startExecution({opportunityId:String(opp.id), agentId:agentA, connectorId:'direct_client_research'});
     ExecutionPipeline.completeExecution(String(exec.id), {delivered:true});
@@ -73,7 +73,7 @@ describe('execution → verification → settlement pipeline (durable, idempoten
   });
 
   it('fail with retry schedules exponential backoff and records provider failure', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Fail', platform:'Direct Client Research', grossCents:40000, expectedFeesCents:4000, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Fail', platform:'Direct Client Research', grossCents:40000, expectedFeesCents:4000, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-fail', datasetSha256:'d'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/pipe-fail', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     const exec:any = ExecutionPipeline.startExecution({opportunityId:String(opp.id), agentId:agentA, connectorId:'direct_client_research'});
     const failed1:any = ExecutionPipeline.failExecutionWithRetry(String(exec.id), 'transient failure 1', 'transient');
@@ -97,7 +97,7 @@ describe('execution → verification → settlement pipeline (durable, idempoten
     void opp;
     const opp2:any = (()=> {
       setKillSwitch(false, ownerId);
-      const o = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Kill', platform:'Direct Client Research', grossCents:30000, expectedFeesCents:3000, expectedCostsCents:500, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+      const o = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Pipe Kill', platform:'Direct Client Research', grossCents:30000, expectedFeesCents:3000, expectedCostsCents:500, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-kill', datasetSha256:'e'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/pipe-kill', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
       setKillSwitch(true, ownerId);
       return o;
     })();

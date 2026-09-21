@@ -64,6 +64,27 @@ export function startExecution(input: { opportunityId:string; agentId:string; co
   const readiness = getProviderReadiness(connectorId);
   if (readiness && readiness.status==='blocked') deny('provider_blocked_per_tos');
   if (readiness && readiness.status==='not_configured' && readiness.requiresOwnerAccount) deny('provider_not_configured');
+  // ── D1-D5 activation procedure for direct_client_research / paid_research_data ──
+  // Fail-closed: execution cannot start until owner completes lawful-purpose, data-rights,
+  // non-sensitive, payout-slot verification and vault scoping (if credential needed).
+  // Discovery already validates D2-D4 (lawfulPurposeRef/datasetSha256/evidenceUrl/nonSensitive),
+  // but re-check evidence_json here to block legacy or bypassed rows; D1 (payout slot) is checked now.
+  if (String(opp!.registry_key) === 'paid_research_data') {
+    const payoutActive = db.get<Row>("SELECT slot FROM mission_payout_slots WHERE status='active' LIMIT 1");
+    if (!payoutActive) deny('owner_action_required:payout_slot_not_verified:D1_payout_slot_verification_required');
+    let ej: any = {};
+    try { ej = JSON.parse(String(opp!.evidence_json)); } catch {}
+    const inner = ej.evidenceJson ?? ej ?? {};
+    if (!inner.lawfulPurposeRef || String(inner.lawfulPurposeRef).trim().length < 8) deny('owner_action_required:lawful_purpose_required:D2_lawful_purpose_ref_missing');
+    if (!inner.datasetSha256 || !/^[a-f0-9]{64}$/i.test(String(inner.datasetSha256).trim())) deny('owner_action_required:dataset_sha_required:D3_dataset_sha256_missing');
+    if (inner.nonSensitiveDataOnly !== true) deny('owner_action_required:non_sensitive_required:D4_non_sensitive_check_missing');
+    if (inner.dataRightsReviewed !== true) deny('owner_action_required:data_rights_required:D2_data_rights_missing');
+    if (inner.credentialId) {
+      const cred = db.get<Row>('SELECT status FROM mission_credentials WHERE id=?', [String(inner.credentialId)]);
+      if (!cred || !['active','expiring'].includes(String(cred.status))) deny('owner_action_required:credential_not_vault_verified:D5_scoped_credential_via_vault_required');
+    }
+    if (!inner.evidenceUrl || !/^https:\/\//.test(String(inner.evidenceUrl).trim())) deny('owner_action_required:evidence_url_required:D2_evidence_url_missing');
+  }
   // Spending gate: expected costs must respect wallet + policy
   // Find agent wallet
   const walletId = (()=> {

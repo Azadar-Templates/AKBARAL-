@@ -101,7 +101,13 @@ it('multi-agent verification requires 2 verifiers at 0.85',()=>{
 
 it('provider confirms, then owner reconciles settlement — no earning until both',()=>{
   const expiry = expiryIso();
-  const opp:any = Engine.discoverOpportunity({registryKey:'paid_research_data', provider:'Data Corp', platform:'Freelancer', grossCents:60000, expectedFeesCents:6000, expectedCostsCents:1000, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiry});
+  // Ensure payout slot is active for settlement (D1)
+  try { db.run("INSERT OR IGNORE INTO mission_payout_slots (slot, label, currency, status, masked_account, provider_ref) VALUES (1,'test-payout','USD','active','****1234','acct_test')"); db.run("UPDATE mission_payout_slots SET status='active', provider_ref='acct_test', masked_account='****1234', currency='USD' WHERE slot=1"); } catch {}
+  const opp:any = Engine.discoverOpportunity({
+    registryKey:'paid_research_data', provider:'Data Corp', platform:'Direct Client Research', grossCents:60000, expectedFeesCents:6000, expectedCostsCents:1000,
+    paymentMethod:'wire', settlementEvidence:'evidence', opportunityExpiry: expiry,
+    evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21', datasetSha256:'a'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/project-data-corp', nonSensitiveDataOnly:true, dataRightsReviewed:true },
+  });
   Engine.lockOpportunityExclusive(String(opp.id), agentA);
   Engine.scheduleWork(String(opp.id), agentA);
   Engine.verifyWorkMultiAgent(String(opp.id), [{agentId:agentA, confidence:0.9, passed:true},{agentId:agentB, confidence:0.9, passed:true}]);

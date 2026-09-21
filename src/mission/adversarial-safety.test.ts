@@ -58,7 +58,7 @@ after(()=> missionDb.close());
 describe('OWNER-SAFETY / LIABILITY GATE — adversarial (fail-closed)', ()=>{
 
   it('normal permitted work remains fully autonomous (execution→verification→settlement)', ()=>{
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Adv Client', platform:'Direct Client Research', grossCents:50000, expectedFeesCents:5000, expectedCostsCents:500, paymentMethod:'wire', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Adv Client', platform:'Direct Client Research', grossCents:50000, expectedFeesCents:5000, expectedCostsCents:500, paymentMethod:'wire', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21', datasetSha256:'a'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/adv-client', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     const exec:any = ExecutionPipeline.startExecution({opportunityId:String(opp.id), agentId:agentA, connectorId:'direct_client_research'});
     assert.equal(String(exec.state),'running');
@@ -442,7 +442,7 @@ describe('OWNER-SAFETY / LIABILITY GATE — adversarial (fail-closed)', ()=>{
   });
 
   it('settlement without independent provider evidence is blocked (false verification)', ()=>{
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'SettleFail Corp', platform:'Direct Client Research', grossCents:40000, expectedFeesCents:4000, expectedCostsCents:400, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'SettleFail Corp', platform:'Direct Client Research', grossCents:40000, expectedFeesCents:4000, expectedCostsCents:400, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21', datasetSha256:'b'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/settlefail', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     const a = freshAgent('settle');
     EarningEngine.lockOpportunityExclusive(String(opp.id), a);
     const exec:any = ExecutionPipeline.startExecution({opportunityId:String(opp.id), agentId:a, connectorId:'direct_client_research'});

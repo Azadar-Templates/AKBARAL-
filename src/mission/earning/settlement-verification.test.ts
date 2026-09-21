@@ -37,12 +37,12 @@ after(()=> missionDb.close());
 
 describe('independent USD settlement verification', ()=> {
   it('requires owner, rail, externalId and verified state', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle Corp', platform:'Direct Client Research', grossCents:60000, expectedFeesCents:6000, expectedCostsCents:1000, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle Corp', platform:'Direct Client Research', grossCents:60000, expectedFeesCents:6000, expectedCostsCents:1000, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-settle1', datasetSha256:'a'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/settle-corp', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     assert.throws(()=> SettlementVerify.verifySettlementAgainstProvider({opportunityId:String(opp.id), rail:'wise', externalId:'ext-1', grossCents:60000, feeCents:6000, netCents:53000, actor:{kind:'owner', id:ownerId}}), /not_verified_state/);
   });
 
   it('verifies independently and is idempotent per opp+rail+externalId', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle2', platform:'Direct Client Research', grossCents:55000, expectedFeesCents:5500, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle2', platform:'Direct Client Research', grossCents:55000, expectedFeesCents:5500, expectedCostsCents:800, paymentMethod:'stripe', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-settle2', datasetSha256:'b'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/settle2', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     EarningEngine.scheduleWork(String(opp.id), agentA);
     EarningEngine.verifyWorkMultiAgent(String(opp.id), [{agentId:agentA, confidence:0.91, passed:true},{agentId:agentB, confidence:0.91, passed:true}]);
@@ -56,7 +56,7 @@ describe('independent USD settlement verification', ()=> {
   });
 
   it('rejects unsupported rail and synthetic without providerRef', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle3', platform:'Direct Client Research', grossCents:50000, expectedFeesCents:5000, expectedCostsCents:500, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle3', platform:'Direct Client Research', grossCents:50000, expectedFeesCents:5000, expectedCostsCents:500, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-settle3', datasetSha256:'c'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/settle3', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     EarningEngine.scheduleWork(String(opp.id), agentA);
     EarningEngine.verifyWorkMultiAgent(String(opp.id), [{agentId:agentA, confidence:0.9, passed:true},{agentId:agentB, confidence:0.9, passed:true}]);
@@ -67,7 +67,7 @@ describe('independent USD settlement verification', ()=> {
   });
 
   it('settlementIsIndependentlyVerified helper', ()=> {
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle4', platform:'Direct Client Research', grossCents:40000, expectedFeesCents:4000, expectedCostsCents:500, paymentMethod:'paypal', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle4', platform:'Direct Client Research', grossCents:40000, expectedFeesCents:4000, expectedCostsCents:500, paymentMethod:'paypal', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-settle4', datasetSha256:'d'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/settle4', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     assert.equal(SettlementVerify.settlementIsIndependentlyVerified(String(opp.id)), false);
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     EarningEngine.scheduleWork(String(opp.id), agentA);
@@ -79,7 +79,7 @@ describe('independent USD settlement verification', ()=> {
 
   it('never credits ledger without verification — totalVerified stays 0 until settlement', ()=> {
     const before = EarningEngine.totalVerifiedEarnings();
-    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle5', platform:'Direct Client Research', grossCents:30000, expectedFeesCents:3000, expectedCostsCents:300, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso()});
+    const opp:any = EarningEngine.discoverOpportunity({registryKey:'paid_research_data', provider:'Settle5', platform:'Direct Client Research', grossCents:30000, expectedFeesCents:3000, expectedCostsCents:300, paymentMethod:'wise', settlementEvidence:'evidence', opportunityExpiry: expiryIso(), evidenceJson:{ lawfulPurposeRef:'client-research-approval-2026-09-21-settle5', datasetSha256:'e'.repeat(64), evidenceUrl:'https://client-actual.com/evidence/settle5', nonSensitiveDataOnly:true, dataRightsReviewed:true }});
     EarningEngine.lockOpportunityExclusive(String(opp.id), agentA);
     EarningEngine.scheduleWork(String(opp.id), agentA);
     EarningEngine.verifyWorkMultiAgent(String(opp.id), [{agentId:agentA, confidence:0.9, passed:true},{agentId:agentB, confidence:0.9, passed:true}]);

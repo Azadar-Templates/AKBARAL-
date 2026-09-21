@@ -47,6 +47,7 @@
           <button data-tab="customer-work" class="tab">Customers &amp; work</button>
           <button data-tab="money" class="tab">Verified cash</button>
           <button data-tab="treasury" class="tab">Legacy accounting &amp; destinations</button>
+          <button data-tab="withdraw" class="tab">Withdraw</button>
           <button data-tab="publishing" class="tab">Publishing</button>
           <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="tools" class="tab">Tools &amp; credentials</button>
@@ -199,6 +200,75 @@
           <h2>Wallets &amp; ledger</h2>
           <div id="wallets" class="table-wrap"></div>
           <div id="ledger" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="withdraw" class="panel" hidden>
+          <h2>Withdraw — verified balance only</h2>
+          <p class="muted">
+            No payout account is required at setup. Verified earnings accumulate internally while payout slots
+            remain unconfigured. When you are ready to withdraw, add or select a payout destination here — only a
+            <strong>verified</strong> slot can receive funds. Every withdrawal needs owner approval and a provider
+            settlement reference. The requested amount is <strong>atomically reserved (deducted/frozen)</strong> on
+            approval to prevent double withdrawal; if the provider reports failure the reservation is safely restored.
+          </p>
+          <p class="muted small">
+            Destination storage: only masked account (e.g. <code>****1234</code>) or provider reference (e.g. Stripe
+            <code>ba_…</code> / Payoneer account id) — raw banking credentials are never stored. Withdrawals of
+            unverified, expected, contracted or synthetic revenue are refused; only <code>received + verifier</code>
+            counts.
+          </p>
+          <div id="withdraw-summary" class="cards"></div>
+          <div id="withdraw-notice" class="banner" hidden></div>
+
+          <h3>Payout destinations — up to 4 slots (none required now)</h3>
+          <p class="muted small">
+            Slots can be labelled now and completed later. A slot must be verified (all control checks + 40-char
+            attestation) before it becomes payable. Configure a destination at withdrawal time if none is verified yet.
+          </p>
+          <div id="withdraw-slots" class="table-wrap"></div>
+          <div id="withdraw-slot-verification"></div>
+
+          <div class="grid-2">
+            <form id="withdraw-slot-form" class="stack-form">
+              <h3>Add / select payout destination</h3>
+              <p class="muted small">Store only masked details / provider reference; full numbers are refused.</p>
+              <label>Slot <input name="slot" type="number" min="1" max="4" value="1" required /></label>
+              <label>Label <input name="label" placeholder="Primary business account" /></label>
+              <label>Destination type
+                <select name="destinationType">
+                  <option value="bank">bank</option>
+                  <option value="wallet">wallet</option>
+                  <option value="payment_provider">payment_provider</option>
+                  <option value="other">other</option>
+                </select>
+              </label>
+              <label>Holder name <input name="holderName" placeholder="account holder" /></label>
+              <label>Provider reference <input name="providerRef" placeholder="payout-provider account id (preferred)" /></label>
+              <label>Masked account <input name="maskedAccount" placeholder="****1234 — full numbers are refused" /></label>
+              <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
+              <button type="submit">Save destination (masked only)</button>
+            </form>
+            <div>
+              <h3>Request withdrawal</h3>
+              <p class="muted small" id="withdraw-balance-hint"></p>
+              <form id="withdraw-form" class="stack-form">
+                <label>Verified payout slot <input name="slot" type="number" min="1" max="4" placeholder="1–4" required /></label>
+                <label>Amount (minor units, verified balance only) <input name="amountCents" type="number" min="1" placeholder="e.g. 50000" required /></label>
+                <label>Memo <input name="memo" placeholder="optional reference" /></label>
+                <button type="submit">Request withdrawal — needs approval</button>
+              </form>
+              <p class="muted small">Status: <code>REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID</code> or <code>FAILED</code> (restore). No synthetic money is created; only verified <code>received</code> revenue can be withdrawn.</p>
+            </div>
+          </div>
+
+          <h3>Withdrawals — lifecycle</h3>
+          <p class="muted small">REQUESTED (pending_approval) → VERIFYING (destination checks) → APPROVED (atomically debited <code>payout:reserve</code>) → PROCESSING (sent) → PAID (settled) or FAILED (refund <code>payout:refund</code> + restore). All transitions audited and idempotent.</p>
+          <div id="withdrawals" class="table-wrap"></div>
+
+          <h3>Wallets &amp; ledger — wallet architecture</h3>
+          <p class="muted small">Per-agent wallets (4000+), central Mission Treasury, and reinvestment reserve. Separate from AKBARAL! customer funds (different DB). Balances never go negative; ledger is hash-chained (seq + prev_hash) and idempotent.</p>
+          <div id="withdraw-wallets" class="table-wrap"></div>
+          <div id="withdraw-ledger" class="table-wrap"></div>
         </section>
 
         <section data-panel="approvals" class="panel" hidden>
