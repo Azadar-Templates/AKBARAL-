@@ -2359,11 +2359,15 @@ export function createMissionServer(): http.Server {
 
 export async function startMissionServer(options: { port?: number; host?: string } = {}): Promise<MissionServer> {
   const env = missionEnv();
-  applyMissionMigrations();
+  applyMissionMigrations(missionDb);
   ensurePolicy(env.currency);
   seedTools();
   ensurePayoutSlots();
   try{ PlatformDiscovery.seedPlatforms(); }catch{}
+  // Runtime foundation — fail-safe seeds (idempotent, no fake revenue, no credentials)
+  try{ ProviderReadiness.seedProviderReadiness(); }catch{}
+  try{ Allocator.ensureCatalogPersisted(); }catch{}
+  try{ Scheduler.schedulerStatus(); }catch{} // ensures mission_scheduler_state row exists disabled=0
   const host = options.host ?? env.bindHost;
   const port = options.port ?? env.port;
   const server = createMissionServer();
