@@ -1,0 +1,56 @@
+name: verify-dockerhub-fix
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/verify-dockerhub-fix.yml]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Pull Docker Hub latest
+        run: |
+          docker pull docker.io/mrzain555/akbaral:latest
+          echo "=== image .image-version ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest cat /app/.image-version
+          echo "=== Check for non-blocking fix in dist ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest sh -c "grep -n 'syncAgentRegistryNonBlocking\|non-blocking' /app/dist/src/index.js | head -n 20" || echo "NOT FOUND in dist"
+          echo "=== Check start-prod.mjs port fix ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest sh -c "grep -n 'always honors PORT\|apiPortRaw\|web.*PORT' /app/scripts/start-prod.mjs | head -n 30"
+          echo "=== Check Dockerfile HEALTHCHECK ==="
+          docker inspect docker.io/mrzain555/akbaral:latest --format='{{.Config.Healthcheck}}'
+          echo "=== Check image Cmd ==="
+          docker inspect docker.io/mrzain555/akbaral:latest --format='Cmd={{.Config.Cmd}}'
+
+      - name: Run image with Blitz-style PORT and test /api/ready
+        run: |
+          docker rm -f blitz-verify 2>/dev/null || true
+          docker run -d --name blitz-verify -p 10000:10000 -e PORT=10000 -e DISABLE_BACKUP_CRON=true docker.io/mrzain555/akbaral:latest
+          echo "Waiting 10s for startup..."
+          sleep 10
+          docker logs blitz-verify --tail 50 || true
+          echo "=== curl /api/ready (should be 200 within 5s, non-blocking) ==="
+          for i in $(seq 1 15); do
+            code=$(curl -sS -m 5 -o /tmp/out -w '%{http_code}' http://127.0.0.1:10000/api/ready 2>&1 || echo "000")
+            echo "attempt $i: $code $(cat /tmp/out | head -c 200)"
+            if [ "$code" = "200" ]; then
+              echo "::notice title=verify::/api/ready 200 on attempt $i"
+              break
+            fi
+            sleep 2
+            docker logs blitz-verify --tail 20 || true
+          done
+          echo "=== curl / (homepage) ==="
+          curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ || echo "failed"
+          echo
+          echo "=== Check for Internal Server Error ==="
+          curl -sS -m 5 http://127.0.0.1:10000/ | head -c 500 || true
+          echo
+          docker logs blitz-verify --tail 100 || true
+          docker rm -f blitz-verify || true
