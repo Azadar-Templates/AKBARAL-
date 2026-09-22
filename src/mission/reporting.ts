@@ -472,6 +472,22 @@ export interface MissionOverview {
   selfManagement: ReturnType<typeof selfManagementSnapshot>;
   audit: ReturnType<typeof verifyMissionAudit>;
   integrity: { ledger: ReturnType<typeof verifyLedger> };
+  opportunityCatalog?: {
+    total: number;
+    verified: number;
+    pending_review: number;
+    rejected: number;
+    expired: number;
+    archived: number;
+    sourcesTotal: number;
+    sourcesActive: number;
+    byCategory: Array<{ category: string; count: number }>;
+    byPlatform: Array<{ platform: string; count: number }>;
+    byType: Array<{ opportunity_type: string; count: number }>;
+    byRisk: Array<{ risk_level: string; count: number }>;
+    bySource: Array<{ source_id: string; source_key: string; source_name: string; total: number; verified: number }>;
+    ingestionQueue: { pending: number; processing: number; failed: number; completed: number };
+  };
   honesty: {
     realizedRevenueOnly: true;
     noFabrication: string;
@@ -550,6 +566,33 @@ export function buildMissionOverview(): MissionOverview {
   );
 
   const snapshot = selfManagementSnapshot();
+
+  // Opportunity catalog stats — best-effort, table may not exist on old DBs
+  let opportunityCatalog: MissionOverview['opportunityCatalog'] | undefined;
+  try {
+    if (missionDb.tableExists('mission_opportunities')) {
+      const { getCatalogStats } = require('./opportunity-catalog') as typeof import('./opportunity-catalog');
+      const stats = getCatalogStats();
+      opportunityCatalog = {
+        total: stats.total,
+        verified: stats.verified,
+        pending_review: stats.pending_review,
+        rejected: stats.rejected,
+        expired: stats.expired,
+        archived: stats.archived,
+        sourcesTotal: stats.sourcesTotal,
+        sourcesActive: stats.sourcesActive,
+        byCategory: stats.byCategory,
+        byPlatform: stats.byPlatform,
+        byType: stats.byType,
+        byRisk: stats.byRisk,
+        bySource: stats.bySource,
+        ingestionQueue: stats.ingestionQueue,
+      };
+    }
+  } catch {
+    // best-effort — reporting must not crash if catalog tables missing
+  }
 
   // Billionaire daily per-agent objective — sweep all agents for today, then list top progress
   const billionaireSweep = sweepAllAgentDailyTargets();
@@ -651,6 +694,7 @@ export function buildMissionOverview(): MissionOverview {
     selfManagement: snapshot,
     audit: verifyMissionAudit(),
     integrity: { ledger: verifyLedger() },
+    opportunityCatalog,
     honesty: {
       realizedRevenueOnly: true,
       noFabrication:

@@ -128,6 +128,33 @@ import {
   snapshotAgentReport,
   updateTarget,
   activityCatalog, type AgentRow} from './reporting';
+import {
+  listOpportunities,
+  getOpportunityById,
+  createOpportunity,
+  updateOpportunityStatus,
+  getCatalogStats,
+  listOpportunitySources,
+  getOpportunitySourceById,
+  upsertOpportunitySource,
+  listDistinctCountries,
+  listDistinctSkills,
+} from './opportunity-catalog';
+import { seedLegitimateSources, seedPlatformOpportunities } from './opportunity-sources';
+import {
+  enqueueIngestionJob,
+  listPendingJobs,
+  processIngestionQueue,
+  ingestSource,
+  sweepExpiredCache,
+} from './opportunity-ingestion';
+import {
+  matchOpportunitiesToAgent,
+  matchAgentsToOpportunity,
+  listMatchesForAgent,
+  listMatchesForOpportunity,
+  batchMatchOpportunities,
+} from './opportunity-matching';
 
 /**
  * ZA141251SA MISSION SERVER — a SEPARATE private application.
@@ -1326,6 +1353,316 @@ async function handleApi(
       appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'report.snapshot_requested', subjectType: 'agent', subjectId: slug });
       json(res, 201, { id: created.id });
       return true;
+    }
+
+    // ── Opportunity Catalog — 100M+ scalable discovery ─────────────────────
+    case 'opportunities': {
+      requireRead(context);
+      if (method === 'GET' && rest.length === 0) {
+        // Dashboard: catalog count, verified, pending, rejected, filters
+        const filters = {
+          source_id: url.searchParams.get('source_id') ?? undefined,
+          platform: url.searchParams.get('platform') ?? undefined,
+          opportunity_type: url.searchParams.get('opportunity_type') ?? undefined,
+          category: url.searchParams.get('category') ?? undefined,
+          status: (url.searchParams.get('status') as any) ?? undefined,
+          risk_level: (url.searchParams.get('risk_level') as any) ?? undefined,
+          country: url.searchParams.get('country') ?? undefined,
+          skill: url.searchParams.get('skill') ?? undefined,
+          search: url.searchParams.get('search') ?? url.searchParams.get('q') ?? undefined,
+          limit: Number(url.searchParams.get('limit') ?? 50),
+          offset: Number(url.searchParams.get('offset') ?? 0),
+          cursor: url.searchParams.get('cursor') ?? undefined,
+          orderBy: (url.searchParams.get('orderBy') as any) ?? 'created_at',
+          orderDir: (url.searchParams.get('orderDir') as any) ?? 'DESC',
+        };
+        json(res, 200, listOpportunities(filters));
+        return true;
+      }
+      if (method === 'GET' && rest[0] === 'stats') {
+        json(res, 200, { stats: getCatalogStats(), countries: listDistinctCountries(100), skills: listDistinctSkills(100) });
+        return true;
+      }
+      if (method === 'GET' && rest[0] === 'countries') {
+        json(res, 200, { countries: listDistinctCountries(Number(url.searchParams.get('limit') ?? 200)) });
+        return true;
+      }
+      if (method === 'GET' && rest[0] === 'skills') {
+        json(res, 200, { skills: listDistinctSkills(Number(url.searchParams.get('limit') ?? 200)) });
+        return true;
+      }
+      if (method === 'GET' && rest[0]) {
+        const opp = getOpportunityById(rest[0]);
+        if (!opp) throw new HttpProblem(404, 'opportunity not found', 'not_found');
+        const matches = listMatchesForOpportunity(opp.id, 20, 0);
+        json(res, 200, { opportunity: opp, matches });
+        return true;
+      }
+      if (method === 'POST' && rest.length === 0) {
+        const session = requireOwner(context, true);
+        const result = createOpportunity({
+          source_id: param('source_id'),
+          platform: param('platform', '') ?? '',
+          opportunity_type: (param('opportunity_type', 'other') ?? 'other') as any,
+          title: param('title', '') ?? '',
+          description: param('description'),
+          category: param('category', 'other') ?? 'other',
+          country_eligibility: body.country_eligibility as string[] | undefined,
+          skills: body.skills as string[] | undefined,
+          payout_currency: param('payout_currency', 'USD') ?? 'USD',
+          payout_method: param('payout_method'),
+          payout_min_cents: body.payout_min_cents !== undefined ? num('payout_min_cents') : null,
+          payout_max_cents: body.payout_max_cents !== undefined ? num('payout_max_cents') : null,
+          payout_frequency: param('payout_frequency'),
+          fees: param('fees'),
+          account_rules: param('account_rules'),
+          api_available: Boolean(body.api_available),
+          automation_permission: (param('automation_permission', 'conditional') ?? 'conditional') as any,
+          tos_url: param('tos_url'),
+          source_url: param('source_url', '') ?? '',
+          external_id: param('external_id'),
+          status: (param('status', 'pending_review') ?? 'pending_review') as any,
+          risk_level: (param('risk_level', 'medium') ?? 'medium') as any,
+          verification_notes: param('verification_notes'),
+        });
+        appendMissionAudit({
+          actorType: 'owner',
+          actorId: session.owner.id,
+          action: result.isNew ? 'opportunity.created' : 'opportunity.duplicate_seen',
+          subjectType: 'opportunity',
+          subjectId: result.opportunity.id,
+          detail: { platform: result.opportunity.platform, dedup_hash: result.opportunity.dedup_hash, isNew: result.isNew },
+        });
+        json(res, result.isNew ? 201 : 200, result);
+        return true;
+      }
+      if (method === 'POST' && rest[1] === 'verify') {
+        const session = requireOwner(context, true);
+        const status = (param('status', 'verified') ?? 'verified') as any;
+        const risk = (param('risk_level') as any) ?? undefined;
+        const opp = updateOpportunityStatus({
+          id: rest[0],
+          status,
+          risk_level: risk,
+          verification_notes: param('verification_notes') ?? param('notes'),
+          verifier_type: 'owner',
+          verifier_id: session.owner.id,
+        });
+        appendMissionAudit({
+          actorType: 'owner',
+          actorId: session.owner.id,
+          action: `opportunity.${status}`,
+          subjectType: 'opportunity',
+          subjectId: opp.id,
+          detail: { status, risk_level: risk ?? opp.risk_level },
+        });
+        json(res, 200, { opportunity: opp });
+        return true;
+      }
+      break;
+    }
+    case 'opportunity-sources': {
+      requireRead(context);
+      if (method === 'GET' && rest.length === 0) {
+        const category = url.searchParams.get('category') ?? undefined;
+        const status = url.searchParams.get('status') ?? undefined;
+        const limit = Number(url.searchParams.get('limit') ?? 100);
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        json(res, 200, listOpportunitySources({ category, status, limit, offset }));
+        return true;
+      }
+      if (method === 'GET' && rest[0]) {
+        const src = getOpportunitySourceById(rest[0]);
+        if (!src) throw new HttpProblem(404, 'opportunity source not found', 'not_found');
+        const stats = missionDb.get<Row>('SELECT * FROM mission_opportunity_source_stats WHERE source_id = ?', [src.id]);
+        const recentRuns = missionDb.all<Row>('SELECT * FROM mission_opportunity_ingestion_runs WHERE source_id = ? ORDER BY started_at DESC LIMIT 20', [src.id]);
+        json(res, 200, { source: src, stats, recentRuns });
+        return true;
+      }
+      if (method === 'POST' && rest.length === 0) {
+        const session = requireOwner(context, true);
+        const src = upsertOpportunitySource({
+          key: param('key', '') ?? '',
+          name: param('name', '') ?? '',
+          category: (param('category', 'other') ?? 'other') as any,
+          description: param('description'),
+          base_url: param('base_url', '') ?? '',
+          api_endpoint: param('api_endpoint'),
+          docs_url: param('docs_url'),
+          tos_url: param('tos_url'),
+          privacy_url: param('privacy_url'),
+          requires_api_key: Boolean(body.requires_api_key),
+          api_key_env_var: param('api_key_env_var'),
+          rate_limit_rpm: body.rate_limit_rpm !== undefined ? num('rate_limit_rpm') : undefined,
+          rate_limit_daily: body.rate_limit_daily !== undefined ? num('rate_limit_daily') : undefined,
+          automation_allowed: body.automation_allowed !== undefined ? num('automation_allowed') : 0,
+          automation_notes: param('automation_notes'),
+          country_eligibility: body.country_eligibility as string[] | undefined,
+          payout_currencies: body.payout_currencies as string[] | undefined,
+          payout_methods: body.payout_methods as string[] | undefined,
+          fees_description: param('fees_description'),
+          account_rules: param('account_rules'),
+          api_available: Boolean(body.api_available),
+          status: param('status') ?? undefined,
+        });
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'opportunity_source.upserted', subjectType: 'opportunity_source', subjectId: src.id, detail: { key: src.key } });
+        json(res, 201, { source: src });
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'seed') {
+        const session = requireOwner(context, true);
+        const sourcesResult = seedLegitimateSources();
+        const platformsResult = seedPlatformOpportunities();
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'opportunity_source.seeded', detail: { ...sourcesResult, platforms: platformsResult } });
+        json(res, 200, { sources: sourcesResult, platforms: platformsResult, stats: getCatalogStats() });
+        return true;
+      }
+      break;
+    }
+    case 'opportunity-ingestion': {
+      requireRead(context);
+      if (method === 'GET' && rest[0] === 'queue') {
+        json(res, 200, { queue: listPendingJobs(Number(url.searchParams.get('limit') ?? 20)), stats: getCatalogStats().ingestionQueue });
+        return true;
+      }
+      if (method === 'GET' && rest[0] === 'runs') {
+        const sourceId = url.searchParams.get('source_id') ?? undefined;
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        const runs = sourceId
+          ? missionDb.all<Row>('SELECT * FROM mission_opportunity_ingestion_runs WHERE source_id = ? ORDER BY started_at DESC LIMIT ?', [sourceId, limit])
+          : missionDb.all<Row>('SELECT * FROM mission_opportunity_ingestion_runs ORDER BY started_at DESC LIMIT ?', [limit]);
+        json(res, 200, { runs });
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'enqueue') {
+        const session = requireOwner(context, true);
+        const sourceId = param('source_id', '') ?? '';
+        if (!sourceId) throw new HttpProblem(400, 'source_id required', 'validation_error');
+        const job = enqueueIngestionJob({
+          source_id: sourceId,
+          job_type: param('job_type', 'ingest') ?? 'ingest',
+          cursor: param('cursor'),
+          payload: body.payload as any,
+          rate_limit_key: param('rate_limit_key') ?? sourceId,
+        });
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'ingestion.enqueued', subjectType: 'ingestion_job', subjectId: job.id, detail: { source_id: sourceId } });
+        json(res, 201, { job });
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'process') {
+        const session = requireOwner(context, true);
+        const batchSize = Number(body.batchSize ?? 5);
+        const result = await processIngestionQueue(batchSize);
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'ingestion.processed', detail: result });
+        json(res, 200, result);
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'ingest') {
+        const session = requireOwner(context, true);
+        const sourceKey = param('source_key', '') ?? '';
+        if (!sourceKey) throw new HttpProblem(400, 'source_key required', 'validation_error');
+        try {
+          const result = await ingestSource(sourceKey, { limit: body.limit !== undefined ? Number(body.limit) : 50, cursor: param('cursor') });
+          appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'ingestion.source_ingested', subjectType: 'opportunity_source', subjectId: sourceKey, detail: result });
+          json(res, 200, result);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new HttpProblem(400, msg, 'ingestion_failed');
+        }
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'sweep-cache') {
+        const session = requireOwner(context, true);
+        const deleted = sweepExpiredCache();
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'ingestion.cache_swept', detail: { deleted } });
+        json(res, 200, { deleted });
+        return true;
+      }
+      break;
+    }
+    case 'opportunity-matches': {
+      requireRead(context);
+      if (method === 'GET' && rest[0] === 'agent' && rest[1]) {
+        const agentId = rest[1];
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        // If no matches yet, compute on fly (paginated, not loading all)
+        const existing = listMatchesForAgent(agentId, limit, offset);
+        if (existing.total === 0) {
+          const computed = matchOpportunitiesToAgent(agentId, { limit, status: url.searchParams.get('status') as any });
+          json(res, 200, { total: computed.total, computed: computed.matches, matches: existing.matches, note: 'computed on fly — no revenue counted until verified received' });
+        } else {
+          json(res, 200, { total: existing.total, matches: existing.matches });
+        }
+        return true;
+      }
+      if (method === 'GET' && rest[0] === 'opportunity' && rest[1]) {
+        const oppId = rest[1];
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        const existing = listMatchesForOpportunity(oppId, limit, offset);
+        if (existing.total === 0) {
+          const computed = matchAgentsToOpportunity(oppId, limit);
+          json(res, 200, { totalAgents: computed.totalAgents, computed: computed.matches, matches: existing.matches });
+        } else {
+          json(res, 200, { total: existing.total, matches: existing.matches });
+        }
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'batch') {
+        const session = requireOwner(context, true);
+        const result = batchMatchOpportunities({ opportunityLimit: body.opportunityLimit !== undefined ? Number(body.opportunityLimit) : 100, agentBatchSize: body.agentBatchSize !== undefined ? Number(body.agentBatchSize) : 100 });
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'matching.batch', detail: result });
+        json(res, 200, result);
+        return true;
+      }
+      break;
+    }
+    case 'opportunity-catalog': {
+      requireRead(context);
+      if (method === 'GET') {
+        const stats = getCatalogStats();
+        json(res, 200, {
+          stats,
+          countries: listDistinctCountries(50),
+          skills: listDistinctSkills(50),
+          scaling: {
+            designedFor: '100,000,000+ records',
+            currentCount: stats.total,
+            verifiedCount: stats.verified,
+            pendingReview: stats.pending_review,
+            rejected: stats.rejected,
+            sources: stats.sourcesTotal,
+            sourcesActive: stats.sourcesActive,
+            pagination: 'cursor-based (id + created_at), never loads all into memory',
+            deduplication: 'dedup_hash unique SHA256(platform|source_url|external_id|type)',
+            queue: 'mission_opportunity_ingestion_queue with rate limits, retries, exponential backoff',
+            rateLimits: 'DB + in-memory buckets, RPM + daily, per source',
+            caching: 'mission_opportunity_cache with TTL, ETag, sweep',
+            incremental: 'ingestion_cursor per source, last_ingested_at, last_seen_at',
+            indexes: 'platform, category, type, status, risk, country, skill, created_at, dedup_hash',
+            matching: '4001+ agents, skills vs opportunity skills, country, automation permission, cost — paginated batches',
+            revenueRule: 'Only status=received + verifier counts as realized revenue — mission accounting unchanged',
+            isolation: 'ZA141251SA separate DB, own migrations, own auth, loopback bind',
+            compliance: 'Never bypass CAPTCHA/KYC/account limits/ToS/robots — only public APIs that explicitly allow automation (Remotive, Arbeitnow, Jobicy) or manual verification',
+          },
+          requiredExternalApis: [
+            { key: 'remotive', name: 'Remotive public API', url: 'https://remotive.com/api/remote-jobs', requiresKey: false, rateLimit: '30 RPM, 5000/day', status: 'active, allowed' },
+            { key: 'arbeitnow', name: 'Arbeitnow public API', url: 'https://www.arbeitnow.com/api/job-board-api', requiresKey: false, rateLimit: '30 RPM, 10000/day', status: 'active, allowed' },
+            { key: 'jobicy', name: 'Jobicy public API', url: 'https://jobicy.com/api/v2/remote-jobs', requiresKey: false, rateLimit: '30 RPM, 10000/day', status: 'active, allowed' },
+            { key: 'upwork', name: 'Upwork API', requiresKey: true, envVar: 'UPWORK_API_KEY', status: 'optional, needs approval' },
+            { key: 'fiverr', name: 'Fiverr API', requiresKey: true, envVar: 'FIVERR_API_KEY', status: 'optional, limited to partners' },
+            { key: 'etsy', name: 'Etsy API v3', requiresKey: true, envVar: 'ETSY_API_KEY', status: 'optional, OAuth required' },
+            { key: 'gumroad', name: 'Gumroad API', requiresKey: true, envVar: 'GUMROAD_API_KEY', status: 'optional, public API allowed' },
+            { key: 'amazon_associates', name: 'Amazon PA-API', requiresKey: true, envVar: 'AMAZON_ASSOCIATES_API_KEY', status: 'optional, requires approval' },
+            { key: 'shareasale', name: 'ShareASale API', requiresKey: true, envVar: 'SHAREASALE_API_KEY', status: 'optional' },
+            { key: 'clickbank', name: 'ClickBank API', requiresKey: true, envVar: 'CLICKBANK_API_KEY', status: 'optional' },
+          ],
+          disclaimer: 'Do not claim 100M records exist until genuinely sourced and deduplicated — current count is actual discovered count only.',
+        });
+        return true;
+      }
+      break;
     }
 
     // ── Health ──────────────────────────────────────────────────────────────
