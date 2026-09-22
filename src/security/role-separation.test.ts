@@ -137,18 +137,63 @@ before(async () => {
 });
 
 after(async () => {
-  if (api) await api.close();
-  if (mission) await new Promise<void>((resolve) => mission.close(() => resolve()));
-  db.run('DELETE FROM users WHERE email LIKE ?', [`sep-%@akbaral.test`]);
-  db.close();
+  // Fix: stop all schedulers/queues BEFORE closing servers and DB to avoid
+  // \"database is not open\" async race. Previously executionQueue kept ticking
+  // after api.close() and tried to access DB after db.close().
+  try {
+    const { executionQueue } = await import('../orchestrator/queue');
+    executionQueue.stop();
+  } catch {
+    // ignore
+  }
+  try {
+    const { automationScheduler } = await import('../automation/scheduler');
+    automationScheduler.stop();
+  } catch {
+    // ignore
+  }
+  try {
+    const { economyScheduler } = await import('../economy/operations');
+    economyScheduler.stop();
+  } catch {
+    // ignore
+  }
+  if (api) {
+    try {
+      await api.close();
+    } catch {
+      // ignore
+    }
+  }
+  if (mission) {
+    try {
+      await new Promise<void>((resolve) => mission.close(() => resolve()));
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    db.run('DELETE FROM users WHERE email LIKE ?', [`sep-%@akbaral.test`]);
+  } catch {
+    // ignore if db already closed
+  }
   try {
     missionDbRef.close();
   } catch {
     /* ignore */
   }
   for (const suffixPart of ['', '-wal', '-shm']) {
-    if (fs.existsSync(`${MISSION_DB}${suffixPart}`)) fs.rmSync(`${MISSION_DB}${suffixPart}`, { force: true });
+    if (fs.existsSync(`${MISSION_DB}${suffixPart}`)) {
+      try {
+        fs.rmSync(`${MISSION_DB}${suffixPart}`, { force: true });
+      } catch {
+        // ignore
+      }
+    }
   }
+  // Do NOT close global db singleton — shared across test files in same process.
+  // Process exit will close it. This fixes \"database is not open\" race when
+  // multiple suites run together.
 });
 
 describe('platform user plane', () => {

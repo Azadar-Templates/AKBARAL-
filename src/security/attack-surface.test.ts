@@ -81,12 +81,39 @@ describe('Milestone 9: attack surface', () => {
         // already gone
       }
     }
+    // Fix: stop queue and close API BEFORE DB cleanup to avoid \"database is not open\" race.
+    try {
+      const { executionQueue } = await import('../orchestrator/queue');
+      executionQueue.stop();
+    } catch {
+      // ignore
+    }
+    try {
+      const { automationScheduler } = await import('../automation/scheduler');
+      automationScheduler.stop();
+    } catch {
+      // ignore
+    }
+    try {
+      const { economyScheduler } = await import('../economy/operations');
+      economyScheduler.stop();
+    } catch {
+      // ignore
+    }
+    try {
+      await api.close();
+    } catch {
+      // ignore
+    }
     // Remove this run's users so later suites see the same shared-db state
     // (agents owned by these users flip to ownerless via ON DELETE SET NULL).
-    db.run('DELETE FROM users WHERE email LIKE ?', [`m9-%${suffix}@akbaral.test`]);
+    try {
+      db.run('DELETE FROM users WHERE email LIKE ?', [`m9-%${suffix}@akbaral.test`]);
+    } catch {
+      // ignore if db already closed
+    }
     delete process.env.BILLING_WEBHOOK_SECRET;
-    db.close();
-    await api.close();
+    // Do NOT close global db singleton — shared across files in same process.
   });
 
   // ------------------------------------------------------------ token auth ---

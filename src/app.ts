@@ -235,7 +235,25 @@ export function createApiServer(): ApiServer {
       });
     },
     async close(): Promise<void> {
-      automationScheduler.stop();
+      // Fix: stop all background schedulers/queues BEFORE closing HTTP server
+      // to prevent \"database is not open\" async race after db.close().
+      // Previously only automationScheduler was stopped; executionQueue and
+      // economyScheduler kept ticking and tried to access DB after close.
+      try {
+        executionQueue.stop();
+      } catch {
+        // already stopped
+      }
+      try {
+        automationScheduler.stop();
+      } catch {
+        // ignore
+      }
+      try {
+        economyScheduler.stop();
+      } catch {
+        // ignore
+      }
       stream.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },

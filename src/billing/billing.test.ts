@@ -156,13 +156,36 @@ describe('Milestone 8: trial/credits/billing', () => {
     } catch {
       // already stopped
     }
+    // Fix: close servers and fixtures BEFORE touching DB, and do NOT close the
+    // global db singleton when multiple test files share the same process.
+    // Closing db before api caused \"database is not open\" async race because
+    // the API's background queue/schedulers still tried to access DB after close.
+    try {
+      await api.close();
+    } catch {
+      // ignore
+    }
+    try {
+      await modelFixture.close();
+    } catch {
+      // ignore
+    }
+    try {
+      await paymentFixture.close();
+    } catch {
+      // ignore
+    }
     // Remove this run's users. The shared test.db is reused by later suites
     // (e.g. src/server/app.test.ts searches for web-research-001), and this
     // suite's successful-task path lazily creates that agent owned by its
     // test user. Deleting the users flips agents.owner_id to NULL (ON DELETE
     // SET NULL), keeping the registry agent visible to everyone — the same
     // state earlier suites leave behind.
-    db.run('DELETE FROM users WHERE email LIKE ?', [`m8-%${suffix}@akbaral.test`]);
+    try {
+      db.run('DELETE FROM users WHERE email LIKE ?', [`m8-%${suffix}@akbaral.test`]);
+    } catch {
+      // db may already be closed in isolated runs, ignore
+    }
     for (const [key, value] of savedEnv) {
       if (value === undefined) {
         delete process.env[key];
@@ -170,10 +193,11 @@ describe('Milestone 8: trial/credits/billing', () => {
         process.env[key] = value;
       }
     }
-    db.close();
-    await modelFixture.close();
-    await paymentFixture.close();
-    await api.close();
+    // Do NOT call db.close() here — the global singleton is shared across
+    // test files when run in one process (e.g. `tsx --test a b c`). Closing it
+    // here breaks subsequent suites with \"database is not open\". The process
+    // exit will close it, and npm test runs each file in its own process with
+    // --test-force-exit anyway.
   });
 
   function authHeaders(userToken: string): Record<string, string> {
