@@ -140,7 +140,7 @@ import {
   listDistinctCountries,
   listDistinctSkills,
 } from './opportunity-catalog';
-import { seedLegitimateSources, seedPlatformOpportunities } from './opportunity-sources';
+import { seedLegitimateSources, seedPlatformOpportunities, seedRealOpportunities } from './opportunity-sources';
 import {
   enqueueIngestionJob,
   listPendingJobs,
@@ -1513,8 +1513,9 @@ async function handleApi(
         const session = requireOwner(context, true);
         const sourcesResult = seedLegitimateSources();
         const platformsResult = seedPlatformOpportunities();
-        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'opportunity_source.seeded', detail: { ...sourcesResult, platforms: platformsResult } });
-        json(res, 200, { sources: sourcesResult, platforms: platformsResult, stats: getCatalogStats() });
+        const realOppsResult = seedRealOpportunities();
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'opportunity_source.seeded', detail: { ...sourcesResult, platforms: platformsResult, realOpportunities: realOppsResult } });
+        json(res, 200, { sources: sourcesResult, platforms: platformsResult, realOpportunities: realOppsResult, stats: getCatalogStats() });
         return true;
       }
       break;
