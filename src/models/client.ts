@@ -523,6 +523,11 @@ export class GoogleProvider implements ModelProvider {
 
 export function createProvider(key: string): ModelProvider {
   switch (key) {
+    case 'omniroute': {
+      // Lazy import to avoid circular deps — omniroute module imports catalog
+      const { OmniRouteProvider } = require('./omniroute') as typeof import('./omniroute');
+      return new OmniRouteProvider();
+    }
     case 'openai':
       return new OpenAICompatibleProvider();
     case 'anthropic':

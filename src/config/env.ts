@@ -93,6 +93,21 @@ function resolveIntEnv(name: string, fallback: number, min: number, max: number)
   return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
+function resolveOmnirouteBaseUrl(): string {
+  const raw = trimOrEmpty(process.env.OMNIROUTE_BASE_URL) || 'http://127.0.0.1:20128/v1';
+  // Must be private unless explicit override — validation below
+  return raw;
+}
+function resolveOmnirouteApiKey(): string | null {
+  return trimOrEmpty(process.env.OMNIROUTE_API_KEY) || null;
+}
+function resolveOmnirouteEnabled(): boolean {
+  return trimOrEmpty(process.env.OMNIROUTE_ENABLED) === '1' || Boolean(trimOrEmpty(process.env.OMNIROUTE_API_KEY));
+}
+function resolveOmnirouteModelAuto(): string {
+  return trimOrEmpty(process.env.OMNIROUTE_MODEL_AUTO) || 'auto';
+}
+
 export const env = {
   nodeEnv,
   isProduction,
@@ -109,6 +124,14 @@ export const env = {
   searchEndpoint: trimOrEmpty(process.env.AKBARAL_SEARCH_ENDPOINT),
   pageFetchEndpoint: trimOrEmpty(process.env.AKBARAL_PAGE_FETCH_ENDPOINT),
   allowPrivateProvider: process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER === '1',
+  // OmniRoute private sidecar — 127.0.0.1 only, never public
+  omnirouteBaseUrl: resolveOmnirouteBaseUrl(),
+  omnirouteApiKey: resolveOmnirouteApiKey(),
+  omnirouteEnabled: resolveOmnirouteEnabled(),
+  omnirouteModelAuto: resolveOmnirouteModelAuto(),
+  omnirouteDailyTokenBudget: resolveIntEnv('OMNIROUTE_DAILY_TOKEN_BUDGET', 100_000, 1000, 10_000_000),
+  omnirouteMonthlyCostCents: resolveIntEnv('OMNIROUTE_MONTHLY_COST_CENTS', 500, 0, 100_000_000),
+  omnirouteRateLimitRpm: resolveIntEnv('OMNIROUTE_RATE_LIMIT_RPM', 10, 1, 1000),
   uploadDir: resolveUploadDir(),
   // Marketplace commission in basis points (1000 = 10%). Report-time rate for
   // agent-order volume; 0 disables commission tracking.
@@ -152,6 +175,24 @@ export function validateEnvironment(): void {
 
   validateDatabaseUrl(resolveDatabaseUrl());
   validateUploadDir(resolveUploadDir());
+
+  // OmniRoute private bind validation — must be 127.0.0.1/localhost unless explicit override
+  const omniBase = resolveOmnirouteBaseUrl();
+  try {
+    const u = new URL(omniBase);
+    const host = u.hostname;
+    const isPrivate = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    if (!isPrivate && process.env.AKBARAL_ALLOW_PRIVATE_PROVIDER !== '1') {
+      throw new EnvConfigError(
+        `OMNIROUTE_BASE_URL must be private (127.0.0.1:20128) unless AKBARAL_ALLOW_PRIVATE_PROVIDER=1 — got ${redactedForError(omniBase)}`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof EnvConfigError) throw err;
+    if (trimOrEmpty(process.env.OMNIROUTE_BASE_URL)) {
+      throw new EnvConfigError(`OMNIROUTE_BASE_URL is malformed: ${redactedForError(omniBase)}`);
+    }
+  }
 
   const currentProduction = currentNodeEnv === 'production';
   if (currentProduction) {

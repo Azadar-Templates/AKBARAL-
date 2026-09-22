@@ -24,6 +24,15 @@ export interface IntegrationDefinition {
 
 export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
   {
+    key: 'omniroute',
+    name: 'OmniRoute Gateway',
+    kind: 'llm',
+    description: 'Private 127.0.0.1:20128 sidecar gateway — OpenAI-compatible /chat/completions, auto-fallback, quota-aware, token compression (RTK+Caveman 15-95%), dashboard. Requires OMNIROUTE_API_KEY, private bind only. Aggregates upstream free tiers (Google, Groq, Cerebras, etc). Optional but recommended for cost controls.',
+    requiredEnv: ['OMNIROUTE_API_KEY'],
+    optionalWhenUnset: true,
+    defaultMode: 'direct providers only — set OMNIROUTE_API_KEY + OMNIROUTE_ENABLED=1 to use private gateway (127.0.0.1:20128)',
+  },
+  {
     key: 'openai',
     name: 'OpenAI',
     kind: 'llm',

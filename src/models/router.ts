@@ -1,6 +1,7 @@
 import { getModel, listModels, recordModelRun } from '../db';
 import { MODEL_SPECS, PROVIDER_SPECS, type ModelSpec } from './catalog';
 import { createProvider, streamViaChat, type ChatMessage, type ChatResult } from './client';
+import { omnirouteEnabled, isOmnirouteConfigured, checkOmnirouteQuota, recordOmnirouteUsage } from './omniroute';
 
 export interface ModelRequirements {
   capability?: string[]; // reasoning | coding | vision | speed | long_context | research | image | ...
@@ -26,6 +27,11 @@ export interface RoutingDecision {
  * Selects the model most suitable for an agent/task from capability, cost,
  * latency, reliability, health and provider credential availability. Selects a
  * primary + fallback chain, and records every run for cost/latency monitoring.
+ *
+ * OmniRoute integration: when OMNIROUTE_ENABLED=1 and OMNIROUTE_API_KEY set,
+ * gateway is preferred (private 127.0.0.1:20128, never public). Quota-aware
+ * fallback, cost controls, telemetry preserved. Direct providers remain as
+ * fallback — never removed.
  */
 export class ModelRouter {
   private dbModels(): ModelSpec[] {
@@ -88,6 +94,15 @@ export class ModelRouter {
         score -= 100;
       }
     }
+    // OmniRoute gateway boost: when enabled and configured, prefer gateway routing
+    // for quota-aware fallback, cost controls and expanded model access.
+    // Does NOT remove direct providers — they remain as fallback.
+    if (omnirouteEnabled() && isOmnirouteConfigured() && model.providerKey === 'omniroute') {
+      score += 10; // Prefer gateway when operator opted in
+      if (model.key === 'auto') score += 5; // 'auto' picks cheapest viable
+      if (model.capabilities.includes('fallback')) score += 2;
+      if (model.capabilities.includes('quota-aware')) score += 2;
+    }
     return score;
   }
 
@@ -112,12 +127,6 @@ export class ModelRouter {
     if (candidates.length === 0) {
       throw new Error('no models registered');
     }
-    // Prefer the best-scoring model whose provider is actually CONFIGURED.
-    // Routing to an unconfigured provider as the primary (only to fall
-    // through the chain anyway) reports a misleading "unavailable" decision
-    // for every request when a perfectly good provider IS configured.
-    // Only when no model is configured at all does the top scorer surface
-    // as an honest unavailable decision.
     const firstConfigured = candidates.find(({ model }) => this.credentialsAvailable(model).available);
     const primary = firstConfigured ?? candidates[0];
     const credential = this.credentialsAvailable(primary.model);
@@ -132,12 +141,6 @@ export class ModelRouter {
     };
   }
 
-  /**
-   * When EVERY provider in the chain was unconfigured, the old behavior
-   * surfaced only the last chain entry ("openai is not configured…"),
-   * misleading users into thinking a single key was missing. The honest
-   * error aggregates every required credential.
-   */
   private unconfiguredChainError(unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }>): Error {
     const required = [...new Set(unconfigured.map((d) => d.requiredEnvKey).filter((k): k is string => Boolean(k)))];
     const error = new Error(
@@ -147,18 +150,11 @@ export class ModelRouter {
     return error;
   }
 
-  /**
-   * Run a chat completion through the routed primary model, then fall back to
-   * the next available model if the provider fails or is not configured.
-   */
   async complete(requirements: ModelRequirements, messages: ChatMessage[]): Promise<ChatResult> {
     const primary = this.route(requirements);
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
-    // A real provider ATTEMPT failure (auth, outage, block, timeout) is the
-    // diagnostic that matters: it must never be masked by a later "not
-    // configured" skip for a different provider in the fallback chain.
     let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
@@ -172,10 +168,30 @@ export class ModelRouter {
         unconfigured.push({ providerKey: decision.providerKey, requiredEnvKey: decision.requiredEnvKey });
         continue;
       }
+
+      if (decision.providerKey === 'omniroute') {
+        const quota = checkOmnirouteQuota(requirements.agentExecutionId ?? null);
+        if (!quota.allowed) {
+          const qError = new Error(quota.reason ?? 'omniroute quota exceeded') as Error & { code?: string };
+          qError.code = 'quota_exceeded';
+          lastError = qError;
+          continue;
+        }
+      }
+
       const provider = createProvider(decision.providerKey);
       const startedAt = Date.now();
       try {
         const result = await provider.chat(decision.model, messages);
+        const costCents = estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0);
+        if (decision.providerKey === 'omniroute') {
+          recordOmnirouteUsage({
+            agentId: requirements.agentExecutionId ?? null,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            costCents,
+          });
+        }
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
@@ -185,7 +201,7 @@ export class ModelRouter {
           latencyMs: result.latencyMs,
           inputTokens: result.inputTokens ?? null,
           outputTokens: result.outputTokens ?? null,
-          costCents: estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0),
+          costCents,
         });
         return result;
       } catch (error) {
@@ -206,9 +222,6 @@ export class ModelRouter {
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
     }
-    // Prefer the real attempt error: if any configured provider was actually
-    // called and failed, that failure is the honest reason this request
-    // failed — not the absence of some other provider's key.
     if (lastAttemptError instanceof Error) {
       throw lastAttemptError;
     }
@@ -218,21 +231,11 @@ export class ModelRouter {
     throw new Error('no model available for request');
   }
 
-  /**
-   * Full routing decision without executing anything: the primary model plus
-   * the ordered fallback chain, each with an honest availability flag. Used by
-   * the routing-preview API and diagnostics.
-   */
   routeChain(requirements: ModelRequirements): RoutingDecision[] {
     const primary = this.route(requirements);
     return this.fallbackChain(primary, requirements);
   }
 
-  /**
-   * Streaming variant of complete(): tokens are forwarded to onToken as the
-   * provider emits them (providers without native streaming emit the full text
-   * as a single token). Same fallback chain, same run recording.
-   */
   async completeStreaming(
     requirements: ModelRequirements,
     messages: ChatMessage[],
@@ -242,9 +245,6 @@ export class ModelRouter {
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
-    // A real provider ATTEMPT failure (auth, outage, block, timeout) is the
-    // diagnostic that matters: it must never be masked by a later "not
-    // configured" skip for a different provider in the fallback chain.
     let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
@@ -258,12 +258,32 @@ export class ModelRouter {
         unconfigured.push({ providerKey: decision.providerKey, requiredEnvKey: decision.requiredEnvKey });
         continue;
       }
+
+      if (decision.providerKey === 'omniroute') {
+        const quota = checkOmnirouteQuota(requirements.agentExecutionId ?? null);
+        if (!quota.allowed) {
+          const qError = new Error(quota.reason ?? 'omniroute quota exceeded') as Error & { code?: string };
+          qError.code = 'quota_exceeded';
+          lastError = qError;
+          continue;
+        }
+      }
+
       const provider = createProvider(decision.providerKey);
       const startedAt = Date.now();
       try {
         const result = provider.streamChat
           ? await provider.streamChat(decision.model, messages, onToken)
           : await streamViaChat(provider, decision.model, messages, onToken);
+        const costCents = estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0);
+        if (decision.providerKey === 'omniroute') {
+          recordOmnirouteUsage({
+            agentId: requirements.agentExecutionId ?? null,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            costCents,
+          });
+        }
         recordModelRun({
           modelKey: decision.model.key,
           providerKey: decision.providerKey,
@@ -273,7 +293,7 @@ export class ModelRouter {
           latencyMs: result.latencyMs,
           inputTokens: result.inputTokens ?? null,
           outputTokens: result.outputTokens ?? null,
-          costCents: estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0),
+          costCents,
         });
         return result;
       } catch (error) {
@@ -294,9 +314,6 @@ export class ModelRouter {
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
     }
-    // Prefer the real attempt error: if any configured provider was actually
-    // called and failed, that failure is the honest reason this request
-    // failed — not the absence of some other provider's key.
     if (lastAttemptError instanceof Error) {
       throw lastAttemptError;
     }
@@ -323,7 +340,6 @@ export class ModelRouter {
       ordered.push(candidate.model);
     }
 
-    // De-dup by key while preserving preference order, then score order.
     const seen = new Set<string>();
     const chain: RoutingDecision[] = [];
     for (const model of ordered) {

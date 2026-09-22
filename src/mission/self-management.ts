@@ -50,6 +50,7 @@ const DEFAULT_TOOLS: Array<{
   key: string; name: string; category: string; provider: string; costModel: string; estCostCents: number;
   status: 'approved' | 'restricted' | 'blocked'; requiredPermission: string; termsUrl: string; notes: string;
 }> = [
+  { key: 'omniroute_gateway', name: 'OmniRoute Gateway (private sidecar)', category: 'ai_model', provider: 'omniroute', costModel: 'metered', estCostCents: 1, status: 'approved', requiredPermission: 'model.call', termsUrl: 'https://github.com/diegosouzapw/OmniRoute', notes: 'Private 127.0.0.1:20128 only, never public. OpenAI-compatible gateway with auto-fallback, quota-aware, token compression RTK+Caveman 15-95%, dashboard. Requires OMNIROUTE_API_KEY, optional OMNIROUTE_ENABLED=1. Aggregates upstream free tiers; operator must ensure ToS allows proxy.' },
   { key: 'gemini_api', name: 'Google Gemini API', category: 'ai_model', provider: 'google', costModel: 'metered', estCostCents: 1, status: 'approved', requiredPermission: 'model.call', termsUrl: 'https://ai.google.dev/terms', notes: 'Primary reasoning model. Requires GOOGLE_API_KEY in the deployment environment.' },
   { key: 'web_search', name: 'Web search provider', category: 'search', provider: 'tavily|brave|serper|google_cse', costModel: 'usage', estCostCents: 1, status: 'approved', requiredPermission: 'search.query', termsUrl: '', notes: 'Provider chosen by the deployment configuration; keyless fallback available.' },
   { key: 'object_storage', name: 'Object storage', category: 'storage', provider: 'provider-configured', costModel: 'subscription', estCostCents: 500, status: 'approved', requiredPermission: 'storage.write', termsUrl: '', notes: 'Requires a provider account + scoped token before use.' },
@@ -596,6 +597,7 @@ export interface SelfManagementSnapshot {
 }
 
 export const EXTERNAL_ACTIVATION: Array<{ provider: string; action: string; why: string }> = [
+  { provider: 'omniroute', action: 'Set OMNIROUTE_API_KEY + OMNIROUTE_ENABLED=1 (private 127.0.0.1:20128 only, never public) to use gateway with auto-fallback/quota/cost controls', why: 'Optional: aggregates upstream free tiers, token compression, dashboard. Direct providers remain fallback. Must ensure upstream ToS allows proxy.' },
   { provider: 'google', action: 'Set GOOGLE_API_KEY in the deployment secret store', why: 'Real Gemini calls are refused (honest provider_not_configured error) until a key exists.' },
   { provider: 'search', action: 'Set a search provider key (TAVILY_API_KEY / BRAVE_SEARCH_API_KEY / SERPER_API_KEY) or AKBARAL_SEARCH_ENDPOINT', why: 'Without it the platform falls back to the keyless provider, which may be unavailable.' },
   { provider: 'payments', action: 'Connect the payment provider and set its webhook secret', why: 'Revenue can only be recorded as received against a verified provider/webhook reference.' },

@@ -57,6 +57,15 @@ export interface ToolSpec {
 
 export const PROVIDER_SPECS: ProviderSpec[] = [
   {
+    key: 'omniroute',
+    name: 'OmniRoute Gateway',
+    type: 'llm',
+    baseUrl: 'http://127.0.0.1:20128/v1',
+    docsUrl: 'https://github.com/diegosouzapw/OmniRoute',
+    envKey: 'OMNIROUTE_API_KEY',
+    capabilities: ['text', 'reasoning', 'coding', 'vision', 'multimodal', 'embedding', 'gateway', 'fallback', 'quota-aware'],
+  },
+  {
     key: 'openai',
     name: 'OpenAI',
     type: 'llm',
@@ -86,6 +95,83 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
 ];
 
 export const MODEL_SPECS: ModelSpec[] = [
+  // OmniRoute auto — cheapest viable provider, quota-aware fallback (primary when OmniRoute enabled)
+  {
+    key: 'auto',
+    name: 'OmniRoute Auto (cheapest viable)',
+    providerKey: 'omniroute',
+    capability: 'llm',
+    modality: 'multimodal',
+    contextTokens: 128000,
+    maxOutputTokens: 8192,
+    costInputPerMillionCents: 5,
+    costOutputPerMillionCents: 20,
+    latencyMs: 800,
+    reliability: 0.97,
+    isDefault: true,
+    capabilities: ['reasoning', 'coding', 'research', 'writing', 'speed', 'fallback', 'quota-aware'],
+  },
+  // OmniRoute expanded free/cheap models (via aggregated free tiers)
+  {
+    key: 'qwen3-coder-plus',
+    name: 'Qwen3 Coder Plus (via OmniRoute free)',
+    providerKey: 'omniroute',
+    capability: 'llm',
+    modality: 'text',
+    contextTokens: 128000,
+    maxOutputTokens: 16384,
+    costInputPerMillionCents: 0,
+    costOutputPerMillionCents: 0,
+    latencyMs: 900,
+    reliability: 0.92,
+    isDefault: false,
+    capabilities: ['coding', 'reasoning', 'speed'],
+  },
+  {
+    key: 'deepseek-v3',
+    name: 'DeepSeek V3 (via OmniRoute)',
+    providerKey: 'omniroute',
+    capability: 'llm',
+    modality: 'text',
+    contextTokens: 128000,
+    maxOutputTokens: 8192,
+    costInputPerMillionCents: 14,
+    costOutputPerMillionCents: 28,
+    latencyMs: 1200,
+    reliability: 0.96,
+    isDefault: false,
+    capabilities: ['reasoning', 'coding', 'research'],
+  },
+  {
+    key: 'llama-4-scout',
+    name: 'Llama 4 Scout (via OmniRoute/Groq free)',
+    providerKey: 'omniroute',
+    capability: 'llm',
+    modality: 'text',
+    contextTokens: 128000,
+    maxOutputTokens: 8192,
+    costInputPerMillionCents: 5,
+    costOutputPerMillionCents: 27,
+    latencyMs: 400,
+    reliability: 0.95,
+    isDefault: false,
+    capabilities: ['speed', 'reasoning', 'research'],
+  },
+  {
+    key: 'kimi-k2',
+    name: 'Kimi K2 (via OmniRoute free)',
+    providerKey: 'omniroute',
+    capability: 'llm',
+    modality: 'text',
+    contextTokens: 128000,
+    maxOutputTokens: 16384,
+    costInputPerMillionCents: 0,
+    costOutputPerMillionCents: 0,
+    latencyMs: 1000,
+    reliability: 0.90,
+    isDefault: false,
+    capabilities: ['reasoning', 'coding', 'long_context'],
+  },
   {
     key: 'gpt-4o',
     name: 'GPT-4o',
@@ -134,7 +220,7 @@ export const MODEL_SPECS: ModelSpec[] = [
   // Google Gemini models — verified against the official model list and
   // pricing (ai.google.dev/gemini-api/docs/models, September 2026).
   // gemini-2.0-flash was shut down by Google on 2026-06-01 (release notes:
-  // "Use gemini-3.5-flash or gemini-3.1-flash-lite instead") and returns
+  // \"Use gemini-3.5-flash or gemini-3.1-flash-lite instead\") and returns
   // HTTP 404 from generativelanguage.googleapis.com — it must never come
   // back into this catalog.
   {
@@ -382,7 +468,7 @@ export function syncModelCatalog(): void {
       capabilities: provider.capabilities,
       // Status encodes operator enable/disable, not credential availability.
       // Credential absence is surfaced by the router as provider_not_configured
-      // so the platform stays honest and never reports "no models registered".
+      // so the platform stays honest and never reports \"no models registered\".
       status: preserveStatus('model_providers', provider.key),
     });
   }
