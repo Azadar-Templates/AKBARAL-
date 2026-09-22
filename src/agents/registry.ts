@@ -123,6 +123,77 @@ export function syncAgentRegistry(): { created: number; updated: number; total: 
   return { created, updated, total: agentDefinitionCount() };
 }
 
+/**
+ * Non-blocking variant for production startup: yields to the event loop every
+ * N agents so that /api/ready and other health probes can be served while the
+ * 4,001-agent catalog is being synced. Without yielding, the synchronous loop
+ * blocks the Node.js event loop for ~35-45s and causes Blitz/StackHost probes
+ * to time out, showing “Starting up” with no output and then killing the
+ * container in a loop.
+ */
+export async function syncAgentRegistryNonBlocking(batchSize = 100): Promise<{ created: number; updated: number; total: number }> {
+  syncModelCatalog();
+  const categories = AGENT_CATEGORIES.map((category) => upsertAgentCategory(category));
+
+  const categoryBySlug = new Map(
+    categories.map((category) => {
+      const row = db.get<{ slug: string; id: string }>('SELECT slug, id FROM agent_categories WHERE id = ?', [category.id]);
+      return [row?.slug ?? '', row?.id ?? ''] as const;
+    }),
+  );
+
+  let created = 0;
+  let updated = 0;
+  let processed = 0;
+
+  for (const definition of generateAgentDefinitions()) {
+    const categoryId = categoryBySlug.get(definition.categorySlug) ?? null;
+    const agent = upsertAgent({
+      name: definition.name,
+      slug: definition.slug,
+      description: definition.specialization,
+      version: '1.0.0',
+      categoryId,
+      status: 'active',
+      config: definition as unknown as Record<string, unknown>,
+    });
+
+    const checksum = createHash('sha256').update(JSON.stringify(definition)).digest('hex');
+    const latest = getLatestAgentVersion(agent.id);
+    const latestChecksum = latest ? (latest.checksum as string) : null;
+    if (latestChecksum !== checksum) {
+      insertAgentVersion({
+        agentId: agent.id,
+        version: '1.0.0',
+        definition,
+        checksum,
+        status: 'active',
+        changelog: 'initial registered definition',
+      });
+      created += 1;
+    }
+
+    for (const toolKey of definition.toolPermissions) {
+      linkAgentTool({ agentId: agent.id, toolKey, permission: 'read' });
+    }
+    upsertAgentMarketplace({
+      agentId: agent.id,
+      priceCents: definition.costUsage.estimatedCents <= 1 ? 0 : 100 * definition.costUsage.estimatedCents,
+      currency: 'USD',
+      status: 'published',
+      tags: definition.capabilities,
+    });
+
+    processed += 1;
+    if (processed % batchSize === 0) {
+      // Yield to event loop so HTTP health probes can be served
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
+  return { created, updated, total: agentDefinitionCount() };
+}
+
 export function countAgentRegistry(): number {
   return db.get<{ count: number }>('SELECT COUNT(*) AS count FROM agents')?.count ?? 0;
 }

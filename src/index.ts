@@ -9,7 +9,7 @@ import { createApiServer } from './app';
 import { db } from './db';
 import { syncModelCatalog } from './models';
 import { ensureBootstrapPlans } from './db';
-import { syncAgentRegistry, countAgentRegistry } from './agents/registry';
+import { syncAgentRegistryNonBlocking, countAgentRegistry } from './agents/registry';
 import { agentDefinitionCount } from './agents/catalog';
 import { recoverInterruptedWork } from './orchestrator/recovery';
 import { executionQueue } from './orchestrator/queue';
@@ -100,18 +100,23 @@ async function start(): Promise<void> {
   // no useful log. Now the API is already listening on :4000 (and the web
   // tier via the Next.js proxy is already healthy), so the sync can run in
   // the background and catch up without failing the probe.
+  // Blitz fix (2026-09-22): the previous setImmediate wrapper still blocked
+  // the event loop for ~40s during sync, causing /api/ready to time out and
+  // Blitz to show “Starting up” indefinitely with no output. The non-blocking
+  // variant yields every 100 agents so health probes are served immediately.
   if (countAgentRegistry() < agentDefinitionCount()) {
-    console.log('[akbaral] agent registry incomplete — syncing specialist catalog...');
+    console.log('[akbaral] agent registry incomplete — syncing specialist catalog (non-blocking, batch 20)...');
     setImmediate(() => {
-      try {
-        const registry = syncAgentRegistry();
-        console.log(`[akbaral] agent registry ready: ${registry.total} specialists`);
-      } catch (error) {
-        console.error(
-          '[akbaral] failed to sync catalog (background):',
-          error instanceof Error ? error.message : String(error),
-        );
-      }
+      syncAgentRegistryNonBlocking(20)
+        .then((registry) => {
+          console.log(`[akbaral] agent registry ready: ${registry.total} specialists`);
+        })
+        .catch((error) => {
+          console.error(
+            '[akbaral] failed to sync catalog (background):',
+            error instanceof Error ? error.message : String(error),
+          );
+        });
     });
   }
 

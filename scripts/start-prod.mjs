@@ -91,16 +91,13 @@ if (!['both', 'web', 'api'].includes(ROLES)) {
  * /api, /uploads and /ws to the API tier (next.config.mjs). So the public port
  * belongs to the web tier, and the API keeps an internal port.
  *
- * Platform hosts (StackHost, Render, Fly, …) inject the port they route
- * traffic to as PORT. Precedence, chosen so no existing deployment changes
- * behaviour:
- *   web — AKBARAL_WEB_PORT, else PORT when it does not collide with the API
- *         port, else 3000
- *   api — AKBARAL_API_PORT, else 4000
- * A PORT that equals the API port therefore keeps its historical meaning
- * (preview/panel scripts export PORT=<api port>) and the web tier stays on
- * 3000, while a platform-injected PORT on any other value moves the public
- * tier as the platform expects.
+ * Platform hosts (StackHost, Render, Fly, Blitz…) inject the port they route
+ * traffic to as PORT. Precedence (Blitz fix 2026-09-22):
+ *   web — AKBARAL_WEB_PORT, else PORT, else 3000  (always honors PORT)
+ *   api — AKBARAL_API_PORT, else 4000, but if it collides with the public
+ *         web port, it moves to 4001 (or +1) so the public PORT is always
+ *         served by the web tier. This prevents Blitz “Starting up” when it
+ *         injects PORT=4000 and previously the web stayed on 3000.
  */
 const portOf = (value) => {
   const raw = String(value ?? '').trim();
@@ -108,10 +105,20 @@ const portOf = (value) => {
   const parsed = Number(raw);
   return parsed >= 1 && parsed <= 65535 ? parsed : null;
 };
-const apiPort = portOf(process.env.AKBARAL_API_PORT) ?? 4000;
+const apiPortRaw = portOf(process.env.AKBARAL_API_PORT) ?? 4000;
 const explicitWebPort = portOf(process.env.AKBARAL_WEB_PORT);
 const platformPort = portOf(process.env.PORT);
-const webPort = explicitWebPort ?? (platformPort !== null && platformPort !== apiPort ? platformPort : 3000);
+let webPort = explicitWebPort ?? platformPort ?? 3000;
+let apiPort = apiPortRaw;
+// If web and api would collide (e.g. Blitz injects PORT=4000), keep web on
+// the public PORT and move api to the next available port.
+if (webPort === apiPort) {
+  apiPort = apiPort === 4000 ? 4001 : apiPort + 1;
+  // Avoid secondary collision with explicit web port
+  if (explicitWebPort !== null && apiPort === explicitWebPort) {
+    apiPort += 1;
+  }
+}
 for (const [name, value] of [['AKBARAL_WEB_PORT', process.env.AKBARAL_WEB_PORT], ['AKBARAL_API_PORT', process.env.AKBARAL_API_PORT], ['PORT', process.env.PORT]]) {
   if (String(value ?? '').trim() !== '' && portOf(value) === null) {
     console.error(`[akbaral] invalid ${name} "${value}" (expected an integer between 1 and 65535)`);
@@ -333,7 +340,10 @@ if (ROLES !== 'web') {
 scheduleBackup();
 
 if (ROLES !== 'api') {
-  const web = launch('web', 'node_modules/.bin/next', ['start', '-p', String(webPort), '-H', '0.0.0.0'], { NODE_ENV: 'production' });
+  const web = launch('web', 'node_modules/.bin/next', ['start', '-p', String(webPort), '-H', '0.0.0.0'], {
+    NODE_ENV: 'production',
+    NEXT_BACKEND_URL: `http://127.0.0.1:${apiPort}`,
+  });
   web.on('exit', (code) => {
     console.log(`[akbaral] web exited with code ${code}`);
     shutdown();

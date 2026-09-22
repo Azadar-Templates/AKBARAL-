@@ -1,0 +1,71 @@
+# AKBARAL! — Mirror immutable GHCR image to Docker Hub (no rebuild)
+#
+# Copies already-published production image:
+#   ghcr.io/azadar-templates/akbaral:2917b939152f231f90a08a231a4a597740fb5be6 (Blitz Internal Server Error fix, user 1000 writable)
+# to:
+#   docker.io/mrzain555/akbaral:latest
+#
+# Requirements:
+# - Do NOT rebuild (no build-push-action, no npm, no Dockerfile)
+# - Pull exact immutable SHA tag from GHCR
+# - Retag + push to Docker Hub
+# - Credentials ONLY from GitHub Secrets DOCKERHUB_USERNAME / DOCKERHUB_TOKEN
+# - Never echo token
+# - Manual trigger workflow_dispatch
+#
+# Docker Hub repo must exist as public: mrzain555/akbaral
+
+name: mirror-ghcr-to-dockerhub
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/mirror-ghcr-to-dockerhub.yml]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR (pull immutable image)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub (secure)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull immutable GHCR image and push to Docker Hub (no rebuild)
+        run: |
+          set -euo pipefail
+          SRC="ghcr.io/azadar-templates/akbaral:2917b939152f231f90a08a231a4a597740fb5be6"
+          DEST_LATEST="docker.io/mrzain555/akbaral:latest"
+          DEST_SHA="docker.io/mrzain555/akbaral:2917b939152f231f90a08a231a4a597740fb5be6"
+
+          echo "Source: $SRC"
+          echo "Destination: $DEST_LATEST"
+          echo "Pulling immutable source (linux/amd64)..."
+          docker pull "$SRC"
+
+          echo "Retagging..."
+          docker tag "$SRC" "$DEST_LATEST"
+          docker tag "$SRC" "$DEST_SHA"
+
+          echo "Pushing to Docker Hub..."
+          docker push "$DEST_LATEST"
+          docker push "$DEST_SHA"
+
+          echo "Verifying manifest (no secret exposure)..."
+          docker buildx imagetools inspect "$DEST_LATEST" 2>&1 | head -n 50 || docker manifest inspect "$DEST_LATEST" 2>&1 | head -n 50 || true
+
+          echo "Mirror complete: $SRC -> $DEST_LATEST"
+          echo "Immutable trace tag also pushed: $DEST_SHA"

@@ -23,6 +23,8 @@ on:
       - "design-system/**"
       - "mobile/**"
       - "**.md"
+      - ".github/workflows/mirror-ghcr-to-dockerhub.yml"
+      - ".github/workflows/blitz-audit.yml"
   workflow_dispatch:
 
 permissions:

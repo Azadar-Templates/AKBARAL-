@@ -30,7 +30,10 @@ ENV AKBARAL_UPLOAD_DIR=/data/uploads
 ENV DATABASE_URL=file:/data/akbaral.db
 ENV HOST=0.0.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates postgresql-client && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /data/uploads /data/backups
+# Blitz fix (2026-09-22): blitz.cloud runs as user 1000:1000 with all caps dropped, never as root.
+# The image must be writable by 1000, otherwise /data/akbaral.db open fails with SQLITE_CANTOPEN
+# and the container shows Internal Server Error with no useful log.
+RUN mkdir -p /data/uploads /data/backups /app/data && chown -R 1000:1000 /data /app && chmod -R 755 /app && chmod -R 777 /data
 VOLUME ["/data"]
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
@@ -39,16 +42,15 @@ COPY package.json next.config.mjs ./
 COPY db ./db
 COPY public ./public
 COPY scripts ./scripts
-RUN chmod +x scripts/entrypoint.sh
+RUN chmod +x scripts/entrypoint.sh && chown -R 1000:1000 /app && chmod -R 755 /app && chmod -R 777 /data
 # Build stamp: the commit that produced this image. CI passes
 # --build-arg GIT_SHA=<sha>; any runtime (Modal, Docker hosts) can then
 # prove which code it is running instead of trusting a mutable :latest tag.
 ARG GIT_SHA=unknown
-RUN echo "${GIT_SHA}" > /app/.image-version
-EXPOSE 3000 4000
-# Port-aware: mirrors scripts/start-prod.mjs precedence (AKBARAL_WEB_PORT, else a
-# PORT that does not collide with the API port, else 3000) so the image reports
-# healthy on hosts that inject their own public port.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "const api=Number(process.env.AKBARAL_API_PORT||4000);const pub=process.env.AKBARAL_WEB_PORT||(process.env.PORT&&Number(process.env.PORT)!==api?process.env.PORT:3000);fetch('http://127.0.0.1:'+pub+'/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+RUN echo "${GIT_SHA}" > /app/.image-version && chown 1000:1000 /app/.image-version
+EXPOSE 3000 4000 8080
+# Port-aware: mirrors scripts/start-prod.mjs (web honors PORT, api moves on collision)
+# so the image reports healthy on hosts that inject their own public port (Blitz).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "let api=Number(process.env.AKBARAL_API_PORT||4000);let pub=Number(process.env.AKBARAL_WEB_PORT||process.env.PORT||3000);if(pub===api)api=api===4000?4001:api+1;fetch('http://127.0.0.1:'+pub+'/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["sh", "scripts/entrypoint.sh"]
