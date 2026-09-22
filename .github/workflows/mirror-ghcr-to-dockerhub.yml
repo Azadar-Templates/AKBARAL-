@@ -1,7 +1,7 @@
 # AKBARAL! — Mirror immutable GHCR image to Docker Hub (no rebuild)
 #
 # Copies already-published production image:
-#   ghcr.io/azadar-templates/akbaral:9ea6e25329f6f6de74bc4d60532b06fdac708418 (Blitz fix, latest)
+#   ghcr.io/azadar-templates/akbaral:0f966a94240b9c7c866c8fdb523aad2b46b00243 (Blitz fix, final)
 # to:
 #   docker.io/mrzain555/akbaral:latest
 #
@@ -47,9 +47,9 @@ jobs:
       - name: Pull immutable GHCR image and push to Docker Hub (no rebuild)
         run: |
           set -euo pipefail
-          SRC="ghcr.io/azadar-templates/akbaral:9ea6e25329f6f6de74bc4d60532b06fdac708418"
+          SRC="ghcr.io/azadar-templates/akbaral:0f966a94240b9c7c866c8fdb523aad2b46b00243"
           DEST_LATEST="docker.io/mrzain555/akbaral:latest"
-          DEST_SHA="docker.io/mrzain555/akbaral:9ea6e25329f6f6de74bc4d60532b06fdac708418"
+          DEST_SHA="docker.io/mrzain555/akbaral:0f966a94240b9c7c866c8fdb523aad2b46b00243"
 
           echo "Source: $SRC"
           echo "Destination: $DEST_LATEST"
