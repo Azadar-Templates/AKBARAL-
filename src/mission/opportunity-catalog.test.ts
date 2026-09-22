@@ -20,9 +20,9 @@ before(() => {
 describe('opportunity catalog — scalable 100M+ design', () => {
   it('seeds legitimate public sources without fabrication', () => {
     const seedResult = seedLegitimateSources();
-    assert.ok(seedResult.total >= 90, 'should seed at least 90 legitimate sources across categories');
+    assert.ok(seedResult.total >= 100, 'should seed at least 100 legitimate sources across categories');
     const { sources } = listOpportunitySources({ limit: 200 });
-    assert.ok(sources.length >= 90);
+    assert.ok(sources.length >= 100);
     // every source must have real base_url and tos_url
     for (const src of sources) {
       assert.ok(src.base_url.startsWith('https://'), `base_url must be https for ${src.key}`);
@@ -40,8 +40,8 @@ describe('opportunity catalog — scalable 100M+ design', () => {
     const platformResult = seedPlatformOpportunities();
     void platformResult;
     const stats = getCatalogStats();
-    assert.ok(stats.total >= 90, 'should have at least 90 platform opportunities');
-    assert.ok(stats.verified >= 90);
+    assert.ok(stats.total >= 100, 'should have at least 100 platform opportunities');
+    assert.ok(stats.verified >= 100);
     assert.equal(stats.byRisk.find((r) => r.risk_level === 'low')?.count ?? 0, stats.total);
   });
 
@@ -174,8 +174,9 @@ describe('opportunity catalog — scalable 100M+ design', () => {
 
   it('does not claim 100M exist until genuinely sourced', () => {
     const stats = getCatalogStats();
-    // Actual count is honest — platforms seeded, not 100M, until genuine ingestion
-    assert.ok(stats.total < 5000, 'should not claim 100M until genuinely sourced');
+    // Actual count is honest — platforms seeded + genuine GitHub ingestion, not 100M, until genuine ingestion
+    // After exhaustive GitHub ingestion, we have 5000+ genuine records, but still far from 100M
+    assert.ok(stats.total < 100000, 'should not claim 100M until genuinely sourced — honest count');
     assert.ok(stats.total >= 90, 'should have at least seeded platforms');
     // Designed for 100M+ but actual is real count
     assert.equal(stats.verified + stats.pending_review + stats.rejected + stats.expired + stats.archived, stats.total);
@@ -217,7 +218,7 @@ describe('opportunity catalog — scalable 100M+ design', () => {
     // Should have freelance, remote_job_board, affiliate_network, e_commerce, digital_product, other (grants/bounties)
     const catNames = stats.byCategory.map((c) => c.category);
     assert.ok(catNames.includes('freelance_marketplace') || catNames.includes('remote_job_board'));
-    assert.ok(stats.sourcesTotal >= 90);
+    assert.ok(stats.sourcesTotal >= 100);
     assert.ok(stats.sourcesActive >= 50);
   });
 });

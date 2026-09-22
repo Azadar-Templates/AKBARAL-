@@ -972,6 +972,216 @@ export async function fetchWorkingNomadsJobs(limit = 50): Promise<FetchedOpportu
   return mapped;
 }
 
+// ── Additional free/no-card GitHub-based fetchers (api.github.com works in sandbox) ──
+
+async function fetchGitHubSearch(query: string, limit = 50, page = 1, cachePrefix: string): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  const cacheKey = `${cachePrefix}:${query}:${limit}:${page}`;
+  const cached = getCachedResponse(cacheKey);
+  if (cached && !cached.expired) return cached.response as { jobs: FetchedOpportunity[]; hasMore: boolean; total: number };
+
+  const perPage = Math.min(100, limit);
+  const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}`;
+  const headers: Record<string, string> = { 'User-Agent': USER_AGENT, Accept: 'application/vnd.github.v3+json' };
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    if (res.status === 403) {
+      const remaining = res.headers.get('x-ratelimit-remaining');
+      if (remaining === '0') throw new Error(`GitHub rate limited, remaining 0, retry after ${res.headers.get('x-ratelimit-reset')}`);
+    }
+    throw new Error(`GitHub Search API ${res.status} for query ${query}`);
+  }
+  const data = (await res.json()) as { items?: any[]; total_count?: number };
+  const items = data.items ?? [];
+  const mapped: FetchedOpportunity[] = items.slice(0, limit).map((issue: any) => {
+    const title = String(issue.title ?? 'GitHub Issue').slice(0, 500);
+    const repo = issue.repository_url ? String(issue.repository_url).split('/').slice(-2).join('/') : 'unknown';
+    const amountMatch = title.match(/\$(\d+(?:,\d+)*(?:\.\d+)?)/);
+    const amountCents = amountMatch ? Math.round(Number(amountMatch[1].replace(/,/g, '')) * 100) : null;
+    return {
+      platform: `GitHub - ${repo}`,
+      opportunity_type: 'other',
+      title: `${title} — ${repo}`,
+      description: String(issue.body ?? '').slice(0, 5000),
+      category: 'other',
+      country_eligibility: ['global'],
+      skills: (issue.labels ?? []).map((l: any) => String(l.name ?? '').toLowerCase()).slice(0, 10),
+      payout_currency: 'USD',
+      payout_method: 'github',
+      payout_min_cents: amountCents,
+      payout_max_cents: amountCents,
+      payout_frequency: 'one_time',
+      api_available: true,
+      automation_permission: 'allowed' as const,
+      tos_url: 'https://docs.github.com/en/site-policy/github-terms/github-terms-of-service',
+      source_url: String(issue.html_url ?? `https://github.com/issues/${issue.id}`),
+      external_id: String(issue.id ?? issue.html_url ?? ''),
+      risk_level: 'low' as const,
+      requirements: `Repo: ${repo}. Comments: ${issue.comments ?? 0}. Labels: ${(issue.labels ?? []).map((l: any) => l.name).join(', ')}.`,
+    };
+  });
+
+  const total = Number(data.total_count ?? 0);
+  const hasMore = items.length === perPage && page * perPage < Math.min(total, 1000); // GitHub search caps at 1000
+  const result = { jobs: mapped, hasMore, total };
+  setCachedResponse(cacheKey, null, result, 1800);
+  return result;
+}
+
+export async function fetchGitHubGoodFirstIssues(limit = 50, page = 1): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  return fetchGitHubSearch('label:\"good first issue\" state:open', limit, page, 'github_good_first');
+}
+
+export async function fetchGitHubHelpWanted(limit = 50, page = 1): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  return fetchGitHubSearch('label:\"help wanted\" state:open', limit, page, 'github_help_wanted');
+}
+
+export async function fetchGitHubHacktoberfest(limit = 50, page = 1): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  return fetchGitHubSearch('label:hacktoberfest state:open', limit, page, 'github_hacktoberfest');
+}
+
+export async function fetchGitHubBugBountyLabel(limit = 50, page = 1): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  return fetchGitHubSearch('label:bug-bounty state:open', limit, page, 'github_bug_bounty');
+}
+
+export async function fetchGitHubSecurity(limit = 50, page = 1): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  return fetchGitHubSearch('label:security state:open', limit, page, 'github_security');
+}
+
+// Enhanced GitHub bounties with pagination support
+export async function fetchGitHubBountiesPaginated(limit = 50, page = 1): Promise<{ jobs: FetchedOpportunity[]; hasMore: boolean; total: number }> {
+  // Combine multiple bounty queries into one OR query for better coverage
+  const query = 'label:\"💎 Bounty\" OR label:bounty OR label:\"💵 Bounty\" OR \"bounty\" in:title state:open is:issue';
+  return fetchGitHubSearch(query, limit, page, 'github_bounties_paginated');
+}
+
+// ── Hacker News Jobs via Algolia (free no key, no card) ──
+export async function fetchHackerNewsJobs(limit = 50, page = 0): Promise<{ jobs: FetchedOpportunity[]; nextPage: number | null }> {
+  const cacheKey = `hacker_news:${limit}:${page}`;
+  const cached = getCachedResponse(cacheKey);
+  if (cached && !cached.expired) return cached.response as { jobs: FetchedOpportunity[]; nextPage: number | null };
+
+  const params = new URLSearchParams();
+  params.set('tags', 'story');
+  params.set('query', 'Who is hiring');
+  params.set('page', String(page));
+  params.set('hitsPerPage', String(Math.min(100, limit)));
+  const url = `https://hn.algolia.com/api/v1/search_by_date?${params.toString()}`;
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  if (!res.ok) throw new Error(`Hacker News Algolia API ${res.status}`);
+  const data = (await res.json()) as { hits?: any[]; page?: number; nbPages?: number };
+  const hits = data.hits ?? [];
+  const mapped: FetchedOpportunity[] = hits.slice(0, limit).map((hit: any) => ({
+    platform: 'Hacker News',
+    opportunity_type: 'remote_job',
+    title: String(hit.title ?? 'HN Who is Hiring').slice(0, 500),
+    description: String(hit.story_text ?? hit.title ?? '').slice(0, 5000),
+    category: 'remote_job_board',
+    country_eligibility: ['global'],
+    skills: ['general'],
+    payout_currency: 'USD',
+    payout_method: 'bank',
+    payout_frequency: 'monthly',
+    api_available: true,
+    automation_permission: 'allowed' as const,
+    tos_url: 'https://news.ycombinator.com/legal',
+    source_url: String(hit.url ?? `https://news.ycombinator.com/item?id=${hit.objectID ?? ''}`),
+    external_id: String(hit.objectID ?? hit.url ?? ''),
+    risk_level: 'low' as const,
+    requirements: `Points: ${hit.points ?? 0}. Author: ${hit.author ?? 'unknown'}.`,
+  }));
+
+  const result = { jobs: mapped, nextPage: page + 1 < (data.nbPages ?? 1) ? page + 1 : null };
+  setCachedResponse(cacheKey, getOpportunitySourceByKey('hacker_news_jobs')?.id ?? null, result, 3600);
+  return result;
+}
+
+// ── Reddit r/forhire and r/remotejobs (public JSON, free no key, requires User-Agent) ──
+export async function fetchRedditJobs(subreddit: string, limit = 50, after?: string | null): Promise<{ jobs: FetchedOpportunity[]; nextAfter: string | null }> {
+  const cacheKey = `reddit:${subreddit}:${limit}:${after ?? 'first'}`;
+  const cached = getCachedResponse(cacheKey);
+  if (cached && !cached.expired) return cached.response as { jobs: FetchedOpportunity[]; nextAfter: string | null };
+
+  const params = new URLSearchParams();
+  params.set('limit', String(Math.min(100, limit)));
+  if (after) params.set('after', after);
+  const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/new.json?${params.toString()}`;
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  if (!res.ok) throw new Error(`Reddit r/${subreddit} API ${res.status}`);
+  const data = (await res.json()) as { data?: { children?: any[]; after?: string | null } };
+  const children = data.data?.children ?? [];
+  const mapped: FetchedOpportunity[] = children.slice(0, limit).map((child: any) => {
+    const post = child.data ?? {};
+    const title = String(post.title ?? 'Reddit Job').slice(0, 500);
+    return {
+      platform: `Reddit r/${subreddit}`,
+      opportunity_type: subreddit === 'forhire' ? 'gig' : 'remote_job',
+      title,
+      description: String(post.selftext ?? '').slice(0, 5000),
+      category: subreddit === 'forhire' ? 'freelance_marketplace' : 'remote_job_board',
+      country_eligibility: ['global'],
+      skills: [subreddit],
+      payout_currency: 'USD',
+      payout_method: 'paypal',
+      payout_frequency: subreddit === 'forhire' ? 'per_task' : 'monthly',
+      api_available: true,
+      automation_permission: 'allowed' as const,
+      tos_url: 'https://www.redditinc.com/policies/user-agreement',
+      source_url: String(`https://www.reddit.com${post.permalink ?? `/r/${subreddit}/comments/${post.id ?? ''}`}`),
+      external_id: String(post.id ?? ''),
+      risk_level: 'medium' as const,
+      requirements: `Subreddit: r/${subreddit}. Author: ${post.author ?? 'unknown'}. Score: ${post.score ?? 0}.`,
+    };
+  });
+
+  const result = { jobs: mapped, nextAfter: data.data?.after ?? null };
+  setCachedResponse(cacheKey, getOpportunitySourceByKey(`reddit_${subreddit}`)?.id ?? null, result, 1800);
+  return result;
+}
+
+export async function fetchRedditForHire(limit = 50, after?: string | null) {
+  return fetchRedditJobs('forhire', limit, after);
+}
+
+export async function fetchRedditRemoteJobs(limit = 50, after?: string | null) {
+  return fetchRedditJobs('remotejobs', limit, after);
+}
+
+// ── Lobste.rs jobs (free public JSON) ──
+export async function fetchLobstersJobs(limit = 50): Promise<FetchedOpportunity[]> {
+  const cacheKey = `lobsters:${limit}`;
+  const cached = getCachedResponse(cacheKey);
+  if (cached && !cached.expired) return cached.response as FetchedOpportunity[];
+
+  const url = `https://lobste.rs/jobs.json`;
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  if (!res.ok) throw new Error(`Lobste.rs API ${res.status}`);
+  const data = (await res.json()) as any[];
+  const mapped: FetchedOpportunity[] = data.slice(0, limit).map((job: any) => ({
+    platform: 'Lobste.rs',
+    opportunity_type: 'remote_job',
+    title: String(job.title ?? 'Lobste.rs Job').slice(0, 500),
+    description: String(job.description ?? '').slice(0, 5000),
+    category: 'remote_job_board',
+    country_eligibility: ['global'],
+    skills: (job.tags ?? []).map((t: string) => String(t).toLowerCase()).slice(0, 10),
+    payout_currency: 'USD',
+    payout_method: 'bank',
+    payout_frequency: 'monthly',
+    api_available: true,
+    automation_permission: 'allowed' as const,
+    tos_url: 'https://lobste.rs/about',
+    source_url: String(job.url ?? `https://lobste.rs/s/${job.short_id ?? ''}`),
+    external_id: String(job.short_id ?? job.url ?? ''),
+    risk_level: 'low' as const,
+    requirements: `Company: ${job.company ?? 'unknown'}. Location: ${job.location ?? 'unknown'}.`,
+  }));
+
+  setCachedResponse(cacheKey, getOpportunitySourceByKey('lobsters_jobs')?.id ?? null, mapped, 3600);
+  return mapped;
+}
+
 /**
  * Generic ingestion for a source — respects rate limits, caching, retries, incremental
  * Supports cursor pagination, resumable ingestion, and 100M+ scale
@@ -1024,10 +1234,8 @@ export async function ingestSource(sourceKey: string, options?: { limit?: number
     } else if (sourceKey === 'challenge_gov') {
       fetched = await fetchChallengeGov(options?.limit ?? 50);
     } else if (sourceKey === 'greenhouse') {
-      // For greenhouse, cursor is company slug, payload contains company list
-      const company = options?.cursor ?? 'stripe'; // default example company that uses Greenhouse
+      const company = options?.cursor ?? 'stripe';
       fetched = await fetchGreenhouseJobs(company, options?.limit ?? 50);
-      // Next cursor would be next company in list — handled by queue payload
     } else if (sourceKey === 'lever') {
       const company = options?.cursor ?? 'netflix';
       fetched = await fetchLeverJobs(company, options?.limit ?? 50);
@@ -1038,11 +1246,47 @@ export async function ingestSource(sourceKey: string, options?: { limit?: number
       fetched = await fetchGrantsGov(options?.limit ?? 50);
     } else if (sourceKey === 'working_nomads') {
       fetched = await fetchWorkingNomadsJobs(options?.limit ?? 50);
-    } else if (sourceKey === 'remotejobs_org') {
-      fetched = await fetchRemoteJobsOrg(options?.limit ?? 50);
+    } else if (sourceKey === 'github_good_first_issue') {
+      const page = options?.cursor ? Number(options.cursor) : 1;
+      const result = await fetchGitHubGoodFirstIssues(options?.limit ?? 50, page);
+      fetched = result.jobs;
+      nextCursor = result.hasMore ? String(page + 1) : null;
+    } else if (sourceKey === 'github_help_wanted') {
+      const page = options?.cursor ? Number(options.cursor) : 1;
+      const result = await fetchGitHubHelpWanted(options?.limit ?? 50, page);
+      fetched = result.jobs;
+      nextCursor = result.hasMore ? String(page + 1) : null;
+    } else if (sourceKey === 'github_hacktoberfest') {
+      const page = options?.cursor ? Number(options.cursor) : 1;
+      const result = await fetchGitHubHacktoberfest(options?.limit ?? 50, page);
+      fetched = result.jobs;
+      nextCursor = result.hasMore ? String(page + 1) : null;
+    } else if (sourceKey === 'github_bug_bounty_label') {
+      const page = options?.cursor ? Number(options.cursor) : 1;
+      const result = await fetchGitHubBugBountyLabel(options?.limit ?? 50, page);
+      fetched = result.jobs;
+      nextCursor = result.hasMore ? String(page + 1) : null;
+    } else if (sourceKey === 'github_security') {
+      const page = options?.cursor ? Number(options.cursor) : 1;
+      const result = await fetchGitHubSecurity(options?.limit ?? 50, page);
+      fetched = result.jobs;
+      nextCursor = result.hasMore ? String(page + 1) : null;
+    } else if (sourceKey === 'hacker_news_jobs') {
+      const page = options?.cursor ? Number(options.cursor) : 0;
+      const result = await fetchHackerNewsJobs(options?.limit ?? 50, page);
+      fetched = result.jobs;
+      nextCursor = result.nextPage !== null ? String(result.nextPage) : null;
+    } else if (sourceKey === 'reddit_forhire') {
+      const result = await fetchRedditForHire(options?.limit ?? 50, options?.cursor ?? null);
+      fetched = result.jobs;
+      nextCursor = result.nextAfter;
+    } else if (sourceKey === 'reddit_remotejobs') {
+      const result = await fetchRedditRemoteJobs(options?.limit ?? 50, options?.cursor ?? null);
+      fetched = result.jobs;
+      nextCursor = result.nextAfter;
+    } else if (sourceKey === 'lobsters_jobs') {
+      fetched = await fetchLobstersJobs(options?.limit ?? 50);
     } else if (sourceKey === 'weworkremotely') {
-      // WWR RSS is not JSON, but we can attempt to fetch as text and parse minimally
-      // For now, treat as requiring manual verification to avoid fragile RSS parsing in this iteration
       throw new Error(`Source ${sourceKey} uses RSS feeds — manual verification recommended, or implement RSS parser with ToS check`);
     } else {
       // For sources requiring API key or manual, we don't auto-fetch without key
