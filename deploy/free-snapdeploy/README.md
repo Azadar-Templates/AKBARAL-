@@ -1,4 +1,8 @@
-# AKBARAL! — Free Production on SnapDeploy (Path E)
+# ⚠️ REJECTED 2026-09-22 — SnapDeploy requires $1/card verification (per user live account)
+
+> **2026-09-22 update:** SnapDeploy docs claim "no credit card" but user account hit $1/card verification screen. Violates NO $1 verification + NO card constraints. Rejected per task. Full verification: `docs/FINAL_HOSTING_VERIFICATION_2026-09-22.md`
+
+# AKBARAL! — Free Production on SnapDeploy (Path E) — RETIRED
 
 > **Why this exists (2026-09-13):** every prior free path died — Modal hit
 > its $1 cap, Render demands a card at signup, **Zeabur's dashboard now
