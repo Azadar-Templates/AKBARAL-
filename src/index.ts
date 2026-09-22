@@ -105,9 +105,9 @@ async function start(): Promise<void> {
   // Blitz to show “Starting up” indefinitely with no output. The non-blocking
   // variant yields every 100 agents so health probes are served immediately.
   if (countAgentRegistry() < agentDefinitionCount()) {
-    console.log('[akbaral] agent registry incomplete — syncing specialist catalog (non-blocking)...');
+    console.log('[akbaral] agent registry incomplete — syncing specialist catalog (non-blocking, batch 20)...');
     setImmediate(() => {
-      syncAgentRegistryNonBlocking(100)
+      syncAgentRegistryNonBlocking(20)
         .then((registry) => {
           console.log(`[akbaral] agent registry ready: ${registry.total} specialists`);
         })
