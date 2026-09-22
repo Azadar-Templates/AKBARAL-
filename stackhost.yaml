@@ -70,7 +70,7 @@ runtime:
 commands:
   package: ""
   build: []
-  start: "sh scripts/entrypoint.sh"
+  start: "node scripts/start-prod.mjs"
 
 # Deploy target: the repository's `main` branch (it already contains the full
 # application — the earlier note about `main` being README-only predates the
