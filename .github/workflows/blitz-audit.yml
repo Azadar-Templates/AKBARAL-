@@ -1,0 +1,87 @@
+name: blitz-audit
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect published Docker Hub image config
+        run: |
+          echo "Pulling mrzain555/akbaral:latest (public, no auth needed for inspect via docker pull)"
+          docker pull docker.io/mrzain555/akbaral:latest
+          echo "=== docker inspect Config ==="
+          docker inspect docker.io/mrzain555/akbaral:latest --format='Cmd={{.Config.Cmd}} Entrypoint={{.Config.Entrypoint}} Env={{.Config.Env}} ExposedPorts={{.Config.ExposedPorts}} WorkingDir={{.Config.WorkingDir}}'
+          echo "=== Image .image-version ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest cat /app/.image-version || true
+          echo "=== List /app ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest ls -lh /app/*.mjs /app/scripts/ 2>&1 | head -n 50 || true
+          echo "=== Check entrypoint.sh ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest cat /app/scripts/entrypoint.sh
+          echo "=== Check start-prod.mjs port logic (first 150 lines) ==="
+          docker run --rm docker.io/mrzain555/akbaral:latest sed -n '1,150p' /app/scripts/start-prod.mjs
+
+      - name: Run image with ONLY PORT env (Blitz minimal) and capture startup
+        run: |
+          set -x
+          echo "=== Test 1: Blitz minimal - only PORT=10000 ==="
+          docker rm -f blitz-test 2>/dev/null || true
+          # Blitz injects PORT, expects app to bind to it. No other env vars.
+          # Our Dockerfile already has NODE_ENV=production, DATABASE_URL, etc.
+          docker run -d --name blitz-test -p 10000:10000 -e PORT=10000 docker.io/mrzain555/akbaral:latest
+          echo "Container started, waiting 5s for initial logs..."
+          sleep 5
+          docker logs blitz-test || true
+          echo "=== curl /api/ready on PORT 10000 (web tier) ==="
+          for i in $(seq 1 20); do
+            code=$(curl -sS -m 3 -o /tmp/out -w '%{http_code}' http://127.0.0.1:10000/api/ready 2>&1 || echo "000")
+            echo "attempt $i: $code $(cat /tmp/out | head -c 200)"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 3
+            docker logs --tail 20 blitz-test || true
+          done
+          echo "=== Full logs after 60s ==="
+          docker logs blitz-test || true
+          docker rm -f blitz-test || true
+
+          echo "=== Test 2: PORT=3000 (common default) ==="
+          docker run -d --name blitz-test -p 3000:3000 -e PORT=3000 docker.io/mrzain555/akbaral:latest
+          sleep 5
+          docker logs blitz-test || true
+          for i in $(seq 1 20); do
+            code=$(curl -sS -m 3 -o /tmp/out -w '%{http_code}' http://127.0.0.1:3000/api/ready 2>&1 || echo "000")
+            echo "attempt $i: $code"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 3
+          done
+          docker logs blitz-test || true
+          docker rm -f blitz-test || true
+
+          echo "=== Test 3: No PORT env (should default 3000) ==="
+          docker run -d --name blitz-test -p 3000:3000 docker.io/mrzain555/akbaral:latest
+          sleep 5
+          docker logs blitz-test || true
+          for i in $(seq 1 10); do
+            code=$(curl -sS -m 3 -o /tmp/out -w '%{http_code}' http://127.0.0.1:3000/api/ready 2>&1 || echo "000")
+            echo "attempt $i: $code"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 3
+          done
+          docker logs blitz-test || true
+          docker rm -f blitz-test || true
+
+      - name: Check if image honors PORT and binds to 0.0.0.0
+        run: |
+          docker run -d --name blitz-test -p 8080:8080 -e PORT=8080 docker.io/mrzain555/akbaral:latest
+          sleep 8
+          docker logs blitz-test
+          echo "=== netstat inside container ==="
+          docker exec blitz-test sh -c "ss -tlnp || netstat -tlnp || cat /proc/net/tcp" 2>&1 | head -n 100 || true
+          echo "=== ps ==="
+          docker exec blitz-test ps aux 2>&1 | head -n 50 || true
+          docker rm -f blitz-test || true
