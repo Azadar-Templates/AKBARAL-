@@ -59,15 +59,18 @@
 #   STRIPE_WEBHOOK_SECRET, SMTP_*   — the provider credentials; each stays
 #                               honestly "not configured" until it is set.
 
+# StackHost Free 512MB fix (2026-09-22): source build (npm ci + next build)
+# needs ~1GB RAM and fails at "Creating build environment → Failed to create container"
+# on the Free tier. Use the already-published GHCR image (built by
+# .github/workflows/docker-publish.yml, contains dist/.next + entrypoint) so
+# StackHost only creates the runtime container (no build RAM).
 runtime:
-  image: node:22
+  image: ghcr.io/azadar-templates/akbaral:latest
 
 commands:
   package: ""
-  build:
-    - "npm ci"
-    - "npm run build"
-  start: "node scripts/start-prod.mjs"
+  build: []
+  start: "sh scripts/entrypoint.sh"
 
 # Deploy target: the repository's `main` branch (it already contains the full
 # application — the earlier note about `main` being README-only predates the
