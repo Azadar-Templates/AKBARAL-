@@ -210,7 +210,9 @@ export function updatePolicy(patch: Partial<MissionPolicy>, actorId: string): Mi
   setNumber('max_payout_cents', patch.maxPayoutCents, 0, 1_000_000_000);
   setNumber('require_approval_above_cents', patch.requireApprovalAboveCents, 0, 1_000_000_000);
   setNumber('reinvest_share_bps', patch.reinvestShareBps, 0, 10_000);
-  setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 1_000_000_000);
+  // Owner-defined aspirational target: $1B/day per agent = 100_000_000_000 cents.
+  // Allow up to $10T/day (1_000_000_000_000_000 cents) for configurability, within safe integer.
+  setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 1_000_000_000_000_000);
   if (patch.currency) {
     fields.push('currency = ?');
     values.push(String(patch.currency).slice(0, 8));

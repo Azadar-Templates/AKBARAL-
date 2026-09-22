@@ -73,6 +73,13 @@ import {
   setWalletBudget,
   reinvestmentSummary,
   sweepDailyTarget,
+  agentDailyTargetStatus,
+  sweepAgentDailyTarget,
+  sweepAllAgentDailyTargets,
+  listAgentDailyTargets,
+  setAgentDailyTarget,
+  BILLIONAIRE_DAILY_TARGET_CENTS,
+  BILLIONAIRE_PERSISTENT_OBJECTIVE,
 } from './treasury';
 import {
   MissionSelfServiceError,
@@ -513,6 +520,25 @@ async function handleApi(
         if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
         json(res, 200, buildAgentReport(agent));
         return true;
+      }
+      if (rest[1] === 'daily-target') {
+        requireRead(context);
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (method === 'GET') {
+          const day = url.searchParams.get('day') ?? undefined;
+          json(res, 200, { dailyTarget: sweepAgentDailyTarget(agent.id, context.session?.owner.id ?? null), day: day ?? undefined });
+          return true;
+        }
+        if (method === 'POST' || method === 'PATCH') {
+          const session = requireOwner(context, true);
+          const targetCents = body.targetCents !== undefined ? num('targetCents') : body.dailyTargetCents !== undefined ? num('dailyTargetCents') : BILLIONAIRE_DAILY_TARGET_CENTS;
+          const currency = param('currency') ?? param('dailyTargetCurrency') ?? 'USD';
+          const objective = param('persistentObjective') ?? param('objective') ?? undefined;
+          const updated = setAgentDailyTarget({ agentId: agent.id, targetCents, currency, actorId: session.owner.id, persistentObjective: objective });
+          json(res, 200, { agent: updated, dailyTarget: agentDailyTargetStatus(agent.id) });
+          return true;
+        }
       }
       if (rest[1] === 'snapshot') {
         const session = requireOwner(context, true);
@@ -1112,10 +1138,18 @@ async function handleApi(
         // The daily sweep is idempotent and records the day's progress; it is
         // part of reading the target board so the owner always sees fresh
         // numbers and a met day is announced exactly once.
+        // Also sweep per-agent billionaire $1B/day targets.
+        const allSweep = sweepAllAgentDailyTargets(context.session?.owner.id ?? null);
         json(res, 200, {
           targets: listTargets(),
           daily: sweepDailyTarget(context.session?.owner.id ?? null),
-          note: 'Targets are KPIs. Progress counts verified realized revenue only and a target is never reported as an achievement.',
+          billionaireDaily: {
+            perAgentTargetCents: BILLIONAIRE_DAILY_TARGET_CENTS,
+            persistentObjective: BILLIONAIRE_PERSISTENT_OBJECTIVE,
+            sweep: allSweep,
+            todayPerAgent: listAgentDailyTargets(allSweep.day, 100),
+          },
+          note: 'Owner-defined aspirational $1B/day per agent. Targets are KPIs. Progress counts verified realized revenue only and a target is never reported as an achievement, never guarantee.',
         });
         return true;
       }
@@ -1346,13 +1380,21 @@ function createRootAgent(input: {
 
   const agentId = missionId('agt');
   return missionDb.transaction(() => {
-    missionDb.run(
-      // Column/value order matters here: the root agent's mission role is its own
-      // typed role, and its capability list is the activity it was created for.
-      `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
-       VALUES (?, ?, ?, ?, 'root', NULL, 0, 'custom', 'active', ?, 'mission', ?)`,
-      [agentId, slug, input.name.slice(0, 160), input.activityKey, input.missionRole, JSON.stringify([input.activityKey])],
-    );
+    try {
+      missionDb.run(
+        // Root agent with billionaire daily aspirational target $1B/day per agent, persistent objective
+        `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities, daily_target_cents, daily_target_currency, persistent_objective)
+         VALUES (?, ?, ?, ?, 'root', NULL, 0, 'custom', 'active', ?, 'mission', ?, ?, ?, ?)`,
+        [agentId, slug, input.name.slice(0, 160), input.activityKey, input.missionRole, JSON.stringify([input.activityKey]), BILLIONAIRE_DAILY_TARGET_CENTS, 'USD', BILLIONAIRE_PERSISTENT_OBJECTIVE],
+      );
+    } catch {
+      // Fallback if migration 0008 not yet applied
+      missionDb.run(
+        `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
+         VALUES (?, ?, ?, ?, 'root', NULL, 0, 'custom', 'active', ?, 'mission', ?)`,
+        [agentId, slug, input.name.slice(0, 160), input.activityKey, input.missionRole, JSON.stringify([input.activityKey])],
+      );
+    }
     const contractId = missionId('ctr');
     missionDb.run(
       `INSERT INTO mission_agent_contracts (id, agent_id, parent_agent_id, purpose, permissions, resource_limits, budget_cents, status, approved_by, approved_at, expires_at)
@@ -1424,11 +1466,19 @@ function createSubAgent(input: {
   const agentId = missionId('agt');
   const depth = parentDepth + 1;
   return missionDb.transaction(() => {
-    missionDb.run(
-      `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
-       VALUES (?, ?, ?, ?, 'sub-agent', ?, ?, 'custom', 'active', 'worker', 'mission', ?)`,
-      [agentId, slug, input.name.slice(0, 160), parent.category ?? null, parent.id, depth, JSON.stringify([input.activityKey])],
-    );
+    try {
+      missionDb.run(
+        `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities, daily_target_cents, daily_target_currency, persistent_objective)
+         VALUES (?, ?, ?, ?, 'sub-agent', ?, ?, 'custom', 'active', 'worker', 'mission', ?, ?, ?, ?)`,
+        [agentId, slug, input.name.slice(0, 160), parent.category ?? null, parent.id, depth, JSON.stringify([input.activityKey]), BILLIONAIRE_DAILY_TARGET_CENTS, 'USD', BILLIONAIRE_PERSISTENT_OBJECTIVE],
+      );
+    } catch {
+      missionDb.run(
+        `INSERT INTO mission_agents (id, slug, name, category, role_key, parent_id, depth, generation, status, mission_role, origin_platform, capabilities)
+         VALUES (?, ?, ?, ?, 'sub-agent', ?, ?, 'custom', 'active', 'worker', 'mission', ?)`,
+        [agentId, slug, input.name.slice(0, 160), parent.category ?? null, parent.id, depth, JSON.stringify([input.activityKey])],
+      );
+    }
     const contractId = missionId('ctr');
     missionDb.run(
       `INSERT INTO mission_agent_contracts (id, agent_id, parent_agent_id, purpose, permissions, resource_limits, budget_cents, status, approved_by, approved_at, expires_at)

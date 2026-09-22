@@ -1111,6 +1111,11 @@ export function reinvestmentSummary(limit = 50): ReinvestmentSummary {
 // Fixed daily revenue target (progress counts VERIFIED revenue only)
 // ─────────────────────────────────────────────────────────────────────────────
 
+export const BILLIONAIRE_DAILY_TARGET_CENTS = 100_000_000_000; // $1B = 100B cents
+export const BILLIONAIRE_DAILY_TARGET_CURRENCY = 'USD';
+export const BILLIONAIRE_PERSISTENT_OBJECTIVE =
+  'Maximize legitimate, verified real-world earnings toward $1,000,000,000 verified revenue per day aspirational target — lawful, sustainable, verifiable only, no guarantees, no fabrication. Pursue fastest lawful sustainable verifiable opportunities within capabilities, resources, provider ToS, and platform rules.';
+
 export interface DailyTargetStatus {
   configured: boolean;
   targetCents: number;
@@ -1165,7 +1170,7 @@ export function dailyTargetStatus(day = utcDay()): DailyTargetStatus {
     day,
     currency: policy.currency,
     label_kind: 'target',
-    note: 'A configured KPI. Progress counts verified (received) revenue only; a target is never presented as achieved revenue.',
+    note: 'Owner-defined aspirational daily target. Progress counts verified (received) revenue only; a target is never presented as achieved revenue, never a guarantee.',
   };
 }
 
@@ -1195,4 +1200,194 @@ export function sweepDailyTarget(actorId: string | null = null): DailyTargetStat
     });
   }
   return dailyTargetStatus(status.day);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-agent billionaire daily target — $1B verified revenue per day per agent
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AgentDailyTargetStatus {
+  agentId: string;
+  slug?: string;
+  name?: string;
+  configured: boolean;
+  targetCents: number;
+  realizedCents: number;
+  remainingCents: number;
+  progressPct: number;
+  met: boolean;
+  metAt: string | null;
+  day: string;
+  currency: string;
+  label_kind: 'agent_daily_target';
+  persistentObjective: string;
+  note: string;
+}
+
+function agentRowForDailyTarget(agentId: string): Row | undefined {
+  try {
+    return missionDb.get<Row>('SELECT id, slug, name, daily_target_cents, daily_target_currency, persistent_objective FROM mission_agents WHERE id = ?', [agentId]);
+  } catch {
+    // Column may not exist yet before migration 0008 — fall back to policy default
+    return missionDb.get<Row>('SELECT id, slug, name FROM mission_agents WHERE id = ?', [agentId]);
+  }
+}
+
+export function agentDailyTargetCents(agentId: string): number {
+  const row = agentRowForDailyTarget(agentId);
+  if (!row) return BILLIONAIRE_DAILY_TARGET_CENTS;
+  const cents = Number(row.daily_target_cents ?? BILLIONAIRE_DAILY_TARGET_CENTS);
+  return Number.isFinite(cents) && cents > 0 ? Math.round(cents) : BILLIONAIRE_DAILY_TARGET_CENTS;
+}
+
+export function agentDailyTargetStatus(agentId: string, day = utcDay()): AgentDailyTargetStatus {
+  const agentRow = agentRowForDailyTarget(agentId);
+  const targetCents = agentDailyTargetCents(agentId);
+  const currency = (agentRow?.daily_target_currency ? String(agentRow.daily_target_currency) : BILLIONAIRE_DAILY_TARGET_CURRENCY) as string;
+  const persistentObjective = agentRow?.persistent_objective ? String(agentRow.persistent_objective) : BILLIONAIRE_PERSISTENT_OBJECTIVE;
+
+  // Verified received revenue ONLY for this agent on this day
+  const realizedRow = missionDb.get<{ total: number }>(
+    `SELECT COALESCE(SUM(amount_cents), 0) AS total FROM mission_revenue
+     WHERE agent_id = ? AND status = 'received' AND verifier IS NOT NULL AND substr(COALESCE(received_at, created_at), 1, 10) = ?`,
+    [agentId, day],
+  );
+  const realizedCents = Number(realizedRow?.total ?? 0);
+
+  let record: Row | undefined;
+  try {
+    record = missionDb.get<Row>('SELECT * FROM mission_agent_daily_targets WHERE agent_id = ? AND day = ?', [agentId, day]);
+  } catch {
+    record = undefined;
+  }
+
+  const met = targetCents > 0 && realizedCents >= targetCents;
+  const remainingCents = Math.max(0, targetCents - realizedCents);
+  const progressPct = targetCents > 0 ? Math.round((realizedCents / targetCents) * 10000) / 100 : 0;
+
+  return {
+    agentId,
+    slug: agentRow?.slug ? String(agentRow.slug) : undefined,
+    name: agentRow?.name ? String(agentRow.name) : undefined,
+    configured: targetCents > 0,
+    targetCents,
+    realizedCents,
+    remainingCents,
+    progressPct,
+    met,
+    metAt: record?.met ? String(record.met_at) : null,
+    day,
+    currency,
+    label_kind: 'agent_daily_target',
+    persistentObjective,
+    note: 'Owner-defined aspirational $1B/day per agent. Progress counts ONLY verified received revenue (status=received + verifier). Target is performance objective, never guarantee, never fabricated.',
+  };
+}
+
+export function sweepAgentDailyTarget(agentId: string, actorId: string | null = null): AgentDailyTargetStatus {
+  const status = agentDailyTargetStatus(agentId);
+  let existing: Row | undefined;
+  try {
+    existing = missionDb.get<Row>('SELECT * FROM mission_agent_daily_targets WHERE agent_id = ? AND day = ?', [agentId, status.day]);
+  } catch {
+    existing = undefined;
+  }
+  const metNow = status.met && !(existing?.met === 1);
+
+  try {
+    missionDb.run(
+      `INSERT INTO mission_agent_daily_targets (agent_id, day, target_cents, realized_cents, remaining_cents, progress_pct, met, met_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(agent_id, day) DO UPDATE SET target_cents = excluded.target_cents, realized_cents = excluded.realized_cents,
+         remaining_cents = excluded.remaining_cents, progress_pct = excluded.progress_pct, met = excluded.met,
+         met_at = COALESCE(mission_agent_daily_targets.met_at, excluded.met_at), updated_at = excluded.updated_at`,
+      [
+        agentId,
+        status.day,
+        status.targetCents,
+        status.realizedCents,
+        status.remainingCents,
+        status.progressPct,
+        status.met ? 1 : 0,
+        status.met ? (existing?.met_at ? String(existing.met_at) : nowIso()) : null,
+        nowIso(),
+      ],
+    );
+  } catch {
+    // Table may not exist before migration — ignore, status still returned
+  }
+
+  if (metNow) {
+    appendMissionAudit({
+      actorType: actorId ? 'owner' : 'system',
+      actorId,
+      action: 'target.agent_daily_met',
+      subjectType: 'agent',
+      subjectId: agentId,
+      detail: { day: status.day, targetCents: status.targetCents, realizedCents: status.realizedCents },
+    });
+  }
+  return agentDailyTargetStatus(agentId, status.day);
+}
+
+export function sweepAllAgentDailyTargets(actorId: string | null = null): { day: string; swept: number; met: number } {
+  const day = utcDay();
+  const agents = missionDb.all<Row>('SELECT id FROM mission_agents WHERE status = ?', ['active']);
+  let met = 0;
+  for (const agent of agents) {
+    const status = sweepAgentDailyTarget(String(agent.id), actorId);
+    if (status.met) met += 1;
+  }
+  // Also sweep global daily target
+  sweepDailyTarget(actorId);
+  return { day, swept: agents.length, met };
+}
+
+export function listAgentDailyTargets(day = utcDay(), limit = 100): AgentDailyTargetStatus[] {
+  let rows: Row[] = [];
+  try {
+    rows = missionDb.all<Row>('SELECT agent_id FROM mission_agent_daily_targets WHERE day = ? ORDER BY realized_cents DESC LIMIT ?', [day, limit]);
+  } catch {
+    // Fallback: compute from agents directly
+    rows = missionDb.all<Row>('SELECT id AS agent_id FROM mission_agents WHERE status = ? LIMIT ?', ['active', limit]);
+  }
+  if (rows.length === 0) {
+    // No progress rows yet today — show active agents with computed status
+    const agents = missionDb.all<Row>('SELECT id FROM mission_agents WHERE status = ? ORDER BY created_at DESC LIMIT ?', ['active', limit]);
+    return agents.map((a) => agentDailyTargetStatus(String(a.id), day));
+  }
+  return rows.map((r) => agentDailyTargetStatus(String(r.agent_id), day));
+}
+
+export function setAgentDailyTarget(input: { agentId: string; targetCents: number; currency?: string; actorId: string; persistentObjective?: string }): Row {
+  const targetCents = Math.max(0, Math.round(input.targetCents));
+  if (!Number.isFinite(targetCents) || targetCents <= 0) {
+    throw new MissionTreasuryError(400, 'daily target must be positive', 'validation_error');
+  }
+  if (targetCents > 1_000_000_000_000_000) {
+    throw new MissionTreasuryError(400, 'daily target exceeds maximum allowed', 'validation_error');
+  }
+  const currency = (input.currency ?? BILLIONAIRE_DAILY_TARGET_CURRENCY).slice(0, 8);
+  const objective = (input.persistentObjective ?? BILLIONAIRE_PERSISTENT_OBJECTIVE).slice(0, 1000);
+
+  try {
+    missionDb.run(
+      `UPDATE mission_agents SET daily_target_cents = ?, daily_target_currency = ?, persistent_objective = ?, updated_at = ? WHERE id = ?`,
+      [targetCents, currency, objective, nowIso(), input.agentId],
+    );
+  } catch {
+    // Column may not exist before migration — try update only target via policy fallback
+    throw new MissionTreasuryError(500, 'agent daily target columns not migrated yet — apply migrations', 'migration_required');
+  }
+
+  appendMissionAudit({
+    actorType: 'owner',
+    actorId: input.actorId,
+    action: 'agent.daily_target_updated',
+    subjectType: 'agent',
+    subjectId: input.agentId,
+    detail: { targetCents, currency, persistentObjective: objective },
+  });
+
+  return missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [input.agentId])!;
 }

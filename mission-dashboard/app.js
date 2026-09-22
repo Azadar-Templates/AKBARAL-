@@ -241,6 +241,37 @@ function renderOverview(overview) {
     card('Pending approvals', overview.approvals.pending, `${overview.upgrades.requested} upgrade requests`),
   );
 
+  // Billionaire daily per-agent $1B/day
+  if (overview.billionaireDaily) {
+    const bd = overview.billionaireDaily;
+    const noteEl = $('#billionaire-note');
+    if (noteEl) noteEl.textContent = bd.note || bd.persistentObjective || 'Owner-defined aspirational $1B/day per agent — resets daily UTC, verified revenue only, never guarantee.';
+    const bCards = $('#billionaire-cards');
+    if (bCards) {
+      bCards.innerHTML = '';
+      const globalDaily = bd.globalDailyTarget || bd.todayPerAgent?.[0];
+      bCards.append(
+        card('Per-agent daily target', money(bd.perAgentTargetCents, bd.perAgentCurrency), 'owner-defined aspirational, configurable, $1B/day'),
+        card('Global daily target', globalDaily ? money(globalDaily.targetCents, globalDaily.currency) : '—', globalDaily ? `${globalDaily.progressPct}% — ${money(globalDaily.realizedCents, globalDaily.currency)} verified today` : ''),
+        card('Agents swept today', bd.sweep ? `${bd.sweep.swept} agents` : '—', bd.sweep ? `${bd.sweep.met} met target today (verified)` : ''),
+        card('Remaining gap (global)', globalDaily ? money(globalDaily.remainingCents, globalDaily.currency) : '—', 'verified revenue only, resets daily UTC'),
+      );
+    }
+    const bdHost = $('#billionaire-daily');
+    if (bdHost) {
+      const rows = (bd.todayPerAgent || []).slice(0, 50);
+      bdHost.innerHTML = '';
+      bdHost.appendChild(table([
+        { label: 'Agent', render: (row) => row.slug || row.agentId.slice(0, 8) },
+        { label: 'Daily target', render: (row) => money(row.targetCents, row.currency) },
+        { label: 'Verified today', render: (row) => money(row.realizedCents, row.currency) },
+        { label: 'Remaining gap', render: (row) => money(row.remainingCents, row.currency) },
+        { label: 'Progress', render: (row) => `${row.progressPct}% ${row.met ? '✓ met' : ''}` },
+        { label: 'Objective', render: (row) => el('span', { class: 'muted small', text: (row.persistentObjective || '').slice(0, 80) + '…' }) },
+      ], rows, 'No active agents yet — every agent initialized at $1B/day when created.'));
+    }
+  }
+
   $('#revenue-honesty').textContent = overview.honesty.noFabrication;
 
   replace('#revenue-realized', table([
@@ -299,6 +330,7 @@ function renderAgentReport(report) {
   const host = $('#agent-report');
   host.innerHTML = '';
   const revenue = report.revenue;
+  const dailyTarget = report.dailyTarget || report.agent.dailyTarget;
 
   host.appendChild(el('h2', { text: `Agent — ${report.agent.name}` }));
   host.appendChild(el('div', { class: 'cards' }, [
@@ -313,7 +345,16 @@ function renderAgentReport(report) {
     card('Contracted', money(revenue.contractedCents, currency)),
     card('Expected', money(revenue.expectedCents, currency)),
     card('Audit entries', report.audit.entries, report.audit.lastAction || ''),
-  ]));
+    dailyTarget ? card('Daily target', money(dailyTarget.targetCents, dailyTarget.currency), `owner-defined $1B/day aspirational`) : null,
+    dailyTarget ? card('Verified today', money(dailyTarget.realizedCents, dailyTarget.currency), `${dailyTarget.progressPct}% progress`) : null,
+    dailyTarget ? card('Remaining gap', money(dailyTarget.remainingCents, dailyTarget.currency), dailyTarget.met ? '✓ met today (verified)' : 'resets daily UTC') : null,
+  ].filter(Boolean)));
+
+  if (dailyTarget) {
+    host.appendChild(el('h3', { text: 'Persistent objective — $1B/day per agent' }));
+    host.appendChild(el('p', { class: 'muted small', text: dailyTarget.persistentObjective || report.agent.persistentObjective || 'Maximize legitimate, verified real-world earnings toward $1B/day aspirational target — lawful, sustainable, verifiable only, no guarantees.' }));
+    host.appendChild(el('p', { class: 'muted small', text: dailyTarget.note || 'Progress counts ONLY verified received revenue (status=received + verifier). Target resets daily UTC, never guarantee, never fabricated.' }));
+  }
 
   host.appendChild(el('p', { class: 'muted small', text: report.honesty.note }));
   if (canMutate()) {

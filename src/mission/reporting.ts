@@ -1,6 +1,19 @@
 import { missionDb, missionId, nowIso, sha256, appendMissionAudit, verifyMissionAudit, type Row } from './database';
 import { currentPolicy, PROHIBITION_STATEMENTS, ALLOWED_ACTIVITY_KEYS } from './policy';
-import { treasurySummary, verifyLedger, listPayoutSlots, listPayouts, listApprovals, listRevenue, listExpenses } from './treasury';
+import {
+  treasurySummary,
+  verifyLedger,
+  listPayoutSlots,
+  listPayouts,
+  listApprovals,
+  listRevenue,
+  listExpenses,
+  agentDailyTargetStatus,
+  sweepAllAgentDailyTargets,
+  listAgentDailyTargets,
+  BILLIONAIRE_DAILY_TARGET_CENTS,
+  BILLIONAIRE_PERSISTENT_OBJECTIVE,
+} from './treasury';
 import { expiringCredentials, listTools, listServices, selfManagementSnapshot, listUpgrades } from './self-management';
 import { identityLockStatus } from './identity-lock';
 
@@ -27,6 +40,9 @@ export interface AgentReport {
     parentSlug: string | null;
     childCount: number;
     children: Array<{ id: string; slug: string; name: string; role: string; status: string; depth: number }>;
+    dailyTargetCents: number;
+    dailyTargetCurrency: string;
+    persistentObjective: string;
   };
   wallet: {
     id: string;
@@ -43,6 +59,7 @@ export interface AgentReport {
     bySource: Array<{ source: string; cents: number; count: number }>;
     entries: Array<Record<string, unknown>>;
   };
+  dailyTarget: ReturnType<typeof agentDailyTargetStatus>;
   work: Array<{
     id: string; title: string; category: string; status: string;
     revenueCents: number; costCents: number; clientRef: string | null; createdAt: string;
@@ -73,6 +90,9 @@ export interface AgentRow extends Row {
   status: string;
   depth: number;
   parent_id: string | null;
+  daily_target_cents: number | null;
+  daily_target_currency: string | null;
+  persistent_objective: string | null;
 }
 
 export function findAgentBySlug(slug: string): AgentRow | undefined {
@@ -123,6 +143,7 @@ export function buildAgentReport(agent: AgentRow): AgentReport {
   );
   const auditRow = missionDb.get<Row>('SELECT COUNT(*) AS count FROM mission_audit WHERE actor_id = ?', [agent.id]);
   const lastAudit = missionDb.get<Row>('SELECT action FROM mission_audit WHERE actor_id = ? ORDER BY seq DESC LIMIT 1', [agent.id]);
+  const dailyTarget = agentDailyTargetStatus(agent.id);
 
   return {
     agent: {
@@ -135,6 +156,9 @@ export function buildAgentReport(agent: AgentRow): AgentReport {
       depth: Number(agent.depth),
       parentSlug: parentSlug(agent.parent_id),
       childCount,
+      dailyTargetCents: dailyTarget.targetCents,
+      dailyTargetCurrency: dailyTarget.currency,
+      persistentObjective: dailyTarget.persistentObjective,
       // The delegation chain is inspectable: an owner can see exactly which
       // agents a parent created, and in what state they are.
       children: childAgents.map((child) => ({
@@ -146,6 +170,7 @@ export function buildAgentReport(agent: AgentRow): AgentReport {
         depth: Number(child.depth),
       })),
     },
+    dailyTarget,
     wallet: walletRow
       ? {
           id: String(walletRow.id),
@@ -435,6 +460,15 @@ export interface MissionOverview {
     byCategory: Array<{ category: string; cents: number; count: number }>;
   };
   targets: TargetView[];
+  billionaireDaily: {
+    perAgentTargetCents: number;
+    perAgentCurrency: string;
+    persistentObjective: string;
+    globalDailyTarget: ReturnType<typeof import('./treasury').dailyTargetStatus>;
+    todayPerAgent: Array<ReturnType<typeof import('./treasury').agentDailyTargetStatus>>;
+    sweep: { day: string; swept: number; met: number };
+    note: string;
+  };
   selfManagement: ReturnType<typeof selfManagementSnapshot>;
   audit: ReturnType<typeof verifyMissionAudit>;
   integrity: { ledger: ReturnType<typeof verifyLedger> };
@@ -517,6 +551,31 @@ export function buildMissionOverview(): MissionOverview {
 
   const snapshot = selfManagementSnapshot();
 
+  // Billionaire daily per-agent objective — sweep all agents for today, then list top progress
+  const billionaireSweep = sweepAllAgentDailyTargets();
+  const todayPerAgent = listAgentDailyTargets(billionaireSweep.day, 50);
+  let globalDaily: ReturnType<typeof import('./treasury').dailyTargetStatus>;
+  try {
+    const { dailyTargetStatus } = require('./treasury') as typeof import('./treasury');
+    globalDaily = dailyTargetStatus(billionaireSweep.day);
+  } catch {
+    globalDaily = {
+      configured: true,
+      targetCents: BILLIONAIRE_DAILY_TARGET_CENTS,
+      realizedCents: 0,
+      expectedCents: 0,
+      contractedCents: 0,
+      remainingCents: BILLIONAIRE_DAILY_TARGET_CENTS,
+      progressPct: 0,
+      met: false,
+      metAt: null,
+      day: billionaireSweep.day,
+      currency: 'USD',
+      label_kind: 'target',
+      note: 'Owner-defined aspirational daily target.',
+    };
+  }
+
   return {
     generatedAt: nowIso(),
     isolation: {
@@ -580,6 +639,15 @@ export function buildMissionOverview(): MissionOverview {
       byCategory: ledgerByCategory,
     },
     targets: listTargets(),
+    billionaireDaily: {
+      perAgentTargetCents: BILLIONAIRE_DAILY_TARGET_CENTS,
+      perAgentCurrency: 'USD',
+      persistentObjective: BILLIONAIRE_PERSISTENT_OBJECTIVE,
+      globalDailyTarget: globalDaily,
+      todayPerAgent,
+      sweep: billionaireSweep,
+      note: 'Owner-defined aspirational $1B verified revenue per day per agent. Resets daily UTC. Progress counts ONLY verified received revenue (status=received + verifier). Never guarantee, never fabricated. Agents pursue legitimate opportunities continuously and aggressively within resources, laws, ToS, platform rules.',
+    },
     selfManagement: snapshot,
     audit: verifyMissionAudit(),
     integrity: { ledger: verifyLedger() },
