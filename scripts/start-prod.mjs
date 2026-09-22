@@ -340,7 +340,10 @@ if (ROLES !== 'web') {
 scheduleBackup();
 
 if (ROLES !== 'api') {
-  const web = launch('web', 'node_modules/.bin/next', ['start', '-p', String(webPort), '-H', '0.0.0.0'], { NODE_ENV: 'production' });
+  const web = launch('web', 'node_modules/.bin/next', ['start', '-p', String(webPort), '-H', '0.0.0.0'], {
+    NODE_ENV: 'production',
+    NEXT_BACKEND_URL: `http://127.0.0.1:${apiPort}`,
+  });
   web.on('exit', (code) => {
     console.log(`[akbaral] web exited with code ${code}`);
     shutdown();
