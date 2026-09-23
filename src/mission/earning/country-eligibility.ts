@@ -46,10 +46,10 @@ export const PAYOUT_RAIL_COUNTRY_SUPPORT: Record<string, {
     supportedCountries: [
       'US','GB','DE','FR','CA','AU','NZ','NL','BE','AT','ES','IT','PT','IE','FI','DK','SE','NO','CH','JP','SG','HK','IN','PH','MY','TH','ID','VN','BR','MX','PL','CZ','HU','RO','BG','HR','SK','SI','LT','LV','EE','GR','LU','MT','CY','IS','LI','TR','AE','SA',
     ],
-    /** Wise is partially available in Pakistan: can RECEIVE from abroad and WITHDRAW to PKR bank, but cannot open full account or send business payments */
-    partiallySupportedCountries: ['PK'],
-    blockedCountries: ['CU','IR','KP','SY','RU','AF'],
-    evidence: 'https://wise.com/help — Pakistan: can receive USD/EUR/GBP and withdraw to PKR bank; no Wise card; no full multi-currency account; limited vs Western users',
+    /** Pakistan: Wise stopped accepting NEW Pakistani registrations in January 2023 due to regulatory changes. Pre-existing accounts can still send PKR but cannot open multi-currency accounts or receive money. New users CANNOT create accounts. */
+    partiallySupportedCountries: [],
+    blockedCountries: ['PK','CU','IR','KP','SY','RU','AF'],
+    evidence: 'https://wise.com/help — Pakistan: Wise stopped accepting new registrations from Pakistan in January 2023 due to regulatory changes. Pre-existing accounts limited to sending PKR only. New multi-currency accounts not available for Pakistan residents.',
   },
   stripe: {
     rail: 'stripe',
@@ -81,78 +81,87 @@ export const PLATFORM_COUNTRY_ELIGIBILITY: Record<string, {
     platformId: 'upwork',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA','QA','KW','BH','OM','JO'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['payoneer','bank_wire','wise','ach'],
-    evidence: 'https://support.upwork.com — Upwork accepts Pakistani freelancers; Payoneer integration confirmed; stricter screening for Asian applicants',
+    /** Note: payoutMethods lists all methods Upwork supports globally. Actual availability per country is checked at routing time via payout rail country support. For Pakistan: only payoneer and direct_to_local_bank (bank_wire) are usable. Wise NOT available for new PK accounts since Jan 2023. ACH requires US bank. */
+    payoutMethods: ['payoneer','bank_wire','direct_to_local_bank','wire'],
+    evidence: 'https://support.upwork.com — Upwork accepts Pakistani freelancers; Payoneer + direct-to-local-bank + wire confirmed for Pakistan. Upwork-Payoneer 15-year partnership extended May 2026.',
   },
   fiverr: {
     platformId: 'fiverr',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['payoneer','bank_wire','paypal'],
-    evidence: 'https://help.fiverr.com — Fiverr fully available in Pakistan; CNIC verification; Payoneer withdrawal confirmed; Pakistan among top freelancing countries',
+    /** Note: payoutMethods lists Fiverr's global methods. For Pakistan specifically: only payoneer and direct_to_local_bank (PKR) are usable. PayPal NOT available for PK sellers to receive. */
+    payoutMethods: ['payoneer','bank_wire','direct_to_local_bank'],
+    evidence: 'https://help.fiverr.com — Fiverr fully available in Pakistan; CNIC verification; Payoneer + direct-to-local-bank (PKR) withdrawal confirmed. Pakistan among top freelancing countries.',
   },
   freelancer: {
     platformId: 'freelancer',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['paypal','payoneer','wise','bank_wire','ach','sepa'],
-    evidence: 'https://www.freelancer.com — Freelancer.com accepts Pakistan-based users; Payoneer/PayPal/wire withdrawal',
+    /** Note: payoutMethods lists all methods Freelancer.com supports globally. For Pakistan specifically: only payoneer and direct bank/express withdrawal are usable. PayPal NOT available in PK. Wise NOT available for new PK accounts. ACH/SEPA require US/EU bank. */
+    payoutMethods: ['payoneer','bank_wire','skrill'],
+    evidence: 'https://www.freelancer.com — Freelancer.com accepts Pakistan-based users; Payoneer + direct bank (express withdrawal) + Skrill confirmed for Pakistan.',
   },
   contra: {
     platformId: 'contra',
-    supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
-    blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['stripe','bank_wire'],
-    evidence: 'https://help.contra.com — Contra is global; Stripe Connect payout requires Stripe-supported country',
+    supportedCountries: ['US','GB','DE','FR','CA','AU','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
+    blockedCountries: ['PK','CU','IR','KP','SY','RU'],
+    payoutMethods: ['stripe'],
+    evidence: 'https://help.contra.com — Contra uses Stripe Connect exclusively for freelancer payouts. Pakistan is NOT a Stripe-supported country for Connect onboarding. Pakistani residents cannot receive Contra payouts without a foreign Stripe-supported entity (not implemented as workaround). See Contra review 2026: "Contra\'s reliance on Stripe for payouts limits its accessibility in countries where Stripe payouts are not available — including Pakistan."',
   },
   toptal: {
     platformId: 'toptal',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['payoneer','bank_wire','paypal','ach'],
-    evidence: 'https://www.toptal.com — Toptal accepts globally but rigorous screening; payout country-dependent',
+    /** Note: payoutMethods lists Toptal's global methods. For Pakistan specifically: only payoneer and bank_wire are usable. PayPal NOT available in PK. ACH requires US bank. */
+    payoutMethods: ['payoneer','bank_wire'],
+    evidence: 'https://www.toptal.com — Toptal accepts Pakistan-based freelancers; Payoneer + bank wire confirmed for Pakistan.',
   },
   hackerone: {
     platformId: 'hackerone',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA','QA','KW','BH','OM','JO','LB','MA','TN','DZ','GH','TZ','UG','RW','SN','CI','CM','ET','UZ','KZ','GE','UA','AL','RS','BA','MK','MD','BY','AZ','AM'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['paypal','bank_wire','payoneer'],
-    evidence: 'https://docs.hackerone.com — HackerOne accepts researchers worldwide; payouts via PayPal/bank wire; Pakistan eligible',
+    /** Note: payoutMethods lists HackerOne's global methods. For Pakistan: bank_wire works; PayPal does NOT; crypto may be available. KYC via Veriff (12-month validity). Tax form (W-8BEN) required. */
+    payoutMethods: ['bank_wire','crypto'],
+    evidence: 'https://docs.hackerone.com — HackerOne accepts researchers worldwide; identity verification via Veriff; tax form required; bank wire payout for Pakistan confirmed.',
   },
   bugcrowd: {
     platformId: 'bugcrowd',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['paypal','bank_wire','payoneer'],
-    evidence: 'https://docs.bugcrowd.com — Bugcrowd accepts researchers globally; PayPal/bank payout; Pakistan eligible',
+    /** Note: payoutMethods lists Bugcrowd's global methods. For Pakistan: bank_wire works; PayPal does NOT; crypto may be available. */
+    payoutMethods: ['bank_wire','crypto'],
+    evidence: 'https://docs.bugcrowd.com — Bugcrowd accepts researchers globally; bank wire payout for Pakistan confirmed. PayPal NOT available for PK.',
   },
   kaggle: {
     platformId: 'kaggle',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['bank_wire','paypal'],
-    evidence: 'https://www.kaggle.com — Kaggle accepts researchers globally; bank/PayPal payout; tax form required',
+    /** Note: payoutMethods lists Kaggle's global methods. For Pakistan: only bank_wire works. PayPal NOT available for PK. Individual competition rules may restrict prize eligibility by country. */
+    payoutMethods: ['bank_wire'],
+    evidence: 'https://www.kaggle.com — Kaggle accepts researchers globally; bank wire payout. PayPal NOT available for PK. Individual competitions may have country-specific prize restrictions.',
   },
   rapidapi: {
     platformId: 'rapidapi',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['paypal','bank_wire','payoneer'],
-    evidence: 'https://rapidapi.com — RapidAPI accepts global providers; PayPal/bank payout',
+    /** Note: For Pakistan: bank_wire works. PayPal NOT available for PK. Payoneer availability unverified. */
+    payoutMethods: ['bank_wire'],
+    evidence: 'https://rapidapi.com — RapidAPI accepts global providers; bank wire payout for Pakistan likely. PayPal NOT available for PK.',
   },
   gumroad: {
     platformId: 'gumroad',
-    supportedCountries: ['US','GB','DE','FR','CA','AU','IN','BR','MX','PH','JP','KR','SG','HK','NZ','IT','ES','NL','BE','AT','CH','DK','SE','NO','FI','IE','PT','PL','CZ','HU','RO','BG','HR','SK','SI','LT','LV','EE','GR','LU','MT','CY','IS','LI','TW','MY','TH','ID','VN','TR','AE','SA'],
-    blockedCountries: ['PK','CU','IR','KP','SY','RU','BD','EG','NG','KE','GH'],
-    payoutMethods: ['stripe','paypal','bank_wire'],
-    evidence: 'https://gumroad.com — Gumroad available in 90+ countries; Pakistan NOT directly supported; requires Stripe/PayPal in supported country',
+    supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','JP','KR','SG','HK','NZ','IT','ES','NL','BE','AT','CH','DK','SE','NO','FI','IE','PT','PL','CZ','HU','RO','BG','HR','SK','SI','LT','LV','EE','GR','LU','MT','CY','IS','LI','TW','MY','TH','ID','VN','TR','AE','SA','EG','NG','KE','ZA','BD','GH'],
+    blockedCountries: ['CU','IR','KP','SY','RU'],
+    payoutMethods: ['bank_wire'],
+    evidence: 'https://gumroad.com/help/article/13-getting-paid — Official: Pakistan (PKR) is in the direct bank deposit payout list. Requires government-issued photo ID + proof of residence. No PayPal/Stripe/Payoneer needed for PK — direct local bank deposit only. Payout in PKR, 2-7 business days.',
   },
   awin: {
     platformId: 'awin',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['payoneer','sepa','ach','bank_wire'],
-    evidence: 'https://www.awin.com — Awin global publisher program; Payoneer payout available for Pakistan',
+    /** Note: payoutMethods lists Awin's global methods. For Pakistan: only payoneer and bank_wire are usable. SEPA (EU only) and ACH (US only) do NOT work for PK. */
+    payoutMethods: ['payoneer','bank_wire'],
+    evidence: 'https://www.awin.com — Awin global publisher program (180+ countries); Payoneer payout confirmed for Pakistan. SEPA/ACH not available for PK residents.',
   },
   github_sponsors: {
     platformId: 'github_sponsors',
@@ -165,8 +174,9 @@ export const PLATFORM_COUNTRY_ELIGIBILITY: Record<string, {
     platformId: 'devpost',
     supportedCountries: ['US','GB','DE','FR','CA','AU','PK','IN','BR','MX','PH','BD','EG','NG','KE','ZA','ID','MY','TH','VN','TR','PL','RO','BG','HR','CZ','HU','SK','SI','LT','LV','EE','PT','ES','IT','NL','BE','AT','CH','DK','SE','NO','FI','IE','JP','KR','TW','HK','SG','NZ','AE','SA'],
     blockedCountries: ['CU','IR','KP','SY','RU'],
-    payoutMethods: ['paypal','bank_wire','payoneer'],
-    evidence: 'https://devpost.com — Devpost hackathons open globally; PayPal/bank payout',
+    /** Note: payoutMethods set by individual hackathon organizers. For Pakistan: bank_wire works. PayPal NOT available for PK. Individual hackathons may restrict. */
+    payoutMethods: ['bank_wire'],
+    evidence: 'https://devpost.com — Devpost hackathons open globally; bank wire payout for Pakistan. Individual hackathon rules may restrict prizes by country. PayPal NOT available for PK.',
   },
 };
 
@@ -281,7 +291,7 @@ export function fullEligibilityReport(platformId: string, countryCode: string): 
   const connector = PLATFORM_CONNECTORS.find(c => c.id === platformId);
   const platData = PLATFORM_COUNTRY_ELIGIBILITY[platformId];
 
-  const payoutMethods = (platData?.payoutMethods ?? ['bank_wire', 'payoneer', 'paypal', 'stripe', 'wise']).map(method => ({
+  const payoutMethods = (platData?.payoutMethods ?? ['bank_wire', 'payoneer']).map(method => ({
     method,
     ...isPayoutRailAvailable(method, cc),
   }));

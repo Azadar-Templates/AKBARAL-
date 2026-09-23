@@ -54,10 +54,10 @@ describe('country eligibility — payout rails', () => {
     assert.match(result.reason, /NOT available/i);
   });
 
-  it('Wise is partially available in Pakistan', () => {
+  it('Wise is NOT available for new users in Pakistan (stopped Jan 2023)', () => {
     const result = isPayoutRailAvailable('wise', 'PK');
-    assert.equal(result.available, true, 'Wise should be partially available in Pakistan');
-    assert.equal(result.partial, true, 'Wise should be marked as partial in Pakistan');
+    assert.equal(result.available, false, 'Wise should NOT be available in Pakistan — stopped accepting new registrations Jan 2023');
+    assert.match(result.reason, /NOT available/i);
   });
 
   it('bank_wire is available in Pakistan', () => {
@@ -109,14 +109,20 @@ describe('country eligibility — platform-specific', () => {
     assert.equal(result.eligible, true);
   });
 
-  it('Gumroad is NOT available in Pakistan', () => {
+  it('Gumroad IS available in Pakistan via direct bank deposit (PKR)', () => {
     const result = getPlatformCountryEligibility('gumroad', 'PK');
-    assert.equal(result.eligible, false, 'Gumroad should NOT be available in Pakistan');
+    assert.equal(result.eligible, true, 'Gumroad should be available in Pakistan — official docs confirm PKR bank deposit payouts');
+    assert.ok(result.availableRails.length > 0, 'Should have available payout rails');
   });
 
   it('GitHub Sponsors is NOT available in Pakistan (needs Stripe)', () => {
     const result = getPlatformCountryEligibility('github_sponsors', 'PK');
     assert.equal(result.eligible, false, 'GitHub Sponsors should NOT be available in Pakistan');
+  });
+
+  it('Contra is NOT available in Pakistan (Stripe Connect required)', () => {
+    const result = getPlatformCountryEligibility('contra', 'PK');
+    assert.equal(result.eligible, false, 'Contra should NOT be available in Pakistan — Stripe Connect required for payouts, not available in PK');
   });
 
   it('sanctioned country is blocked on all platforms', () => {
@@ -141,20 +147,17 @@ describe('country eligibility — full report', () => {
     assert.equal(report.eligible, true);
     assert.equal(report.sanctionsCheck, true);
 
-    // Check payout methods (Upwork supports: payoneer, bank_wire, wise, ach)
+    // Check payout methods (Upwork supports: payoneer, bank_wire, direct_to_local_bank, wire)
+    // payoneer and bank_wire are standard rails; direct_to_local_bank and wire are Upwork-specific
     const payoneer = report.payoutMethods.find(m => m.method === 'payoneer');
     assert.ok(payoneer, 'Should have payoneer method');
-    assert.equal(payoneer!.available, true);
+    assert.equal(payoneer!.available, true, 'Payoneer should be available in Pakistan');
 
     const bankWire = report.payoutMethods.find(m => m.method === 'bank_wire');
     assert.ok(bankWire, 'Should have bank_wire method');
-    assert.equal(bankWire!.available, true);
+    assert.equal(bankWire!.available, true, 'Bank wire should be available in Pakistan');
 
-    const wise = report.payoutMethods.find(m => m.method === 'wise');
-    assert.ok(wise, 'Should have wise method');
-    assert.equal(wise!.available, true); // Wise partially available in PK
-
-    // Upwork does NOT use stripe for payouts
+    // Upwork has 4 payout methods listed
     assert.equal(report.payoutMethods.length, 4, 'Upwork should have 4 payout methods');
   });
 
@@ -165,11 +168,12 @@ describe('country eligibility — full report', () => {
     assert.equal(report.payoutMethods.every(m => !m.available), true);
   });
 
-  it('full report for Upwork + US shows all methods available', () => {
+  it('full report for Upwork + US shows Payoneer and bank_wire available', () => {
     const report = fullEligibilityReport('upwork', 'US');
     assert.equal(report.eligible, true);
     const available = report.payoutMethods.filter(m => m.available);
-    assert.ok(available.length >= 3, `US should have at least 3 available payout methods, got ${available.length}`);
+    // US has payoneer and bank_wire available (standard rails)
+    assert.ok(available.length >= 2, `US should have at least 2 available payout methods, got ${available.length}`);
   });
 });
 
@@ -197,9 +201,14 @@ describe('country eligibility — data integrity', () => {
     }
   });
 
-  it('Pakistan is in Payoneer but not PayPal/Stripe', () => {
+  it('Pakistan is in Payoneer but not PayPal/Stripe/Wise', () => {
     assert.ok(PAYOUT_RAIL_COUNTRY_SUPPORT.payoneer.supportedCountries.includes('PK'));
     assert.ok(PAYOUT_RAIL_COUNTRY_SUPPORT.paypal.blockedCountries.includes('PK'));
     assert.ok(PAYOUT_RAIL_COUNTRY_SUPPORT.stripe.blockedCountries.includes('PK'));
+    assert.ok(PAYOUT_RAIL_COUNTRY_SUPPORT.wise.blockedCountries.includes('PK'), 'Wise stopped accepting new PK registrations Jan 2023');
+  });
+
+  it('Pakistan is NOT in Wise partiallySupportedCountries (corrected)', () => {
+    assert.ok(!PAYOUT_RAIL_COUNTRY_SUPPORT.wise.partiallySupportedCountries?.includes('PK'), 'Wise should NOT have PK in partiallySupportedCountries');
   });
 });
