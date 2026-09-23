@@ -32,12 +32,14 @@ export interface AuthUserView {
   status: string;
   freeCredits: number;
   createdAt: string;
+  country?: string | null;
 }
 
 export interface RegisterInput {
   email: string;
   password: string;
   name?: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface LoginOutput {
@@ -52,6 +54,13 @@ function toUserView(user: Awaited<ReturnType<typeof findUserById>>): AuthUserVie
     throw new HttpError(404, 'user not found', 'not_found');
   }
   const account = getCreditAccount(user.id);
+  let country: string | null = null;
+  try {
+    if (user.metadata) {
+      const meta = JSON.parse(user.metadata);
+      if (typeof meta.country === 'string') country = meta.country;
+    }
+  } catch {}
   return {
     id: user.id,
     email: user.email,
@@ -60,6 +69,7 @@ function toUserView(user: Awaited<ReturnType<typeof findUserById>>): AuthUserVie
     status: user.status,
     freeCredits: account ? getAvailableCredits(account) : 0,
     createdAt: user.created_at,
+    country,
   };
 }
 
@@ -76,13 +86,18 @@ export async function register(input: RegisterInput): Promise<AuthUserView> {
   }
 
   const passwordHash = await hashPassword(input.password);
+  const metadata = {
+    signup: true,
+    phase: 'foundation',
+    ...(input.metadata ?? {}),
+  };
   const user = createUser({
     email,
     name: input.name?.trim() || null,
     role: 'user',
     status: 'active',
     passwordHash,
-    metadata: { signup: true, phase: 'foundation' },
+    metadata,
   });
 
   appendAuditLog({
