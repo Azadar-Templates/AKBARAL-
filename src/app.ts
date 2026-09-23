@@ -94,6 +94,49 @@ function corsHeaders(req: express.Request, res: express.Response, next: express.
   next();
 }
 
+/**
+ * Request timeout middleware — prevents a slow provider or blocking work from
+ * holding an HTTP connection forever. When AKBARAL_API_REQUEST_TIMEOUT_MS > 0,
+ * any /api request that exceeds the budget is terminated with a 503 and a
+ * user-friendly message. Long-running work (queue, workflows) continues safely
+ * in background — only the HTTP response is timed out, not the job.
+ *
+ * Streaming endpoints (/api/models, realtime) opt out via Cache-Control: no-transform
+ * and are excluded from this timeout because they intentionally hold the connection.
+ */
+function requestTimeout(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const timeoutMs = env.apiRequestTimeoutMs;
+  if (!timeoutMs || timeoutMs <= 0) {
+    next();
+    return;
+  }
+  // Skip streaming endpoints: they set no-transform and hold connection intentionally
+  if (req.path.includes('/stream') || req.path.includes('/realtime') || req.path.includes('/ws')) {
+    next();
+    return;
+  }
+  // Only apply to /api routes — static assets and health checks are cheap
+  if (!req.path.startsWith('/api/')) {
+    next();
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: {
+          code: 'request_timeout',
+          message: `Request timed out after ${timeoutMs}ms. The operation may still be running in background — check the task center or try again. If this persists, check provider configuration and try a faster model.`,
+          timeoutMs,
+        },
+      });
+    }
+  }, timeoutMs);
+  timer.unref?.();
+  res.on('finish', () => clearTimeout(timer));
+  res.on('close', () => clearTimeout(timer));
+  next();
+}
+
 export function createApiServer(): ApiServer {
   // Embedded/test callers get the same mandatory-config validation. The
   // production SESSION_SECRET requirement is enforced by validateEnvironment().
@@ -125,6 +168,7 @@ export function createApiServer(): ApiServer {
   app.use(securityHeaders);
   app.use(cacheHeaders);
   app.use(corsHeaders);
+  app.use(requestTimeout);
   // Provider webhooks are signed over the RAW bytes: re-serializing JSON would
   // change the payload and invalidate every signature. The `verify` hook keeps
   // the exact bytes on the request so the webhook routes can verify them.

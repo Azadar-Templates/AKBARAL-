@@ -149,6 +149,17 @@ export const env = {
   executionRetryBaseDelayMs: resolveIntEnv('AKBARAL_EXECUTION_RETRY_BASE_DELAY_MS', 2000, 0, 60000),
   executionStepTimeoutMs: resolveIntEnv('AKBARAL_EXECUTION_STEP_TIMEOUT_MS', 120000, 250, 3600000),
   workflowTimeoutMs: resolveIntEnv('AKBARAL_WORKFLOW_TIMEOUT_MS', 900000, 1000, 7200000),
+  // --- AI Provider timeouts & resilience (fix for \"AI took too long\" platform timeout) ----
+  // Provider call timeout: per-request hard limit for non-streaming calls (default 60s, min 1s)
+  providerTimeoutMs: resolveIntEnv('AKBARAL_PROVIDER_TIMEOUT_MS', 60000, 1000, 300000),
+  // Streaming chunk timeout: time allowed between SSE chunks before aborting (default 30s)
+  providerStreamChunkTimeoutMs: resolveIntEnv('AKBARAL_PROVIDER_STREAM_CHUNK_TIMEOUT_MS', 30000, 1000, 120000),
+  // Goal analysis LLM timeout: how long MASTER waits for LLM analysis before falling back to heuristic (default 15s)
+  goalAnalysisTimeoutMs: resolveIntEnv('AKBARAL_GOAL_ANALYSIS_TIMEOUT_MS', 15000, 1000, 60000),
+  // API request timeout: Express-level timeout for /api/* requests (default 30s, 0 disables)
+  apiRequestTimeoutMs: resolveIntEnv('AKBARAL_API_REQUEST_TIMEOUT_MS', 30000, 0, 300000),
+  // Frontend fetch timeout: used by public/app.js for API calls (default 30s)
+  frontendApiTimeoutMs: resolveIntEnv('AKBARAL_FRONTEND_API_TIMEOUT_MS', 30000, 5000, 120000),
 } as const;
 
 /**

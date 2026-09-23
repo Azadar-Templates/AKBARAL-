@@ -125,7 +125,19 @@
       },
       timed_out: {
         title: 'Execution timed out',
-        detail: 'The execution exceeded its time budget and was stopped. Your free task credit was refunded.',
+        detail: 'The execution exceeded its time budget and was stopped. Your free task credit was refunded. Try again or use a faster model.',
+      },
+      timeout: {
+        title: 'Request timed out',
+        detail: 'The request took too long and was stopped to keep the interface responsive. The task may still be running in background — check the task center. Try again with a faster model or check provider health.',
+      },
+      request_timeout: {
+        title: 'Request timed out',
+        detail: 'The server stopped the request after the configured timeout to keep the interface responsive. Long-running work continues safely in background (queue). Check the task center or try again shortly.',
+      },
+      provider_chain_exhausted: {
+        title: 'All AI providers failed',
+        detail: 'All configured AI providers were tried with fallback and failed. The task was retried with backoff and then stopped honestly. Your free task credit was refunded — check provider status and try again shortly.',
       },
       cancelled: {
         title: 'Task cancelled',
@@ -143,7 +155,10 @@
       else if (msg.includes('HTTP 5') || msg.includes('server error')) key = 'provider_outage';
       else if (msg.includes('not configured')) key = 'provider_not_configured';
       else if (msg.includes('verification_failed')) key = 'verification_failed';
-      else if (msg.includes('timed_out')) key = 'timed_out';
+      else if (msg.includes('timed_out') || msg.includes('timed out')) key = 'timed_out';
+      else if (msg.includes('request_timeout') || msg.includes('Request timed out')) key = 'request_timeout';
+      else if (msg.includes('provider_chain_exhausted') || msg.includes('All AI providers failed') || msg.includes('All providers failed')) key = 'provider_chain_exhausted';
+      else if (msg.toLowerCase().includes('took too long') || msg.toLowerCase().includes('timeout')) key = 'timeout';
     }
     const entry = m[key];
     if (!entry) return { title: 'Task failed', detail: 'The task failed honestly. The raw error is shown below.', code: code || 'execution_failed' };
@@ -633,10 +648,33 @@
     return `<span class="badge ${color}">${esc(status)}</span>`;
   }
 
+  function frontendTimeoutMs() {
+    const meta = document.querySelector('meta[name=\"akbaral-frontend-timeout\"]');
+    const raw = meta ? Number.parseInt(meta.content || '', 10) : NaN;
+    return Number.isFinite(raw) && raw >= 5000 ? raw : 30_000;
+  }
+
   async function api(path, options = {}, retry = true) {
     const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
     if (state.accessToken) headers.authorization = `Bearer ${state.accessToken}`;
-    const response = await fetch(path, { ...options, headers });
+    // Configurable timeout + streaming-friendly: AbortController with frontendTimeoutMs
+    const timeoutMs = frontendTimeoutMs();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
+    try {
+      response = await fetch(path, { ...options, headers, signal: options.signal || controller.signal });
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err && err.name === 'AbortError') {
+        const error = new Error(`Request timed out after ${timeoutMs}ms — the server may still be processing in background. Check the task center or try again with a faster model.`);
+        error.code = 'timeout';
+        error.status = 408;
+        throw error;
+      }
+      throw err;
+    }
+    clearTimeout(timeout);
     if (response.status === 401 && retry && state.refreshToken) {
       // Pass the exact token that failed: if another tab has refreshed since,
       // refreshSession adopts its tokens instead of rotating again.

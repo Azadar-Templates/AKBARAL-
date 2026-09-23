@@ -91,13 +91,31 @@ function resolveProviderSpec(key: string) {
  * self-hosted OpenAI-compatible endpoints without code changes.
  */
 /**
- * Per-request provider timeout. Default 60s; operators (and the timeout
- * regression test) can override via AKBARAL_PROVIDER_TIMEOUT_MS (min 1s so a
- * misconfiguration cannot disable the timeout entirely).
+ * Per-request provider timeout. Configurable via AKBARAL_PROVIDER_TIMEOUT_MS (min 1s).
+ * Uses env.providerTimeoutMs when available, falls back to process.env for test isolation.
  */
 function providerTimeoutMs(): number {
+  try {
+    const { env } = require('../config/env') as { env: { providerTimeoutMs: number } };
+    if (env?.providerTimeoutMs && env.providerTimeoutMs >= 1000) {
+      return env.providerTimeoutMs;
+    }
+  } catch {
+    // env not yet loaded (e.g. early test setup) — fall through to process.env
+  }
   const parsed = Number.parseInt(process.env.AKBARAL_PROVIDER_TIMEOUT_MS ?? '', 10);
   return Number.isFinite(parsed) && parsed >= 1000 ? parsed : 60_000;
+}
+
+function providerStreamChunkTimeoutMs(): number {
+  try {
+    const { env } = require('../config/env') as { env: { providerStreamChunkTimeoutMs: number } };
+    if (env?.providerStreamChunkTimeoutMs && env.providerStreamChunkTimeoutMs >= 1000) {
+      return env.providerStreamChunkTimeoutMs;
+    }
+  } catch {}
+  const parsed = Number.parseInt(process.env.AKBARAL_PROVIDER_STREAM_CHUNK_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 1000 ? parsed : 30_000;
 }
 
 function resolveBaseUrl(spec: { key: string; baseUrl?: string }): string {
@@ -189,6 +207,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
             Accept: 'text/event-stream',
           },
           body: JSON.stringify({ model: model.key, messages, stream: true }),
+          chunkTimeoutMs: providerStreamChunkTimeoutMs(),
           onData: (data) => {
             if (!data || data === '[DONE]') {
               return;
@@ -314,6 +333,7 @@ export class AnthropicProvider implements ModelProvider {
             messages: rest,
             stream: true,
           }),
+          chunkTimeoutMs: providerStreamChunkTimeoutMs(),
           onData: (data) => {
             if (!data) {
               return;
@@ -477,6 +497,7 @@ export class GoogleProvider implements ModelProvider {
             contents,
             systemInstruction: system ? { parts: [{ text: system }] } : undefined,
           }),
+          chunkTimeoutMs: providerStreamChunkTimeoutMs(),
           onData: (data) => {
             if (!data) {
               return;

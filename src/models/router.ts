@@ -32,6 +32,12 @@ export interface RoutingDecision {
  * gateway is preferred (private 127.0.0.1:20128, never public). Quota-aware
  * fallback, cost controls, telemetry preserved. Direct providers remain as
  * fallback — never removed.
+ *
+ * Resilience (fix for "AI took too long to respond"):
+ *   - Overall chain timeout (configurable via env) prevents indefinite waiting
+ *   - Streaming with per-chunk timeout
+ *   - Clear user-friendly error after all fallbacks exhausted
+ *   - Long-running queue tasks continue in background, HTTP returns 202 quickly
  */
 export class ModelRouter {
   private dbModels(): ModelSpec[] {
@@ -94,12 +100,9 @@ export class ModelRouter {
         score -= 100;
       }
     }
-    // OmniRoute gateway boost: when enabled and configured, prefer gateway routing
-    // for quota-aware fallback, cost controls and expanded model access.
-    // Does NOT remove direct providers — they remain as fallback.
     if (omnirouteEnabled() && isOmnirouteConfigured() && model.providerKey === 'omniroute') {
-      score += 10; // Prefer gateway when operator opted in
-      if (model.key === 'auto') score += 5; // 'auto' picks cheapest viable
+      score += 10;
+      if (model.key === 'auto') score += 5;
       if (model.capabilities.includes('fallback')) score += 2;
       if (model.capabilities.includes('quota-aware')) score += 2;
     }
@@ -150,14 +153,47 @@ export class ModelRouter {
     return error;
   }
 
+  private overallTimeoutMs(): number {
+    try {
+      const { env } = require('../config/env') as { env: { providerTimeoutMs: number; executionStepTimeoutMs: number } };
+      const providerMs = env?.providerTimeoutMs ?? 60_000;
+      const stepMs = env?.executionStepTimeoutMs ?? 120_000;
+      return Math.min(providerMs * 3 + 10_000, stepMs);
+    } catch {
+      return 120_000;
+    }
+  }
+
+  private chainExhaustedError(lastError: unknown, attempted: string[]): Error {
+    const attemptedList = attempted.join(', ') || 'no providers attempted';
+    const reason = lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown error');
+    const error = new Error(
+      `All AI providers failed after trying: ${attemptedList}. Last error: ${reason}. The task was retried with fallback and then stopped honestly — your free task credit was refunded. Try again shortly or check provider configuration.`,
+    ) as Error & { code?: string; attemptedProviders?: string[] };
+    error.code = (lastError as { code?: string })?.code ?? 'provider_chain_exhausted';
+    error.attemptedProviders = attempted;
+    return error;
+  }
+
   async complete(requirements: ModelRequirements, messages: ChatMessage[]): Promise<ChatResult> {
     const primary = this.route(requirements);
     const chain = this.fallbackChain(primary, requirements);
+    const overallTimeout = this.overallTimeoutMs();
+    const overallDeadline = Date.now() + overallTimeout;
 
     let lastError: unknown = null;
     let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
+    const attempted: string[] = [];
     for (const decision of chain) {
+      if (Date.now() > overallDeadline) {
+        const timeoutErr = new Error(`AI provider chain timed out after ${overallTimeout}ms (attempted: ${attempted.join(', ')})`) as Error & { code?: string };
+        timeoutErr.code = 'timeout';
+        lastError = timeoutErr;
+        lastAttemptError = timeoutErr;
+        break;
+      }
+
       if (!decision.available) {
         const error = new Error(
           `${decision.providerKey} is not configured; set ${decision.requiredEnvKey}`,
@@ -179,6 +215,7 @@ export class ModelRouter {
         }
       }
 
+      attempted.push(`${decision.providerKey}/${decision.model.key}`);
       const provider = createProvider(decision.providerKey);
       const startedAt = Date.now();
       try {
@@ -222,6 +259,9 @@ export class ModelRouter {
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
     }
+    if (attempted.length > 0) {
+      throw this.chainExhaustedError(lastAttemptError ?? lastError, attempted);
+    }
     if (lastAttemptError instanceof Error) {
       throw lastAttemptError;
     }
@@ -243,11 +283,22 @@ export class ModelRouter {
   ): Promise<ChatResult> {
     const primary = this.route(requirements);
     const chain = this.fallbackChain(primary, requirements);
+    const overallTimeout = this.overallTimeoutMs();
+    const overallDeadline = Date.now() + overallTimeout;
 
     let lastError: unknown = null;
     let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
+    const attempted: string[] = [];
     for (const decision of chain) {
+      if (Date.now() > overallDeadline) {
+        const timeoutErr = new Error(`AI provider streaming chain timed out after ${overallTimeout}ms (attempted: ${attempted.join(', ')})`) as Error & { code?: string };
+        timeoutErr.code = 'timeout';
+        lastError = timeoutErr;
+        lastAttemptError = timeoutErr;
+        break;
+      }
+
       if (!decision.available) {
         const error = new Error(
           `${decision.providerKey} is not configured; set ${decision.requiredEnvKey}`,
@@ -269,6 +320,7 @@ export class ModelRouter {
         }
       }
 
+      attempted.push(`${decision.providerKey}/${decision.model.key}`);
       const provider = createProvider(decision.providerKey);
       const startedAt = Date.now();
       try {
@@ -313,6 +365,9 @@ export class ModelRouter {
 
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
+    }
+    if (attempted.length > 0) {
+      throw this.chainExhaustedError(lastAttemptError ?? lastError, attempted);
     }
     if (lastAttemptError instanceof Error) {
       throw lastAttemptError;

@@ -34,6 +34,10 @@ const heroVideoEnabled = existsSync(heroVideoPath);
  *   clearly labelled "Advertisement" in non-intrusive positions.
  */
 const adsenseClient = (process.env.AKBARAL_ADSENSE_CLIENT ?? '').trim();
+const frontendTimeoutMs = (() => {
+  const raw = Number.parseInt(process.env.AKBARAL_FRONTEND_API_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(raw) && raw >= 5000 ? raw : 30_000;
+})();
 
 /**
  * NO React-rendered scripts and NO pre-hydration DOM mutations — by design.
@@ -58,6 +62,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <meta name="theme-color" content="#08080a" />
         {heroVideoEnabled ? <meta name="akbaral-hero-video" content="1" /> : null}
         {adsenseClient ? <meta name="akbaral-adsense-client" content={adsenseClient} /> : null}
+        <meta name="akbaral-frontend-timeout" content={String(frontendTimeoutMs)} />
         {/* Premium editorial type: Sora (display) + Inter (text) + Space Grotesk Mono (technical),
             swapped with system fallbacks — never a render blocker. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
