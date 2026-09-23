@@ -23,7 +23,12 @@ import { displayDatabaseTarget } from '../db/display-target';
  *   · table introspection uses each engine's own catalogue.
  */
 
-const DEFAULT_DATABASE_URL = 'file:./mission.db';
+const DEFAULT_DATABASE_URL = (() => {
+  // Honour DATA_DIR so the mission DB lives under the same writable volume
+  // as the main DB (/data in production, ./data in dev).
+  const dataDir = (process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data')).trim();
+  return `file:${dataDir}/mission.db`;
+})();
 
 export interface MissionEnv {
   databaseUrl: string;
@@ -35,7 +40,8 @@ export interface MissionEnv {
 }
 
 export function missionEnv(): MissionEnv {
-  const raw = (process.env.ZA141251SA_DATABASE_URL ?? process.env.MISSION_DATABASE_URL ?? DEFAULT_DATABASE_URL).trim();
+  const dataDir = (process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data')).trim();
+  const raw = (process.env.ZA141251SA_DATABASE_URL ?? process.env.MISSION_DATABASE_URL ?? `file:${dataDir}/mission.db`).trim();
   return {
     databaseUrl: raw.length > 0 ? raw : DEFAULT_DATABASE_URL,
     sessionSecret: (process.env.ZA141251SA_SESSION_SECRET ?? '').trim() || null,
