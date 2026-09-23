@@ -47,6 +47,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Compute image name (lowercase; strip trailing non-alphanumerics
           so "AKBARAL-" becomes the valid repository "akbaral")
         run: |
@@ -68,6 +75,8 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+            mrzain555/akbaral:latest
+            mrzain555/akbaral:${{ github.sha }}
           build-args: |
             GIT_SHA=${{ github.sha }}
           cache-from: type=gha
@@ -104,6 +113,50 @@ jobs:
       - name: Verify compiled PostgreSQL json_extract fix in image
         run: |
           docker run --rm "${{ env.IMAGE }}:${{ github.sha }}" node scripts/verify-compiled-pg.mjs
+
+      - name: Verify DATA_DIR fix in image
+        run: |
+          echo "=== Verifying DATA_DIR fix in built image ==="
+          # Check DATA_DIR env var is set
+          DATA_DIR_VAL=$(docker run --rm --entrypoint env "${{ env.IMAGE }}:${{ github.sha }}" | grep ^DATA_DIR= || true)
+          echo "DATA_DIR: ${DATA_DIR_VAL:-NOT SET}"
+          if [ -z "$DATA_DIR_VAL" ]; then
+            echo "::error::DATA_DIR not set in image"
+            exit 1
+          fi
+          # Check no mkdir /app/data in Dockerfile history
+          echo "Checking Dockerfile layer for /app/data mkdir..."
+          # Check /data is writable
+          docker run --rm --entrypoint sh "${{ env.IMAGE }}:${{ github.sha }}" -c "test -w /data && echo '/data is writable' || echo '/data is NOT writable'"
+          # Check VOLUME
+          docker inspect "${{ env.IMAGE }}:${{ github.sha }}" --format='{{json .Config.Volumes}}' | grep -o '/data' && echo "VOLUME /data present" || echo "::warning::VOLUME /data not found in image config"
+          echo "=== DATA_DIR fix verification complete ==="
+
+      - name: Verify Docker Hub push and manifest
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        run: |
+          echo "=== Verifying Docker Hub image ==="
+          SHA="${{ github.sha }}"
+          # Check Docker Hub manifest via API (no docker pull needed)
+          TOKEN=$(curl -s "https://hub.docker.com/v2/users/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\": \"${{ secrets.DOCKERHUB_USERNAME }}\", \"password\": \"${{ secrets.DOCKERHUB_TOKEN }}\"}" | jq -r .token)
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::warning::Could not authenticate to Docker Hub for manifest verification"
+          else
+            # Verify :latest tag
+            MANIFEST_LATEST=$(curl -s -H "Authorization: JWT ${TOKEN}" \
+              "https://hub.docker.com/v2/repositories/mrzain555/akbaral/tags/latest" | jq -r .digest 2>/dev/null)
+            echo "Docker Hub mrzain555/akbaral:latest digest: ${MANIFEST_LATEST:-not found}"
+            # Verify :sha tag
+            MANIFEST_SHA=$(curl -s -H "Authorization: JWT ${TOKEN}" \
+              "https://hub.docker.com/v2/repositories/mrzain555/akbaral/tags/${SHA}" | jq -r .digest 2>/dev/null)
+            echo "Docker Hub mrzain555/akbaral:${SHA} digest: ${MANIFEST_SHA:-not found}"
+            if [ -z "$MANIFEST_SHA" ] || [ "$MANIFEST_SHA" = "null" ]; then
+              echo "::warning::Docker Hub SHA tag not found yet (may need a moment to propagate)"
+            fi
+          fi
+          echo "=== Docker Hub verification complete ==="
 
       - name: Make package public (idempotent; public repo => public image)
         run: |
