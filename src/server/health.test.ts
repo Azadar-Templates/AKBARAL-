@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { createApiServer, type ApiServer } from '../app';
 import { db } from '../db';
 import { checkMigrationsCurrent } from './health';
+import { executionQueue } from '../orchestrator/queue';
 
 /**
  * Milestone 10 — liveness/readiness/metrics verification.
@@ -67,8 +68,8 @@ describe('Milestone 10: health, readiness and metrics', () => {
 
   after(async () => {
     db.run('DELETE FROM users WHERE email LIKE ?', [`m10-%${suffix}@akbaral.test`]);
-    db.close();
     await api.close();
+    db.close();
   });
 
   it('liveness probe actually checks the database (no fake ok)', async () => {
@@ -92,6 +93,40 @@ describe('Milestone 10: health, readiness and metrics', () => {
     for (const check of body.checks) {
       assert.ok(check.ok, `${check.name} is ready`);
     }
+  });
+
+  it('a stopped execution poller is not ready even when its statistics remain readable', async () => {
+    executionQueue.stop();
+    try {
+      assert.equal(executionQueue.isStarted, false);
+      assert.equal(executionQueue.stats().activeWorkers, 0, 'an idle/stopped count is not liveness');
+      const response = await fetch(`${baseUrl}/api/ready`);
+      assert.equal(response.status, 503);
+      const body = await response.json() as { status: string; checks: Array<{ name: string; ok: boolean }> };
+      assert.equal(body.status, 'not_ready');
+      assert.equal(body.checks.find(check => check.name === 'execution_queue')?.ok, false);
+      assert.equal((await fetch(`${baseUrl}/api/health`)).status, 200, 'HTTP/database liveness remains distinct');
+    } finally {
+      executionQueue.start();
+    }
+    assert.equal(executionQueue.isStarted, true);
+    assert.equal((await fetch(`${baseUrl}/api/ready`)).status, 200, 'idle running poller is ready again');
+  });
+
+  it('unavailable queue statistics fail readiness closed', async context => {
+    context.mock.method(executionQueue, 'stats', () => { throw new Error('synthetic queue statistics unavailable'); });
+    const response = await fetch(`${baseUrl}/api/ready`);
+    assert.equal(response.status, 503);
+    const body = await response.json() as { checks: Array<{ name: string; ok: boolean }> };
+    assert.equal(body.checks.find(check => check.name === 'execution_queue')?.ok, false);
+  });
+
+  it('the migration probe selects the actual database engine directory', context => {
+    const seen: string[] = [];
+    const exists = fs.existsSync;
+    context.mock.method(fs, 'existsSync', (target: fs.PathLike) => { seen.push(String(target)); return exists(target); });
+    assert.equal(checkMigrationsCurrent().ok, true);
+    assert.ok(seen.includes(path.resolve(process.cwd(), 'db', db.engine === 'postgres' ? 'migrations-pg' : 'migrations')));
   });
 
   it('migration check fails honestly when migrations are pending', () => {

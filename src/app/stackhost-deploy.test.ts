@@ -110,15 +110,30 @@ test('entrypoint no longer duplicates startup preconditions that start-prod.mjs 
 // --------------------------------------------------------------------------
 
 test('stackhost.yaml uses the documented build/start commands and preserves the injected PORT', () => {
-  // StackHost requires `commands.build` to be a YAML list (array) — a single
-  // string with `&&` is a schema violation that causes the platform's build
-  // step to be skipped or to fail with no application logs (2-5s silent exit).
-  // The correct form is two separate list items exactly as the Dockerfile does.
-  // Minimal fix 2026-09-17 for “FAILED TO INSTALL DEPENDENCIES”: `npm ci`
-  // (without `--include=dev`) is the Dockerfile-faithful form and avoids the
-  // platform-specific install failure observed with `--include=dev` on free-tier.
-  assert.match(stackhostSource, /build:\s*\n\s*- "npm ci"/);
-  assert.match(stackhostSource, /- "npm run build"/);
+  // StackHost Free memory ceiling fix (2026-09-22): a source build
+  // (`npm ci` + `next build`) needs roughly 1GB of RAM and fails on the 512MB
+  // free tier at "Creating build environment → Failed to create container".
+  // The deployed configuration therefore pulls the prebuilt image published by
+  // the docker-publish workflow and runs NO build step on the platform.
+  assert.match(
+    stackhostSource,
+    /image:\s*"?ghcr\.io\/azadar-templates\/akbaral:[\w.-]+/,
+    'stackhost.yaml must run the prebuilt GHCR image — a source build needs ~1GB and the free tier has 512MB',
+  );
+  assert.match(
+    stackhostSource,
+    /build:\s*\[\]/,
+    'commands.build must stay an empty list: the image is prebuilt, so the platform must not rebuild it',
+  );
+  assert.doesNotMatch(
+    stackhostSource,
+    /build:\s*\n\s*-\s*"?npm (ci|run build)/,
+    'do not reintroduce a platform-side source build — it exceeds the StackHost Free 512MB ceiling',
+  );
+  // StackHost requires `commands.build` to be a YAML list (array) when it is
+  // non-empty — a single string with `&&` is a schema violation that causes the
+  // platform's build step to be skipped or to fail with no application logs
+  // (2-5s silent exit). This guard stays live in case a build step ever returns.
   assert.doesNotMatch(
     stackhostSource,
     /build:\s*"npm ci --include=dev && npm run build"/,

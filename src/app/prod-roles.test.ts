@@ -21,12 +21,15 @@ import assert from 'node:assert/strict';
  * the real script's `--print-ports` mode (no servers are started), not by
  * matching its text:
  *
- *   AKBARAL_API_PORT > 4000 > PORT-injected host port; AKBARAL_WEB_PORT wins,
- *   else PORT when it does not collide with the API port, else 3000.
+ *   AKBARAL_WEB_PORT wins; else PORT (the port the platform routes traffic to);
+ *   else 3000. The API keeps AKBARAL_API_PORT, else 4000 — and only when that
+ *   would collide with the resolved public port does it step to the next free
+ *   port (4001), so the platform's injected port is ALWAYS served by the web tier.
  *
- * The historical behaviour is part of the contract: PORT=<api port> (what the
- * preview supervisor and the panel scripts export) must keep the web tier on
- * 3000 instead of colliding with the API.
+ * Contract change (2026-09-22, Blitz): PORT=<api port> used to keep the web tier
+ * on 3000. Blitz injects PORT=4000, which left the public port unserved and the
+ * app stuck on "Starting up" with no output. PORT now always moves the web tier
+ * and the API steps aside on collision instead.
  */
 
 const source = readFileSync('scripts/start-prod.mjs', 'utf8');
@@ -70,11 +73,15 @@ test('default ports are unchanged for every existing deployment', () => {
   assert.equal(bare.body.webPort, 3000, 'with no port env the web tier stays on 3000');
   assert.equal(bare.body.apiPort, 4000, 'with no port env the API stays on 4000');
 
-  // What the preview supervisor and panel scripts export: PORT=<api port>.
-  const panelStyle = printPorts({ PORT: '4000' });
-  assert.equal(panelStyle.status, 0);
-  assert.equal(panelStyle.body.webPort, 3000, 'PORT=<api port> must not move the web tier (no collision)');
-  assert.equal(panelStyle.body.apiPort, 4000, 'the API keeps its port');
+  // Blitz (2026-09-22) injects PORT=4000, its own default. The public tier must
+  // serve that port, so the API steps to 4001 rather than the web tier refusing
+  // to move — the previous behaviour left the injected port unserved and Blitz
+  // stuck on "Starting up" with no application output at all.
+  const blitzStyle = printPorts({ PORT: '4000' });
+  assert.equal(blitzStyle.status, 0);
+  assert.equal(blitzStyle.body.webPort, 4000, 'PORT=<api port> must move the PUBLIC tier so the injected port is served');
+  assert.equal(blitzStyle.body.publicPort, 4000, 'the reported public port is the web tier');
+  assert.equal(blitzStyle.body.apiPort, 4001, 'the API steps off its default instead of colliding with the public port');
 });
 
 test('a platform-injected PORT moves the PUBLIC tier only', () => {

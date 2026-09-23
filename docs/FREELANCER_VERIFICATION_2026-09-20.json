@@ -1,0 +1,2087 @@
+{
+  "schemaVersion": 1,
+  "verifiedSourceCommit": "636f9f36e6ae3cf2aa83f3c068fc70193a610f5b",
+  "summary": {
+    "fingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+    "completedFiles": 111,
+    "totalFiles": 111,
+    "complete": true,
+    "tests": 1174,
+    "suites": 114,
+    "pass": 1174,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "next": null
+  },
+  "sourceReuse": {
+    "kind": "pending-test-only-evidence-reuse",
+    "fromCheckpoint": "/home/user/AKBARAL-/logs/test-checkpoints/f7d194d6c6fee392c1df9b35/checkpoint.json",
+    "fromCheckpointHash": "0244bbd7e92298776decf7c876764b9ea0d988a3ac56786eaed4e01c95ee1eb7",
+    "fromFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+    "toFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+    "unchangedCompletedFiles": 86,
+    "changedPendingTest": "src/realtime/execution-stream.test.ts",
+    "oldTestHash": "105c1c75b9388025389b82eb082b6b30866d185601f56c81225a245ced21b251",
+    "newTestHash": "59136f791896a713b16be6c731952b8a9b83b788acd3b17f0406abc911d27cad",
+    "change": "Only two fixture cleanup calls now use ApiServer.close; assertions, production code, harness, dependencies and config unchanged",
+    "verification": "Original full fingerprint reconstructed exactly; all 86 TAP and snapshot hashes and decoded SQLite images verified; old checkpoint, failed database and every artifact preserved"
+  },
+  "nativePostgresql": {
+    "settlement": {
+      "counts": {
+        "tests": 53,
+        "suites": 0,
+        "pass": 53,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "c60ad8605a1010d21b50db7f5ad36ab52108accecd37b54092dd589cef58cd2f"
+    },
+    "delivery": {
+      "counts": {
+        "tests": 30,
+        "suites": 0,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "675fa8c4408741e0911887e28563573c4cef04ad99eb08a62fa52521ba9bd8e3"
+    },
+    "money": {
+      "counts": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 40,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1,
+        "todo": 0
+      },
+      "logSha256": "2596345d4911257175a05fbb4a00a76bfcef496c3f6282c3ec8bf6647f8169a9"
+    },
+    "awin": {
+      "counts": {
+        "tests": 32,
+        "suites": 0,
+        "pass": 32,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "3cb5a3429855c2aca68c415945823a36297217d28babd52d8e64f3c8821a3d04"
+    }
+  },
+  "memoryFixtureArchive": {
+    "path": "logs/test-checkpoints/f43de898877c5eb8de24bb29/memory-fixtures.tar.br",
+    "bytes": 7614447,
+    "sha256": "1d4bccc0caf738786e0964b3db841b68c206e1c0873f0f6a832565583f7b6f91",
+    "roundTripComparedToOriginals": true
+  },
+  "files": [
+    {
+      "file": "src/agents/access.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/0-6d5ce4e2-d7f7-45c2-907c-e16fe4093c55/output.tap",
+      "logSha256": "4ca929ca8cb9c1c8350c25bbaf561f62fd9663a5dbc43e59b27a6c29c5849efa",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/0-6d5ce4e2-d7f7-45c2-907c-e16fe4093c55/passed.db.br",
+      "snapshotSha256": "ece8c6df07584bb8234e51a5a171fbc51230eebf1282dfae413614b86ff8984f",
+      "sqliteImageSha256": "f5a47951bf5c008b18b5592b0145851a84d44fbca60c640cda7406615bbf6c3e"
+    },
+    {
+      "file": "src/agents/registry.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/1-4091e502-4ba0-48b4-88f3-29e6f2a8074a/output.tap",
+      "logSha256": "1c4818f9fbb8cc9db674b1789b1c5300bbd41d09c87674944e5f4dce8bedf236",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/1-4091e502-4ba0-48b4-88f3-29e6f2a8074a/passed.db.br",
+      "snapshotSha256": "90a35aa535c5777ca31e5608434008bf4d250919d4cf7b01e192372e7d19074a",
+      "sqliteImageSha256": "d497322a048cee49be7ca7bf3c31c129cd64a6b26348e751d8fc35e62117d4fd"
+    },
+    {
+      "file": "src/agents/search-providers.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/2-8f9e2c4e-e193-463c-ad76-a131cf8c91fc/output.tap",
+      "logSha256": "18be3641ff4331719b5ba4ea7bf4a9f2ebe4d2f3e890b4de6e121075f12765cf",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/2-8f9e2c4e-e193-463c-ad76-a131cf8c91fc/passed.db.br",
+      "snapshotSha256": "31d3fce4f83a30a3531530096ba929a41ebe940a33067cb614aa3cdf856be8c9",
+      "sqliteImageSha256": "7013bcbfad12227081359c3e8bd5e7294f4e02cb67b23094451bba6ca5a18c61"
+    },
+    {
+      "file": "src/agents/web-research.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/3-44347d65-dd52-46f4-87b5-d5dad1beba19/output.tap",
+      "logSha256": "bfe45227a66d6d29d1858419363d8838c47dc452d3f45e5bbc5a959b768a2639",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/3-44347d65-dd52-46f4-87b5-d5dad1beba19/passed.db.br",
+      "snapshotSha256": "53868781e44b2c7581e41b7c58b87299ba798a66d0fe802b2ff8fe977971fa0e",
+      "sqliteImageSha256": "a3847e6f97c837afa56afc2bd829115d705089dfc352c26c6e2afa1548811643"
+    },
+    {
+      "file": "src/app/asset-delivery.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/4-44c40709-6c75-4c67-b5ef-4f6dc136d5c7/output.tap",
+      "logSha256": "5af9f9efd9c743f4accb6deb9c06ed382e5b93ad89b69609d15f1b1bb05a75ee",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/4-44c40709-6c75-4c67-b5ef-4f6dc136d5c7/passed.db.br",
+      "snapshotSha256": "45256cf38c569599ace1ae2ec9684f97208c769b30e38777194b619cd73fe6e6",
+      "sqliteImageSha256": "86dd2ed377d8d4ddbfd1cc412cf313005f838dcacc3dabf93e2d153183f9a589"
+    },
+    {
+      "file": "src/app/auth-provider-ux.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/5-a035c729-6156-4a30-99b6-91c8acdfda28/output.tap",
+      "logSha256": "85158bed999723ed33b5994901917e55b20ad374461f25ac08088af3c610e333",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/5-a035c729-6156-4a30-99b6-91c8acdfda28/passed.db.br",
+      "snapshotSha256": "876d4fda1d4c31b7646f5ae7f437a88175cd5b411fa1f6193e4c65b9cbc098f5",
+      "sqliteImageSha256": "2293fa4a4efd85d074e6ed612ccfc304668adf80cc33eb4164272dc492bcb917"
+    },
+    {
+      "file": "src/app/build-runtime-assets.test.ts",
+      "counts": {
+        "tests": 1,
+        "suites": 0,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/6-09812951-ba58-4798-9b1b-102f39a8cc3d/output.tap",
+      "logSha256": "dac9678b0260fd81970d87214cc53b540e49f1e337ab7cce505802e44b0285f9",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/6-09812951-ba58-4798-9b1b-102f39a8cc3d/passed.db.br",
+      "snapshotSha256": "4371913256247054b3ce966ba56a7993879426e79f5ffc72fbe20369a065e13a",
+      "sqliteImageSha256": "ec0699d05ecffe01d7f09ae0370c60f10c565f73e70254373c3d4f8e88bad4f0"
+    },
+    {
+      "file": "src/app/deep-link-refresh.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/7-2745e6fb-d1bd-4922-bc4b-c97751c72841/output.tap",
+      "logSha256": "f1db28bb473ae49a2a9d6e5f463e63b77fa3dc42cafedf483cc55a24866df954",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/7-2745e6fb-d1bd-4922-bc4b-c97751c72841/passed.db.br",
+      "snapshotSha256": "e85b32722b6a9b2527fc56376d466b60d7e0571c0f32ad737440243e132b29d3",
+      "sqliteImageSha256": "a78341b40bd54eb51822bf03c1d5fbd19b7a5e387d942cfb2eddc31639ee0788"
+    },
+    {
+      "file": "src/app/final-ui-ux.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/8-d8997788-d0d3-4160-b4a4-f7fa5d2ec1aa/output.tap",
+      "logSha256": "87cfcd818fac9126f5b545fb81817d9e4a3e4d86b5a7fca18728197cbddab58a",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/8-d8997788-d0d3-4160-b4a4-f7fa5d2ec1aa/passed.db.br",
+      "snapshotSha256": "42bb0d4be1b524e2b3ad10372314816cee61d5d74a0f74ae612c4e7c363d7f09",
+      "sqliteImageSha256": "43610def7cfd4483fc74834ba951427e9e8bec3ae49bd1fd80f7f37cb96f3049"
+    },
+    {
+      "file": "src/app/master-routing.test.ts",
+      "counts": {
+        "tests": 10,
+        "suites": 1,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/9-c62b2787-4646-437e-b36b-8d4d3b902210/output.tap",
+      "logSha256": "f1e798203a5509e0359235805693d2bd7648175fc80cd5ea69b3007d6283f391",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/9-c62b2787-4646-437e-b36b-8d4d3b902210/passed.db.br",
+      "snapshotSha256": "261b16d479d4ce5b9e1ab6b8a86155ac65ee2be144ffb48c853d30ac0a33b420",
+      "sqliteImageSha256": "8779f41e66773459a1043424906a8d7b8dfe60a6d0ebc092fd75dd7f510bf87b"
+    },
+    {
+      "file": "src/app/preview-stack.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/10-00e439d8-149e-45e6-8c18-21cfc945092a/output.tap",
+      "logSha256": "798e94b33e03b2c2c0b12857a0b569f85a1c7943cc173714786269751424d2b6",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/10-00e439d8-149e-45e6-8c18-21cfc945092a/passed.db.br",
+      "snapshotSha256": "8c483f2d1cf8384649726109edb76788fde6374f682f30de137abe13f2aa0290",
+      "sqliteImageSha256": "c5207354c4f3bf0133a2e6cab94d29798d368afd23a2c4b405772a7d4823efbb"
+    },
+    {
+      "file": "src/app/preview-supervisor.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 0,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/11-be438742-dd26-451f-83ff-89647b8820cf/output.tap",
+      "logSha256": "0c93b93f3727250148b7e4b78972644a2e4f4a7093f2fd4c683411545f5aed79",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/11-be438742-dd26-451f-83ff-89647b8820cf/passed.db.br",
+      "snapshotSha256": "fab9672abcb8964c3fc74410695c20531aba1e137b7a889c0fe01879a799d65c",
+      "sqliteImageSha256": "92394b0e4aeeeb0cb788ed7528628ea7b6f780573368e39ca2c0b743a271b9b9"
+    },
+    {
+      "file": "src/app/prod-roles.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/12-6f5e0c04-eae9-4b0d-aeca-bfc044a63da2/output.tap",
+      "logSha256": "ea667d0a46805fc8e49327f0a3300919b86ca755dde3d67e2076df62b560cc4f",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/12-6f5e0c04-eae9-4b0d-aeca-bfc044a63da2/passed.db.br",
+      "snapshotSha256": "652986ad58b8efc3ed1bdbed3ba2632055a3c6878f972478115725636ea313cd",
+      "sqliteImageSha256": "05bc017ea0cc837b2abf0449327906d935edf7efb6cbee0ae5c3279bdbbb9385"
+    },
+    {
+      "file": "src/app/responsive-contract.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 1,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/13-b9e085ca-fe8a-4411-a9a5-e511bf63cb7f/output.tap",
+      "logSha256": "8d7a702a51f2e5eadc8a03d933e4b578374dc011c50c0925898af2cc45e2f3d2",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/13-b9e085ca-fe8a-4411-a9a5-e511bf63cb7f/passed.db.br",
+      "snapshotSha256": "b5ea1eeddb1357d317607a84ada1d4c1980fe1b28d31eebe4bd6522bc4a8e331",
+      "sqliteImageSha256": "b3ecc691afa7e434ea81baecf5625c5d816468585f3023964d0d29067d737c9e"
+    },
+    {
+      "file": "src/app/result-state-contract.test.ts",
+      "counts": {
+        "tests": 20,
+        "suites": 4,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/14-4afd6d75-71fd-4870-a99b-19425eaaae3f/output.tap",
+      "logSha256": "422aa92bc161ec70b1871a2c34de660625364e9124c7d2e11efc441a99c1c61b",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/14-4afd6d75-71fd-4870-a99b-19425eaaae3f/passed.db.br",
+      "snapshotSha256": "8fd3707c4e9580e9012d5f4090b3323d5852222d9c42e4bf91fdda62654d0cc0",
+      "sqliteImageSha256": "c74287dcb54223287ec6465b7fda2b3a2fc499089637d00a7430d67e2d2018ee"
+    },
+    {
+      "file": "src/app/stackhost-deploy.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/15-393c534d-6b04-4fe7-aba3-2dc8654c5bc9/output.tap",
+      "logSha256": "37838ee68b5731f2a00617ba827b3bace182647467f4a569f5d6d8be9b594ecb",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/15-393c534d-6b04-4fe7-aba3-2dc8654c5bc9/passed.db.br",
+      "snapshotSha256": "2a0898024f85718b4ee092293489b8e8ac24ffe3a810cc29278738b99b44995f",
+      "sqliteImageSha256": "cdeaa209a35ee7e476b41a2351038636621972244053c34010dcb123d224d638"
+    },
+    {
+      "file": "src/app/user-journey.test.ts",
+      "counts": {
+        "tests": 16,
+        "suites": 1,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/16-53811d9e-6096-4b06-b57e-21ed894394b5/output.tap",
+      "logSha256": "a2075b4395bec924afee23b55a4c8018467d038cf3bc81fd1b4cc3b617176206",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/16-53811d9e-6096-4b06-b57e-21ed894394b5/passed.db.br",
+      "snapshotSha256": "46841c2501d3966b16852e25148dce0b13d632522c2ded1217ff9cfd03e7b9c5",
+      "sqliteImageSha256": "d50cf0802c184ab31c558b758e9ce8961ddc8a233870feee23f66282709f30fb"
+    },
+    {
+      "file": "src/app/website-builder.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 3,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/17-073a90b0-d79a-472c-a69d-e4d0ca5fe872/output.tap",
+      "logSha256": "378bdfaf1aef46c31e5eca1250d363c0f529be2b1ffdeb255ee8f92d7bac2d05",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/17-073a90b0-d79a-472c-a69d-e4d0ca5fe872/passed.db.br",
+      "snapshotSha256": "503e00e79ffa183b79acabf56b19a89ce5748ba8f10f6a38818e7b395821f188",
+      "sqliteImageSha256": "a1d0720a69aea71cc6a84ed7fdb5bd4511d38d2570dbd52f6cec88674f1feea0"
+    },
+    {
+      "file": "src/app/workspace-ux-contract.test.ts",
+      "counts": {
+        "tests": 25,
+        "suites": 3,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/18-b98fbf71-3ff8-4597-a601-715a8a50bc5b/output.tap",
+      "logSha256": "82c33eaab9aa82d5da3e47b795234281f862558f8ba5e8b1701ede886ad5c6d6",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/18-b98fbf71-3ff8-4597-a601-715a8a50bc5b/passed.db.br",
+      "snapshotSha256": "64586a9703ff8359fd642d3ef566f4d5c1a3fea83b335e268e619d49fa4b3a54",
+      "sqliteImageSha256": "667b8b9b7dc3ff9126f90463927ed13dc89fba571c607fae49e7e0bf0c09f0fb"
+    },
+    {
+      "file": "src/auth/oauth.test.ts",
+      "counts": {
+        "tests": 20,
+        "suites": 1,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/19-8a920518-9fdb-4fc5-b861-215543db9389/output.tap",
+      "logSha256": "5a1213b1b00d3f54b910ca2f526ca8a9abf8f033de50776f9c1985698fdcc50b",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/19-8a920518-9fdb-4fc5-b861-215543db9389/passed.db.br",
+      "snapshotSha256": "aa2548a27baabad371c3fa75b2af15543775ae5e6826f4b9ad7d7765c4517e0e",
+      "sqliteImageSha256": "74b17c19dfef06045904f6cf5ee72231eb07c3e49ab7a73c55c8af5a76e897c9"
+    },
+    {
+      "file": "src/auth/service.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/20-9f9bd896-4c70-4b0f-883e-286be6b363e8/output.tap",
+      "logSha256": "fb7d401d814eb95a0176ea3b18c365e6966801266580dc1a55ccacde2052d5f5",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/20-9f9bd896-4c70-4b0f-883e-286be6b363e8/passed.db.br",
+      "snapshotSha256": "8706ef6153551a141539cd46ab0f870c309fcb02ebe5135d7c716b29be009024",
+      "sqliteImageSha256": "6f6750a023ceff81fcd517d71d7dda366768e1e361d6ae2cf28d0cef6d3d9fae"
+    },
+    {
+      "file": "src/automation/automation.test.ts",
+      "counts": {
+        "tests": 18,
+        "suites": 1,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/21-b6c577f0-89c4-42a2-a42d-f277da6846b5/output.tap",
+      "logSha256": "37b2989e1cdfbae331ea77a9c974a8ea844f420f03816a36dc400099aef6c747",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/21-b6c577f0-89c4-42a2-a42d-f277da6846b5/passed.db.br",
+      "snapshotSha256": "a3386662b1219d4597f80b33a0f475e918c666a2f5d4fa841f1cea8172811a09",
+      "sqliteImageSha256": "5c7d70edff5345a2dc4e28a6219adfe6375e18f84569f67520f6c175126faa0a"
+    },
+    {
+      "file": "src/automation/cron.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/22-1859afd7-ac17-40fb-b511-cd0be7408c2a/output.tap",
+      "logSha256": "282650aa4d4663fc254b7f34bedf556f9fa1722219e97c105161656cc3b51409",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/22-1859afd7-ac17-40fb-b511-cd0be7408c2a/passed.db.br",
+      "snapshotSha256": "c120f041131cb053bb6945079974acb49bdb2128120d512aaeb0c7ed68e2cf3d",
+      "sqliteImageSha256": "1c57f081774e4edc1f4be9266511395d8443921745fab9039eaef8ecd89f07a5"
+    },
+    {
+      "file": "src/billing/billing.test.ts",
+      "counts": {
+        "tests": 19,
+        "suites": 1,
+        "pass": 19,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/23-1a6fbee6-d608-4424-9841-d3f486b0bda8/output.tap",
+      "logSha256": "ff59640b7c8302d597e928945499c743cb00f27daf2235717fea0c17ac309949",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/23-1a6fbee6-d608-4424-9841-d3f486b0bda8/passed.db.br",
+      "snapshotSha256": "66c3e9d804bd2c95ff6f038ae0103db6c181bc76d1c2940391851263505bb13e",
+      "sqliteImageSha256": "d84a2d0985bf2c709ccd2ea0f56a8afc2b1c32cdcecba3e48bc389a2d83abbfb"
+    },
+    {
+      "file": "src/billing/stripe-webhook.http.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/24-c189a00c-1b82-49d6-9d87-72da20c221d7/output.tap",
+      "logSha256": "591ff499a744d6bbaa0ee9243fb0f4c603a562c75efc985bdf712c992255c738",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/24-c189a00c-1b82-49d6-9d87-72da20c221d7/passed.db.br",
+      "snapshotSha256": "3c50fdfb8c4cc1361662b0777a2666dd7fc0bc787a09256a9e24ddfed18a5bd9",
+      "sqliteImageSha256": "9835ec0e131965bcccb3d8bf7ee1caa838a39aace0c03e21bb4c4e4280f30b9c"
+    },
+    {
+      "file": "src/billing/stripe-webhook.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 2,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/25-5bd5db0c-4900-4afb-91d1-8711a92acc8a/output.tap",
+      "logSha256": "d55ac4c28d3e64622196173c99f380acdbb7bed75c3b8281555450ed38df837d",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/25-5bd5db0c-4900-4afb-91d1-8711a92acc8a/passed.db.br",
+      "snapshotSha256": "a9e077101a8c3fc30b48ee5e44ce4f8dee93f78a7a9fd545f2613eb55a1e998c",
+      "sqliteImageSha256": "b32813e3c224e010a67a07e09f7aa7c5a0fe83075c3e51d652698c02b70411d9"
+    },
+    {
+      "file": "src/business/owner-analytics.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 2,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/26-e3b4a97e-06bb-46f4-8e3a-637ab8b3ad41/output.tap",
+      "logSha256": "98ca3769ba64f142c3cdd0eda0efe5a7f0dd586fe6961402f7257b219527bb55",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/26-e3b4a97e-06bb-46f4-8e3a-637ab8b3ad41/passed.db.br",
+      "snapshotSha256": "97d1c0d484d8d8eb541f2a1bbba03ee8ca7d3c577f34fbffd5d64b00c810f8aa",
+      "sqliteImageSha256": "f10bb08fe9ef2cf63c3774e8ab9d3c9a2c1870f085bef629b912e82bf36706f9"
+    },
+    {
+      "file": "src/config/env.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 4,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/27-294abc7e-9cfc-4fbb-b4e6-9603f15efdda/output.tap",
+      "logSha256": "543b8a6d39db37a3ef16f260a90f6ac3b3130d1af65a2ad41f2f9e766d9c4449",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/27-294abc7e-9cfc-4fbb-b4e6-9603f15efdda/passed.db.br",
+      "snapshotSha256": "de245983faa667fc0ab79c20b5cd99e5282ff3a3ec7a4f001c0d5b560f9e1191",
+      "sqliteImageSha256": "621cdb8c2f919e176f90f73d95408878970e699b71de4a4d4e9dd0f0d3c72eeb"
+    },
+    {
+      "file": "src/db/business.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/28-4c841601-4791-427c-ab95-ec1023d9097b/output.tap",
+      "logSha256": "b89c48a636b458ccd5807d0c3492c95da347ce84b363373d633b0ece86414aca",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/28-4c841601-4791-427c-ab95-ec1023d9097b/passed.db.br",
+      "snapshotSha256": "e45fcbfd61b314c2372152da231ed2cc880ac6dcb0780f219bd1cf5c2e994718",
+      "sqliteImageSha256": "7f746eb33736c8f74a79ea0340f8225501b47dfe3ecf72009650c5b1dd96d864"
+    },
+    {
+      "file": "src/db/database-display.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/29-f988185b-a5cd-41c2-9b70-b36445b8d444/output.tap",
+      "logSha256": "672a8e2fa463b31c0e1aa8984213cd0070c60135830f985a1c5fa03a856365b7",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/29-f988185b-a5cd-41c2-9b70-b36445b8d444/passed.db.br",
+      "snapshotSha256": "1b58e71fc6c416373b3002d3cf3f780baa5bf45040a2b818f044c27640171092",
+      "sqliteImageSha256": "7d3dbd1740154058115a7585c993c02b216d1ed5deab518b7dcfb5075e19c270"
+    },
+    {
+      "file": "src/db/database.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/30-64c839ae-ad96-45c0-8cfc-b9585f0ef597/output.tap",
+      "logSha256": "5267712cff5ff389c9b5d34592a440b850557ce792adf950010d828f963bbd01",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/30-64c839ae-ad96-45c0-8cfc-b9585f0ef597/passed.db.br",
+      "snapshotSha256": "9a78001990794af345daf7f8cb4ea0fa816822576854778fad9fa48dfd49c3cd",
+      "sqliteImageSha256": "44d19667495817d87995c21ac9c0704d89e29fc84dde862dd6bb6943a91b23e0"
+    },
+    {
+      "file": "src/db/migration-parity.test.ts",
+      "counts": {
+        "tests": 2,
+        "suites": 1,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/31-6b5ba419-6155-43ee-8c89-e956ed32756a/output.tap",
+      "logSha256": "a8480ca4566b728ebe3421d9d334436f9786d55b8145bea928e489f4607a271a",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/31-6b5ba419-6155-43ee-8c89-e956ed32756a/passed.db.br",
+      "snapshotSha256": "b7acfb4ebc82cf1ea27b23ec760d1338d710a9c49879a8f392c6a4b785a317b2",
+      "sqliteImageSha256": "c3baa455c088572a56fc5a124c5ede5323821a4feeb007618386933c59494d74"
+    },
+    {
+      "file": "src/db/pg-bridge-wakeup.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/32-398eff1c-1d3a-44b7-bb94-0fdc48b6ecbd/output.tap",
+      "logSha256": "c126a9a60535bc962b7d8bf24810d6edc80fa4ac2cd14ae6d06efab35c8f5b81",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/32-398eff1c-1d3a-44b7-bb94-0fdc48b6ecbd/passed.db.br",
+      "snapshotSha256": "30fbf371353db892f14c1a496bc42ba49dd3934637a741ea19b25dc7ba3be9b5",
+      "sqliteImageSha256": "316a9ff2129118062f8324b1b246fab47dee820aaade0e79855726e7345caacd"
+    },
+    {
+      "file": "src/db/pg-connection.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/33-adbef77c-526d-400f-ae44-570c4f4777ff/output.tap",
+      "logSha256": "29ff624ef93195d88efd32ae9a73a5a11a5249b5ec6bc6b88a183ca098843df7",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/33-adbef77c-526d-400f-ae44-570c4f4777ff/passed.db.br",
+      "snapshotSha256": "b46ea5fd551637fcc4c233c7bf90262d1e0d5a4ae22de1f915abd8d2882cdac7",
+      "sqliteImageSha256": "aa3559df172fee8b68479c97b655deb5fdc15c8bb6ac5f8adbf629b7e6ea62b6"
+    },
+    {
+      "file": "src/db/postgres.integration.test.ts",
+      "counts": {
+        "tests": 0,
+        "suites": 3,
+        "pass": 0,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/34-c3a6aee1-98d9-4dbe-b25d-d519c5dc5a7f/output.tap",
+      "logSha256": "272c6f15212829f86a5ef7610bb6d19512d5cd435c9f119c44ab7180941d51d1",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/34-c3a6aee1-98d9-4dbe-b25d-d519c5dc5a7f/passed.db.br",
+      "snapshotSha256": "9ac2e7eb26f91cf1aed5b6c40d9c830d8e2f1184eb8f046de8000d2af357de55",
+      "sqliteImageSha256": "e69f9db2c560cd5b21b185788bb0b57e2f8e1668b10e993c44e4d0b9ff17a571"
+    },
+    {
+      "file": "src/db/trust.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/35-e1269038-4062-42e9-b812-ea821fed1539/output.tap",
+      "logSha256": "165f9baa680c54c0594c9c752c003e2e967c533e2d0eea2b023c4eb1a49a89cf",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/35-e1269038-4062-42e9-b812-ea821fed1539/passed.db.br",
+      "snapshotSha256": "019c38202fa58411811f85cd98a138b824f84d56e4bf4dc9e8942d6142367301",
+      "sqliteImageSha256": "85e60da32e51219e618f460623428a3ef50ca554b1b6c4e29474102ded5a3a0c"
+    },
+    {
+      "file": "src/db/workforce-parity.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/36-60c913f5-f45a-47fc-a4dd-22e01458d2b5/output.tap",
+      "logSha256": "3c6e67344281e05d5e39c44495d0d407d89e866626c525071b5efedfcdc7f08c",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/36-60c913f5-f45a-47fc-a4dd-22e01458d2b5/passed.db.br",
+      "snapshotSha256": "65e3fd7fd25c6a53a053faff8981e962f916f87b8479f6f602d3fd72cdc9b72f",
+      "sqliteImageSha256": "7c116b8e8dbab5c09fc2f1c0454c5a448de8806b2546f08ef6efc0ca08be4190"
+    },
+    {
+      "file": "src/economy/delegation-scale.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/37-f17b2829-1ab0-470b-b062-790f76361779/output.tap",
+      "logSha256": "35d2bebff4881d9375e18318e5c2791a8565a1bd923937f46e47a10b4ff78437",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/37-f17b2829-1ab0-470b-b062-790f76361779/passed.db.br",
+      "snapshotSha256": "af79cf8a763c8bee78f380abd4213f8fa680cc55fd74c54b300187addb651ecf",
+      "sqliteImageSha256": "6d5c8d7d74fffb7d323850ac59c42e53d21b27951fe371dfaab6efff178700e7"
+    },
+    {
+      "file": "src/economy/discovery.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/38-31b78446-6b11-4bc9-a2c7-cf71e08ead6a/output.tap",
+      "logSha256": "e5a59e96e7fbaa169070452790c316cd06fcdeb0cc25d9f37abaccab50283746",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/38-31b78446-6b11-4bc9-a2c7-cf71e08ead6a/passed.db.br",
+      "snapshotSha256": "f3cd8b812f7e84e00d4ec929fac7ba8951638031edcaf38a32e7e5a57d9988ba",
+      "sqliteImageSha256": "585972dae51efc408cd990fc9b6d7a58705151c87374d5b9a099dade9db84e67"
+    },
+    {
+      "file": "src/economy/economy.test.ts",
+      "counts": {
+        "tests": 46,
+        "suites": 4,
+        "pass": 46,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/39-437036b4-88ca-441e-83b7-644b8f596023/output.tap",
+      "logSha256": "74fdc6ac3758d3842adf4281ac30f7994332cdad44d59d7d8b2fbe6d6f43476d",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/39-437036b4-88ca-441e-83b7-644b8f596023/passed.db.br",
+      "snapshotSha256": "edcdefc16cddcfcb06aaf86460c357002ff2f896cb4074c40041aa6eed26fa24",
+      "sqliteImageSha256": "df86fcb5e9c567db51ce45aa5e30eecf1f059f2264b5a63ffc53decf89af080a"
+    },
+    {
+      "file": "src/economy/financial-atomicity.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/40-77affbd9-d33a-4fb6-8cb2-df548bff302d/output.tap",
+      "logSha256": "2a5269c180f60e8379602d9e535bbff7aefb24d361b26cc27d09aa541c4a6157",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/40-77affbd9-d33a-4fb6-8cb2-df548bff302d/passed.db.br",
+      "snapshotSha256": "bfc5155491c1165e40044036dcc970986e81951c707a686b9ad4e799b0510a8a",
+      "sqliteImageSha256": "4ccf08a459145dd768d2ddf3e6825e83e90088dba8c3480f2c95401128fdabb4"
+    },
+    {
+      "file": "src/economy/hierarchy.test.ts",
+      "counts": {
+        "tests": 22,
+        "suites": 3,
+        "pass": 22,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/41-064cf893-271b-4e40-a5e5-0b9839de1abd/output.tap",
+      "logSha256": "a4b77a1cd7223887ccdcd55a68fce2a6c91c0c278d03769fd251ca670ff3eba3",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/41-064cf893-271b-4e40-a5e5-0b9839de1abd/passed.db.br",
+      "snapshotSha256": "a61861d881073b83ed78f5806a34cfe1c3d5a442e6abcb7da791d342c0a5b098",
+      "sqliteImageSha256": "1569212626651a78d8e718d39a0a4e0eea26b1b60942f0438007c002b0cc6d1a"
+    },
+    {
+      "file": "src/economy/mission-chat.test.ts",
+      "counts": {
+        "tests": 10,
+        "suites": 2,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/42-9535e746-5196-4862-9624-e1b3922ffd40/output.tap",
+      "logSha256": "1166ed3e90bb904d6b0127dea11b8c3cb8ed7ed61e8c6d711df92d1d191f03d9",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/42-9535e746-5196-4862-9624-e1b3922ffd40/passed.db.br",
+      "snapshotSha256": "c4c18d475510dc27e6d8c0e6b31cd310c3c22e04dd32cd7971d1663d77a38b0f",
+      "sqliteImageSha256": "56defe1637ae0c1bce522562afb108c1a2c716e38e4637b0b5260aa0934a2d34"
+    },
+    {
+      "file": "src/economy/payment-concurrency.test.ts",
+      "counts": {
+        "tests": 2,
+        "suites": 0,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/43-f70bc6c1-ea67-4775-bd7b-279afda87098/output.tap",
+      "logSha256": "9778fd35b3313a2e2a8c319118cb4395bde0439f7532694e6d30651f7dbfe72c",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/43-f70bc6c1-ea67-4775-bd7b-279afda87098/passed.db.br",
+      "snapshotSha256": "f7f414293d04970e0cc7d20973c889e3101b0233576a8c2bbd6a6d2d8038e6b4",
+      "sqliteImageSha256": "6afa1569f04be518bba1b67e4df23b24747f977836bda80ca38abafc122133af"
+    },
+    {
+      "file": "src/integrations/smtp.test.ts",
+      "counts": {
+        "tests": 1,
+        "suites": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/44-2a55b6e3-e5ab-407d-83d1-c4c96ee65f0b/output.tap",
+      "logSha256": "a7ce66656a54d4c6aab6f5b49ed2bc5bf989db859efc6cdaf761791194723f3e",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/44-2a55b6e3-e5ab-407d-83d1-c4c96ee65f0b/passed.db.br",
+      "snapshotSha256": "2082e72556f1c34f95f1479f08e209720904564c6707c1111aa7e21b36e0d5ac",
+      "sqliteImageSha256": "d8b011d8191e384ef5fc95bb7a3764942c81f562660dfb208eac47cfaeb0aa42"
+    },
+    {
+      "file": "src/launch/checks.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 3,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/45-6e1a6529-f7ff-4b56-bc79-1db745f96510/output.tap",
+      "logSha256": "08addb37655124e1b92a3625adb839dfccacb2449616b7b737f64a67468cb8df",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/45-6e1a6529-f7ff-4b56-bc79-1db745f96510/passed.db.br",
+      "snapshotSha256": "dbd9d6cd73c2bef40cf068e7a57f007c496ef310fa8e4aff6a0d0e0c3cac711c",
+      "sqliteImageSha256": "3b00e4f8efcae97c5998401290e49f9f231d392f80bed7559ec8d6c63a19d15e"
+    },
+    {
+      "file": "src/mission/chat-worker.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/46-097e7591-cfd2-419f-8ce3-dfa8b193e678/output.tap",
+      "logSha256": "4102a7dbde5a71686ee3e4a3288522d4b8f232adaa911fe1d95ace3ad493833f",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/46-097e7591-cfd2-419f-8ce3-dfa8b193e678/passed.db.br",
+      "snapshotSha256": "20967298d38ccd18d9f2c264b5fad0b4cb464c757705bf99fd0b5908e10953d2",
+      "sqliteImageSha256": "0848e9d9313753cc717de57687056847dd504dcfb942a3e4bf1e9905a6a3a60b"
+    },
+    {
+      "file": "src/mission/database-isolation.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/47-aa50c343-6622-4895-bbcf-e558d0dde813/output.tap",
+      "logSha256": "9ea434ab44512bb1822e5163ca9711effec3726de0659d1a73a4949d958153a3",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/47-aa50c343-6622-4895-bbcf-e558d0dde813/passed.db.br",
+      "snapshotSha256": "3ee4f72d32b8bfc5fb5f2de483fb824915530143d8da4f084b09333ea34ecbbb",
+      "sqliteImageSha256": "e184f10e25e90c6b56987a5eea7553fd9ce21f1e781a0839e3d00d01b38769ce"
+    },
+    {
+      "file": "src/mission/earning/awin-workflow.test.ts",
+      "counts": {
+        "tests": 32,
+        "suites": 0,
+        "pass": 32,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/48-715c70d5-5aa7-48ec-860b-49791a3b8772/output.tap",
+      "logSha256": "e179875f071299956b826a0dc4b496428dc920d92f1d23b4904e117bc7e0ac8a",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/48-715c70d5-5aa7-48ec-860b-49791a3b8772/passed.db.br",
+      "snapshotSha256": "88728ede19fcce9bf85e557d1cca433f539585cbfe2d9692b309e5c0542d5af5",
+      "sqliteImageSha256": "121557606774ebe0aba55379e82e5abf5d932c94cf7e2dd0f2dc200581154399"
+    },
+    {
+      "file": "src/mission/earning/awin.test.ts",
+      "counts": {
+        "tests": 24,
+        "suites": 0,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/49-5ec5d38f-52d5-4223-85c0-0b92786d01f3/output.tap",
+      "logSha256": "1715ec142a4add48f07a6f290d480b75b631f1f3ddc7fb02465ce2eea960a6a9",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/49-5ec5d38f-52d5-4223-85c0-0b92786d01f3/passed.db.br",
+      "snapshotSha256": "6f1e9c1846199ac8d4faaa866e55b0eecd6d71097f7715dc43a1dfc4cc9e4240",
+      "sqliteImageSha256": "7d23c15a0f41160682bbe9568795fe2d057add30dbf4dcf488dc7d615ee3ad33"
+    },
+    {
+      "file": "src/mission/earning/freelancer-settlement.test.ts",
+      "counts": {
+        "tests": 53,
+        "suites": 0,
+        "pass": 53,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/50-48909645-d007-428a-b81a-b1c59bf03446/output.tap",
+      "logSha256": "64e0d4c667c8e1523f0ee77af08c96af693c96a7b4e4ad0704b9264ff9b6bfd4",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/50-48909645-d007-428a-b81a-b1c59bf03446/passed.db.br",
+      "snapshotSha256": "96c8327b610b443251370786d1a676f371999ef89f0a2fdfa61c980cbc47d43a",
+      "sqliteImageSha256": "811a14b64e4bcea167724d77fea446f741b3a0278e2e213d9b5796099537eff0"
+    },
+    {
+      "file": "src/mission/earning/freelancer-workflow.test.ts",
+      "counts": {
+        "tests": 30,
+        "suites": 0,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/51-9e0e99f1-e77b-4f4e-9d7c-606447685672/output.tap",
+      "logSha256": "86b036d402c23b40aed4c3f5b620c9c409faebeed908001001448736946cd255",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/51-9e0e99f1-e77b-4f4e-9d7c-606447685672/passed.db.br",
+      "snapshotSha256": "8aa4b872075e718d8e4eb98cae349d3329d0caafe6bc3ea29259b50fd5322d93",
+      "sqliteImageSha256": "c2f8e172f18326a5936ca12878178352497bb106dfb2781d9cf9b071166f8b1f"
+    },
+    {
+      "file": "src/mission/earning/freelancer.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 0,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/52-560444bd-e54c-4719-a16a-8f1e751db919/output.tap",
+      "logSha256": "c6dbf3d465eae5607c05e2241883c26dcd998a7947ea998f80d6109bb34030b7",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/52-560444bd-e54c-4719-a16a-8f1e751db919/passed.db.br",
+      "snapshotSha256": "1e881aecb1aaedbaf4c6c9eec5ed3c4e6c604b8e2913d3feed68abe576486fd4",
+      "sqliteImageSha256": "92fb2cf76e4f921d720a006e8881539586006fee6411169ec4c3590703d6b2e2"
+    },
+    {
+      "file": "src/mission/mission-core.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/53-fa847850-41bd-4a08-80ee-9c1725c5b8a3/output.tap",
+      "logSha256": "543b807f5b79903b61ee825df9eba5ed43a98e2fd3409e8683055cd0d6223536",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/53-fa847850-41bd-4a08-80ee-9c1725c5b8a3/passed.db.br",
+      "snapshotSha256": "681ba067a14900a89866e94b405ed5721f308a264896722f6ec76ed5862f14b5",
+      "sqliteImageSha256": "222ceec779ceb2bf8f6b355e5ad02417e0e9a27681e3eba68ec86d941e6fc8a1"
+    },
+    {
+      "file": "src/mission/mission-dashboard-render.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/54-bcff46be-d98c-41a6-a650-4dd10b3f9940/output.tap",
+      "logSha256": "36a40f2b2ec3d1acd667bde2e8f4699e10196a9f6a096964c3aecd861924206d",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/54-bcff46be-d98c-41a6-a650-4dd10b3f9940/passed.db.br",
+      "snapshotSha256": "7dd2b46322201d56fc90f8b858277b2f3943dbab0cb08469612a4d592f546b4f",
+      "sqliteImageSha256": "9e51fc94b216251ebac1b741bd16a45e74f6b7e7d57326d570464186c7ff8ac8"
+    },
+    {
+      "file": "src/mission/mission-financial-atomicity.test.ts",
+      "counts": {
+        "tests": 24,
+        "suites": 0,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/55-0f8c589a-5b20-4534-b161-27e333c7a427/output.tap",
+      "logSha256": "68a96ce2967f50ab61596042a04753f7bf6371cb74d12d17d3f9683d8fde1e91",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/55-0f8c589a-5b20-4534-b161-27e333c7a427/passed.db.br",
+      "snapshotSha256": "1631bbbfc3a1f1da575dfdf345c60dec5f07e42b3deaf717066b22864a0b3634",
+      "sqliteImageSha256": "a8ebb3ef82c902cb8e077349ba0d01a06b665e8f5729c3b2926c9f550f4a2b43"
+    },
+    {
+      "file": "src/mission/mission-identity-lock.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 0,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/56-6f98bf5d-add9-4639-8b76-0381d6929223/output.tap",
+      "logSha256": "9e0f0ee5c8960e96f6633a16f23c6df0130c435d4fcc0e404348d8bc0feba005",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/56-6f98bf5d-add9-4639-8b76-0381d6929223/passed.db.br",
+      "snapshotSha256": "a86ac4679a90052b36523121143da7ea0678fd02205be6bc7627b36a7449a954",
+      "sqliteImageSha256": "299e209bfb8c5e13c822e0dac1d9416516cebc7bcb35983e882be3f3a81c6b69"
+    },
+    {
+      "file": "src/mission/mission-payout-verification.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/57-381f034f-f4a5-4392-92b9-d3766602ebf4/output.tap",
+      "logSha256": "d8f7a2d3ed590174a001927c1f6d6b70dc86daddb08b732366921f498f5c2b7d",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/57-381f034f-f4a5-4392-92b9-d3766602ebf4/passed.db.br",
+      "snapshotSha256": "a3e5160bd0040b2ed574e986c5731a042f33e8f0fc150a16f719d0e228ceb1ab",
+      "sqliteImageSha256": "498931446645f4f3a71b9048c730c2bb16c3e3045d97bc54090af7c5bc6e03a1"
+    },
+    {
+      "file": "src/mission/mission-probe-policy.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/58-66cffeea-c73f-4d6a-8b78-70bc9c19aae2/output.tap",
+      "logSha256": "871cf0e2607249f3e54f105dc6a4cfad3365605de768e20a07f880190541f461",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/58-66cffeea-c73f-4d6a-8b78-70bc9c19aae2/passed.db.br",
+      "snapshotSha256": "3d3be9b5e3691b8e026ca395f92e861545a1168838e8e055b1c23e4b0be50280",
+      "sqliteImageSha256": "255c495fe0a4dee0d0de3ff4a9154988076e2ca615ebab309ed5f69aa75c6e41"
+    },
+    {
+      "file": "src/mission/mission-reinvestment.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 0,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/59-b4b32bfa-38aa-43f8-ad1f-42d7a22aa937/output.tap",
+      "logSha256": "dbce73ec4ce35731a2b4a246e75ebcfb4514aa793e27e1e12aaa327919013109",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/59-b4b32bfa-38aa-43f8-ad1f-42d7a22aa937/passed.db.br",
+      "snapshotSha256": "d5e484e24e2f0ca5b14edc78ee1a2c3f83607ef55d603e938d7599b732d8302a",
+      "sqliteImageSha256": "b8c44a3a1f7e4325241119ba726d0b24258624ac9543a36b52bcff2b8f104cd9"
+    },
+    {
+      "file": "src/mission/mission-server.test.ts",
+      "counts": {
+        "tests": 37,
+        "suites": 0,
+        "pass": 37,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/60-bdaa3aa8-7d4d-486d-bbda-c2ffb5d78572/output.tap",
+      "logSha256": "079ddf542c58eb4d44c7f9370ef2e8b312a78d3646dd8d5229fec58cf935aac2",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/60-bdaa3aa8-7d4d-486d-bbda-c2ffb5d78572/passed.db.br",
+      "snapshotSha256": "170cadf836b95dbef76ea986edbef353df125532c35f5a44b2e172707a54b7b4",
+      "sqliteImageSha256": "f40a4aeeab84808fe0e618971cc5bac45b41496449aaa2a640980555b8e8459d"
+    },
+    {
+      "file": "src/mission/mission-social.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/61-eeee502c-a279-4f9d-a14a-4a5ec0385330/output.tap",
+      "logSha256": "c170a47e5b65de87bc78a5ccfb02de5d7eb01f80e34b2024cf3872d70adfa4f3",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/61-eeee502c-a279-4f9d-a14a-4a5ec0385330/passed.db.br",
+      "snapshotSha256": "1c18a6fc0c2c3404b20183a8963adf0c4e3243558572f5f16280a352b7ddb318",
+      "sqliteImageSha256": "15e7e9eb66a7340f6b64ebc78ff22bdc0f382c18aa3848e87abed18279e49090"
+    },
+    {
+      "file": "src/mission/mission-treasury.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/62-0e0a5677-e635-438c-9643-a9fc08b67230/output.tap",
+      "logSha256": "246cef6a584ca1ed1c7d49023f68503b35365287725885676315b5977e682107",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/62-0e0a5677-e635-438c-9643-a9fc08b67230/passed.db.br",
+      "snapshotSha256": "0410368549b962acba2d0394ba9956e439f63bbd8fa7a96012267019a16ab852",
+      "sqliteImageSha256": "7e23f59667047db7b7e51b47b47359a27877ae00a4f8318cd816547f9019159f"
+    },
+    {
+      "file": "src/mission/money-concurrency.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 0,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/63-d3ef376b-975d-4fa2-a287-5d7033816918/output.tap",
+      "logSha256": "49db6bc9636c46bdfa1889c22a094b5b20eb09f4ec3f91706fbef82cc33911ce",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/63-d3ef376b-975d-4fa2-a287-5d7033816918/passed.db.br",
+      "snapshotSha256": "6d9c1da987df894865237e5a91eae036269004b48eed8bb0602d7bf9063e2dd1",
+      "sqliteImageSha256": "9e24992fc5a4903a986ff23f5c096c01bed08d3afa820de7d312e8487dcc2c5c"
+    },
+    {
+      "file": "src/mission/money-stripe.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 0,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/64-859f9f60-3b96-4a14-aee9-6506565bee3d/output.tap",
+      "logSha256": "16a7b05933700e9708d04a4240f3daebab3919fc36d619bf9957086398811576",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/64-859f9f60-3b96-4a14-aee9-6506565bee3d/passed.db.br",
+      "snapshotSha256": "558eab298c6609e6c1f5825339340f0cebc721cd32d904d843c2f7148ed93b9a",
+      "sqliteImageSha256": "f78f56caab081d7dfdde0f2c01e347a467770ddd4c83a5710595e864e15fc2c5"
+    },
+    {
+      "file": "src/mission/money.test.ts",
+      "counts": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 41,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/65-076dd464-f958-4e3c-9e9d-a5753db32835/output.tap",
+      "logSha256": "3b8331372a9892364fe9cda65ba0cb477eca3f531441a2aa82a75ef48326a643",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/65-076dd464-f958-4e3c-9e9d-a5753db32835/passed.db.br",
+      "snapshotSha256": "10d6ef92174abd4c2ee14bc2c8368517de3dc333f517ff608845189a1ed79b77",
+      "sqliteImageSha256": "46d61f2a2e0b597f678296ddaa562c3a51e64f8ab06cb4c273a61a88cf8cfbbb"
+    },
+    {
+      "file": "src/mission/registry-sync.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/66-ff063182-0d47-452c-a93e-8d6649ee9a73/output.tap",
+      "logSha256": "6d38ee1ccba3775cf8039c4518e67fa3c338b00d174df9fd7188df660502012f",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/66-ff063182-0d47-452c-a93e-8d6649ee9a73/passed.db.br",
+      "snapshotSha256": "442681468807bb318f846a36c6a8ac01e2b6256ee98297682cf5fc480abaf96e",
+      "sqliteImageSha256": "7864e49dac1478618a1e3d7b676f4179d6c6a32b18f149005858a24b7190f51a"
+    },
+    {
+      "file": "src/mission/resource-budgets.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 0,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/67-d4e5c0e2-79be-4e43-b914-cc3efd5d28e0/output.tap",
+      "logSha256": "a5588caccd0e7a4e79d742dfc73ac19efbd5736c14e1d2242f7edc5ef13706bf",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/67-d4e5c0e2-79be-4e43-b914-cc3efd5d28e0/passed.db.br",
+      "snapshotSha256": "4e1ac1715ef33998a2708a13a7ac958a2c5bda41a90160d3a0a09bd2078ce5ab",
+      "sqliteImageSha256": "f11967d8610cee570651d3e58c64ea983211606dac9d26af08ad3059b8ee1720"
+    },
+    {
+      "file": "src/mission/resource-calls.test.ts",
+      "counts": {
+        "tests": 20,
+        "suites": 0,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/68-057c4e78-3e0a-4ae7-999c-0b59183a72ae/output.tap",
+      "logSha256": "0c071edbf89f79944f7355b8e8d26af09db8acc41a34321b3bb4e94ab0a7a7bd",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/68-057c4e78-3e0a-4ae7-999c-0b59183a72ae/passed.db.br",
+      "snapshotSha256": "90af96d3cf41debcc6421df842b1bccd413430941f5f69533ef831dc9cd3b975",
+      "sqliteImageSha256": "dcbd20f8a1e65590d25a277d2d1919d8d5271113707cb5619816cf2c7f326af5"
+    },
+    {
+      "file": "src/mission/resource-periods.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 0,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/69-3d59f8fe-408d-4729-8405-748ec94af388/output.tap",
+      "logSha256": "b3c9a41ae7767ad198d2bfa332b7776b277fc23a2c75950bc6854dcc4637f216",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/69-3d59f8fe-408d-4729-8405-748ec94af388/passed.db.br",
+      "snapshotSha256": "62645e9c05f9eee7a6920de59c94808dce22e8c9233407b506e6f171f1665be5",
+      "sqliteImageSha256": "c9d19fd0f0622015ab591fe4d68bc0d2d66fdb52cc5453ae69c4d0cc79ae6921"
+    },
+    {
+      "file": "src/models/catalog-contract.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/70-3d22aadd-8efa-4153-a7a8-470183071c97/output.tap",
+      "logSha256": "92f2862ac842f7727c8646371da4b837e0fa891f3908272421d5598076422b17",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/70-3d22aadd-8efa-4153-a7a8-470183071c97/passed.db.br",
+      "snapshotSha256": "52b6d301720f91623e7673849b1a638016aedea1e1f2a2c66e15acb5f527bf3c",
+      "sqliteImageSha256": "9f2d87f5ba4daa6acef360077e5cbfeaed26fb36ae1f039e42b234aec829afec"
+    },
+    {
+      "file": "src/models/models-api.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/71-1fcd29ef-5db4-424b-b8b9-a56489f56950/output.tap",
+      "logSha256": "510ac23e5c3900c431fb7a450bdd52420e35518cc48f2385493d1bce14ce8f71",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/71-1fcd29ef-5db4-424b-b8b9-a56489f56950/passed.db.br",
+      "snapshotSha256": "d4276a35815e9ced5223d9829202f792159f3f2dcacab65cfd9ab684496adeda",
+      "sqliteImageSha256": "382d567104db164c9328c2c107404a9df4d4865997b6b883b189356f218004f6"
+    },
+    {
+      "file": "src/models/provider-hardening.test.ts",
+      "counts": {
+        "tests": 10,
+        "suites": 1,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/72-018c0b8c-40d0-49a9-a2cf-7fd73f10096b/output.tap",
+      "logSha256": "4827509315909e151a1ff6d373635131a92d3a7c8393e2881bfcb73be00bb288",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/72-018c0b8c-40d0-49a9-a2cf-7fd73f10096b/passed.db.br",
+      "snapshotSha256": "48b1ddffa363b058afe70aebc406433fc7207a64a70f86dccc2dadc769f28793",
+      "sqliteImageSha256": "6a668182b3c1bd3bda96b0304cfd71a1fdcb1518ecd5b5fcdf4cd60291b0871f"
+    },
+    {
+      "file": "src/models/router.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/73-b2bbe741-f702-4b71-9e49-2d788530ab42/output.tap",
+      "logSha256": "2bf6d938260542958005e2c4317fa5528f2901596350403023fb8166a52205e9",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/73-b2bbe741-f702-4b71-9e49-2d788530ab42/passed.db.br",
+      "snapshotSha256": "13186e43924cac06f8cc4a562357c499b97f443d8d0c4d531a0d6ce445213b9e",
+      "sqliteImageSha256": "7071f93800b4134c4c64c32388f57334e5c4e0e999cff22545a34276fcddfb7e"
+    },
+    {
+      "file": "src/orchestrator/executor.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/74-eb15bd4e-c42b-4e11-9705-515d89bf203d/output.tap",
+      "logSha256": "e7a285fd944973681a5f1b395a0e0236c040d0085b568f98283d800e4533a0b5",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/74-eb15bd4e-c42b-4e11-9705-515d89bf203d/passed.db.br",
+      "snapshotSha256": "00903edb870e8a97f9ff87023234349df570c31b11bb593ae1b659fea651cc56",
+      "sqliteImageSha256": "70c07bf3dc54511a6e52446ab8e36427273e8833a2818f3a2ba990f64ac284b0"
+    },
+    {
+      "file": "src/orchestrator/factory-templates.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/75-f9669cfd-b928-4538-bfab-8b5573d3c027/output.tap",
+      "logSha256": "0981b6041fd7f53b61b67e9d524eba6814c06b66026995a92a16a95f98c26a5a",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/75-f9669cfd-b928-4538-bfab-8b5573d3c027/passed.db.br",
+      "snapshotSha256": "1340675d0948f54819bcc738a67522777ec062d79685866f62cf3353c1c5bd8d",
+      "sqliteImageSha256": "5c9cdc83f93cefbc2afc75c4aac04ce39d4363bf9b5b1b4456d8c3edfa470ff2"
+    },
+    {
+      "file": "src/orchestrator/factory.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/76-623c7788-20c8-444c-bd88-214593e76ce9/output.tap",
+      "logSha256": "be5fb3e4fd0c75eb35887db1f1047959bdb50fb5107c4e40700c8601486fcc59",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/76-623c7788-20c8-444c-bd88-214593e76ce9/passed.db.br",
+      "snapshotSha256": "e3e00d3227132f30ac871a1ab5ee7266f65e6420174eff7ec2d7fd9b06fb284f",
+      "sqliteImageSha256": "7897d54ba8b86192d16d2818ac7e05cf6791e3eea2e9f9675e13717d3739519f"
+    },
+    {
+      "file": "src/orchestrator/goal-analyzer.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 3,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/77-c343bbc1-9180-4542-818e-bfe47479459c/output.tap",
+      "logSha256": "94f9b76ceb680919b8873443308baa0a87ffd5cc7baad9fc8b054cf1823303ce",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/77-c343bbc1-9180-4542-818e-bfe47479459c/passed.db.br",
+      "snapshotSha256": "8ebba2a97a22a6c6e2baeca85ce6292c0b38d4cd7b17e1aa4d7d61020bfa90dc",
+      "sqliteImageSha256": "8c5eb2ccf6333c8235c736d0dd4bbe34d32d1eeef47cd6b858c6f28bc0ba0889"
+    },
+    {
+      "file": "src/orchestrator/master-flow.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/78-a97f7184-d6f6-4e6b-a67b-0f3ad6994b58/output.tap",
+      "logSha256": "69bf8d81727487fd73d2d6bc599f42c8ec95913ba6fa619df4a39def33894155",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/78-a97f7184-d6f6-4e6b-a67b-0f3ad6994b58/passed.db.br",
+      "snapshotSha256": "1691790ecfa85ba7cdc6822fc65989d900f94779fbbbe3f87e377a274f64d21b",
+      "sqliteImageSha256": "d9e40a8f14659f6949ba64857c8a79319c8597326f282250c7794178c58aa89d"
+    },
+    {
+      "file": "src/orchestrator/owner-entitlement.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 3,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/79-60f35243-9e19-40c2-816e-8cc3a5945553/output.tap",
+      "logSha256": "dffd6648f2fe8903a717d151e195383bd8a58bfe2665e0c4e0eb445364431cb5",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/79-60f35243-9e19-40c2-816e-8cc3a5945553/passed.db.br",
+      "snapshotSha256": "52ed33692b7e7fc616853d20673ffeaff220e5dfdefb40f12a84007e40d7d14d",
+      "sqliteImageSha256": "8647032c75c4b3a6c01f1bd026cf8cf9981e98f5e4c824af42d5b582b4090702"
+    },
+    {
+      "file": "src/orchestrator/queue.test.ts",
+      "counts": {
+        "tests": 18,
+        "suites": 1,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/80-627a548b-d204-4150-a9c7-15c75a840a37/output.tap",
+      "logSha256": "e40a22c3a3049f87441de0175d00ec56070d912d16108188d59924f1f45d2654",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/80-627a548b-d204-4150-a9c7-15c75a840a37/passed.db.br",
+      "snapshotSha256": "bb74f04be97f902cd83a06f16af138032ccd305d5607b16f20c10c2989fab8ac",
+      "sqliteImageSha256": "d1fb7d6de82b5329d17243c20a49dd27ea370b3cbb113418e6bd48df6bdcee2b"
+    },
+    {
+      "file": "src/orchestrator/recovery.test.ts",
+      "counts": {
+        "tests": 2,
+        "suites": 1,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/81-1173692c-76f1-4128-82b6-a4ad65565850/output.tap",
+      "logSha256": "3dca12b61e97709946799f940ed06584bdf944115069cc88a11f19f282b88067",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/81-1173692c-76f1-4128-82b6-a4ad65565850/passed.db.br",
+      "snapshotSha256": "74abef2a10b40a7680148e6d9db9c5416a745eeeaaf63ef332a4475a29d73e8e",
+      "sqliteImageSha256": "64a9bc80cd9629f23520136677fe25bb469c23023aa114ae4d570e0d0c015578"
+    },
+    {
+      "file": "src/orchestrator/synthesizer.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 2,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/82-c55b24cd-7b1a-4844-9e5e-a708ec59021c/output.tap",
+      "logSha256": "a0120caf19ce645bda61fb06b8edea1aef0b2411a3b04b9c7635316ceca3d098",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/82-c55b24cd-7b1a-4844-9e5e-a708ec59021c/passed.db.br",
+      "snapshotSha256": "2e276b187f986f701bc45dfff8a88a7c510d4e8eea0a1b2550b62f2a8b041e6f",
+      "sqliteImageSha256": "8f19ce9b99b9827f0e29b2fb9d7fdeb57304037eee916c5433aaae128ab44fc8"
+    },
+    {
+      "file": "src/orchestrator/tool-stage.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/83-9017195b-26ba-4752-a391-6bb995be060e/output.tap",
+      "logSha256": "03648a5221f5632f3e125c3813d0599d532052831eeec1e3b2ded6d0bb93c1b1",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/83-9017195b-26ba-4752-a391-6bb995be060e/passed.db.br",
+      "snapshotSha256": "b96d2e28bc18b460d1ded7d8b7e0317963322fd9aa16787cde310ed752cce77c",
+      "sqliteImageSha256": "635f34b9ab535eb1bf488c2cb1a7bab3d783a2c8b7129f6ae68090d261789ba2"
+    },
+    {
+      "file": "src/orchestrator/verifier.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 2,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/84-9e093b9b-3655-4978-aaa0-ffd5ab114afc/output.tap",
+      "logSha256": "e6e42f9dba3f1efb688d45a62626bc947f62435ba7d3e679ef18cf71ade2d747",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/84-9e093b9b-3655-4978-aaa0-ffd5ab114afc/passed.db.br",
+      "snapshotSha256": "cf5f4203e52c27023d021afd6ebd2e1c5f2429f5d704093403afdaaf70931ceb",
+      "sqliteImageSha256": "eeb2ad1aabacc661c2755bb1cbf75615ca139ddb004341a21f419f8f4162a602"
+    },
+    {
+      "file": "src/push/push.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f7d194d6c6fee392c1df9b35664d1653b00124ed197043efa7e067f7b9753ddf",
+      "log": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/85-bdb5b4b0-1f1a-4d2c-8e03-15392023f265/output.tap",
+      "logSha256": "4e2f872d2d72ef608442534591ed09da84e5c9cd8f063a497198ecb5ae667c34",
+      "snapshot": "logs/test-checkpoints/f7d194d6c6fee392c1df9b35/85-bdb5b4b0-1f1a-4d2c-8e03-15392023f265/passed.db.br",
+      "snapshotSha256": "dd106c3ade074e3417b7cacae460bc740d85a59ca85fb4678b755a13ae3e8bc9",
+      "sqliteImageSha256": "95dee5f2375cb0acc4a3cd9e65db029ead9da8afddfdd26a6847284c46c1650f"
+    },
+    {
+      "file": "src/realtime/execution-stream.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 2,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/87-add0cc8d-a573-4223-95f7-98ac184aa74f/output.tap",
+      "logSha256": "4b9c9cade209051241a6419fea95b5070707f4563fcbee314f4f46fdf7f483c2",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/87-add0cc8d-a573-4223-95f7-98ac184aa74f/passed.db.br",
+      "snapshotSha256": "9e27f2333bb1bc9e87725f518941001d66b41687c8c77130d16cad39f9b1ccd1",
+      "sqliteImageSha256": "3b007c5552c30fb3cbf651d83f03f01373d5bfc1915ee65c2af80d01823a8e42"
+    },
+    {
+      "file": "src/routes/contact.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/88-2bd20e12-f608-45df-a4af-296a79bdc32e/output.tap",
+      "logSha256": "4571681add8b3b3dcecb99e3780f28e976ef0e4e6a304ee542031a161bc0c195",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/88-2bd20e12-f608-45df-a4af-296a79bdc32e/passed.db.br",
+      "snapshotSha256": "f3cb9b8f6b64584bf8d7fba3f40d700b7a5a84d9bea98fa93737db38f823060e",
+      "sqliteImageSha256": "05824e10af8aee573fa8fdb194b650c219f411fbdaeef1aaba3c303e1106f522"
+    },
+    {
+      "file": "src/routes/marketplace-world.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/89-b8305f04-b1a0-4ad0-8b7f-eaa65b51040b/output.tap",
+      "logSha256": "4f42a5ead7740b6a4c0f9a46331475a4ac335dd5822034f03b27b5372401c52f",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/89-b8305f04-b1a0-4ad0-8b7f-eaa65b51040b/passed.db.br",
+      "snapshotSha256": "6b57b8b29f3d3de5ba32e8105924abe2076fff5b42f77e72522efd2a89fe74e1",
+      "sqliteImageSha256": "24ab0636daef09b656dbc332b60325f60f2bb5f298eb6b7e4de4cb6a1d155bd9"
+    },
+    {
+      "file": "src/routes/public.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/90-3592d19e-2de2-4bd1-9015-afadfc92d2ad/output.tap",
+      "logSha256": "2cfe8323383d62195c69c594068091b699460dd406a0949ef0874d3f9d8cf9fe",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/90-3592d19e-2de2-4bd1-9015-afadfc92d2ad/passed.db.br",
+      "snapshotSha256": "eda59ad843689c6364b8e72256678ff525cbc2f488eb048c19f3b126f0e582aa",
+      "sqliteImageSha256": "1baa0c858ef851cd13d9f0a6c859f2df06cbbd7906e214668cd53309c8e35fb1"
+    },
+    {
+      "file": "src/routes/workspace.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/91-2603f72c-f86d-42c4-ad8c-be879e4562d1/output.tap",
+      "logSha256": "3007e32e80b2460a5ff5ffe761d09f69066d2eb5cb4b2fdd69c2f97f7570fcc2",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/91-2603f72c-f86d-42c4-ad8c-be879e4562d1/passed.db.br",
+      "snapshotSha256": "dc8883e129225eeb91c0fb69c5fb9a14a91294858f5c001fd3bd470b9a4370dc",
+      "sqliteImageSha256": "7538bcc3aae0fcfd1e0bcfcde2cb65127a36e7e45ec9440bf458a932d5622a13"
+    },
+    {
+      "file": "src/scripts/backup.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/93-90572225-569a-4e2b-a5e6-18e0eb74423e/output.tap",
+      "logSha256": "204323cea3613a952b54fe8887bc1ba980c978272ec6e0af0f1f61d12009c2f0",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/93-90572225-569a-4e2b-a5e6-18e0eb74423e/passed.db.br",
+      "snapshotSha256": "1e34d858bf0076e39c7bca98d8ebe10ea2f99055f2c4ad9823dd4dc0474d12ef",
+      "sqliteImageSha256": "7fee56e818a8db15723babcb51f0cef9e762f4912b8829056367a0506f697b34"
+    },
+    {
+      "file": "src/security/attack-surface.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 1,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/94-cbb653f5-35bf-4b0a-a990-2f1e694150a7/output.tap",
+      "logSha256": "3d0c8f7bf7848e007515724345fba07c20d229e8c85f2f5d807efe17f5a5f593",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/94-cbb653f5-35bf-4b0a-a990-2f1e694150a7/passed.db.br",
+      "snapshotSha256": "be48d9a34a0a813b234832c80f331ead94b7b654b40bcd93045693bb40d03fa6",
+      "sqliteImageSha256": "bbe8dfafe0fdf9947cd7dcbae27b428f1a15549158895ed703cf641ef22f211e"
+    },
+    {
+      "file": "src/security/mission-cash-boundary.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/95-4807c251-aee1-470b-863d-972d57ab1078/output.tap",
+      "logSha256": "327c14a454991059a457fcafcd8b7dbbfbfa336e0d9dc01e56824582ba35ea32",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/95-4807c251-aee1-470b-863d-972d57ab1078/passed.db.br",
+      "snapshotSha256": "55b2d831e3f65fcc0bc3167d753c36c54eec7ce9fe0d4a9e44747f79e76685d3",
+      "sqliteImageSha256": "5f647f3782612f3696dc5d30a7293156bb343a82665c8c48be2e90a54ebc3890"
+    },
+    {
+      "file": "src/security/password.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/96-3c80170e-b1e9-4455-aaef-c82e601e01cd/output.tap",
+      "logSha256": "668c068a28001f1da03b78003c84bb252a22863f9a8e902239d6325150e7d72e",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/96-3c80170e-b1e9-4455-aaef-c82e601e01cd/passed.db.br",
+      "snapshotSha256": "b069d9bc1feedbb5a6a7a8386bc7ce31adbe8ac02b215192fc89d19a6304ea2e",
+      "sqliteImageSha256": "b14bc758d4b0fb12437f224945f13ec20c9df837dd6c5b67fbad46b32c36d737"
+    },
+    {
+      "file": "src/security/role-separation.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 6,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/97-c5bc9d9e-5d39-42b0-8150-e9f11d35171c/output.tap",
+      "logSha256": "43f138f44ea69553c911def11421f709b1df9580613f81059ab20d1c751bb3ed",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/97-c5bc9d9e-5d39-42b0-8150-e9f11d35171c/passed.db.br",
+      "snapshotSha256": "819d69f08d6d530716ff88c1e220377848f6129af2f1738ab7de49fa21518bb0",
+      "sqliteImageSha256": "669bfe4c493f3531e877503a4534036969d889e350b6a07f412d64be4136e169"
+    },
+    {
+      "file": "src/security/scan-secrets.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/98-2855562e-96de-4d99-a2cd-f29bbea2972f/output.tap",
+      "logSha256": "5ac95746c45e5d1659a8d6aa08b0d5ac4584917d89fb1eda19f0c42b570e8eec",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/98-2855562e-96de-4d99-a2cd-f29bbea2972f/passed.db.br",
+      "snapshotSha256": "46987e96ace1cb29b9cfcaf312af2ddb9fca47d8664e53d6adf910d154855f9c",
+      "sqliteImageSha256": "df74ba8c547555e68d663506dc6f78481f70d714f2f2cb2332a99c612cf37c8e"
+    },
+    {
+      "file": "src/server/app.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/99-e1b8f9b0-82e6-4643-96e5-bf509d92653b/output.tap",
+      "logSha256": "3c639e9fc966b153911c121f98d88a311e4abe62d16b63f0e9a3c4d837a80e41",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/99-e1b8f9b0-82e6-4643-96e5-bf509d92653b/passed.db.br",
+      "snapshotSha256": "425e385cada3bc245e39d393a20b8bbb585a679da37fe1faa1e90223c59c6987",
+      "sqliteImageSha256": "b674a57910c34854d5f835f13620cc46ce243bfc317740eb3f92e74627910743"
+    },
+    {
+      "file": "src/server/health.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/100-7ca51f29-703a-4b23-8d04-a784c0949ce8/output.tap",
+      "logSha256": "53d10c086c6ab0e950158a1ccacb751e6139541bcb92736b584824b49e3388c1",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/100-7ca51f29-703a-4b23-8d04-a784c0949ce8/passed.db.br",
+      "snapshotSha256": "fdcad6031ba81be6e2ea921b6fd0b0f59792c00e97330f70d467871b2f704a09",
+      "sqliteImageSha256": "99358beca79c908e158b32abf48aacdbe303f87e227e97afc4680eec588be1b0"
+    },
+    {
+      "file": "src/server/middleware/rate-limit.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/101-062f4d41-9c0c-42b3-9860-5a69fa2c1422/output.tap",
+      "logSha256": "5e46bdf698556bc0c9dd4d35a90cc0761ad539b3b195a177b87bbe4dffd170f0",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/101-062f4d41-9c0c-42b3-9860-5a69fa2c1422/passed.db.br",
+      "snapshotSha256": "b796f8f8f7d7ef395cf57b17c0af4f7c5331e6af132b277d49a899077ee45d47",
+      "sqliteImageSha256": "2940218bc87860d7f3dc365499b1e68e2aeafa326a083d735609388ea5d0abd9"
+    },
+    {
+      "file": "src/testing/checkpoint-runner.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/102-6cfbb7f4-7d28-49c3-960a-91c76d7ef594/output.tap",
+      "logSha256": "4caa4817cf2c10cc284221e5fbbaa57f796263f17a72e98efe95c7ef815e0051",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/102-6cfbb7f4-7d28-49c3-960a-91c76d7ef594/passed.db.br",
+      "snapshotSha256": "e24f2f31c8608f67c2755146b5ab565c0866956649ff990ef4140ca4b7ea16d1",
+      "sqliteImageSha256": "1b1a9634ce520a407f803e6b3fbe0b40272f0bd8a58673f07d07cd470a1cf234"
+    },
+    {
+      "file": "src/tools/tools.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/103-d3ab6f00-8ed3-4e6e-9ae6-484953e84bd3/output.tap",
+      "logSha256": "9573f7b081630178fc49013d96f41c053e1e79cea5809c21cfb238bc21f37dcb",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/103-d3ab6f00-8ed3-4e6e-9ae6-484953e84bd3/passed.db.br",
+      "snapshotSha256": "926c2f6f049d7fcd5f7c4b2a8487483f7d5f2c2efc300484c494db1054626219",
+      "sqliteImageSha256": "316c405f5cf02ecb1bda7b4d6fd795c18eac7a7fe16f81df7087da5d9537dab0"
+    },
+    {
+      "file": "src/workforce/alerts.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/104-46c52088-a87b-43f6-93b3-b203e7589c3a/output.tap",
+      "logSha256": "a8796d9d45041f21a5e286f314449a747e268b769c7dd63eb431412179759119",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/104-46c52088-a87b-43f6-93b3-b203e7589c3a/passed.db.br",
+      "snapshotSha256": "a07245c2d6d21ca8cc83212287e860a0c3e9e8ede2cb3b949c07eabbf909bf3d",
+      "sqliteImageSha256": "aff125a35d925bfe6d94ff6675e61381bb1b71b9faf0f33eaf558ce841997588"
+    },
+    {
+      "file": "src/workforce/catalog-validation.test.ts",
+      "counts": {
+        "tests": 1,
+        "suites": 0,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/105-85424d08-66ef-47b5-b592-4a266b0166cd/output.tap",
+      "logSha256": "08520d44716f576e45544174eae2bbf7fd9aa13fe7e851f8e5d0f1cb0db8f0fc",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/105-85424d08-66ef-47b5-b592-4a266b0166cd/passed.db.br",
+      "snapshotSha256": "d21ae533ad7def98605432c887ac203a259c2a9034aef3627737f550d1b5365e",
+      "sqliteImageSha256": "91c778a4c33179f61bd082c8116f28881095f31a80354418ff053bd9e15a9d06"
+    },
+    {
+      "file": "src/workforce/earning.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 4,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/106-503cfc1f-4ac6-4112-bf67-70959f8e41ab/output.tap",
+      "logSha256": "83e93427db7efe63e8dcd5fc9eb4712c6e4dd3d5eb140a9eadaa483a85799d60",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/106-503cfc1f-4ac6-4112-bf67-70959f8e41ab/passed.db.br",
+      "snapshotSha256": "b4391d72293427af60862a80254864193e5ed3c5d923ca4c68d4c2718e88f62a",
+      "sqliteImageSha256": "287820e4ffd2fa9ec3ef9b98af52d44975f82fbb15e9010af395b2bce0fac394"
+    },
+    {
+      "file": "src/workforce/execution-cost.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/107-bfd5382b-2655-49b7-957c-2aab4de7ddb4/output.tap",
+      "logSha256": "17eafb519b5409ae2c814aa9f54351015edd4cc55a7f9321964acdf0e606a5ad",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/107-bfd5382b-2655-49b7-957c-2aab4de7ddb4/passed.db.br",
+      "snapshotSha256": "040c0c0f394b9748fc6f4ca4aea43b8f0639dbc657398b5837068e95c90ed2e3",
+      "sqliteImageSha256": "9ad741e316835813df77324da7f0d39b173905e77c3994f87daf76353b96e1c2"
+    },
+    {
+      "file": "src/workforce/execution-integrity.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/108-5e835875-e408-4dd1-a9e7-a777ad3b9252/output.tap",
+      "logSha256": "002b58a814072dc47979a58b389286969bf4852a66f113cdfdc0b66190936a00",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/108-5e835875-e408-4dd1-a9e7-a777ad3b9252/passed.db.br",
+      "snapshotSha256": "6375be16e33fa4ed58372f5a3675377ce8d1066c35bb5e1eff7344d42b1231ed",
+      "sqliteImageSha256": "c762c78076176926db30c86b06ab258ff69e153e7c28e4b23f37709634abf822"
+    },
+    {
+      "file": "src/workforce/images.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/109-06e2b141-5fb0-45e9-b82b-eb9cd1a54e6b/output.tap",
+      "logSha256": "9210d3753f834113dac88374cfa3da456d5bed21667c47d666f220ccb396f345",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/109-06e2b141-5fb0-45e9-b82b-eb9cd1a54e6b/passed.db.br",
+      "snapshotSha256": "dd15f53c88d412a060df470a739f7a0c9ecd254940fced76671022234b815d06",
+      "sqliteImageSha256": "d84b0ebbfc99c05b1b97352a1b0d49fea10169a332465e4e6abe96d21d1e2da5"
+    },
+    {
+      "file": "src/workforce/primary.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/110-83f83dd6-f183-4f22-a928-911b5e6aacbf/output.tap",
+      "logSha256": "4831375fde8cdf70bca984a8fe9e65de23b53cfce88dfeaf40029ad4c3886108",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/110-83f83dd6-f183-4f22-a928-911b5e6aacbf/passed.db.br",
+      "snapshotSha256": "4551b6b3506e9368bd5ca6c5047201350597b4becfee8c705e10cd4a6c1b690a",
+      "sqliteImageSha256": "b0de708bbbaf08da4582033955e6769cee2161ef4dc00c6b96dd31b3007a26db"
+    },
+    {
+      "file": "src/workforce/staging.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/111-697d568b-62d3-43bb-9af4-adb97d532cec/output.tap",
+      "logSha256": "29cd4cca09c17d6beb055e88e689dcc1c0b8e30f62b241204fa26e24b72f2c45",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/111-697d568b-62d3-43bb-9af4-adb97d532cec/passed.db.br",
+      "snapshotSha256": "a33b829f0959203accdd4006aa6862a8b2f3fa231b1d59f2c5d105fbac875c5d",
+      "sqliteImageSha256": "9e2c9f53a25d350d09f3aab7b543a1c860c940a1dc8d8621a3809563af11089a"
+    },
+    {
+      "file": "src/workforce/workforce.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "sourceFingerprint": "f43de898877c5eb8de24bb294aecc16763c4d7d830ed162c6edc35f835ed4ea0",
+      "log": "logs/test-checkpoints/f43de898877c5eb8de24bb29/112-6fb7f738-f231-487d-81bb-13ad769e6367/output.tap",
+      "logSha256": "4009cf631772a39c211b4b7a6157f8331f74197d0abe9b7297063403015af247",
+      "snapshot": "logs/test-checkpoints/f43de898877c5eb8de24bb29/112-6fb7f738-f231-487d-81bb-13ad769e6367/passed.db.br",
+      "snapshotSha256": "f33b9e0c1e7b9d6eb6be74d04f9f5ce06955e25ecc84ecc0d816bfeb34766144",
+      "sqliteImageSha256": "5844cf14f470c8694cada4139f3f643a2c8690073077f6ffbffea81144a0bde0"
+    }
+  ]
+}

@@ -3679,6 +3679,8 @@ async function loadConnectedAccounts() {
       </div>
       ${costMix.length ? `<table class="econ-table"><thead><tr><th>Cost category</th><th>Total</th></tr></thead><tbody>${costMix.map(([category, cents]) => `<tr><td>${esc(String(category).replace(/_/g, ' '))}</td><td>${money(cents)}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No costs recorded yet — $0 honestly.</p>'}`;
     loadMissionChat().catch(() => {});
+    loadWorkforceOverview().catch(() => {});
+    loadEconomyCommands().catch(() => {});
     $('#economy-today').innerHTML = today.chronology.length
       ? `<ol class="econ-chronology">${today.chronology.map((e) => `<li><small>${esc(new Date(e.ts).toLocaleTimeString())} · ${esc(e.kind)} · ${esc(e.actor)}</small><div>${esc(e.summary)}</div></li>`).join('')}</ol>`
       : '<p class="sub">No autonomous activity recorded today.</p>';
@@ -3709,6 +3711,80 @@ async function loadConnectedAccounts() {
     kill.classList.toggle('btn-danger', !dashboard.policy.killSwitch);
     $('#econ-policy-note').textContent = `Daily spend cap $${(dashboard.policy.maxDailySpendCents / 100).toFixed(2)} · min expected net ${dashboard.policy.minExpectedNetCents}c · min ROI ${dashboard.policy.minRoi} · concurrency ${dashboard.policy.maxConcurrentExecutions} · agent cap ${dashboard.policy.maxEconomyAgents}. ${dashboard.honesty.note}`;
     ensureTableScroll();
+  }
+
+  // ── Workforce overview + agent inspector + command console (2026-09-19) ──
+  // Every figure rendered here comes from a live API response over the real
+  // database; nothing on this console is seeded, estimated or illustrative.
+  async function loadWorkforceOverview() {
+    const root = $('#economy-workforce');
+    if (!root) return;
+    const money = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`;
+    try {
+      const { overview } = await api('/api/economy/workforce-overview');
+      const f = overview.finance || {};
+      const w = overview.work || {};
+      root.innerHTML = [
+        ['Agents (active/total)', `${overview.activeAgents} / ${overview.economyAgentCount}`, `${overview.primaryCoveragePct}% primary coverage`],
+        ['Primary assignments', String(overview.primaryAssignments ?? 0), `${overview.coveredAgents ?? 0} agents covered`],
+        ['Fleet revenue', money(f.fleetRevenueCents), 'realized only'],
+        ['Fleet available', money(f.fleetAvailableCents), 'spendable by policy'],
+        ['Open commands', String(w.openCommands ?? 0), 'issued+acknowledged+executing'],
+        ['Unverified completions', String(w.unverifiedCompletions ?? 0), 'never paid without verification'],
+      ].map(([label, value, note]) => `<div class="stat"><span class="stat-label">${label}</span><strong class="stat-value">${value}</strong><small>${esc(note)}</small></div>`).join('');
+      const prim = await api('/api/workforce/primaries?limit=10').catch(() => ({ primaries: [] }));
+      const list = $('#economy-primaries');
+      if (list) {
+        list.innerHTML = (prim.primaries || []).length
+          ? `<table class="econ-table"><thead><tr><th>Agent</th><th>Primary platform</th><th>Status</th></tr></thead><tbody>${prim.primaries.map((p) => `<tr><td>${esc(p.agent_slug)}</td><td>${esc(p.platform_name || p.platform_id)}</td><td>${p.account_bound_at ? 'bound' : 'assigned'}</td></tr>`).join('')}</tbody></table>`
+          : '<p class="sub">No primary assignments yet — agents share the verified pool until 1:1 coverage grows.</p>';
+      }
+    } catch (e) { root.innerHTML = `<p class="sub">Workforce overview unavailable: ${esc(e.message)}</p>`; }
+  }
+
+  async function loadAgentInspector() {
+    const root = $('#economy-agent');
+    if (!root) return;
+    const slug = ($('#agent-inspector-slug')?.value || '').trim();
+    const money = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`;
+    if (!slug) { root.innerHTML = '<p class="sub">Enter an agent slug to inspect its finance, work, verification and blockers.</p>'; return; }
+    try {
+      const { report } = await api(`/api/economy/agents/${encodeURIComponent(slug)}/report`);
+      const fin = report.finance || {};
+      const cmds = (report.recentCommands || []).map((c) => `<li><small>${esc(c.id)} · ${esc(c.status)} · verification ${esc(c.verification)}</small><div>${esc(String(c.instruction).slice(0, 120))}</div></li>`).join('');
+      root.innerHTML = `
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-label">Revenue (realized)</span><strong class="stat-value">${money(fin.realizedRevenueCents)}</strong><small>spent ${money(fin.costCents)} · available ${money(fin.availableCents)}</small></div>
+          <div class="stat"><span class="stat-label">Primary</span><strong class="stat-value">${report.primary ? esc(report.primary.platform_name || report.primary.platform_id) : 'none'}</strong><small>${report.primary?.account_bound_at ? 'account bound' : '1:1 coverage pending'}</small></div>
+          <div class="stat"><span class="stat-label">Quota</span><strong class="stat-value">${money(report.quota?.remainingCents ?? 0)} left</strong><small>of ${money(report.quota?.dailyCapCents ?? 0)} daily</small></div>
+          <div class="stat"><span class="stat-label">Blockers</span><strong class="stat-value">${(report.blockers || []).length}</strong><small>${(report.blockers || []).map((b) => esc(b.reason)).join(' · ') || 'none'}</small></div>
+        </div>
+        ${cmds ? `<ul class="econ-events">${cmds}</ul>` : '<p class="sub">No commands issued to this agent yet.</p>'}`;
+    } catch (e) { root.innerHTML = `<p class="sub">Agent report unavailable: ${esc(e.message)}</p>`; }
+  }
+
+  async function loadEconomyCommands() {
+    const root = $('#economy-commands');
+    if (!root) return;
+    try {
+      const { commands } = await api('/api/economy/commands?limit=10');
+      root.innerHTML = (commands || []).length
+        ? `<table class="econ-table"><thead><tr><th>Command</th><th>Agent</th><th>Status</th><th>Verification</th><th>Chat</th></tr></thead><tbody>${commands.map((c) => `<tr><td><small>${esc(c.id)}</small></td><td>${esc(c.agent_slug)}</td><td>${badge(c.status)}</td><td>${esc(c.verification)}</td><td>${c.chat_thread_id ? `<small>${esc(c.chat_thread_id.slice(0, 18))}…</small>` : '—'}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="sub">No commands issued yet.</p>';
+    } catch (e) { root.innerHTML = `<p class="sub">Commands unavailable: ${esc(e.message)}</p>`; }
+  }
+
+  async function sendEconomyCommand() {
+    const slug = ($('#command-slug')?.value || '').trim();
+    const instruction = ($('#command-text')?.value || '').trim();
+    if (!slug || !instruction) { toast('Agent slug and instruction are required', 'err'); return; }
+    try {
+      const result = await api('/api/economy/commands', { method: 'POST', body: JSON.stringify({ agent_slug: slug, instruction, idempotency_key: `ui-${Date.now()}-${slug}` }) });
+      toast(result.idempotentReplay ? 'Existing command returned (idempotent replay)' : `Command ${result.command.id} issued — chat thread linked`, 'ok');
+      const root = $('#economy-command');
+      if (root) root.innerHTML = `<p class="sub">Latest: ${esc(result.command.id)} → ${esc(slug)} · ${esc(result.command.status)} · verification ${esc(result.command.verification)}</p>`;
+      await loadEconomyCommands();
+    } catch (e) { toast(e.message, 'err'); }
   }
 
   async function loadMissionChat() {
@@ -3768,6 +3844,8 @@ async function loadConnectedAccounts() {
         await loadEconomy();
       } catch (e) { toast(e.message, 'err'); }
     });
+    $('#agent-inspector-load')?.addEventListener('click', () => { loadAgentInspector().catch((e) => toast(e.message, 'err')); });
+    $('#command-send')?.addEventListener('click', () => { sendEconomyCommand().catch((e) => toast(e.message, 'err')); });
     $('#mission-send')?.addEventListener('click', async () => {
       const agent = ($('#mission-agent')?.value || '').trim();
       const content = ($('#mission-input')?.value || '').trim();

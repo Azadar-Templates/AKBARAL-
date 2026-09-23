@@ -1,4 +1,5 @@
 import { getEconomyPolicy, type EconomyPolicyRow } from '../db/economy-repositories';
+import { WORKFORCE_CATEGORIES } from '../workforce/categories';
 
 /**
  * ZA141251SA economy policy + evaluation engine (pure logic — no I/O).
@@ -36,6 +37,9 @@ export interface PolicySnapshot {
   providerAccessRevoked: boolean;
   economyModelKey: string | null;
   discoveryCategories: string[];
+  /** 0022: default OFF. Autonomous upgrades stay off until the owner enables them. */
+  autoUpgradeEnabled: boolean;
+  maxAutoUpgradeCostCents: number;
 }
 
 export function snapshotPolicy(row: EconomyPolicyRow): PolicySnapshot {
@@ -67,6 +71,8 @@ export function snapshotPolicy(row: EconomyPolicyRow): PolicySnapshot {
     providerAccessRevoked: row.provider_access_revoked === 1,
     economyModelKey: row.economy_model_key ?? null,
     discoveryCategories: categories,
+    autoUpgradeEnabled: row.auto_upgrade_enabled === 1,
+    maxAutoUpgradeCostCents: Number(row.max_auto_upgrade_cost_cents ?? 0),
   };
 }
 
@@ -226,4 +232,68 @@ export const DISCOVERY_CATEGORIES: DiscoveryCategory[] = [
 
 export function findDiscoveryCategory(key: string): DiscoveryCategory | undefined {
   return DISCOVERY_CATEGORIES.find((category) => category.key === key);
+}
+
+/**
+ * D4 (audit): the economy discovery allow-list was pinned to the 13 legacy
+ * keys, silently dropping the 13 workforce-only categories. Resolution is now
+ * the union — legacy first (existing stored policies keep working), then the
+ * workforce catalog adapted to the discovery shape. Pure data, no I/O.
+ */
+export function findAnyDiscoveryCategory(key: string): DiscoveryCategory | undefined {
+  const legacy = findDiscoveryCategory(key);
+  if (legacy) return legacy;
+  const workforce = WORKFORCE_CATEGORIES.find((category) => category.key === key);
+  if (!workforce) return undefined;
+  return {
+    key: workforce.key,
+    queries: [...workforce.queries],
+    defaultRevenueCents: workforce.defaultRevenueCents,
+    defaultCostCents: workforce.defaultCostCents,
+    defaultTimeHours: workforce.defaultTimeHours,
+    defaultProbability: workforce.defaultProbability,
+    defaultRisk: workforce.defaultRisk,
+  };
+}
+
+/** Every configurable discovery key: 13 legacy + 13 workforce-only (8 overlap). */
+export const ALL_DISCOVERY_CATEGORY_KEYS: string[] = [
+  ...DISCOVERY_CATEGORIES.map((c) => c.key),
+  ...WORKFORCE_CATEGORIES.map((c) => c.key).filter((key) => !DISCOVERY_CATEGORIES.some((c) => c.key === key)),
+];
+
+/**
+ * D9: owner-tunable integer policy ranges, enforced by the economy API.
+ * The agent-count ceiling moves with registry scale (4,001 agents + growth
+ * headroom); every money gate keeps its own ceiling — counts scale, spending
+ * stays governed.
+ */
+export const POLICY_INT_RANGES: Array<[field: string, min: number, max: number]> = [
+  ['max_concurrent_executions', 1, 10],
+  ['max_daily_spend_cents', 0, 100_000],
+  ['max_opportunity_cost_cents', 0, 100_000],
+  ['min_expected_net_cents', 0, 1_000_000],
+  ['settlement_threshold_cents', 0, 10_000_000],
+  ['max_economy_agents', 1, 10_000],
+  // Hierarchy policy (Section 3): the operator sets how fast the workforce
+  // may grow, how deep it may go, how many children a parent may have and
+  // what one delegation costs the parent. 0 disables spawning entirely.
+  ['max_agent_depth', 0, 10],
+  ['max_children_per_agent', 0, 100],
+  ['spawn_rate_per_hour', 0, 1_000],
+  ['spawn_cost_cents', 0, 100_000],
+];
+
+/**
+ * Validate owner-supplied discovery categories. Unknown keys are dropped
+ * (never throw on config input); the result keeps first-seen order.
+ */
+export function sanitizeDiscoveryCategories(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const valid = new Set(ALL_DISCOVERY_CATEGORY_KEYS);
+  const out: string[] = [];
+  for (const entry of input) {
+    if (typeof entry === 'string' && valid.has(entry) && !out.includes(entry)) out.push(entry);
+  }
+  return out;
 }

@@ -123,10 +123,10 @@ describe('Milestone 4: tool/API/provider catalog', () => {
 
   after(async () => {
     db.run('DELETE FROM users WHERE id IN (?, ?)', [userId, adminId]);
+    await api.close();
     db.close();
     restoreEnv();
     await fixture.close();
-    await api.close();
   });
 
   // ---------------------------------------------------------------- tools ---

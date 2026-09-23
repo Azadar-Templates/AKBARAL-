@@ -29,11 +29,11 @@ describe('HTTP API integration', () => {
     for (const id of tempUsers) {
       db.run('DELETE FROM users WHERE id = ?', [id]);
     }
+    await api.close();
     db.close();
     if (fixture) {
       await fixture.close();
     }
-    await api.close();
   });
 
   it('health check', async () => {

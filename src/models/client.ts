@@ -13,6 +13,12 @@ export interface ChatResult {
   inputTokens?: number;
   outputTokens?: number;
   latencyMs: number;
+  /** D10: real usage + cost, attached by the router on success. Absent on failure paths. */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    costCents?: number;
+  };
 }
 
 export class ProviderNotConfiguredError extends Error {

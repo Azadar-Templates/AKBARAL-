@@ -1,5 +1,6 @@
 import {
   addAgentSpendCents,
+  agentSpendSince,
   agentChildrenMap,
   agentDepths,
   countAgentChildren,
@@ -652,3 +653,47 @@ export function subtreeSpend(rootAgentSlug: string): number {
 }
 
 export { listDelegations };
+
+// ── Per-agent spend quotas (0022) ────────────────────────────────────────────
+// A quota caps what ONE agent (plus its own ledger-attributed spend) may burn
+// per UTC day / calendar month. NULL quota = uncapped. Every enforcement
+// states the window, the spent figure and the cap — never a bare "denied".
+
+export interface AgentQuotaStatus {
+  agentSlug: string;
+  dailyQuotaCents: number | null;
+  dailySpentCents: number;
+  monthlyQuotaCents: number | null;
+  monthlySpentCents: number;
+}
+
+export function agentQuotaStatus(agentSlug: string): AgentQuotaStatus {
+  const profile = getAgentProfileBySlug(agentSlug);
+  const now = new Date();
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  return {
+    agentSlug,
+    dailyQuotaCents: profile?.daily_spend_quota_cents ?? null,
+    dailySpentCents: agentSpendSince(agentSlug, dayStart.toISOString()),
+    monthlyQuotaCents: profile?.monthly_spend_quota_cents ?? null,
+    monthlySpentCents: agentSpendSince(agentSlug, monthStart.toISOString()),
+  };
+}
+
+export function assertAgentQuota(agentSlug: string, additionalCents: number): AgentQuotaStatus {
+  const status = agentQuotaStatus(agentSlug);
+  if (status.dailyQuotaCents !== null && status.dailySpentCents + additionalCents > status.dailyQuotaCents) {
+    throw new HierarchyControlError(
+      409, 'daily_quota_exceeded',
+      'agent "' + agentSlug + '" daily quota: spent ' + status.dailySpentCents + 'c of ' + status.dailyQuotaCents + 'c — +' + additionalCents + 'c refused',
+    );
+  }
+  if (status.monthlyQuotaCents !== null && status.monthlySpentCents + additionalCents > status.monthlyQuotaCents) {
+    throw new HierarchyControlError(
+      409, 'monthly_quota_exceeded',
+      'agent "' + agentSlug + '" monthly quota: spent ' + status.monthlySpentCents + 'c of ' + status.monthlyQuotaCents + 'c — +' + additionalCents + 'c refused',
+    );
+  }
+  return status;
+}

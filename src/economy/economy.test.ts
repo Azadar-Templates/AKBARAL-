@@ -265,6 +265,7 @@ describe('ZA141251SA agent economy', () => {
   });
 
   it('completes a real execution through a real provider endpoint, records EXPECTED (not received) revenue', async () => {
+    process.env.AKBARAL_PAGE_FETCH_ENDPOINT = searchFixture.url;
     process.env.OPENAI_API_KEY = 'economy-fixture-key';
     process.env.OPENAI_BASE_URL = `${modelFixture.url}/v1`;
     try {
@@ -516,7 +517,11 @@ describe('ZA141251SA agent economy', () => {
 
   // ── I: owner settlement ──────────────────────────────────────────────────
   it('settles net profit only above the operating float, honestly (pending external provider)', () => {
-    updateEconomyPolicy({ settlement_threshold_cents: 10_000 });
+    // A real destination is required: migration 0022-era policy refuses to move
+    // money to the seeded 'owner-configured-settlement' placeholder (see
+    // za-autonomy.test.ts). This test is about the operating float, so it sets
+    // a destination and leaves the placeholder guard to its own test.
+    updateEconomyPolicy({ settlement_threshold_cents: 10_000, settlement_destination: 'owner-bank-acct ECONOMY-TEST-001' });
     const before = listSettlements().length;
     const outcome = proposeSettlement();
     assert.equal(outcome.created, true, `settlement must be created (reason was: ${outcome.reason})`);

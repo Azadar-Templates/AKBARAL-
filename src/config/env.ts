@@ -89,7 +89,11 @@ function resolveTrustProxy(): number {
 }
 
 function resolveIntEnv(name: string, fallback: number, min: number, max: number): number {
-  const parsed = Number(trimOrEmpty(process.env[name]));
+  const raw = trimOrEmpty(process.env[name]);
+  // Number('') is zero, not an absent setting. In particular it silently
+  // disabled the default retry backoff and made transient states unobservable.
+  if (!raw) return fallback;
+  const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 

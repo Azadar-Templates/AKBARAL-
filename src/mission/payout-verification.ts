@@ -149,7 +149,7 @@ function parseJson<T>(raw: unknown, fallback: T): T {
  */
 export function destinationFingerprint(slot: Row): string {
   return sha256(
-    [String(slot.destination_type ?? ''), String(slot.masked_account ?? ''), String(slot.provider_ref ?? ''), String(slot.holder_name ?? '')].join('|'),
+    [String(slot.destination_type ?? ''), String(slot.masked_account ?? ''), String(slot.provider_ref ?? ''), String(slot.holder_name ?? ''), String(slot.currency ?? '')].join('|'),
   ).slice(0, 32);
 }
 
@@ -228,35 +228,38 @@ export function startPayoutVerification(input: {
   /** Platform actor kind. 'agent' is refused: money decisions are owner-only. */
   actorType?: 'owner' | 'agent';
 }): PayoutVerificationPublic {
-  assertOwner(input.actorType, 'start a payout destination verification');
-  const slot = slotRow(input.slot);
-  if (!slot.provider_ref && !slot.masked_account) {
-    throw new MissionTreasuryError(409, 'the slot has no destination yet — configure it before verifying', 'conflict');
-  }
-  const method = (input.method ?? (slot.provider_ref ? 'provider_reference' : 'owner_attestation')) as string;
-  if (!PAYOUT_VERIFICATION_METHODS.includes(method as PayoutVerificationMethod)) {
-    throw new MissionTreasuryError(400, `method must be one of ${PAYOUT_VERIFICATION_METHODS.join(', ')}`, 'validation_error');
-  }
-  if (method === 'provider_reference' && !slot.provider_ref) {
-    throw new MissionTreasuryError(409, 'a provider-reference verification needs a provider reference on the slot', 'conflict');
-  }
-  const required = requiredChecksFor(slot);
-  const id = missionId('pvf');
-  const now = nowIso();
-  missionDb.run(
-    `INSERT INTO mission_payout_slot_verifications (id, slot, method, status, checks, required_checks, evidence_ref, attestation, destination_fingerprint, requested_by, requested_at, created_at, updated_at)
-     VALUES (?, ?, ?, 'pending', '{}', ?, ?, NULL, ?, ?, ?, ?, ?)`,
-    [id, input.slot, method, JSON.stringify(required), input.evidenceRef ?? null, destinationFingerprint(slot), input.ownerId, now, now, now],
-  );
-  appendMissionAudit({
-    actorType: 'owner',
-    actorId: input.ownerId,
-    action: 'payout_slot.verification_started',
-    subjectType: 'payout_slot',
-    subjectId: String(input.slot),
-    detail: { verificationId: id, method, requiredChecks: required },
+  return missionDb.transaction(() => {
+    assertOwner(input.actorType, 'start a payout destination verification');
+    const slot = slotRow(input.slot);
+    if (!slot.provider_ref && !slot.masked_account) {
+      throw new MissionTreasuryError(409, 'the slot has no destination yet — configure it before verifying', 'conflict');
+    }
+    const method = (input.method ?? (slot.provider_ref ? 'provider_reference' : 'owner_attestation')) as string;
+    if (!PAYOUT_VERIFICATION_METHODS.includes(method as PayoutVerificationMethod)) {
+      throw new MissionTreasuryError(400, `method must be one of ${PAYOUT_VERIFICATION_METHODS.join(', ')}`, 'validation_error');
+    }
+    if (method === 'provider_reference' && !slot.provider_ref) {
+      throw new MissionTreasuryError(409, 'a provider-reference verification needs a provider reference on the slot', 'conflict');
+    }
+    const required = requiredChecksFor(slot);
+    const id = missionId('pvf');
+    const now = nowIso();
+    missionDb.run(
+      `INSERT INTO mission_payout_slot_verifications (id, slot, method, status, checks, required_checks, evidence_ref, attestation, destination_fingerprint, requested_by, requested_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'pending', '{}', ?, ?, NULL, ?, ?, ?, ?, ?)`,
+      [id, input.slot, method, JSON.stringify(required), input.evidenceRef ?? null, destinationFingerprint(slot), input.ownerId, now, now, now],
+    );
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId: input.ownerId,
+      action: 'payout_slot.verification_started',
+      subjectType: 'payout_slot',
+      subjectId: String(input.slot),
+      detail: { verificationId: id, method, requiredChecks: required },
+    });
+    return toPublic(missionDb.get<Row>('SELECT * FROM mission_payout_slot_verifications WHERE id = ?', [id])!, slot);
+
   });
-  return toPublic(missionDb.get<Row>('SELECT * FROM mission_payout_slot_verifications WHERE id = ?', [id])!, slot);
 }
 
 export interface ConfirmPayoutVerificationInput {
@@ -278,95 +281,98 @@ export interface ConfirmPayoutVerificationInput {
  * destination can never become payable.
  */
 export function confirmPayoutVerification(input: ConfirmPayoutVerificationInput): { verification: PayoutVerificationPublic; slot: Row } {
-  assertOwner(input.actorType, 'confirm a payout destination verification');
-  const slot = slotRow(input.slot);
-  if (!slot.provider_ref && !slot.masked_account) {
-    throw new MissionTreasuryError(409, 'the slot has no destination yet — configure it before verifying', 'conflict');
-  }
-  const attestation = (input.attestation ?? '').trim();
-  if (attestation.length < 40) {
-    throw new MissionTreasuryError(
-      400,
-      'the attestation must state, in at least 40 characters, that you control this destination and have completed the provider’s identity checks',
-      'validation_error',
-    );
-  }
-  const required = requiredChecksFor(slot);
-  const missing = required.filter((key) => input.checks?.[key] !== true);
-  if (missing.length > 0) {
-    throw new MissionTreasuryError(
-      409,
-      `every required check must be confirmed — missing: ${missing.join(', ')}`,
-      'verification_incomplete',
-    );
-  }
-  if (input.evidenceRef) {
-    assertDestinationDescriptionSafe(input.evidenceRef, 'evidenceRef');
-  }
+  return missionDb.transaction(() => {
+    assertOwner(input.actorType, 'confirm a payout destination verification');
+    const slot = slotRow(input.slot);
+    if (!slot.provider_ref && !slot.masked_account) {
+      throw new MissionTreasuryError(409, 'the slot has no destination yet — configure it before verifying', 'conflict');
+    }
+    const attestation = (input.attestation ?? '').trim();
+    if (attestation.length < 40) {
+      throw new MissionTreasuryError(
+        400,
+        'the attestation must state, in at least 40 characters, that you control this destination and have completed the provider’s identity checks',
+        'validation_error',
+      );
+    }
+    const required = requiredChecksFor(slot);
+    const missing = required.filter((key) => input.checks?.[key] !== true);
+    if (missing.length > 0) {
+      throw new MissionTreasuryError(
+        409,
+        `every required check must be confirmed — missing: ${missing.join(', ')}`,
+        'verification_incomplete',
+      );
+    }
+    if (input.evidenceRef) {
+      assertDestinationDescriptionSafe(input.evidenceRef, 'evidenceRef');
+    }
 
-  const method = input.method ?? (slot.provider_ref ? 'provider_reference' : 'owner_attestation');
-  if (!PAYOUT_VERIFICATION_METHODS.includes(method as PayoutVerificationMethod)) {
-    throw new MissionTreasuryError(400, `method must be one of ${PAYOUT_VERIFICATION_METHODS.join(', ')}`, 'validation_error');
-  }
+    const method = input.method ?? (slot.provider_ref ? 'provider_reference' : 'owner_attestation');
+    if (!PAYOUT_VERIFICATION_METHODS.includes(method as PayoutVerificationMethod)) {
+      throw new MissionTreasuryError(400, `method must be one of ${PAYOUT_VERIFICATION_METHODS.join(', ')}`, 'validation_error');
+    }
 
-  const pending = latestVerification(input.slot);
-  const id = pending && String(pending.status) === 'pending' ? String(pending.id) : missionId('pvf');
-  const now = nowIso();
-  const expiresAt = new Date(Date.now() + PAYOUT_VERIFICATION_VALIDITY_DAYS * 24 * 3600 * 1000).toISOString();
-  const checks = Object.fromEntries(Object.entries(input.checks ?? {}).map(([key, value]) => [key, value === true]));
-  const fingerprint = destinationFingerprint(slot);
+    const pending = latestVerification(input.slot);
+    const id = pending && String(pending.status) === 'pending' ? String(pending.id) : missionId('pvf');
+    const now = nowIso();
+    const expiresAt = new Date(Date.now() + PAYOUT_VERIFICATION_VALIDITY_DAYS * 24 * 3600 * 1000).toISOString();
+    const checks = Object.fromEntries(Object.entries(input.checks ?? {}).map(([key, value]) => [key, value === true]));
+    const fingerprint = destinationFingerprint(slot);
 
-  if (pending && String(pending.status) === 'pending') {
-    missionDb.run(
-      `UPDATE mission_payout_slot_verifications
-          SET method = ?, status = 'verified', checks = ?, required_checks = ?, evidence_ref = ?, attestation = ?,
-              destination_fingerprint = ?, verified_by = ?, verified_at = ?, expires_at = ?, updated_at = ?
-        WHERE id = ?`,
-      [method, JSON.stringify(checks), JSON.stringify(required), input.evidenceRef ?? pending.evidence_ref ?? null, attestation, fingerprint, input.ownerId, now, expiresAt, now, id],
-    );
-  } else {
-    missionDb.run(
-      `INSERT INTO mission_payout_slot_verifications (id, slot, method, status, checks, required_checks, evidence_ref, attestation, destination_fingerprint, requested_by, requested_at, verified_by, verified_at, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, 'verified', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        input.slot,
-        method,
-        JSON.stringify(checks),
-        JSON.stringify(required),
-        input.evidenceRef ?? null,
-        attestation,
-        fingerprint,
-        input.ownerId,
-        now,
-        input.ownerId,
-        now,
-        expiresAt,
-        now,
-        now,
-      ],
-    );
-  }
+    if (pending && String(pending.status) === 'pending') {
+      missionDb.run(
+        `UPDATE mission_payout_slot_verifications
+            SET method = ?, status = 'verified', checks = ?, required_checks = ?, evidence_ref = ?, attestation = ?,
+                destination_fingerprint = ?, verified_by = ?, verified_at = ?, expires_at = ?, updated_at = ?
+          WHERE id = ?`,
+        [method, JSON.stringify(checks), JSON.stringify(required), input.evidenceRef ?? pending.evidence_ref ?? null, attestation, fingerprint, input.ownerId, now, expiresAt, now, id],
+      );
+    } else {
+      missionDb.run(
+        `INSERT INTO mission_payout_slot_verifications (id, slot, method, status, checks, required_checks, evidence_ref, attestation, destination_fingerprint, requested_by, requested_at, verified_by, verified_at, expires_at, created_at, updated_at)
+         VALUES (?, ?, ?, 'verified', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          input.slot,
+          method,
+          JSON.stringify(checks),
+          JSON.stringify(required),
+          input.evidenceRef ?? null,
+          attestation,
+          fingerprint,
+          input.ownerId,
+          now,
+          input.ownerId,
+          now,
+          expiresAt,
+          now,
+          now,
+        ],
+      );
+    }
 
-  // Single activation primitive: treasury decides that 'active' means payable,
-  // and it re-applies the owner-only rule itself.
-  verifyPayoutSlot(input.slot, input.ownerId, input.actorType);
+    // Single activation primitive: treasury decides that 'active' means payable,
+    // and it re-applies the owner-only rule itself.
+    verifyPayoutSlot(input.slot, input.ownerId, input.actorType);
 
-  appendMissionAudit({
-    actorType: 'owner',
-    actorId: input.ownerId,
-    action: 'payout_slot.verification_confirmed',
-    subjectType: 'payout_slot',
-    subjectId: String(input.slot),
-    // Checks, method and expiry only. The attestation text is stored on the
-    // verification row and referenced by id — never duplicated into the log.
-    detail: { verificationId: id, method, checks, expiresAt, evidenceRef: input.evidenceRef ?? null },
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId: input.ownerId,
+      action: 'payout_slot.verification_confirmed',
+      subjectType: 'payout_slot',
+      subjectId: String(input.slot),
+      // Checks, method and expiry only. The attestation text is stored on the
+      // verification row and referenced by id — never duplicated into the log.
+      detail: { verificationId: id, method, checks, expiresAt, evidenceRef: input.evidenceRef ?? null },
   });
 
   return {
     verification: toPublic(missionDb.get<Row>('SELECT * FROM mission_payout_slot_verifications WHERE id = ?', [id])!, slot),
     slot: slotRow(input.slot),
   };
+
+  });
 }
 
 /** Revoke a verification and pause the slot: payouts stop immediately. */
@@ -376,33 +382,36 @@ export function revokePayoutVerification(input: {
   reason: string;
   actorType?: 'owner' | 'agent';
 }): PayoutVerificationPublic {
-  assertOwner(input.actorType, 'revoke a payout destination verification');
-  const slot = slotRow(input.slot);
-  const record = latestVerification(input.slot);
-  if (!record || String(record.status) !== 'verified') {
-    throw new MissionTreasuryError(404, 'this slot has no verified destination to revoke', 'not_found');
-  }
-  const reason = (input.reason ?? '').trim();
-  if (reason.length < 8) {
-    throw new MissionTreasuryError(400, 'a revocation reason of at least 8 characters is required', 'validation_error');
-  }
-  const now = nowIso();
-  missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'revoked', revoked_at = ?, revoked_reason = ?, updated_at = ? WHERE id = ?`, [
-    now,
-    reason,
-    now,
-    String(record.id),
-  ]);
-  setPayoutSlotStatus(input.slot, 'paused', input.ownerId, input.actorType);
-  appendMissionAudit({
-    actorType: 'owner',
-    actorId: input.ownerId,
-    action: 'payout_slot.verification_revoked',
-    subjectType: 'payout_slot',
-    subjectId: String(input.slot),
-    detail: { verificationId: String(record.id), reason },
+  return missionDb.transaction(() => {
+    assertOwner(input.actorType, 'revoke a payout destination verification');
+    const slot = slotRow(input.slot);
+    const record = latestVerification(input.slot);
+    if (!record || String(record.status) !== 'verified') {
+      throw new MissionTreasuryError(404, 'this slot has no verified destination to revoke', 'not_found');
+    }
+    const reason = (input.reason ?? '').trim();
+    if (reason.length < 8) {
+      throw new MissionTreasuryError(400, 'a revocation reason of at least 8 characters is required', 'validation_error');
+    }
+    const now = nowIso();
+    missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'revoked', revoked_at = ?, revoked_reason = ?, updated_at = ? WHERE id = ?`, [
+      now,
+      reason,
+      now,
+      String(record.id),
+    ]);
+    setPayoutSlotStatus(input.slot, 'paused', input.ownerId, input.actorType);
+    appendMissionAudit({
+      actorType: 'owner',
+      actorId: input.ownerId,
+      action: 'payout_slot.verification_revoked',
+      subjectType: 'payout_slot',
+      subjectId: String(input.slot),
+      detail: { verificationId: String(record.id), reason },
+    });
+    return toPublic(missionDb.get<Row>('SELECT * FROM mission_payout_slot_verifications WHERE id = ?', [String(record.id)])!, slot);
+
   });
-  return toPublic(missionDb.get<Row>('SELECT * FROM mission_payout_slot_verifications WHERE id = ?', [String(record.id)])!, slot);
 }
 
 export interface PayoutSlotVerificationStatus {
@@ -435,7 +444,7 @@ export function payoutSlotVerificationStatus(slotNumber: number): PayoutSlotVeri
   else {
     if (verification.status !== 'verified') blockers.push(`verification status is "${verification.status}"`);
     if (verification.stale) blockers.push('the destination changed after verification — re-verify');
-    if (verification.daysUntilExpiry !== null && verification.daysUntilExpiry <= 0) blockers.push('verification has expired — re-verify');
+    if (!verification.expiresAt || !Number.isFinite(Date.parse(verification.expiresAt)) || Date.parse(verification.expiresAt) <= Date.now()) blockers.push('verification has expired — re-verify');
   }
   if (String(slot.status) !== 'active') blockers.push(`slot status is "${String(slot.status)}"`);
   const pendingChecks = checks.filter((entry) => !entry.confirmed).map((entry) => entry.key);
@@ -464,52 +473,59 @@ export function listPayoutSlotVerificationStatuses(): PayoutSlotVerificationStat
  * Called by the mission server tick and by the status endpoint.
  */
 export function sweepPayoutVerifications(): { expired: number[]; paused: number[] } {
-  const now = nowIso();
-  const expired: number[] = [];
-  const paused: number[] = [];
-  const rows = missionDb.all<Row>(
-    `SELECT * FROM mission_payout_slot_verifications WHERE status = 'verified' AND expires_at IS NOT NULL AND expires_at <= ?`,
-    [now],
-  );
-  for (const row of rows) {
-    missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'expired', updated_at = ? WHERE id = ?`, [now, String(row.id)]);
-    expired.push(Number(row.slot));
-    const slot = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [Number(row.slot)]);
-    if (slot && String(slot.status) === 'active') {
-      setPayoutSlotStatus(Number(row.slot), 'paused', String(row.verified_by ?? 'system'));
-      paused.push(Number(row.slot));
+  return missionDb.transaction(() => {
+    const now = nowIso();
+    const expired: number[] = [];
+    const paused: number[] = [];
+    const rows = missionDb.all<Row>(
+      `SELECT * FROM mission_payout_slot_verifications WHERE status = 'verified' AND expires_at IS NOT NULL AND expires_at <= ?`,
+      [now],
+    );
+    for (const row of rows) {
+      missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'expired', updated_at = ? WHERE id = ?`, [now, String(row.id)]);
+      expired.push(Number(row.slot));
+      const slot = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [Number(row.slot)]);
+      // Expire historical evidence, but only the current verification controls
+      // whether this slot must pause. A newer attestation must not be undone.
+      const isCurrent = latestVerification(Number(row.slot))?.id === row.id;
+      if (slot && isCurrent && String(slot.status) === 'active') {
+        setPayoutSlotStatus(Number(row.slot), 'paused', String(row.verified_by ?? 'system'));
+        paused.push(Number(row.slot));
+      }
+      appendMissionAudit({
+        actorType: 'system',
+        action: 'payout_slot.verification_expired',
+        subjectType: 'payout_slot',
+        subjectId: String(row.slot),
+        detail: { verificationId: String(row.id), expiresAt: String(row.expires_at ?? '') },
+      });
     }
-    appendMissionAudit({
-      actorType: 'system',
-      action: 'payout_slot.verification_expired',
-      subjectType: 'payout_slot',
-      subjectId: String(row.slot),
-      detail: { verificationId: String(row.id), expiresAt: String(row.expires_at ?? '') },
-    });
-  }
-  // A destination that changed after verification invalidates it as well.
-  const verifiedRows = missionDb.all<Row>(`SELECT * FROM mission_payout_slot_verifications WHERE status = 'verified'`);
-  for (const row of verifiedRows) {
-    const slot = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [Number(row.slot)]);
-    if (!slot) continue;
-    if (destinationFingerprint(slot) === String(row.destination_fingerprint ?? '')) continue;
-    missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'expired', revoked_reason = ?, updated_at = ? WHERE id = ?`, [
-      'the destination changed after verification',
-      now,
-      String(row.id),
-    ]);
-    expired.push(Number(row.slot));
-    if (String(slot.status) === 'active') {
-      setPayoutSlotStatus(Number(row.slot), 'paused', 'system');
-      paused.push(Number(row.slot));
+    // A destination that changed after verification invalidates it as well.
+    const verifiedRows = missionDb.all<Row>(`SELECT * FROM mission_payout_slot_verifications WHERE status = 'verified'`);
+    for (const row of verifiedRows) {
+      const slot = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [Number(row.slot)]);
+      if (!slot) continue;
+      if (destinationFingerprint(slot) === String(row.destination_fingerprint ?? '')) continue;
+      missionDb.run(`UPDATE mission_payout_slot_verifications SET status = 'expired', revoked_reason = ?, updated_at = ? WHERE id = ?`, [
+        'the destination changed after verification',
+        now,
+        String(row.id),
+      ]);
+      expired.push(Number(row.slot));
+      const isCurrent = latestVerification(Number(row.slot))?.id === row.id;
+      if (isCurrent && String(slot.status) === 'active') {
+        setPayoutSlotStatus(Number(row.slot), 'paused', 'system');
+        paused.push(Number(row.slot));
+      }
+      appendMissionAudit({
+        actorType: 'system',
+        action: 'payout_slot.verification_invalidated',
+        subjectType: 'payout_slot',
+        subjectId: String(row.slot),
+        detail: { verificationId: String(row.id), reason: 'destination changed after verification' },
+      });
     }
-    appendMissionAudit({
-      actorType: 'system',
-      action: 'payout_slot.verification_invalidated',
-      subjectType: 'payout_slot',
-      subjectId: String(row.slot),
-      detail: { verificationId: String(row.id), reason: 'destination changed after verification' },
-    });
-  }
-  return { expired: [...new Set(expired)], paused: [...new Set(paused)] };
+    return { expired: [...new Set(expired)], paused: [...new Set(paused)] };
+
+  });
 }
