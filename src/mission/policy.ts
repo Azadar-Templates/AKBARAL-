@@ -212,7 +212,11 @@ export function updatePolicy(patch: Partial<MissionPolicy>, actorId: string): Mi
     setNumber('max_payout_cents', patch.maxPayoutCents, 0, 1_000_000_000);
     setNumber('require_approval_above_cents', patch.requireApprovalAboveCents, 0, 1_000_000_000);
     setNumber('reinvest_share_bps', patch.reinvestShareBps, 0, 10_000);
-    setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 1_000_000_000);
+    // Ceiling matches the $1B/day objective that migration 0008 seeds directly
+    // (BILLIONAIRE_DAILY_TARGET_CENTS = 100_000_000_000). A lower cap here made
+    // the seeded target unreachable through the API and silently shrank it 100x
+    // on the next policy write.
+    setNumber('daily_revenue_target_cents', patch.dailyRevenueTargetCents, 0, 100_000_000_000);
     if (patch.currency) {
       fields.push('currency = ?');
       values.push(String(patch.currency).slice(0, 8));

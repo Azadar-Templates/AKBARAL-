@@ -100,12 +100,67 @@ function transformScalarMaxMin(sql: string): string {
   return out.join('');
 }
 
+/**
+ * Rewrite every SQLite `INSERT OR IGNORE INTO …;` in a (possibly multi-statement)
+ * script into the portable `INSERT INTO … ON CONFLICT DO NOTHING;`, which both
+ * SQLite (3.24+) and PostgreSQL accept. The terminating semicolon is located by a
+ * single-quote-aware scan, so a `;` inside a string literal is not mistaken for
+ * the end of the statement.
+ */
+function rewriteInsertOrIgnore(sql: string): string {
+  const pattern = /INSERT\s+OR\s+IGNORE\s+INTO/gi;
+  let out = '';
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(sql)) !== null) {
+    // Find the `;` that ends this statement, skipping over quoted literals.
+    let end = -1;
+    let inQuote = false;
+    for (let i = match.index; i < sql.length; i += 1) {
+      const ch = sql[i];
+      if (inQuote) {
+        if (ch === "'") {
+          if (sql[i + 1] === "'") { i += 1; continue; } // escaped quote ('')
+          inQuote = false;
+        }
+        continue;
+      }
+      if (ch === "'") { inQuote = true; continue; }
+      if (ch === ';') { end = i; break; }
+    }
+    const stop = end === -1 ? sql.length : end;
+    const body = sql.slice(match.index + match[0].length, stop);
+    out += sql.slice(cursor, match.index) + 'INSERT INTO' + body + ' ON CONFLICT DO NOTHING';
+    cursor = stop;
+    pattern.lastIndex = stop;
+  }
+  return out + sql.slice(cursor);
+}
+
 export function translateSqlForPg(sql: string): string {
   let out = transformScalarMaxMin(sql);
 
   out = out.replace(
     /strftime\(\s*'%Y-%m-%dT%H:%M:%fZ'\s*,\s*'now'\s*\)/g,
     `to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+  );
+
+  // SQLite's `datetime()` has no PostgreSQL counterpart — the engine reports
+  // `function datetime(unknown) does not exist`. Translate the two forms that
+  // actually appear in the dialect-neutral mission migrations and the shared
+  // application SQL. SQLite renders `datetime('now')` as 'YYYY-MM-DD HH:MM:SS'
+  // in UTC, so to_char with that exact mask preserves the stored shape.
+  //   datetime('now')                -> now() at time zone 'utc'
+  //   datetime('now', '±N <unit>')   -> now() at time zone 'utc' ± interval 'N <unit>'
+  // Parameterized forms such as `datetime('now', '-' || ? || ' days')` are NOT
+  // handled here and must not be used on PostgreSQL-executed paths.
+  out = out.replace(
+    /datetime\(\s*'now'\s*(?:,\s*'([+-])\s*(\d+)\s+([A-Za-z]+)'\s*)?\)/g,
+    (_m, sign?: string, amount?: string, unit?: string) => {
+      const base = `now() at time zone 'utc'`;
+      const expr = sign ? `${base} ${sign} interval '${amount} ${unit}'` : base;
+      return `to_char(${expr}, 'YYYY-MM-DD HH24:MI:SS')`;
+    },
   );
 
   out = out.replace(
@@ -121,11 +176,15 @@ export function translateSqlForPg(sql: string): string {
     },
   );
 
-  if (/^\s*INSERT OR IGNORE INTO/i.test(out)) {
-    out = out.replace(/^\s*INSERT OR IGNORE INTO/i, 'INSERT INTO');
-    out = out.replace(/;\s*$/, '');
-    out = `${out} ON CONFLICT DO NOTHING`;
-  }
+  // `INSERT OR IGNORE` is SQLite-only. It may appear ANYWHERE in the script:
+  // exec() hands a whole migration file over at once, so the old `^\s*`-anchored
+  // rule (no `m` flag) only ever fired when the statement opened the file, and
+  // mid-file occurrences reached PostgreSQL verbatim as
+  // `syntax error at or near "OR"`. Rewrite every occurrence and attach
+  // ON CONFLICT DO NOTHING to THAT statement, not to the end of the script.
+  // The scan is single-quote aware so a `;` inside a string literal cannot
+  // truncate the statement early.
+  out = rewriteInsertOrIgnore(out);
 
   out = out.replace(
     /knowledge_fts MATCH \?/g,

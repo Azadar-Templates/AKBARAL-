@@ -18,7 +18,10 @@
 --     revenue (status='received' + verifier NOT NULL).
 
 -- Per-agent daily target columns (owner-defined aspirational, configurable)
-ALTER TABLE mission_agents ADD COLUMN daily_target_cents INTEGER NOT NULL DEFAULT 100000000000;
+-- BIGINT: the $1B/day default is 100,000,000,000 cents — 47x PostgreSQL's int4
+-- maximum (2,147,483,647). As INTEGER this migration aborts on PostgreSQL with
+-- "integer out of range" while silently succeeding on SQLite.
+ALTER TABLE mission_agents ADD COLUMN daily_target_cents BIGINT NOT NULL DEFAULT 100000000000;
 ALTER TABLE mission_agents ADD COLUMN daily_target_currency TEXT NOT NULL DEFAULT 'USD';
 ALTER TABLE mission_agents ADD COLUMN persistent_objective TEXT NOT NULL DEFAULT 'Maximize legitimate, verified real-world earnings toward $1,000,000,000 verified revenue per day aspirational target — lawful, sustainable, verifiable only, no guarantees, no fabrication. Pursue fastest lawful sustainable verifiable opportunities within capabilities, resources, provider ToS, and platform rules.';
 
@@ -26,9 +29,9 @@ ALTER TABLE mission_agents ADD COLUMN persistent_objective TEXT NOT NULL DEFAULT
 CREATE TABLE IF NOT EXISTS mission_agent_daily_targets (
   agent_id       TEXT NOT NULL REFERENCES mission_agents(id) ON DELETE CASCADE,
   day            TEXT NOT NULL, -- UTC date YYYY-MM-DD
-  target_cents   INTEGER NOT NULL,
-  realized_cents INTEGER NOT NULL DEFAULT 0,
-  remaining_cents INTEGER NOT NULL DEFAULT 0,
+  target_cents   BIGINT NOT NULL,            -- up to $1B/day; exceeds int4
+  realized_cents BIGINT NOT NULL DEFAULT 0,
+  remaining_cents BIGINT NOT NULL DEFAULT 0,
   progress_pct   REAL NOT NULL DEFAULT 0,
   met            INTEGER NOT NULL DEFAULT 0,
   met_at         TEXT,

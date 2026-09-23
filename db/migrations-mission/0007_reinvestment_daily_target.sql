@@ -18,12 +18,16 @@
 -- event is auditable and reported exactly once per day.
 
 ALTER TABLE mission_policy ADD COLUMN reinvest_share_bps INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE mission_policy ADD COLUMN daily_revenue_target_cents INTEGER NOT NULL DEFAULT 0;
+-- BIGINT, not INTEGER: migration 0008 sets this to $1B/day = 100,000,000,000
+-- cents, which is 47x PostgreSQL's int4 maximum (2,147,483,647) and fails with
+-- "integer out of range". SQLite ignores the distinction (both are INTEGER
+-- affinity), so this is a no-op there and a fix on PostgreSQL.
+ALTER TABLE mission_policy ADD COLUMN daily_revenue_target_cents BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS mission_daily_target_days (
   day            TEXT PRIMARY KEY,          -- UTC date, YYYY-MM-DD
-  target_cents   INTEGER NOT NULL,
-  realized_cents INTEGER NOT NULL,
+  target_cents   BIGINT NOT NULL,           -- up to $1B/day; exceeds int4
+  realized_cents BIGINT NOT NULL,
   met            INTEGER NOT NULL DEFAULT 0,
   met_at         TEXT,
   updated_at     TEXT NOT NULL
