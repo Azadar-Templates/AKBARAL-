@@ -63,9 +63,16 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
     description:
       'Agent #001 / web_search. Uses a production search API when its key is present (Tavily, Brave, Serper, ' +
       'Google Programmable Search), an explicit AKBARAL_SEARCH_ENDPOINT proxy, or the keyless DuckDuckGo default.',
-    requiredEnv: [],
+    requiredEnv: [
+      'TAVILY_API_KEY',
+      'BRAVE_SEARCH_API_KEY',
+      'SERPER_API_KEY',
+      'GOOGLE_CSE_API_KEY',
+      'GOOGLE_CSE_ID',
+      'AKBARAL_SEARCH_ENDPOINT',
+    ],
     optionalWhenUnset: true,
-    defaultMode: 'keyless DuckDuckGo HTML endpoint — AKBARAL_SEARCH_ENDPOINT optional custom https:// search proxy',
+    defaultMode: 'keyless DuckDuckGo HTML endpoint',
   },
   {
     key: 'page_fetch',

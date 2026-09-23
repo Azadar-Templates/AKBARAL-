@@ -71,8 +71,8 @@ describe('Milestone 7: Agent World + Marketplace', () => {
       db.run('DELETE FROM agent_marketplace WHERE agent_id = ?', [agentId]);
       db.run('DELETE FROM agents WHERE id = ?', [agentId]);
     }
-    db.close();
     await api.close();
+    db.close();
   });
 
   it('publishes a custom agent to the marketplace', async () => {

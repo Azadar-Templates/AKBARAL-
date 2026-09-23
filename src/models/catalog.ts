@@ -220,7 +220,7 @@ export const MODEL_SPECS: ModelSpec[] = [
   // Google Gemini models — verified against the official model list and
   // pricing (ai.google.dev/gemini-api/docs/models, September 2026).
   // gemini-2.0-flash was shut down by Google on 2026-06-01 (release notes:
-  // \"Use gemini-3.5-flash or gemini-3.1-flash-lite instead\") and returns
+  // "Use gemini-3.5-flash or gemini-3.1-flash-lite instead") and returns
   // HTTP 404 from generativelanguage.googleapis.com — it must never come
   // back into this catalog.
   {
@@ -468,7 +468,7 @@ export function syncModelCatalog(): void {
       capabilities: provider.capabilities,
       // Status encodes operator enable/disable, not credential availability.
       // Credential absence is surfaced by the router as provider_not_configured
-      // so the platform stays honest and never reports \"no models registered\".
+      // so the platform stays honest and never reports "no models registered".
       status: preserveStatus('model_providers', provider.key),
     });
   }

@@ -80,8 +80,8 @@ describe('Stripe webhook endpoint (integration)', () => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    db.close();
     await api.close();
+    db.close();
   });
 
   function event(overrides: Record<string, unknown> = {}): Record<string, unknown> {

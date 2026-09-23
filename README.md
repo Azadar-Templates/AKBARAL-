@@ -1,5 +1,7 @@
 # AKBARAL! / MASTER AI
 
+> **Current verified status and continuation:** [Current source of truth](docs/CURRENT_SOURCE_OF_TRUTH.md) (2026-09-19), with [recovered Day 1–today history](docs/PROJECT_HISTORY.md) and [source inventory](docs/SOURCE_INVENTORY.md). Older launch/build reports are historical snapshots, not current production verification.
+
 Master AI operating platform:
 
 `User Goal -> AI Core/Orchestrator -> Plan -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result`

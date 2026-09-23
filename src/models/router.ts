@@ -127,6 +127,12 @@ export class ModelRouter {
     if (candidates.length === 0) {
       throw new Error('no models registered');
     }
+    // Prefer the best-scoring model whose provider is actually CONFIGURED.
+    // Routing to an unconfigured provider as the primary (only to fall
+    // through the chain anyway) reports a misleading "unavailable" decision
+    // for every request when a perfectly good provider IS configured.
+    // Only when no model is configured at all does the top scorer surface
+    // as an honest unavailable decision.
     const firstConfigured = candidates.find(({ model }) => this.credentialsAvailable(model).available);
     const primary = firstConfigured ?? candidates[0];
     const credential = this.credentialsAvailable(primary.model);
@@ -141,6 +147,12 @@ export class ModelRouter {
     };
   }
 
+  /**
+   * When EVERY provider in the chain was unconfigured, the old behavior
+   * surfaced only the last chain entry ("openai is not configured…"),
+   * misleading users into thinking a single key was missing. The honest
+   * error aggregates every required credential.
+   */
   private unconfiguredChainError(unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }>): Error {
     const required = [...new Set(unconfigured.map((d) => d.requiredEnvKey).filter((k): k is string => Boolean(k)))];
     const error = new Error(
@@ -150,11 +162,18 @@ export class ModelRouter {
     return error;
   }
 
+  /**
+   * Run a chat completion through the routed primary model, then fall back to
+   * the next available model if the provider fails or is not configured.
+   */
   async complete(requirements: ModelRequirements, messages: ChatMessage[]): Promise<ChatResult> {
     const primary = this.route(requirements);
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
+    // A real provider ATTEMPT failure (auth, outage, block, timeout) is the
+    // diagnostic that matters: it must never be masked by a later "not
+    // configured" skip for a different provider in the fallback chain.
     let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
@@ -183,6 +202,9 @@ export class ModelRouter {
       const startedAt = Date.now();
       try {
         const result = await provider.chat(decision.model, messages);
+        // D10: the cost used to be computed ONLY for the model_runs row while
+        // callers read `result.usage.costCents` (never set -> 0 posted to the
+        // execution ledger). Compute once, record AND return on the result.
         const costCents = estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0);
         if (decision.providerKey === 'omniroute') {
           recordOmnirouteUsage({
@@ -203,7 +225,10 @@ export class ModelRouter {
           outputTokens: result.outputTokens ?? null,
           costCents,
         });
-        return result;
+        return {
+          ...result,
+          usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costCents },
+        };
       } catch (error) {
         lastError = error;
         lastAttemptError = error;
@@ -222,6 +247,9 @@ export class ModelRouter {
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
     }
+    // Prefer the real attempt error: if any configured provider was actually
+    // called and failed, that failure is the honest reason this request
+    // failed — not the absence of some other provider's key.
     if (lastAttemptError instanceof Error) {
       throw lastAttemptError;
     }
@@ -231,11 +259,21 @@ export class ModelRouter {
     throw new Error('no model available for request');
   }
 
+  /**
+   * Full routing decision without executing anything: the primary model plus
+   * the ordered fallback chain, each with an honest availability flag. Used by
+   * the routing-preview API and diagnostics.
+   */
   routeChain(requirements: ModelRequirements): RoutingDecision[] {
     const primary = this.route(requirements);
     return this.fallbackChain(primary, requirements);
   }
 
+  /**
+   * Streaming variant of complete(): tokens are forwarded to onToken as the
+   * provider emits them (providers without native streaming emit the full text
+   * as a single token). Same fallback chain, same run recording.
+   */
   async completeStreaming(
     requirements: ModelRequirements,
     messages: ChatMessage[],
@@ -245,6 +283,9 @@ export class ModelRouter {
     const chain = this.fallbackChain(primary, requirements);
 
     let lastError: unknown = null;
+    // A real provider ATTEMPT failure (auth, outage, block, timeout) is the
+    // diagnostic that matters: it must never be masked by a later "not
+    // configured" skip for a different provider in the fallback chain.
     let lastAttemptError: unknown = null;
     const unconfigured: Array<{ providerKey: string; requiredEnvKey: string | null }> = [];
     for (const decision of chain) {
@@ -275,6 +316,9 @@ export class ModelRouter {
         const result = provider.streamChat
           ? await provider.streamChat(decision.model, messages, onToken)
           : await streamViaChat(provider, decision.model, messages, onToken);
+        // D10: the cost used to be computed ONLY for the model_runs row while
+        // callers read `result.usage.costCents` (never set -> 0 posted to the
+        // execution ledger). Compute once, record AND return on the result.
         const costCents = estimateCost(decision.model, result.inputTokens ?? 0, result.outputTokens ?? 0);
         if (decision.providerKey === 'omniroute') {
           recordOmnirouteUsage({
@@ -295,7 +339,10 @@ export class ModelRouter {
           outputTokens: result.outputTokens ?? null,
           costCents,
         });
-        return result;
+        return {
+          ...result,
+          usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costCents },
+        };
       } catch (error) {
         lastError = error;
         lastAttemptError = error;
@@ -314,6 +361,9 @@ export class ModelRouter {
     if (unconfigured.length === chain.length) {
       throw this.unconfiguredChainError(unconfigured);
     }
+    // Prefer the real attempt error: if any configured provider was actually
+    // called and failed, that failure is the honest reason this request
+    // failed — not the absence of some other provider's key.
     if (lastAttemptError instanceof Error) {
       throw lastAttemptError;
     }
@@ -340,6 +390,7 @@ export class ModelRouter {
       ordered.push(candidate.model);
     }
 
+    // De-dup by key while preserving preference order, then score order.
     const seen = new Set<string>();
     const chain: RoutingDecision[] = [];
     for (const model of ordered) {
