@@ -1,3 +1,4 @@
+import { PAYOUT_VERIFICATION_CHECKS } from './payout-verification';
 /**
  * ZA141251SA — private mission application tests (HTTP surface + reporting).
  *
@@ -26,7 +27,7 @@ import { applyMissionMigrations, missionDb, resolveMissionDbPath, type Row } fro
 import { createAccessLink, login, provisionOwner } from './auth';
 import { createMissionServer } from './server';
 import { ensurePolicy } from './policy';
-import { ensurePayoutSlots, recordRevenue, listWallets } from './treasury';
+import { ensurePayoutSlots, recordRevenue } from './treasury';
 import { seedTools } from './self-management';
 import { buildAgentReport, buildMissionOverview, createTarget, listTargets, type AgentRow } from './reporting';
 
@@ -282,10 +283,11 @@ test('targets are labelled as targets and progress counts only verified revenue'
     method: 'POST',
     body: JSON.stringify({ agentId: 'agt_parent', amountCents: 25_000_000, source: 'client', status: 'received', idempotencyKey: 'tgt-received-1', verifier: 'provider-webhook', externalRef: 'pi_real_ref_1' }),
   });
-  assert.equal(received.status, 201);
+  assert.equal(received.status, 409);
+  assert.equal(received.body.error.code, 'provider_verification_required');
   const after = listTargets().find((target) => target.id === created.body.target.id)!;
-  assert.equal(after.actualCents, 25_000_000, 'verified receipts count toward the target');
-  assert.equal(after.progressPct, 25, 'progress is a real percentage, not a claim');
+  assert.equal(after.actualCents, 0, 'a caller-supplied verifier string cannot establish cash');
+  assert.equal(after.progressPct, 0, 'unverified claims do not advance this target');
   assert.ok(after.actualCents < after.amountCents, 'an unmet target stays unmet');
 });
 
@@ -305,20 +307,15 @@ test('the payout surface requires owner authority and verified destinations', as
   const early = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 1_000, idempotencyKey: 'srv-pay-1' }) });
   assert.equal(early.status, 409, 'payouts are refused until the destination is verified');
 
-  await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({}) });
-  const missionWallet = listWallets('mission')[0];
-  assert.ok(missionWallet, 'a mission treasury wallet exists');
-  const request = await owner('/api/payouts', { method: 'POST', body: JSON.stringify({ slot: 1, amountCents: 2_000, idempotencyKey: 'srv-pay-2', memo: 'provider fee coverage' }) });
-  assert.equal(request.status, 201);
-  assert.equal(request.body.payout.status, 'pending_approval');
-  const approve = await owner(`/api/payouts/${request.body.payout.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
-  assert.equal(approve.status, 200);
-  assert.equal(approve.body.payout.status, 'approved');
-  const settleNoRef = await owner(`/api/payouts/${request.body.payout.id}/settle`, { method: 'POST', body: JSON.stringify({ status: 'settled' }) });
-  assert.equal(settleNoRef.status, 400, 'settlement needs a provider reference');
-  const settle = await owner(`/api/payouts/${request.body.payout.id}/settle`, { method: 'POST', body: JSON.stringify({ status: 'settled', settlementRef: 'po_provider_ref_1' }) });
-  assert.equal(settle.status, 200);
-  assert.equal(settle.body.payout.status, 'settled');
+  const emptyVerification = await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(emptyVerification.status, 400, 'status-only activation cannot bypass documentary verification');
+  const verified = await owner('/api/payout-slots/1/verify', { method: 'POST', body: JSON.stringify({ checks: Object.fromEntries(PAYOUT_VERIFICATION_CHECKS.map(check => [check.key, true])), attestation: 'Synthetic owner attestation for HTTP tests only; no actual payment destination.' }) });
+  assert.equal(verified.status, 200);
+  for (const status of ['sent','settled','failed']) {
+    const result = await owner('/api/payouts/legacy/settle', {method:'POST',body:JSON.stringify({status,settlementRef:'caller-invented-reference'})});
+    assert.equal(result.status,409);
+    assert.equal(result.body.error.code,'provider_verification_required');
+  }
 });
 
 test('the private dashboard is served by the mission server only', async () => {
@@ -398,37 +395,12 @@ test('pausing or retiring an agent requires a reason and is audited', async () =
   assert.equal(detail.reason, 'probe hold');
 });
 
-test('owner funding is real, idempotent and never counted as revenue', async () => {
-  const key = `fund-${Date.now()}`;
-  const first = await owner(`/api/wallets/${rootWalletId}/fund`, {
-    method: 'POST',
-    body: JSON.stringify({ amountCents: 4000, reference: 'bank transfer 12345', idempotencyKey: key }),
-  });
-  assert.equal(first.status, 201, JSON.stringify(first.body));
-  assert.equal(first.body.wallet.balanceCents, 4000);
-  assert.equal(first.body.category, 'owner_capital');
-
-  const retry = await owner(`/api/wallets/${rootWalletId}/fund`, {
-    method: 'POST',
-    body: JSON.stringify({ amountCents: 4000, reference: 'bank transfer 12345', idempotencyKey: key }),
-  });
-  assert.equal(retry.status, 200);
-  assert.equal(retry.body.duplicated, true);
-  assert.equal(retry.body.wallet.balanceCents, 4000, 'a retried request cannot double-credit the wallet');
-
-  const revenue = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_revenue WHERE wallet_id = ?`, [rootWalletId]);
-  assert.equal(Number(revenue?.count ?? 0), 0, 'owner capital is not revenue');
-  const ledger = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_ledger WHERE idempotency_key = ?`, [key]);
-  assert.equal(Number(ledger?.count ?? 0), 1, 'exactly one ledger row for the retried deposit');
-});
-
-test('funding requires a reference and a positive amount', async () => {
-  const noRef = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 100, reference: '', idempotencyKey: 'k-1' }) });
-  assert.equal(noRef.status, 400);
-  const noKey = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 100, reference: 'bank transfer 9', idempotencyKey: '' }) });
-  assert.equal(noKey.status, 400);
-  const zero = await owner(`/api/wallets/${rootWalletId}/fund`, { method: 'POST', body: JSON.stringify({ amountCents: 0, reference: 'bank transfer 9', idempotencyKey: 'k-2' }) });
-  assert.equal(zero.status, 400);
+test('owner notes cannot fund real money, even with idempotency keys', async () => {
+  for (const amountCents of [0,100,4000]) {
+    const result=await owner(`/api/wallets/${rootWalletId}/fund`,{method:'POST',body:JSON.stringify({amountCents,reference:'owner statement only',idempotencyKey:'legacy-deposit'})});
+    assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  }
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger WHERE idempotency_key=?',['legacy-deposit'])?.n),0);
 });
 
 test('the owner controls a wallet budget and can freeze it', async () => {
@@ -444,55 +416,18 @@ test('the owner controls a wallet budget and can freeze it', async () => {
     body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'p', description: 'frozen wallet', amountCents: 10 }),
   });
   assert.equal(refused.status, 409);
-  assert.match(String(refused.body.error.message), /wallet_frozen/);
+  assert.equal(refused.body.error.code,'provider_verification_required');
 
   await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ status: 'active' }) });
   const bad = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: -5 }) });
   assert.equal(bad.status, 400);
 });
 
-test('an expense uses the agent wallet, auto-executes under the threshold and queues above it', async () => {
-  const policy = (await owner('/api/policy')).body.policy;
-  const under = await owner('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'provider-a', description: 'under threshold', amountCents: Math.max(1, Math.floor(policy.requireApprovalAboveCents / 2)) }),
-  });
-  assert.equal(under.status, 201, `under-threshold expense: ${JSON.stringify(under.body)}`);
-  assert.equal(under.body.expense.status, 'paid', 'below the threshold the spend executes immediately');
-
-  // The budget is authority, the balance is money: raise the ceiling before
-  // committing more than what is left of the previous budget.
-  const raised = await owner(`/api/wallets/${rootWalletId}`, { method: 'PATCH', body: JSON.stringify({ budgetCents: policy.requireApprovalAboveCents * 2 }) });
-  assert.equal(raised.status, 200);
-  const over = await owner('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify({ agentSlug: rootAgentSlug, category: 'api', provider: 'provider-a', description: 'over threshold', amountCents: policy.requireApprovalAboveCents + 1 }),
-  });
-  assert.equal(over.status, 201, `over-threshold expense: ${JSON.stringify(over.body)}`);
-  assert.equal(over.body.expense.status, 'requested');
-  assert.ok(over.body.approvalId, 'an approval was queued');
-
-  const rejected = await owner(`/api/expenses/${over.body.expense.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'rejected', note: 'not this month' }) });
-  assert.equal(rejected.status, 200);
-  assert.equal(rejected.body.expense.status, 'rejected');
-  const again = await owner(`/api/expenses/${over.body.expense.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
-  assert.equal(again.status, 409, 'a decided expense cannot be re-decided');
-});
-
-test('an agent wallet is resolved automatically and a missing wallet states the real requirement', async () => {
-  const orphan = await owner('/api/agents', {
-    method: 'POST',
-    body: JSON.stringify({ name: 'No Wallet Agent', specialization: 'scratch', activity: 'software_development', budgetCents: 0, missionRole: 'worker' }),
-  });
-  const slug = String(orphan.body.agent.slug);
-  const walletId = String(orphan.body.wallet.id);
-  missionDb.run('DELETE FROM mission_wallets WHERE id = ?', [walletId]);
-  const expense = await owner('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify({ agentSlug: slug, category: 'api', provider: 'p', description: 'no wallet', amountCents: 10 }),
-  });
-  assert.equal(expense.status, 409);
-  assert.equal(expense.body.error.code, 'wallet_required');
+test('legacy expense requests cannot claim payment without a provider', async () => {
+  for(const amountCents of [1,1000]) {
+    const result=await owner('/api/expenses',{method:'POST',body:JSON.stringify({agentSlug:rootAgentSlug,category:'api',provider:'fixture',amountCents,idempotencyKey:`legacy-${amountCents}`})});
+    assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  }
 });
 
 test('the kill switch sub-route is reachable on both paths and blocks work', async () => {
@@ -525,10 +460,442 @@ test('the agent report lists the delegation children with their state', async ()
   assert.equal(report.body.agent.childCount, children.length);
 });
 
+test('the legacy approval queue cannot bypass provider verification', async () => {
+  const id='legacy-finance-approval';
+  missionDb.run("INSERT INTO mission_approvals (id,subject_type,subject_id,action,status) VALUES (?,'payout','legacy-payout','payout.approve','pending')",[id]);
+  const result=await owner(`/api/approvals/${id}/decide`,{method:'POST',body:JSON.stringify({decision:'approved'})});
+  assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  assert.equal(missionDb.get<Row>('SELECT status FROM mission_approvals WHERE id=?',[id])?.status,'pending');
+});
+
+test('private agent messages are durable, replay-safe, scoped and never execute money commands', async () => {
+  const before = Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n);
+  const input = { message: 'Synthetic owner message: do not execute any payment from this text.', idempotencyKey: 'owner-message-fixture' };
+  const stored = await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify(input) });
+  assert.equal(stored.status, 201);
+  assert.equal(stored.body.commandExecuted, false);
+  const replay = await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify(input) });
+  assert.equal(replay.body.duplicate, true);
+  assert.equal(replay.body.message.id, stored.body.message.id);
+  const changed = await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify({ ...input, message: 'changed content' }) });
+  assert.equal(changed.status, 409);
+  const link = createAccessLink({ label: 'message fixture', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+  const headers = { 'x-mission-link': link.token };
+  const own = await api('/api/agents/link-agent-a/messages', { headers });
+  assert.equal(own.status, 200);
+  assert.equal(own.body.automaticReplies, false);
+  assert.equal(own.body.messages.length, 1);
+  const forbidden = await api('/api/agents/link-agent-b/messages', { headers });
+  assert.equal(forbidden.status, 403);
+  const reply = await api('/api/agents/link-agent-a/messages', { method: 'POST', headers, body: JSON.stringify({ message: 'Synthetic bound-agent reply, actually submitted via its access link.', replyTo: stored.body.message.id, idempotencyKey: 'agent-message-fixture' }) });
+  assert.equal(reply.status, 201);
+  assert.equal(reply.body.message.actor_type, 'agent');
+  const page = await owner(`/api/agents/link-agent-a/messages?after=${stored.body.message.seq}`);
+  assert.equal(page.body.messages.length, 1);
+  assert.equal(page.body.messages[0].id, reply.body.message.id);
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), before);
+  const anonymous = await api('/api/agents/link-agent-a/messages');
+  assert.equal(anonymous.status, 401);
+});
+
+test('message mutations reject cross-agent, read-only, paused and invalid requests', async () => {
+  const bound = createAccessLink({ label: 'negative message fixture', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+  const read = createAccessLink({ label: 'non-private read fixture', scope: 'dashboard:read', expiresInHours: 1, createdBy: 'owner' });
+  const payload = { message: 'Synthetic authorization regression message', idempotencyKey: 'negative-message-fixture', actorType: 'owner', actorId: 'spoofed-owner' };
+  const headers = { 'x-mission-link': bound.token };
+  assert.equal((await api('/api/agents/link-agent-b/messages', { method: 'POST', headers, body: JSON.stringify(payload) })).status, 403);
+  for (const method of ['GET', 'POST']) {
+    assert.equal((await api('/api/agents/link-agent-a/messages', { method, headers: { 'x-mission-link': read.token }, ...(method === 'POST' ? { body: JSON.stringify(payload) } : {}) })).status, 403);
+  }
+  const trusted = await api('/api/agents/link-agent-a/messages', { method: 'POST', headers, body: JSON.stringify(payload) });
+  assert.equal(trusted.status, 201);
+  assert.equal(trusted.body.message.actor_type, 'agent');
+  assert.equal(trusted.body.message.actor_id, 'agt_link_a');
+  const crossReply = await owner('/api/agents/link-agent-b/messages', { method: 'POST', body: JSON.stringify({ ...payload, replyTo: trusted.body.message.id }) });
+  assert.equal(crossReply.status, 409);
+  for (const message of ['', 'x'.repeat(12001)]) {
+    assert.equal((await owner('/api/agents/link-agent-a/messages', { method: 'POST', body: JSON.stringify({ ...payload, message }) })).status, 400);
+  }
+  for (const query of ['after=-1', 'after=NaN', 'limit=0', 'limit=101']) {
+    assert.equal((await owner(`/api/agents/link-agent-a/messages?${query}`)).status, 400);
+  }
+  missionDb.run("UPDATE mission_agents SET status = 'paused' WHERE id = ?", ['agt_link_a']);
+  try {
+    assert.equal((await api('/api/agents/link-agent-a/messages', { headers })).status, 200);
+    assert.equal((await api('/api/agents/link-agent-a/messages', { method: 'POST', headers, body: JSON.stringify(payload) })).status, 409);
+  } finally { missionDb.run("UPDATE mission_agents SET status = 'active' WHERE id = ?", ['agt_link_a']); }
+});
+
+test('generic approval dispatch completes resource, upgrade and tool subjects without replay or fictitious payments', async () => {
+  const ledgerBefore = Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n);
+  for (const fixture of [
+    { type: 'resource', endpoint: '/api/resources', key: 'resource', input: { kind: 'storage', provider: 'synthetic-provider', monthlyCostCents: 10000 }, resultKey: 'resource' },
+    { type: 'upgrade', endpoint: '/api/upgrades', key: 'upgrade', input: { capability: 'Synthetic zero-cost approval fixture', requestedCostCents: 0 }, resultKey: 'upgrade' },
+    { type: 'tool', endpoint: '/api/tools/request', key: 'request', input: { toolKey: 'gemini_api' }, resultKey: 'toolRequest' },
+  ]) {
+    const requested = await owner(fixture.endpoint, { method: 'POST', body: JSON.stringify({ ...fixture.input, agentSlug: 'link-agent-a' }) });
+    assert.equal(requested.status, 201, fixture.type);
+    const id = requested.body[fixture.key].id;
+    const approval = missionDb.get<Row>('SELECT id FROM mission_approvals WHERE subject_type = ? AND subject_id = ?', [fixture.type, id])!;
+    const decided = await owner(`/api/approvals/${approval.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) });
+    assert.equal(decided.status, 200, JSON.stringify(decided.body));
+    assert.equal(decided.body[fixture.resultKey].status, 'approved');
+    assert.equal((await owner(`/api/approvals/${approval.id}/decide`, { method: 'POST', body: JSON.stringify({ decision: 'approved' }) })).status, 409);
+  }
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), ledgerBefore);
+});
+
+test('only an owner can bind a stored credential and the response claims no provider verification', async () => {
+  const credential = await owner('/api/credentials', { method: 'POST', body: JSON.stringify({ provider: 'synthetic-binding-provider', label: 'Synthetic API fixture', secret: 'synthetic-credential-value-not-real' }) });
+  assert.equal(credential.status, 201);
+  const created = await owner('/api/resources', { method: 'POST', body: JSON.stringify({ agentSlug: 'link-agent-a', kind: 'api', provider: 'synthetic-binding-provider', monthlyCostCents: 0 }) });
+  assert.equal(created.status, 201);
+  const url = `/api/resources/${created.body.resource.id}/credential`;
+  const payload = { credentialId: credential.body.credential.id, expectedCredentialId: null, reason: 'Synthetic owner-approved binding, not a real integration.' };
+  const link = createAccessLink({ label: 'credential binding denial fixture', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+  assert.equal((await api(url, { method: 'POST', headers: { 'x-mission-link': link.token }, body: JSON.stringify(payload) })).status, 401, 'a scoped agent link is not an owner session');
+  const result = await owner(url, { method: 'POST', body: JSON.stringify(payload) });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.resource.credential_id, payload.credentialId);
+  assert.equal(result.body.resource.status, 'approved');
+  assert.equal(result.body.providerVerified, false);
+  assert.equal(result.body.readiness.usable, false);
+  assert.ok(!JSON.stringify(result.body).includes('synthetic-credential-value-not-real'));
+});
+
+test('owner call review and reconciliation are private, resource-scoped and never execute payments', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const operations = require('./resource-calls') as typeof import('./resource-calls');
+  const credential = await owner('/api/credentials', { method: 'POST', body: JSON.stringify({ provider: 'synthetic-call-review', label: 'Synthetic review fixture', secret: 'synthetic-credential-value-not-real' }) });
+  const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-call-review', kind: 'api', credentialId: credential.body.credential.id, limits: { requests: 3 } });
+  const id = String(resource.id);
+  management.provisionResource({ id, actualCostCents: 0, providerRef: 'synthetic-call-review-invoice', evidence: 'Synthetic fixture only; no real purchase.', actorId: 'owner' });
+  management.recordResourceUsage({ id, usage: { requests: 0 }, actorType: 'owner', actorId: 'owner' });
+  const input = { resourceId: id, agentId: 'agt_link_a', actorType: 'agent' as const, actorId: 'agt_link_a', operationFingerprint: 'a'.repeat(64), units: { requests: 1 } };
+  const held = operations.reserveResourceCall({ ...input, idempotencyKey: 'synthetic-review-hold' });
+  const uncertain = operations.reserveResourceCall({ ...input, idempotencyKey: 'synthetic-review-unknown' });
+  operations.claimResourceCall(String(uncertain.id), input);
+  operations.markResourceCallUncertain(String(uncertain.id), input);
+  const before = Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n);
+  const base = `/api/resources/${id}/calls`;
+  const proof = { outcome: 'succeeded', actualUsage: { requests: 1 }, providerRef: 'synthetic-call-receipt', evidence: 'Synthetic owner receipt, not external provider proof.' };
+  for (const scope of ['agent:self', 'dashboard:read'] as const) {
+    const link = createAccessLink({ label: 'call review denied fixture', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
+    const headers = { 'x-mission-link': link.token };
+    assert.equal((await api(base, { headers })).status, 401);
+    assert.equal((await api(`${base}/${held.id}/cancel`, { method: 'POST', headers, body: '{}' })).status, 401);
+    assert.equal((await api(`${base}/${uncertain.id}/reconcile`, { method: 'POST', headers, body: JSON.stringify(proof) })).status, 401);
+  }
+  assert.equal((await api(base)).status, 401);
+  const page = await owner(`${base}?limit=1`);
+  assert.equal(page.body.calls.length, 1);
+  assert.ok(page.body.nextCursor);
+  assert.equal((await owner(`${base}?limit=1&before=${page.body.nextCursor}`)).body.calls.length, 1);
+  assert.ok(!JSON.stringify(page.body).includes('binding_snapshot'));
+  assert.equal((await owner(`${base}?limit=101`)).status, 400);
+  assert.equal((await owner(`${base}/${uncertain.id}/cancel`, { method: 'POST', body: '{}' })).status, 409);
+  assert.equal((await owner(`${base}/${held.id}/cancel`, { method: 'POST', body: '{}' })).body.call.status, 'cancelled');
+  assert.equal((await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify({ ...proof, outcome: 'unknown' }) })).status, 400);
+  assert.equal((await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify({ ...proof, actualUsage: {} }) })).status, 400);
+  const other = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-call-review', kind: 'api' });
+  assert.equal((await owner(`/api/resources/${other.id}/calls/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify(proof) })).status, 404);
+  const settled = await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify(proof) });
+  assert.equal(settled.status, 200);
+  assert.equal(settled.body.moneyMoved, false);
+  assert.equal(settled.body.providerVerified, false);
+  assert.equal((await owner(`${base}/${uncertain.id}/reconcile`, { method: 'POST', body: JSON.stringify(proof) })).status, 200);
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_ledger')!.n), before);
+});
+
+test('owner cost receipt API records private accounting once and never accepts agent authority', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const operations = require('./resource-calls') as typeof import('./resource-calls');
+  const treasury = require('./treasury') as typeof import('./treasury');
+  const policy = require('./policy') as typeof import('./policy');
+  const previous = policy.currentPolicy();
+  policy.updatePolicy({ maxDailySpendCents: 1000000, maxExpenseCents: 1000, requireApprovalAboveCents: 1000 }, 'owner');
+  try {
+    const credential = await owner('/api/credentials', { method: 'POST', body: JSON.stringify({ provider: 'synthetic-budget-http', label: 'Synthetic budget fixture', secret: 'synthetic-credential-value-not-real' }) });
+    const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-budget-http', kind: 'api', credentialId: credential.body.credential.id, limits: { requests: 3 } });
+    const id = String(resource.id);
+    management.provisionResource({ id, actualCostCents: 0, providerRef: 'synthetic-budget-http-invoice', evidence: 'Synthetic fixture only; no real purchase.', actorId: 'owner' });
+    management.recordResourceUsage({ id, usage: { requests: 0 }, actorType: 'owner', actorId: 'owner' });
+    const wallet = treasury.ensureAgentWallet('agt_link_a', 'Synthetic budget HTTP wallet');
+    treasury.setWalletBudget({ walletId: wallet.id, budgetCents: 100000, actorId: 'owner' });
+    treasury.credit({ walletId: wallet.id, amountCents: 100, category: 'transfer', memo: 'Synthetic fixture funds' });
+    const actor = { actorType: 'agent' as const, actorId: 'agt_link_a' };
+    const call = operations.reserveResourceCall({ resourceId: id, agentId: actor.actorId, ...actor, operationFingerprint: 'c'.repeat(64), idempotencyKey: 'synthetic-http-budget-reservation', units: { requests: 1 }, budget: { walletId: wallet.id, maxCostCents: 40 } });
+    operations.claimResourceCall(String(call.id), actor);
+    operations.settleResourceCall(String(call.id), actor, { outcome: 'succeeded', actualUsage: { requests: 1 }, providerRef: 'synthetic-budget-http-usage', evidence: 'Synthetic usage; not financial evidence.' });
+    const url = `/api/resources/${id}/calls/${call.id}/record-cost`;
+    const receipt = { actualCostCents: 25, providerRef: 'synthetic-budget-http-charge', evidence: 'Synthetic financial receipt only, no provider payment.' };
+    const link = createAccessLink({ label: 'cost mutation denied', scope: 'agent:self', agentId: 'agt_link_a', expiresInHours: 1, createdBy: 'owner' });
+    assert.equal((await api(url, { method: 'POST', headers: { 'x-mission-link': link.token }, body: JSON.stringify({ ...receipt, actorType: 'owner', actorId: 'owner' }) })).status, 401);
+    assert.equal((await owner(url, { method: 'POST', body: JSON.stringify({ ...receipt, actualCostCents: null }) })).status, 400);
+    assert.equal((await owner(url.replace(id, 'wrong-resource'), { method: 'POST', body: JSON.stringify(receipt) })).status, 404);
+    const before = treasury.getWallet(wallet.id)!.balanceCents;
+    const result = await owner(url, { method: 'POST', body: JSON.stringify(receipt) });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.externalPaymentExecuted, false);
+    assert.equal(treasury.getWallet(wallet.id)!.balanceCents, before - 25);
+    assert.equal((await owner(url, { method: 'POST', body: JSON.stringify(receipt) })).status, 200);
+    assert.equal(treasury.getWallet(wallet.id)!.balanceCents, before - 25);
+    assert.equal((await owner(url, { method: 'POST', body: JSON.stringify({ ...receipt, actualCostCents: 26 }) })).status, 409);
+    const page = await owner(`/api/resources/${id}/calls`);
+    assert.equal(page.body.calls[0].budget.actualCents, 25);
+    assert.equal(page.body.calls[0].budget.status, 'recorded');
+  } finally { policy.updatePolicy(previous, 'owner'); }
+});
+
+test('automatic chat configuration and job visibility require owner identity; config is not provider activation', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const treasury = require('./treasury') as typeof import('./treasury');
+  const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'google', kind: 'api' });
+  const wallet = treasury.ensureAgentWallet('agt_link_a', 'Synthetic chat HTTP wallet');
+  const config = { enabled: true, resourceId: resource.id, walletId: wallet.id, model: 'gemini-2.5-flash', maxInputBytes: 2000, maxOutputTokens: 128, maxCostCents: 40, costBasis: 'Synthetic configuration, no real model access or pricing claim.' };
+  const base = '/api/agents/link-agent-a';
+  for (const scope of ['agent:self', 'dashboard:read'] as const) {
+    const link = createAccessLink({ label: 'chat configuration denied', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
+    const headers = { 'x-mission-link': link.token };
+    assert.equal((await api(`${base}/chat-config`, { headers })).status, 401);
+    assert.equal((await api(`${base}/chat-jobs`, { headers })).status, 401);
+    assert.equal((await api(`${base}/chat-config`, { method: 'POST', headers, body: JSON.stringify({ ...config, actorType: 'owner' }) })).status, 401);
+  }
+  assert.equal((await owner(`${base}/chat-config`, { method: 'POST', body: JSON.stringify({ ...config, maxCostCents: 0 }) })).status, 400);
+  assert.equal((await owner(`${base}/chat-config`, { method: 'POST', body: JSON.stringify({ ...config, resourceId: undefined }) })).status, 400);
+  assert.equal((await owner('/api/agents/link-agent-b/chat-config', { method: 'POST', body: JSON.stringify(config) })).status, 403);
+  const configured = await owner(`${base}/chat-config`, { method: 'POST', body: JSON.stringify(config) });
+  assert.equal(configured.status, 200); assert.equal(configured.body.providerActivated, false);
+  const posted = await owner(`${base}/messages`, { method: 'POST', body: JSON.stringify({ message: 'Synthetic new owner message, no actual provider request', idempotencyKey: 'synthetic-http-chat-message' }) });
+  assert.equal(posted.status, 201); assert.equal(posted.body.commandExecuted, false);
+  const jobs = await owner(`${base}/chat-jobs`);
+  assert.equal(jobs.body.jobs.length, 1); assert.equal(jobs.body.jobs[0].status, 'queued');
+  assert.ok(!JSON.stringify(jobs.body).includes('config_snapshot'));
+  assert.equal((await owner(`${base}/chat-jobs?limit=101`)).status, 400);
+  const settings = await owner(`${base}/chat-config`);
+  assert.equal(settings.body.workerLivenessVerified, false);
+  assert.equal(settings.body.agentId, 'agt_link_a');
+  assert.equal((await owner(`${base}/messages`)).body.automaticRepliesConfigured, true);
+});
+
+test('resource periods require owner evidence and preserve prior usage without a purchase or replayed debit', async () => {
+  const management = require('./self-management') as typeof import('./self-management');
+  const expiry = new Date(Date.now() - 3600000).toISOString();
+  const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'synthetic-period-http', kind: 'api', expiresAt: expiry, limits: { requests: 10 } });
+  const id = String(resource.id);
+  management.provisionResource({ id, actualCostCents: 0, providerRef: 'synthetic-period-http-provision', evidence: 'Synthetic prior resource, not external activation.', actorId: 'owner' });
+  management.recordResourceUsage({ id, usage: { requests: 2 }, actorType: 'owner', actorId: 'owner' });
+  const body = { idempotencyKey: 'synthetic-period-http-replay', expectedExpiresAt: expiry, periodStart: new Date(Date.now() - 1000).toISOString(), periodEnd: new Date(Date.now() + 86400000).toISOString(), limits: { requests: 20 }, startingUsage: { requests: 1 }, actualCostCents: 0, currency: 'USD', providerRef: 'synthetic-period-http-renewal', evidence: 'Synthetic renewed period evidence, not a real provider receipt.' };
+  const route = `/api/resources/${id}/periods`;
+  for (const scope of ['agent:self', 'dashboard:read'] as const) {
+    const link = createAccessLink({ label: 'period access denied', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
+    const headers = { 'x-mission-link': link.token };
+    assert.equal((await api(route, { headers })).status, 401);
+    assert.equal((await api(route, { method: 'POST', headers, body: JSON.stringify({ ...body, actorType: 'owner' }) })).status, 401);
+  }
+  assert.equal((await owner(route, { method: 'POST', body: JSON.stringify({ ...body, startingUsage: {} }) })).status, 400);
+  const result = await owner(route, { method: 'POST', body: JSON.stringify(body) });
+  assert.equal(result.status, 200); assert.equal(result.body.externalPaymentExecuted, false); assert.equal(result.body.providerVerified, false);
+  assert.equal((await owner(route, { method: 'POST', body: JSON.stringify(body) })).body.duplicate, true);
+  assert.equal((await owner(route, { method: 'POST', body: JSON.stringify({ ...body, evidence: 'Different synthetic evidence cannot replace this receipt.' }) })).status, 409);
+  const history = await owner(route);
+  assert.equal(history.body.periods[0].previous_usage, '{"requests":2}');
+  assert.equal(history.body.periods[0].starting_usage, '{"requests":1}');
+  assert.ok(!JSON.stringify(history.body).includes('idempotency_key'));
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const suffix of ['', '-wal', '-shm']) {
     const file = `${DB_PATH}${suffix}`;
     if (fs.existsSync(file)) fs.rmSync(file, { force: true });
   }
+});
+
+
+test('verified cash API is owner-scoped, zero-funded, and exposes audit pagination',async()=>{
+  assert.equal((await api('/api/money')).status,401);
+  const boot=await owner('/api/money/bootstrap',{method:'POST',body:'{}'});assert.equal(boot.status,200);
+  const cash=await owner('/api/money');assert.equal(cash.status,200);assert.equal(cash.body.accounting,'provider_verified_cash_only');assert.equal(cash.body.legacyBalancesImported,false);
+  assert.equal(cash.body.accounts.reduce((n:number,a:any)=>n+Number(a.available_cents),0),0);
+  const ledger=await owner('/api/money/ledger?limit=10');assert.equal(ledger.status,200);assert.ok(Array.isArray(ledger.body.entries));
+  const missingProvider=await owner('/api/money/receipt',{method:'POST',body:JSON.stringify({externalId:'txn_claim'})});
+  assert.equal(missingProvider.status,409);assert.equal(missingProvider.body.error.code,'mission_live_provider_not_configured');
+});
+
+test('new verified-cash requests reject fabricated funding and preserve zero balances',async()=>{
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents WHERE slug=?',[rootAgentSlug])!;
+  const grant=await owner('/api/money/grants',{method:'POST',body:JSON.stringify({agentId:agent.id,spendLimitCents:100,delegationCents:0,expiresAt:new Date(Date.now()+86400000).toISOString()})});assert.equal(grant.status,200);
+  const result=await owner('/api/money/request',{method:'POST',body:JSON.stringify({kind:'expense',agentId:agent.id,provider:'stripe-mission',destination:'vendor',category:'api',amountCents:10,maxCostCents:10,idempotencyKey:'unfunded-real-expense'})});
+  assert.equal(result.status,409);assert.equal(result.body.error.code,'insufficient_real_funds');
+});
+test('agent cash read is scoped; ledger, operations and grants cannot leak fleet data',async()=>{
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents WHERE slug=?',[rootAgentSlug])!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Synthetic cash-read fixture'});
+  const headers={'x-mission-link':link.token};
+  const own=await api('/api/money',{headers});assert.equal(own.status,200);assert.equal(own.body.account.agent_id,agent.id);assert.equal(own.body.accounts,undefined);
+  assert.equal((await api('/api/money?agentId=another-agent',{headers})).status,403);
+  assert.equal((await api('/api/money/ledger?limit=10',{headers})).status,200);
+  assert.equal((await api('/api/money/operations?limit=10',{headers})).status,200);
+  const mutation=await api('/api/money/revoke-opportunity',{method:'POST',headers,body:JSON.stringify({id:'not-owned'})});assert.equal(mutation.status,409);assert.equal(mutation.body.error.code,'owner_required');
+});
+test('Agent Factory delegates a finite grant only through explicit parent permission; failure leaves no orphan',async()=>{
+  await owner('/api/policy',{method:'PATCH',body:JSON.stringify({allowAgentCreation:true,autonomousEnabled:true,maxChildrenPerAgent:5,maxAgents:5000,maxDepth:4})});
+  const root=await owner('/api/agents',{method:'POST',body:JSON.stringify({name:'Synthetic bounded-factory fixture',activity:'software_development',budgetCents:500})});
+  assert.equal(root.status,201);assert.equal(root.body.cashAccount.available_cents,0);
+  const parent=root.body.agent;
+  const link=createAccessLink({scope:'agent:self',agentId:parent.id,label:'Synthetic factory authorization fixture'});
+  const headers={'x-mission-link':link.token};
+  const payload={name:'Synthetic delegated child fixture',activity:'software_development',budgetCents:30};
+  const create=()=>api(`/api/agents/${parent.slug}/children`,{method:'POST',headers,body:JSON.stringify(payload)});
+  assert.equal((await create()).status,409);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_agents WHERE parent_id=?',[parent.id])!.n,0);
+  const expiry=new Date(Date.now()+86400000).toISOString();
+  assert.equal((await owner('/api/money/grants',{method:'POST',body:JSON.stringify({agentId:parent.id,spendLimitCents:0,delegationCents:40,canCreate:true,expiresAt:expiry})})).status,200);
+  const child=await create();assert.equal(child.status,201);assert.equal(child.body.cashAccount.available_cents,0);
+  const grant=missionDb.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id=?',[child.body.agent.id])!;
+  assert.equal(grant.parent_id,parent.id);assert.equal(grant.spend_limit_cents,30);assert.equal(grant.can_create,0);assert.equal(grant.expires_at,expiry);
+  assert.equal((await create()).status,409);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_agents WHERE parent_id=?',[parent.id])!.n,1);
+  missionDb.run("UPDATE mission_agent_contracts SET expires_at='2000-01-01T00:00:00Z' WHERE agent_id=?",[child.body.agent.id]);
+  assert.throws(()=>require('./money').grant(child.body.agent.id),/agent_contract_inactive/);
+  await owner('/api/agents/'+parent.slug+'/status',{method:'POST',body:JSON.stringify({status:'paused',reason:'Synthetic owner brake'})});
+  assert.equal((await api('/api/money',{headers})).status,200,'a paused agent may still read its own accounting');
+  assert.equal((await api('/api/money/jobs?limit=1',{headers})).status,200);
+  assert.equal((await create()).status,409);
+});
+test('paid legacy upgrade approval aliases and apply cannot masquerade as verified purchase',async()=>{
+  const requested=await owner('/api/upgrades',{method:'POST',body:JSON.stringify({agentSlug:rootAgentSlug,capability:'Synthetic paid-upgrade refusal fixture',requestedCostCents:10})});
+  assert.equal(requested.status,201);const id=requested.body.upgrade.id;
+  const approval=missionDb.get<Row>('SELECT id FROM mission_approvals WHERE subject_id=?',[id])!;
+  for(const url of [`/api/upgrades/${id}/decide`,`/api/approvals/${approval.id}/decide`,`/api/upgrades/${id}/apply`]){
+    const result=await owner(url,{method:'POST',body:JSON.stringify({decision:'approved',note:'Owner note is not payment proof'})});
+    assert.equal(result.status,409);assert.equal(result.body.error.code,'provider_verification_required');
+  }
+  assert.equal(missionDb.get<Row>('SELECT status FROM mission_upgrades WHERE id=?',[id])!.status,'requested');
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,0);
+});
+
+
+test('Awin routes are owner-only and cannot accept caller-invented publishing or settlement proof', async () => {
+  const previous = process.env.ZA141251SA_AWIN_ENABLED;
+  process.env.ZA141251SA_AWIN_ENABLED = 'false';
+  try {
+    assert.equal((await api('/api/awin')).status,401);
+    const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+    const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Awin fixture denial'});
+    assert.equal((await api('/api/awin',{headers:{'x-mission-link':link.token}})).status,401);
+    const view=await owner('/api/awin');assert.equal(view.status,200);
+    assert.deepEqual(view.body.blocked,['credentials','property_not_configured','settlement_not_configured']);
+    const proof=await owner('/api/awin/reconcile-payout',{method:'POST',body:JSON.stringify({paymentId:'77',externalId:'invented',state:'settled',netCents:99999,propertyVerified:true})});
+    assert.equal(proof.status,409);assert.equal(proof.body.error.code,'awin_blocked_settlement_not_configured');
+    const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+    const discovery=await owner('/api/awin/discover',{method:'POST',body:'{}'});
+    assert.equal(discovery.status,409);
+    assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+  } finally { if(previous===undefined)delete process.env.ZA141251SA_AWIN_ENABLED;else process.env.ZA141251SA_AWIN_ENABLED=previous; }
+});
+
+test('Freelancer is owner-only, disabled by default, and rejects invented payouts or automated bids', async () => {
+  const previous=process.env.ZA141251SA_FREELANCER_ENABLED;process.env.ZA141251SA_FREELANCER_ENABLED='false';
+  try {
+    assert.equal((await api('/api/freelancer')).status,401);
+    const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+    const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Freelancer fixture denial'});
+    assert.equal((await api('/api/freelancer',{headers:{'x-mission-link':link.token}})).status,401);
+    const view=await owner('/api/freelancer');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+    const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+    for(const command of ['bid','accept-award','withdraw']) {
+      const response=await owner(`/api/freelancer/${command}`,{method:'POST',body:JSON.stringify({state:'settled',netCents:99999,currency:'USD'})});assert.equal(response.status,404);
+    }
+    for(const command of ['observe-payout','reconcile-payout','reconcile-reversal']) {
+      const response=await owner(`/api/freelancer/${command}`,{method:'POST',body:JSON.stringify({payoutId:'fixture',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true})});
+      assert.equal(response.status,409);assert.equal(response.body.error.code,'freelancer_payout_adapter_not_configured');
+    }
+    const discovery=await owner('/api/freelancer/discover',{method:'POST',body:JSON.stringify({query:'software'})});assert.equal(discovery.status,409);
+    assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+  } finally {if(previous===undefined)delete process.env.ZA141251SA_FREELANCER_ENABLED;else process.env.ZA141251SA_FREELANCER_ENABLED=previous;}
+});
+
+test('Upwork is owner/bearer protected, has no live proof adapters, and exposes no financial actuation', async()=>{
+  assert.equal((await api('/api/upwork')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Upwork synthetic denial'});
+  assert.equal((await api('/api/upwork',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/upwork/inspect',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/upwork');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const command of ['bid','accept-offer','release-milestone','withdraw','pay','buy-connects','import-proof']){
+    assert.equal((await owner(`/api/upwork/${command}`,{method:'POST',body:'{}'})).status,404);
+  }
+  const fake={contractId:'synthetic',milestoneId:'synthetic',workId:'synthetic',payoutId:'synthetic',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true};
+  for(const command of ['inspect','observe-payout','reconcile-payout','reconcile-reversal'])assert.equal((await owner(`/api/upwork/${command}`,{method:'POST',body:JSON.stringify(fake)})).status,409);
+  assert.equal((await owner('/api/upwork/inspect/extra',{method:'POST',body:'{}'})).status,404);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+});
+
+test('Fiverr is owner/bearer protected, has no live proof adapters, and exposes no financial actuation', async()=>{
+  assert.equal((await api('/api/fiverr')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Fiverr synthetic denial'});
+  assert.equal((await api('/api/fiverr',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/fiverr/inspect',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/fiverr');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const command of ['scrape','create-account','create-gig','send-message','deliver','withdraw','pay','early-payout','cash-advance','import-proof']){
+    assert.equal((await owner(`/api/fiverr/${command}`,{method:'POST',body:'{}'})).status,404);
+  }
+  const fake={orderId:'synthetic',workId:'synthetic',payoutId:'synthetic',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true};
+  for(const command of ['inspect','observe-payout','reconcile-payout','reconcile-reversal'])assert.equal((await owner(`/api/fiverr/${command}`,{method:'POST',body:JSON.stringify(fake)})).status,409);
+  assert.equal((await owner('/api/fiverr/inspect/extra',{method:'POST',body:'{}'})).status,404);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+});
+
+test('Contra is owner/bearer protected, has no live proof adapters, and exposes no financial actuation', async()=>{
+  assert.equal((await api('/api/contra')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Contra synthetic denial'});
+  assert.equal((await api('/api/contra',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/contra/inspect',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/contra');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const command of ['scrape','create-account','create-project','send-message','deliver','withdraw','pay','faster-payout','cash-advance','import-proof']){
+    assert.equal((await owner(`/api/contra/${command}`,{method:'POST',body:'{}'})).status,404);
+  }
+  const fake={projectId:'synthetic',workId:'synthetic',payoutId:'synthetic',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true};
+  for(const command of ['inspect','observe-payout','reconcile-payout','reconcile-reversal'])assert.equal((await owner(`/api/contra/${command}`,{method:'POST',body:JSON.stringify(fake)})).status,409);
+  assert.equal((await owner('/api/contra/inspect/extra',{method:'POST',body:'{}'})).status,404);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+});
+
+test('Toptal is owner/bearer protected, has no live proof adapters, and exposes no financial actuation', async()=>{
+  assert.equal((await api('/api/toptal')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Toptal synthetic denial'});
+  assert.equal((await api('/api/toptal',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/toptal/inspect',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/toptal');assert.equal(view.status,200);assert.equal(view.body.cashBridgeEnabled,false);assert.equal(view.body.lifecycle.length,9);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const command of ['scrape','create-account','accept-engagement','submit-timesheet','take-screening','auto-track-time','send-message','deliver','withdraw','pay','faster-payout','cash-advance','import-proof']){
+    assert.equal((await owner(`/api/toptal/${command}`,{method:'POST',body:'{}'})).status,404);
+  }
+  const fake={periodId:'synthetic',workId:'synthetic',payoutId:'synthetic',externalId:'invented',state:'settled',netCents:99999,currency:'USD',missionOwnershipVerified:true};
+  for(const command of ['inspect','observe-payout','reconcile-payout','reconcile-reversal'])assert.equal((await owner(`/api/toptal/${command}`,{method:'POST',body:JSON.stringify(fake)})).status,409);
+  assert.equal((await owner('/api/toptal/inspect/extra',{method:'POST',body:'{}'})).status,404);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
+});
+
+test('customer work is owner-only, cannot send/spend/import proof, and produces labelled local samples',async()=>{
+  assert.equal((await api('/api/customer-work')).status,401);
+  const agent=missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link=createAccessLink({scope:'agent:self',agentId:String(agent.id),label:'Synthetic customer privacy denial'});
+  assert.equal((await api('/api/customer-work',{headers:{'x-mission-link':link.token}})).status,401);
+  assert.equal((await api('/api/customer-work/record',{method:'POST',headers:{cookie:`mission_session=${ownerToken}`,origin:'https://untrusted.invalid'},body:'{}'})).status,401);
+  const view=await owner('/api/customer-work');assert.equal(view.status,200);assert.equal(view.body.totalRecords,0);assert.equal(view.body.publishingEnabled,false);assert.equal(view.body.automaticOutreach,false);
+  const before=missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n;
+  for(const action of ['send','scrape','publish','create-account','import-proof','credit','withdraw'])assert.equal((await owner(`/api/customer-work/${action}`,{method:'POST',body:JSON.stringify({state:'settled',netCents:100000})})).status,404);
+  const listing=await owner('/api/customer-work/listing',{method:'POST',body:JSON.stringify({serviceId:'html-release-check',quoteCents:20000})});assert.equal(listing.status,200);assert.equal(listing.body.result.published,false);
+  const sample=await owner('/api/customer-work/preview',{method:'POST',body:JSON.stringify({serviceId:'html-release-check',input:'<title>Owner supplied sample</title>',configuration:null,dataRightsReviewed:true,nonSensitiveDataOnly:true})});assert.equal(sample.status,200);assert.equal(sample.body.result.classification,'owner_supplied_sample_not_customer_work');
+  assert.equal((await owner('/api/customer-work/record',{method:'POST',body:JSON.stringify({customerRef:'invented',paid:true})})).status,409);
+  assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
 });

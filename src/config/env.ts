@@ -52,6 +52,25 @@ const nodeEnv = resolveNodeEnv();
 const isProduction = nodeEnv === 'production';
 const isTest = nodeEnv === 'test';
 
+/**
+ * DATA_DIR — configurable writable application data directory.
+ *
+ * In production/container environments, this defaults to `/data` (a mounted
+ * persistent volume). In development, it defaults to `./data` (local).
+ * All writable paths (SQLite database, uploads, session secrets, mission DB)
+ * resolve under DATA_DIR so `/app` stays read-only application code.
+ */
+function resolveDataDir(): string {
+  const configured = trimOrEmpty(process.env.DATA_DIR);
+  if (configured) return configured;
+  // Production default: /data (persistent volume mount point)
+  if (isProduction) return '/data';
+  // Development/test: relative to cwd
+  return './data';
+}
+
+const dataDir = resolveDataDir();
+
 function resolveSessionSecret(): string {
   const configured = trimOrEmpty(process.env.SESSION_SECRET);
   if (configured && !SESSION_SECRET_PLACEHOLDERS.has(configured.toLowerCase())) {
@@ -75,11 +94,17 @@ function resolveHost(): string {
 }
 
 function resolveDatabaseUrl(): string {
-  return trimOrEmpty(process.env.DATABASE_URL) || 'file:./data/akbaral.db';
+  const configured = trimOrEmpty(process.env.DATABASE_URL);
+  if (configured) return configured;
+  // Default under DATA_DIR — /data in production, ./data in dev
+  return `file:${dataDir}/akbaral.db`;
 }
 
 function resolveUploadDir(): string {
-  return trimOrEmpty(process.env.AKBARAL_UPLOAD_DIR) || 'data/uploads';
+  const configured = trimOrEmpty(process.env.AKBARAL_UPLOAD_DIR);
+  if (configured) return configured;
+  // Default under DATA_DIR — /data/uploads in production, data/uploads in dev
+  return `${dataDir}/uploads`;
 }
 
 function resolveTrustProxy(): number {
@@ -89,7 +114,11 @@ function resolveTrustProxy(): number {
 }
 
 function resolveIntEnv(name: string, fallback: number, min: number, max: number): number {
-  const parsed = Number(trimOrEmpty(process.env[name]));
+  const raw = trimOrEmpty(process.env[name]);
+  // Number('') is zero, not an absent setting. In particular it silently
+  // disabled the default retry backoff and made transient states unobservable.
+  if (!raw) return fallback;
+  const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
@@ -113,6 +142,7 @@ export const env = {
   isProduction,
   isTest,
   isDevelopment: !isProduction && !isTest,
+  dataDir,
   databaseUrl: resolveDatabaseUrl(),
   sessionSecret: resolveSessionSecret(),
   // Optional previous secret kept valid for one rotation cycle so operators

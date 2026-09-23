@@ -96,6 +96,9 @@ export interface OpportunityRow {
   source_url: string;
   external_id: string | null;
   dedup_hash: string;
+  content_hash?: string | null;
+  requirements?: string | null;
+  first_seen_at?: string | null;
   status: OpportunityStatus;
   risk_level: RiskLevel;
   verification_notes: string | null;
@@ -105,12 +108,32 @@ export interface OpportunityRow {
   updated_at: string;
 }
 
-export function computeDedupHash(input: { platform: string; source_url: string; external_id?: string | null; opportunity_type: string }): string {
-  const normalizedUrl = input.source_url.trim().toLowerCase();
+export function computeDedupHash(input: { platform: string; source_url: string; external_id?: string | null; opportunity_type: string; title?: string; description?: string }): string {
+  // Canonical URL normalization: trim, lowercase host, strip fragment, strip tracking params
+  let normalizedUrl = input.source_url.trim();
+  try {
+    const u = new URL(normalizedUrl);
+    u.hash = '';
+    // Strip common tracking params
+    const stripParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'ref', 'ref_src'];
+    for (const p of stripParams) u.searchParams.delete(p);
+    normalizedUrl = u.toString().toLowerCase();
+    // Remove trailing slash for consistency
+    if (normalizedUrl.endsWith('/') && normalizedUrl.length > 8) normalizedUrl = normalizedUrl.slice(0, -1);
+  } catch {
+    normalizedUrl = normalizedUrl.toLowerCase();
+  }
   const platform = input.platform.trim().toLowerCase();
   const external = (input.external_id ?? '').trim().toLowerCase();
   const type = input.opportunity_type.trim().toLowerCase();
+  // Dedup hash: canonical URL + platform + external ID + type (content hash tracked separately for cross-aggregator dup detection)
   return sha256(`${platform}|${normalizedUrl}|${external}|${type}`);
+}
+
+export function computeContentHash(title: string, description?: string | null): string {
+  const normalizedTitle = title.trim().toLowerCase();
+  const normalizedDesc = (description ?? '').trim().toLowerCase().slice(0, 2000);
+  return sha256(`${normalizedTitle}|${normalizedDesc}`);
 }
 
 export function createOpportunitySource(input: {
@@ -291,6 +314,7 @@ export function createOpportunity(input: {
   payout_frequency?: string | null;
   fees?: string | null;
   account_rules?: string | null;
+  requirements?: string | null;
   api_available?: boolean;
   automation_permission?: AutomationPermission;
   tos_url?: string | null;
@@ -314,7 +338,10 @@ export function createOpportunity(input: {
     source_url: input.source_url,
     external_id: input.external_id ?? null,
     opportunity_type: input.opportunity_type,
+    title: input.title,
+    description: input.description ?? undefined,
   });
+  const content_hash = computeContentHash(input.title, input.description ?? null);
 
   const existing = missionDb.get<OpportunityRow>('SELECT * FROM mission_opportunities WHERE dedup_hash = ?', [dedup_hash]);
   if (existing) {
@@ -324,51 +351,114 @@ export function createOpportunity(input: {
     return { opportunity: missionDb.get<OpportunityRow>('SELECT * FROM mission_opportunities WHERE id = ?', [existing.id])!, isNew: false };
   }
 
+  // Aggressive dedup: check content_hash across platforms
+  try {
+    if (missionDb.tableExists('mission_opportunity_content_hashes')) {
+      const contentDup = missionDb.get<Row>('SELECT content_hash FROM mission_opportunity_content_hashes WHERE content_hash = ?', [content_hash]);
+      if (contentDup) {
+        // If same content hash already seen 3+ times, treat as duplicate to avoid cloning same job across aggregators
+        const countRow = missionDb.get<{ count: number }>('SELECT count FROM mission_opportunity_content_hashes WHERE content_hash = ?', [content_hash]);
+        if (Number(countRow?.count ?? 0) >= 3) {
+          // Still store but mark as duplicate? For now we allow but track — we don't reject, we just track
+        }
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
   const id = missionId('opp');
   const now = nowIso();
   const countries = input.country_eligibility ?? ['global'];
   const skills = input.skills ?? [];
 
   missionDb.transaction(() => {
-    missionDb.run(
-      `INSERT INTO mission_opportunities
-        (id, source_id, platform, opportunity_type, title, description, category, country_eligibility, skills,
-         payout_currency, payout_method, payout_min_cents, payout_max_cents, payout_frequency, fees, account_rules,
-         api_available, automation_permission, tos_url, source_url, external_id, dedup_hash, status, risk_level,
-         verification_notes, last_verified_at, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        input.source_id ?? null,
-        input.platform.slice(0, 200),
-        input.opportunity_type,
-        input.title.slice(0, 500),
-        input.description?.slice(0, 5000) ?? null,
-        input.category.slice(0, 100),
-        JSON.stringify(countries),
-        JSON.stringify(skills),
-        (input.payout_currency ?? 'USD').slice(0, 10),
-        input.payout_method?.slice(0, 50) ?? null,
-        input.payout_min_cents ?? null,
-        input.payout_max_cents ?? null,
-        input.payout_frequency?.slice(0, 50) ?? null,
-        input.fees?.slice(0, 1000) ?? null,
-        input.account_rules?.slice(0, 2000) ?? null,
-        input.api_available ? 1 : 0,
-        input.automation_permission ?? 'conditional',
-        input.tos_url ?? null,
-        input.source_url,
-        input.external_id?.slice(0, 300) ?? null,
-        dedup_hash,
-        input.status ?? 'pending_review',
-        input.risk_level ?? 'medium',
-        input.verification_notes?.slice(0, 2000) ?? null,
-        null,
-        now,
-        now,
-        now,
-      ],
-    );
+    // Try insert with new columns, fallback to old schema if columns don't exist yet (migration not applied)
+    try {
+      missionDb.run(
+        `INSERT INTO mission_opportunities
+          (id, source_id, platform, opportunity_type, title, description, category, country_eligibility, skills,
+           payout_currency, payout_method, payout_min_cents, payout_max_cents, payout_frequency, fees, account_rules, requirements,
+           api_available, automation_permission, tos_url, source_url, external_id, dedup_hash, content_hash, first_seen_at, status, risk_level,
+           verification_notes, last_verified_at, last_seen_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          input.source_id ?? null,
+          input.platform.slice(0, 200),
+          input.opportunity_type,
+          input.title.slice(0, 500),
+          input.description?.slice(0, 5000) ?? null,
+          input.category.slice(0, 100),
+          JSON.stringify(countries),
+          JSON.stringify(skills),
+          (input.payout_currency ?? 'USD').slice(0, 10),
+          input.payout_method?.slice(0, 50) ?? null,
+          input.payout_min_cents ?? null,
+          input.payout_max_cents ?? null,
+          input.payout_frequency?.slice(0, 50) ?? null,
+          input.fees?.slice(0, 1000) ?? null,
+          input.account_rules?.slice(0, 2000) ?? null,
+          input.requirements?.slice(0, 2000) ?? null,
+          input.api_available ? 1 : 0,
+          input.automation_permission ?? 'conditional',
+          input.tos_url ?? null,
+          input.source_url,
+          input.external_id?.slice(0, 300) ?? null,
+          dedup_hash,
+          content_hash,
+          now,
+          input.status ?? 'pending_review',
+          input.risk_level ?? 'medium',
+          input.verification_notes?.slice(0, 2000) ?? null,
+          null,
+          now,
+          now,
+          now,
+        ],
+      );
+    } catch {
+      // Fallback to old schema without new columns
+      missionDb.run(
+        `INSERT INTO mission_opportunities
+          (id, source_id, platform, opportunity_type, title, description, category, country_eligibility, skills,
+           payout_currency, payout_method, payout_min_cents, payout_max_cents, payout_frequency, fees, account_rules,
+           api_available, automation_permission, tos_url, source_url, external_id, dedup_hash, status, risk_level,
+           verification_notes, last_verified_at, last_seen_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          input.source_id ?? null,
+          input.platform.slice(0, 200),
+          input.opportunity_type,
+          input.title.slice(0, 500),
+          input.description?.slice(0, 5000) ?? null,
+          input.category.slice(0, 100),
+          JSON.stringify(countries),
+          JSON.stringify(skills),
+          (input.payout_currency ?? 'USD').slice(0, 10),
+          input.payout_method?.slice(0, 50) ?? null,
+          input.payout_min_cents ?? null,
+          input.payout_max_cents ?? null,
+          input.payout_frequency?.slice(0, 50) ?? null,
+          input.fees?.slice(0, 1000) ?? null,
+          input.account_rules?.slice(0, 2000) ?? null,
+          input.api_available ? 1 : 0,
+          input.automation_permission ?? 'conditional',
+          input.tos_url ?? null,
+          input.source_url,
+          input.external_id?.slice(0, 300) ?? null,
+          dedup_hash,
+          input.status ?? 'pending_review',
+          input.risk_level ?? 'medium',
+          input.verification_notes?.slice(0, 2000) ?? null,
+          null,
+          now,
+          now,
+          now,
+        ],
+      );
+    }
 
     // insert country mappings
     for (const code of countries.slice(0, 20)) {
@@ -392,6 +482,20 @@ export function createOpportunity(input: {
          ON CONFLICT(source_id) DO UPDATE SET total = total + 1, pending_review = pending_review + 1, last_updated = excluded.last_updated`,
         [input.source_id, now],
       );
+    }
+
+    // track content hash for aggressive dedup
+    try {
+      if (missionDb.tableExists('mission_opportunity_content_hashes')) {
+        missionDb.run(
+          `INSERT INTO mission_opportunity_content_hashes (content_hash, first_seen_at, count, example_opportunity_id)
+           VALUES (?, ?, 1, ?)
+           ON CONFLICT(content_hash) DO UPDATE SET count = count + 1`,
+          [content_hash, now, id],
+        );
+      }
+    } catch {
+      // best-effort
     }
   });
 

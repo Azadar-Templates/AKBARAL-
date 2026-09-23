@@ -5,6 +5,8 @@ import { assertPublicHttpUrl } from '../security/ssrf';
 import { searchWeb, fetchPage } from '../agents';
 import { extractTextFromFile, UPLOAD_DIR, resolveStoredFilePath } from '../services/files';
 import { externalHttpRequest } from '../integrations/http';
+import { WORKFORCE_SERVICE_USER, isWorkforceService } from '../workforce/identity';
+import { resolveStagedFile, searchStagedKnowledge } from '../workforce/staging';
 
 /**
  * AKBARAL! Tool System.
@@ -186,7 +188,11 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
   async file_parse_text(input, ctx) {
     try {
       const fileKey = requireStringInput(input, 'file', 'file_parse_text');
-      const filePath = findUploadedFile(fileKey, ctx.userId);
+      // D5: the workforce service identity owns nothing — it may only read
+      // files the owner explicitly staged (revocable, item by item).
+      const filePath = isWorkforceService(ctx.userId)
+        ? resolveStagedFile(fileKey)
+        : findUploadedFile(fileKey, ctx.userId);
       const mime = typeof input.mime_type === 'string' ? input.mime_type : 'text/plain';
       const text = extractTextFromFile(filePath, mime);
       return ok('file_parse_text', text, { bytes: text.length, parsed: true });
@@ -202,6 +208,13 @@ export const TOOL_HANDLERS: Record<string, (input: ToolInput, ctx: ToolContext) 
       }
       const query = requireStringInput(input, 'query', 'knowledge_search');
       const limit = Math.min(typeof input.limit === 'number' ? Math.floor(input.limit) : 20, 50);
+      // D5: the workforce service identity searches STAGED knowledge only —
+      // items the owner explicitly shared. Unstaged owner knowledge is
+      // unreachable from the workforce path by construction.
+      if (isWorkforceService(ctx.userId)) {
+        const staged = searchStagedKnowledge(query, limit);
+        return ok('knowledge_search', JSON.stringify(staged, null, 2), { results: staged, scope: WORKFORCE_SERVICE_USER });
+      }
       const rows = searchKnowledge(ctx.userId, query, limit);
       return ok('knowledge_search', JSON.stringify(rows, null, 2), { results: rows });
     } catch (error) {

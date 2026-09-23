@@ -276,6 +276,21 @@ describe('PHASE 3: complete user journey (real HTTP, end to end)', () => {
 
       const meAfterFailure = await call('/api/me', { headers: { authorization: `Bearer ${journey.accessToken}` } });
       assert.equal(meAfterFailure.body.user.freeCredits, 3, 'failed run refunded — credits unchanged');
+
+      // A retryable failure is rescheduled with exponential backoff
+      // (orchestrator/queue.ts:451). The `finally` below restores the provider
+      // URL, so a retry firing afterwards would legitimately SUCCEED and consume
+      // the credit that was just refunded — correct product behaviour, but it
+      // would silently invalidate every later credit assertion in this journey.
+      // Cancel now, while the job is still non-terminal ('retrying'), so the
+      // refund stays the final word on this run. queue.ts:338 re-checks
+      // cancellation before every attempt, so no retry can slip through.
+      const cancelled = await call(`/api/workflows/${workflowId}/cancel`, {
+        method: 'POST',
+        headers: authJson(journey.accessToken),
+        body: JSON.stringify({ reason: 'journey test: provider-failure refund already asserted' }),
+      });
+      assert.ok([200, 409].includes(cancelled.status), `workflow cancel accepted (got ${cancelled.status})`);
     } finally {
       process.env.OPENAI_BASE_URL = previousBaseUrl;
     }

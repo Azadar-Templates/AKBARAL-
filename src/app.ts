@@ -5,6 +5,8 @@ import { env, validateEnvironment } from './config/env';
 import { authRouter } from './routes/auth';
 import { agentsRouter } from './routes/agents';
 import { meRouter } from './routes/me';
+import { userDashboardRouter } from './routes/user-dashboard';
+import { bossDashboardRouter } from './routes/boss-dashboard';
 import { createTasksRouter } from './routes/tasks';
 import { createWorkflowsRouter } from './routes/workflows';
 import { createAutomationsRouter } from './routes/automations';
@@ -20,9 +22,11 @@ import { createToolsRouter } from './routes/tools';
 import { createModelsRouter } from './routes/models';
 import { createFactoryRouter } from './routes/factory';
 import { createEconomyRouter } from './routes/economy';
+import { createWorkforceRouter } from './routes/workforce';
 import { createOwnerRouter } from './routes/owner';
 import { syncConfiguredOwnerIdentity } from './auth/owner-identity';
 import { economyScheduler } from './economy/operations';
+import { workforceScheduler } from './workforce/scheduler';
 import { createMarketplaceRouter } from './routes/marketplace';
 import { createWorldRouter } from './routes/world';
 import { createPublicRouter } from './routes/public';
@@ -121,6 +125,10 @@ export function createApiServer(): ApiServer {
   // owner enables autonomous operation (kill switch checked every tick).
   economyScheduler.start();
 
+  // Workforce scheduler: multi-category continuous operation for the 4,000+
+  // agent workforce (same idle-unless-enabled + kill-switch contract).
+  workforceScheduler.start();
+
   app.set('trust proxy', env.trustProxy);
   app.use(securityHeaders);
   app.use(cacheHeaders);
@@ -195,6 +203,8 @@ export function createApiServer(): ApiServer {
   app.use('/api/projects', createProjectsRouter());
   app.use('/api', createFilesRouter());
   app.use('/api/billing', createBillingRouter());
+  app.use('/api/dashboard', userDashboardRouter);
+  app.use('/api/boss', bossDashboardRouter);
   app.use('/api/admin', createAdminRouter());
   app.use('/api/tools', createToolsRouter());
   app.use('/api/models', createModelsRouter());
@@ -203,6 +213,8 @@ export function createApiServer(): ApiServer {
   app.use('/api/owner', createOwnerRouter());
   // ZA141251SA private agent economy — owner/super_admin only, invisible to users.
   app.use('/api/economy', createEconomyRouter());
+  // 4,000+ agent workforce — owner/super_admin only, invisible to users.
+  app.use('/api/workforce', createWorkforceRouter());
   app.use('/api/marketplace', createMarketplaceRouter());
   app.use('/api/world', createWorldRouter());
   // Public read-only catalog (powers the /agents directory page; platform agents only)
@@ -251,6 +263,11 @@ export function createApiServer(): ApiServer {
       }
       try {
         economyScheduler.stop();
+      } catch {
+        // ignore
+      }
+      try {
+        workforceScheduler.stop();
       } catch {
         // ignore
       }

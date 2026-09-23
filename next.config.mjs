@@ -1,8 +1,29 @@
 /** @type {import('next').NextConfig} */
 const backend = process.env.NEXT_BACKEND_URL || 'http://127.0.0.1:4000';
 
+// Low-memory production build (StackHost free plan: 512 MB RAM container).
+//
+// Measured 2026-09-19 on a clean tree — peak RSS of the whole process tree:
+//   npm ci                                    ~325 MB
+//   npx tsc -p tsconfig.backend.json          ~475 MB  (404 MB with a 384 MB heap cap)
+//   npx next build --webpack                  ~668 MB  (build-time type check included)
+//   npx next build (Turbopack default)       ~1284 MB
+//   running stack (API + next-server)         ~336 MB
+// Every untuned build phase therefore overshoots a 512 MB container on its own,
+// which is what the platform reports as a failed install/build step. The
+// runtime is comfortably inside the budget; only the build was not.
+//
+// AKBARAL_LOW_MEMORY_BUILD=1 (set only by the constrained deployment, see
+// stackhost.yaml) skips the in-build type check, which alone peaked at ~475 MB.
+// Nothing goes unchecked: the same types are enforced by `npm run typecheck`,
+// the test suite and the docker-publish image build in CI, all of which run on
+// machines with normal memory. The flag exists so a 512 MB host can produce a
+// usable `.next/` instead of dying inside the type-check phase.
+const lowMemoryBuild = process.env.AKBARAL_LOW_MEMORY_BUILD === '1';
+
 const nextConfig = {
   reactStrictMode: false,
+  ...(lowMemoryBuild ? { typescript: { ignoreBuildErrors: true } } : {}),
   // Compression is ON — the 178 KB application document and every other text
   // response used to travel uncompressed (≈550 KB per first visit).
   //

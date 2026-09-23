@@ -1,0 +1,2309 @@
+{
+  "timestamp": "2026-09-22T20:17:28.749Z",
+  "initial": {
+    "total": 136,
+    "verified": 136,
+    "pending_review": 0,
+    "rejected": 0,
+    "expired": 0,
+    "archived": 0,
+    "byCategory": [
+      {
+        "category": "other",
+        "count": 40
+      },
+      {
+        "category": "remote_job_board",
+        "count": 25
+      },
+      {
+        "category": "digital_product",
+        "count": 16
+      },
+      {
+        "category": "freelance_marketplace",
+        "count": 14
+      },
+      {
+        "category": "affiliate_network",
+        "count": 10
+      },
+      {
+        "category": "creator_monetization",
+        "count": 10
+      },
+      {
+        "category": "microtask",
+        "count": 8
+      },
+      {
+        "category": "e_commerce",
+        "count": 6
+      },
+      {
+        "category": "research",
+        "count": 5
+      },
+      {
+        "category": "survey",
+        "count": 2
+      }
+    ],
+    "byPlatform": [
+      {
+        "platform": "99designs",
+        "count": 2
+      },
+      {
+        "platform": "Algora",
+        "count": 2
+      },
+      {
+        "platform": "Amazon Mechanical Turk",
+        "count": 2
+      },
+      {
+        "platform": "Bountysource",
+        "count": 2
+      },
+      {
+        "platform": "Bugcrowd",
+        "count": 2
+      },
+      {
+        "platform": "Challenge.gov",
+        "count": 2
+      },
+      {
+        "platform": "Chrome Web Store",
+        "count": 2
+      },
+      {
+        "platform": "Devpost",
+        "count": 2
+      },
+      {
+        "platform": "Etsy",
+        "count": 2
+      },
+      {
+        "platform": "Gengo",
+        "count": 2
+      },
+      {
+        "platform": "Gitcoin",
+        "count": 2
+      },
+      {
+        "platform": "Grants.gov",
+        "count": 2
+      },
+      {
+        "platform": "HackerOne",
+        "count": 2
+      },
+      {
+        "platform": "Himalayas",
+        "count": 2
+      },
+      {
+        "platform": "Prolific",
+        "count": 2
+      },
+      {
+        "platform": "Remote OK",
+        "count": 2
+      },
+      {
+        "platform": "Rev.com",
+        "count": 2
+      },
+      {
+        "platform": "Skillshare",
+        "count": 2
+      },
+      {
+        "platform": "The Muse",
+        "count": 2
+      },
+      {
+        "platform": "Topcoder",
+        "count": 2
+      },
+      {
+        "platform": "UserTesting",
+        "count": 2
+      },
+      {
+        "platform": "We Work Remotely",
+        "count": 2
+      },
+      {
+        "platform": "eBay",
+        "count": 2
+      },
+      {
+        "platform": "AWIN",
+        "count": 1
+      },
+      {
+        "platform": "Adobe Stock Contributor",
+        "count": 1
+      },
+      {
+        "platform": "Adzuna",
+        "count": 1
+      },
+      {
+        "platform": "Amazon Associates",
+        "count": 1
+      },
+      {
+        "platform": "Appen",
+        "count": 1
+      },
+      {
+        "platform": "Apple App Store",
+        "count": 1
+      },
+      {
+        "platform": "Apple App Store Connect",
+        "count": 1
+      },
+      {
+        "platform": "Arbeitnow",
+        "count": 1
+      },
+      {
+        "platform": "Ashby Job Boards",
+        "count": 1
+      },
+      {
+        "platform": "Bark.com",
+        "count": 1
+      },
+      {
+        "platform": "Behance JobList",
+        "count": 1
+      },
+      {
+        "platform": "BigCommerce",
+        "count": 1
+      },
+      {
+        "platform": "Buy Me a Coffee",
+        "count": 1
+      },
+      {
+        "platform": "CJ Affiliate (Commission Junction)",
+        "count": 1
+      },
+      {
+        "platform": "Clarity.fm",
+        "count": 1
+      },
+      {
+        "platform": "ClickBank",
+        "count": 1
+      },
+      {
+        "platform": "Clickworker",
+        "count": 1
+      },
+      {
+        "platform": "Coursera Instructor",
+        "count": 1
+      },
+      {
+        "platform": "DesignCrowd",
+        "count": 1
+      },
+      {
+        "platform": "Devfolio",
+        "count": 1
+      },
+      {
+        "platform": "Dribbble Hiring",
+        "count": 1
+      },
+      {
+        "platform": "Fiverr",
+        "count": 1
+      },
+      {
+        "platform": "FlexJobs",
+        "count": 1
+      },
+      {
+        "platform": "Freelancer.com",
+        "count": 1
+      },
+      {
+        "platform": "Ghost.org",
+        "count": 1
+      },
+      {
+        "platform": "GitHub",
+        "count": 1
+      },
+      {
+        "platform": "GitHub Bounties",
+        "count": 1
+      }
+    ],
+    "byType": [
+      {
+        "opportunity_type": "platform_membership",
+        "count": 107
+      },
+      {
+        "opportunity_type": "other",
+        "count": 11
+      },
+      {
+        "opportunity_type": "remote_job",
+        "count": 6
+      },
+      {
+        "opportunity_type": "digital_product",
+        "count": 4
+      },
+      {
+        "opportunity_type": "gig",
+        "count": 3
+      },
+      {
+        "opportunity_type": "product_listing",
+        "count": 2
+      },
+      {
+        "opportunity_type": "research",
+        "count": 2
+      },
+      {
+        "opportunity_type": "microtask",
+        "count": 1
+      }
+    ],
+    "byRisk": [
+      {
+        "risk_level": "low",
+        "count": 136
+      }
+    ],
+    "bySource": [
+      {
+        "source_id": "opsrc_ce24176956834399af",
+        "source_key": "99designs",
+        "source_name": "99designs",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_503fb35800c548b195",
+        "source_key": "remoteok",
+        "source_name": "Remote OK",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_318073da90764d9f9a",
+        "source_key": "himalayas",
+        "source_name": "Himalayas",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3e3c76aef4cb47b990",
+        "source_key": "themuse",
+        "source_name": "The Muse",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b0c987315a96448588",
+        "source_key": "weworkremotely",
+        "source_name": "We Work Remotely",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_4d0fe9f39b714b2e9d",
+        "source_key": "greenhouse",
+        "source_name": "Greenhouse Job Boards",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_df790f1484b54c19bc",
+        "source_key": "lever",
+        "source_name": "Lever Job Boards",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_36d876b7290f4e36b3",
+        "source_key": "etsy",
+        "source_name": "Etsy",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d390ba3aa169439393",
+        "source_key": "ebay",
+        "source_name": "eBay",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fe8e7e2c3a114193b2",
+        "source_key": "skillshare",
+        "source_name": "Skillshare",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3ed7b96a95824bcf9e",
+        "source_key": "google_play_console",
+        "source_name": "Google Play Console",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_a4b9d2efe11f4355b1",
+        "source_key": "apple_app_store",
+        "source_name": "Apple App Store Connect",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8e879614dc514cc689",
+        "source_key": "chrome_web_store",
+        "source_name": "Chrome Web Store",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_81d6774ef72b49338f",
+        "source_key": "prolific",
+        "source_name": "Prolific",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_07cae1b18e2b44a59a",
+        "source_key": "usertesting",
+        "source_name": "UserTesting",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_bbc173d9b832439e92",
+        "source_key": "mturk",
+        "source_name": "Amazon Mechanical Turk",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d67970c378c34d8c89",
+        "source_key": "challenge_gov",
+        "source_name": "Challenge.gov",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fbcdcbd5abdd4b3887",
+        "source_key": "grants_gov",
+        "source_name": "Grants.gov",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_059946976ddb4553ad",
+        "source_key": "devpost",
+        "source_name": "Devpost",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_61132c0566e943f396",
+        "source_key": "topcoder",
+        "source_name": "Topcoder",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_e9c9f107f8284cc9b3",
+        "source_key": "kaggle_competitions",
+        "source_name": "Kaggle Competitions",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_956ad4c111b248f380",
+        "source_key": "github_bounties",
+        "source_name": "GitHub Bounties",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_960515b77983434281",
+        "source_key": "gitcoin",
+        "source_name": "Gitcoin",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ab07e56710114bb680",
+        "source_key": "bountysource",
+        "source_name": "Bountysource",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9bf44c0d47cd4887b7",
+        "source_key": "algora",
+        "source_name": "Algora",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f09d29f4905b437280",
+        "source_key": "bugcrowd",
+        "source_name": "Bugcrowd",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8ac748687b324de48a",
+        "source_key": "hackerone",
+        "source_name": "HackerOne",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_2c33b852ba8f43d5ac",
+        "source_key": "rev",
+        "source_name": "Rev.com",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8121379f23ee4f39ba",
+        "source_key": "gengo",
+        "source_name": "Gengo",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_5b4bf1146c554d32bb",
+        "source_key": "upwork",
+        "source_name": "Upwork",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_6d6e52cb061447d8bc",
+        "source_key": "fiverr",
+        "source_name": "Fiverr",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9c56d6455e6e4c2a8a",
+        "source_key": "freelancer",
+        "source_name": "Freelancer.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f9b2ab13c9ec4368ac",
+        "source_key": "toptal",
+        "source_name": "Toptal",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_e2314a2b50d0432ebd",
+        "source_key": "guru",
+        "source_name": "Guru.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8407ab250a6c4dab98",
+        "source_key": "peopleperhour",
+        "source_name": "PeoplePerHour",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ccb3e5cda6694cbcb2",
+        "source_key": "dribbble_hiring",
+        "source_name": "Dribbble Hiring",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_692750a3882f4397ae",
+        "source_key": "behance",
+        "source_name": "Behance JobList",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_2fdd22d69d1043c7a3",
+        "source_key": "designcrowd",
+        "source_name": "DesignCrowd",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_92b2e945734a4cf391",
+        "source_key": "flexjobs",
+        "source_name": "FlexJobs",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_73f73ade97c042efb3",
+        "source_key": "bark",
+        "source_name": "Bark.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8212fb537b03449094",
+        "source_key": "remotive",
+        "source_name": "Remotive",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ed43d9626d7b420884",
+        "source_key": "arbeitnow",
+        "source_name": "Arbeitnow",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9295305fc68942b8ac",
+        "source_key": "remotejobs_org",
+        "source_name": "RemoteJobs.org",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_6a3ce863af87414c8f",
+        "source_key": "justremote",
+        "source_name": "JustRemote",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_e664b335da2b4ce0a8",
+        "source_key": "working_nomads",
+        "source_name": "Working Nomads",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fcd38d6ca29a44f099",
+        "source_key": "adzuna",
+        "source_name": "Adzuna",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_79b6ac499ba243e497",
+        "source_key": "jooble",
+        "source_name": "Jooble",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_1dab9eca2c8f4cd5bb",
+        "source_key": "ashby",
+        "source_name": "Ashby Job Boards",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_1f37f74b06504d69b8",
+        "source_key": "jobicy",
+        "source_name": "Jobicy",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c77495acde2e4b4381",
+        "source_key": "amazon_associates",
+        "source_name": "Amazon Associates",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_42c2fcd960d9459c91",
+        "source_key": "shareasale",
+        "source_name": "ShareASale",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_51f321db590547f3b4",
+        "source_key": "clickbank",
+        "source_name": "ClickBank",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_0cad3bba524541ff8b",
+        "source_key": "impact",
+        "source_name": "Impact.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_2b5eb224f5974f83a4",
+        "source_key": "cj_affiliate",
+        "source_name": "CJ Affiliate (Commission Junction)",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9da6147b96b74f05b3",
+        "source_key": "partnerstack",
+        "source_name": "PartnerStack",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_4c0b8868ecf948e2bc",
+        "source_key": "rakuten_advertising",
+        "source_name": "Rakuten Advertising",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_a9b19fed264e42f9a3",
+        "source_key": "awin",
+        "source_name": "AWIN",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d9650624b6df42a58b",
+        "source_key": "refersion",
+        "source_name": "Refersion",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9cbba5e709184bcba8",
+        "source_key": "tapfiliate",
+        "source_name": "Tapfiliate",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8727ae49a4c44bbc96",
+        "source_key": "youtube_partner",
+        "source_name": "YouTube Partner Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_5b3f074b805f4f4bb2",
+        "source_key": "patreon",
+        "source_name": "Patreon",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c5bed40f9dc6446091",
+        "source_key": "substack",
+        "source_name": "Substack",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_dfafab10268045719e",
+        "source_key": "medium_partner",
+        "source_name": "Medium Partner Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d7a47b2d69524d5481",
+        "source_key": "tiktok_creativity",
+        "source_name": "TikTok Creativity Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8659b30a77dd432c97",
+        "source_key": "reddit_partner",
+        "source_name": "Reddit Contributor Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_7d18e168ba024e4580",
+        "source_key": "kofi",
+        "source_name": "Ko-fi",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3def65043c6f4b1bae",
+        "source_key": "buymeacoffee",
+        "source_name": "Buy Me a Coffee",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_35d3b36987b74c6bb9",
+        "source_key": "onlyfans",
+        "source_name": "OnlyFans",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_36ae47f2ffc64d11b0",
+        "source_key": "ghost",
+        "source_name": "Ghost.org",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b417ed91de16493fb8",
+        "source_key": "shopify",
+        "source_name": "Shopify",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fe83bb274d47468b84",
+        "source_key": "bigcommerce",
+        "source_name": "BigCommerce",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3d823c9bdac14852b4",
+        "source_key": "gumroad",
+        "source_name": "Gumroad",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c447a49d7efd43d5bb",
+        "source_key": "teachable",
+        "source_name": "Teachable",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_65f42fdceb6a45c9b3",
+        "source_key": "udemy",
+        "source_name": "Udemy",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_aff3684ca1664188aa",
+        "source_key": "thinkific",
+        "source_name": "Thinkific",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9389d6a43df64620bd",
+        "source_key": "kajabi",
+        "source_name": "Kajabi",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_abce38f09c384a2ba3",
+        "source_key": "shutterstock_contributor",
+        "source_name": "Shutterstock Contributor",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_54f71f9beeb54c7cb4",
+        "source_key": "adobe_stock",
+        "source_name": "Adobe Stock Contributor",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c5edfc62b9ca4dd3b8",
+        "source_key": "respondent",
+        "source_name": "Respondent.io",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_27b0c43b067e433b82",
+        "source_key": "clickworker",
+        "source_name": "Clickworker",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_12a0acd7536348f885",
+        "source_key": "microworkers",
+        "source_name": "Microworkers",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3a544bf5c5574921b5",
+        "source_key": "appen",
+        "source_name": "Appen",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_212fa073ceb34dc09b",
+        "source_key": "telus_international",
+        "source_name": "TELUS International AI",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_a970c57d8add4beab0",
+        "source_key": "swagbucks",
+        "source_name": "Swagbucks",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_5f30d63bc2294c748d",
+        "source_key": "surveyjunkie",
+        "source_name": "SurveyJunkie",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f2fb96c5d382429399",
+        "source_key": "hackerearth",
+        "source_name": "HackerEarth",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_14ad57ba6beb4f5caf",
+        "source_key": "devfolio",
+        "source_name": "Devfolio",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b6967dce5321476dbe",
+        "source_key": "issuehunt",
+        "source_name": "IssueHunt",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_4710ef5dd82246ee9b",
+        "source_key": "gotranscript",
+        "source_name": "GoTranscript",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d02e861f9eec435083",
+        "source_key": "transcribeme",
+        "source_name": "TranscribeMe",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_579ecc77b94e406eb5",
+        "source_key": "unbabel",
+        "source_name": "Unbabel",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3f69cc8b48d443e7ba",
+        "source_key": "scale_ai",
+        "source_name": "Scale AI (Remotasks)",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f2e574bd660a4ae283",
+        "source_key": "labelbox",
+        "source_name": "Labelbox",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_931512b51b7b42f185",
+        "source_key": "kaggle_datasets",
+        "source_name": "Kaggle Datasets",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8753742b895f43dcb0",
+        "source_key": "clarity",
+        "source_name": "Clarity.fm",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_45c8e245b27a4457ba",
+        "source_key": "intro",
+        "source_name": "Intro.co",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_81e80683c5c940738a",
+        "source_key": "coursera_instructor",
+        "source_name": "Coursera Instructor",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b6de10deb6194cb799",
+        "source_key": "github_good_first_issue",
+        "source_name": "GitHub Good First Issue",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_bd64f0c6b48441d4ba",
+        "source_key": "github_help_wanted",
+        "source_name": "GitHub Help Wanted",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f4eecc1d46554ac882",
+        "source_key": "github_hacktoberfest",
+        "source_name": "GitHub Hacktoberfest",
+        "total": 1,
+        "verified": 0
+      }
+    ],
+    "sourcesTotal": 107,
+    "sourcesActive": 107,
+    "ingestionQueue": {
+      "pending": 0,
+      "processing": 0,
+      "failed": 0,
+      "completed": 0
+    }
+  },
+  "final": {
+    "total": 5021,
+    "verified": 136,
+    "pending_review": 4885,
+    "rejected": 0,
+    "expired": 0,
+    "archived": 0,
+    "byCategory": [
+      {
+        "category": "other",
+        "count": 4925
+      },
+      {
+        "category": "remote_job_board",
+        "count": 25
+      },
+      {
+        "category": "digital_product",
+        "count": 16
+      },
+      {
+        "category": "freelance_marketplace",
+        "count": 14
+      },
+      {
+        "category": "affiliate_network",
+        "count": 10
+      },
+      {
+        "category": "creator_monetization",
+        "count": 10
+      },
+      {
+        "category": "microtask",
+        "count": 8
+      },
+      {
+        "category": "e_commerce",
+        "count": 6
+      },
+      {
+        "category": "research",
+        "count": 5
+      },
+      {
+        "category": "survey",
+        "count": 2
+      }
+    ],
+    "byPlatform": [
+      {
+        "platform": "GitHub - monk-io/monk-plugin",
+        "count": 169
+      },
+      {
+        "platform": "GitHub - Hel-Phone/HelPhone",
+        "count": 117
+      },
+      {
+        "platform": "GitHub - lingdojo/kana-dojo",
+        "count": 97
+      },
+      {
+        "platform": "GitHub - HackSpain/hackspain26",
+        "count": 91
+      },
+      {
+        "platform": "GitHub",
+        "count": 87
+      },
+      {
+        "platform": "GitHub - StellarCanary/ProtocolCanary-Fixtures",
+        "count": 74
+      },
+      {
+        "platform": "GitHub - StellarCanary/ProtocolCanary-Action",
+        "count": 72
+      },
+      {
+        "platform": "GitHub - ApexChainx/ApexChainx-Backend",
+        "count": 71
+      },
+      {
+        "platform": "GitHub - Nodal-stellar/Nodal-AI",
+        "count": 71
+      },
+      {
+        "platform": "GitHub - riteshekbote/sumup-hunt",
+        "count": 68
+      },
+      {
+        "platform": "GitHub - EF-CHAIN/SendAm",
+        "count": 62
+      },
+      {
+        "platform": "GitHub - riteshekbote/hornbach-hunt",
+        "count": 59
+      },
+      {
+        "platform": "GitHub - riteshekbote/gamdom-hunt",
+        "count": 58
+      },
+      {
+        "platform": "GitHub - pacocartones/free-llm-api-hub",
+        "count": 57
+      },
+      {
+        "platform": "GitHub - emircan-sahin/gitviber",
+        "count": 56
+      },
+      {
+        "platform": "GitHub - riteshekbote/fonial-hunt",
+        "count": 55
+      },
+      {
+        "platform": "GitHub - FlowwStar/FlowStar",
+        "count": 50
+      },
+      {
+        "platform": "GitHub - riteshekbote/rainbet-hunt",
+        "count": 48
+      },
+      {
+        "platform": "GitHub - iamkanhaiyakumar/ai-content-generator",
+        "count": 43
+      },
+      {
+        "platform": "GitHub - nagcas/TerraQuakeApi",
+        "count": 42
+      },
+      {
+        "platform": "GitHub - riteshekbote/alfaview-hunt",
+        "count": 42
+      },
+      {
+        "platform": "GitHub - riteshekbote/spare-hunt",
+        "count": 42
+      },
+      {
+        "platform": "GitHub - wavefnd/Whale",
+        "count": 41
+      },
+      {
+        "platform": "GitHub - riteshekbote/basf-hunt",
+        "count": 40
+      },
+      {
+        "platform": "GitHub - riteshekbote/peoplefone-hunt",
+        "count": 39
+      },
+      {
+        "platform": "GitHub - Rajath2005/SmartCityApp",
+        "count": 38
+      },
+      {
+        "platform": "GitHub - riteshekbote/n26-hunt",
+        "count": 37
+      },
+      {
+        "platform": "GitHub - MettaChain/PropChain-contract",
+        "count": 35
+      },
+      {
+        "platform": "GitHub - TheVicky1/Pact_OS",
+        "count": 32
+      },
+      {
+        "platform": "GitHub - smtpfast/feedletter",
+        "count": 30
+      },
+      {
+        "platform": "GitHub - Akazajan/Oraculum",
+        "count": 29
+      },
+      {
+        "platform": "GitHub - riteshekbote/gladia-hunt",
+        "count": 29
+      },
+      {
+        "platform": "GitHub - workswithagents/specs",
+        "count": 29
+      },
+      {
+        "platform": "GitHub - OSSAfrica/skillguard",
+        "count": 27
+      },
+      {
+        "platform": "GitHub - riteshekbote/sipgate-hunt",
+        "count": 27
+      },
+      {
+        "platform": "GitHub - OpsiMate/OpsiMate",
+        "count": 26
+      },
+      {
+        "platform": "GitHub - crazy-goat/go-mesi",
+        "count": 26
+      },
+      {
+        "platform": "GitHub - riteshekbote/cineplex-hunt",
+        "count": 25
+      },
+      {
+        "platform": "GitHub - riteshekbote/daimler-truck-hunt",
+        "count": 25
+      },
+      {
+        "platform": "GitHub - riteshekbote/questnet-gmbh-hunt",
+        "count": 25
+      },
+      {
+        "platform": "GitHub - ilyoxxx/WebAudit",
+        "count": 24
+      },
+      {
+        "platform": "GitHub - juandresrodca/AdminForge",
+        "count": 24
+      },
+      {
+        "platform": "GitHub - riteshekbote/hypofriend-hunt",
+        "count": 24
+      },
+      {
+        "platform": "GitHub - ApexChainx/ApexChainx-Contracts",
+        "count": 23
+      },
+      {
+        "platform": "GitHub - riteshekbote/avatarux-studios-hunt",
+        "count": 23
+      },
+      {
+        "platform": "GitHub - yrn-dev/Operator",
+        "count": 23
+      },
+      {
+        "platform": "GitHub - FujoJTOP/loment",
+        "count": 22
+      },
+      {
+        "platform": "GitHub - riteshekbote/obi-hunt",
+        "count": 22
+      },
+      {
+        "platform": "GitHub - shep-pm/shep",
+        "count": 22
+      },
+      {
+        "platform": "GitHub - StellarFlow-Network/stellarflow-frontend",
+        "count": 21
+      }
+    ],
+    "byType": [
+      {
+        "opportunity_type": "other",
+        "count": 4896
+      },
+      {
+        "opportunity_type": "platform_membership",
+        "count": 107
+      },
+      {
+        "opportunity_type": "remote_job",
+        "count": 6
+      },
+      {
+        "opportunity_type": "digital_product",
+        "count": 4
+      },
+      {
+        "opportunity_type": "gig",
+        "count": 3
+      },
+      {
+        "opportunity_type": "product_listing",
+        "count": 2
+      },
+      {
+        "opportunity_type": "research",
+        "count": 2
+      },
+      {
+        "opportunity_type": "microtask",
+        "count": 1
+      }
+    ],
+    "byRisk": [
+      {
+        "risk_level": "low",
+        "count": 4935
+      },
+      {
+        "risk_level": "medium",
+        "count": 86
+      }
+    ],
+    "bySource": [
+      {
+        "source_id": "opsrc_b6de10deb6194cb799",
+        "source_key": "github_good_first_issue",
+        "source_name": "GitHub Good First Issue",
+        "total": 1001,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_313d8f190e734138b2",
+        "source_key": "github_bug_bounty_label",
+        "source_name": "GitHub Bug Bounty Label",
+        "total": 1001,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_28b5df1b7d3b4e5793",
+        "source_key": "github_security",
+        "source_name": "GitHub Security Issues",
+        "total": 971,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f4eecc1d46554ac882",
+        "source_key": "github_hacktoberfest",
+        "source_name": "GitHub Hacktoberfest",
+        "total": 955,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_bd64f0c6b48441d4ba",
+        "source_key": "github_help_wanted",
+        "source_name": "GitHub Help Wanted",
+        "total": 876,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_956ad4c111b248f380",
+        "source_key": "github_bounties",
+        "source_name": "GitHub Bounties",
+        "total": 88,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ce24176956834399af",
+        "source_key": "99designs",
+        "source_name": "99designs",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_503fb35800c548b195",
+        "source_key": "remoteok",
+        "source_name": "Remote OK",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_318073da90764d9f9a",
+        "source_key": "himalayas",
+        "source_name": "Himalayas",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3e3c76aef4cb47b990",
+        "source_key": "themuse",
+        "source_name": "The Muse",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b0c987315a96448588",
+        "source_key": "weworkremotely",
+        "source_name": "We Work Remotely",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_4d0fe9f39b714b2e9d",
+        "source_key": "greenhouse",
+        "source_name": "Greenhouse Job Boards",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_df790f1484b54c19bc",
+        "source_key": "lever",
+        "source_name": "Lever Job Boards",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_36d876b7290f4e36b3",
+        "source_key": "etsy",
+        "source_name": "Etsy",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d390ba3aa169439393",
+        "source_key": "ebay",
+        "source_name": "eBay",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fe8e7e2c3a114193b2",
+        "source_key": "skillshare",
+        "source_name": "Skillshare",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3ed7b96a95824bcf9e",
+        "source_key": "google_play_console",
+        "source_name": "Google Play Console",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_a4b9d2efe11f4355b1",
+        "source_key": "apple_app_store",
+        "source_name": "Apple App Store Connect",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8e879614dc514cc689",
+        "source_key": "chrome_web_store",
+        "source_name": "Chrome Web Store",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_81d6774ef72b49338f",
+        "source_key": "prolific",
+        "source_name": "Prolific",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_07cae1b18e2b44a59a",
+        "source_key": "usertesting",
+        "source_name": "UserTesting",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_bbc173d9b832439e92",
+        "source_key": "mturk",
+        "source_name": "Amazon Mechanical Turk",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d67970c378c34d8c89",
+        "source_key": "challenge_gov",
+        "source_name": "Challenge.gov",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fbcdcbd5abdd4b3887",
+        "source_key": "grants_gov",
+        "source_name": "Grants.gov",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_059946976ddb4553ad",
+        "source_key": "devpost",
+        "source_name": "Devpost",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_61132c0566e943f396",
+        "source_key": "topcoder",
+        "source_name": "Topcoder",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_e9c9f107f8284cc9b3",
+        "source_key": "kaggle_competitions",
+        "source_name": "Kaggle Competitions",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_960515b77983434281",
+        "source_key": "gitcoin",
+        "source_name": "Gitcoin",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ab07e56710114bb680",
+        "source_key": "bountysource",
+        "source_name": "Bountysource",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9bf44c0d47cd4887b7",
+        "source_key": "algora",
+        "source_name": "Algora",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f09d29f4905b437280",
+        "source_key": "bugcrowd",
+        "source_name": "Bugcrowd",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8ac748687b324de48a",
+        "source_key": "hackerone",
+        "source_name": "HackerOne",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_2c33b852ba8f43d5ac",
+        "source_key": "rev",
+        "source_name": "Rev.com",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8121379f23ee4f39ba",
+        "source_key": "gengo",
+        "source_name": "Gengo",
+        "total": 2,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_5b4bf1146c554d32bb",
+        "source_key": "upwork",
+        "source_name": "Upwork",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_6d6e52cb061447d8bc",
+        "source_key": "fiverr",
+        "source_name": "Fiverr",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9c56d6455e6e4c2a8a",
+        "source_key": "freelancer",
+        "source_name": "Freelancer.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f9b2ab13c9ec4368ac",
+        "source_key": "toptal",
+        "source_name": "Toptal",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_e2314a2b50d0432ebd",
+        "source_key": "guru",
+        "source_name": "Guru.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8407ab250a6c4dab98",
+        "source_key": "peopleperhour",
+        "source_name": "PeoplePerHour",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ccb3e5cda6694cbcb2",
+        "source_key": "dribbble_hiring",
+        "source_name": "Dribbble Hiring",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_692750a3882f4397ae",
+        "source_key": "behance",
+        "source_name": "Behance JobList",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_2fdd22d69d1043c7a3",
+        "source_key": "designcrowd",
+        "source_name": "DesignCrowd",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_92b2e945734a4cf391",
+        "source_key": "flexjobs",
+        "source_name": "FlexJobs",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_73f73ade97c042efb3",
+        "source_key": "bark",
+        "source_name": "Bark.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8212fb537b03449094",
+        "source_key": "remotive",
+        "source_name": "Remotive",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_ed43d9626d7b420884",
+        "source_key": "arbeitnow",
+        "source_name": "Arbeitnow",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9295305fc68942b8ac",
+        "source_key": "remotejobs_org",
+        "source_name": "RemoteJobs.org",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_6a3ce863af87414c8f",
+        "source_key": "justremote",
+        "source_name": "JustRemote",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_e664b335da2b4ce0a8",
+        "source_key": "working_nomads",
+        "source_name": "Working Nomads",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fcd38d6ca29a44f099",
+        "source_key": "adzuna",
+        "source_name": "Adzuna",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_79b6ac499ba243e497",
+        "source_key": "jooble",
+        "source_name": "Jooble",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_1dab9eca2c8f4cd5bb",
+        "source_key": "ashby",
+        "source_name": "Ashby Job Boards",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_1f37f74b06504d69b8",
+        "source_key": "jobicy",
+        "source_name": "Jobicy",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c77495acde2e4b4381",
+        "source_key": "amazon_associates",
+        "source_name": "Amazon Associates",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_42c2fcd960d9459c91",
+        "source_key": "shareasale",
+        "source_name": "ShareASale",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_51f321db590547f3b4",
+        "source_key": "clickbank",
+        "source_name": "ClickBank",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_0cad3bba524541ff8b",
+        "source_key": "impact",
+        "source_name": "Impact.com",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_2b5eb224f5974f83a4",
+        "source_key": "cj_affiliate",
+        "source_name": "CJ Affiliate (Commission Junction)",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9da6147b96b74f05b3",
+        "source_key": "partnerstack",
+        "source_name": "PartnerStack",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_4c0b8868ecf948e2bc",
+        "source_key": "rakuten_advertising",
+        "source_name": "Rakuten Advertising",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_a9b19fed264e42f9a3",
+        "source_key": "awin",
+        "source_name": "AWIN",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d9650624b6df42a58b",
+        "source_key": "refersion",
+        "source_name": "Refersion",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9cbba5e709184bcba8",
+        "source_key": "tapfiliate",
+        "source_name": "Tapfiliate",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8727ae49a4c44bbc96",
+        "source_key": "youtube_partner",
+        "source_name": "YouTube Partner Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_5b3f074b805f4f4bb2",
+        "source_key": "patreon",
+        "source_name": "Patreon",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c5bed40f9dc6446091",
+        "source_key": "substack",
+        "source_name": "Substack",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_dfafab10268045719e",
+        "source_key": "medium_partner",
+        "source_name": "Medium Partner Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d7a47b2d69524d5481",
+        "source_key": "tiktok_creativity",
+        "source_name": "TikTok Creativity Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8659b30a77dd432c97",
+        "source_key": "reddit_partner",
+        "source_name": "Reddit Contributor Program",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_7d18e168ba024e4580",
+        "source_key": "kofi",
+        "source_name": "Ko-fi",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3def65043c6f4b1bae",
+        "source_key": "buymeacoffee",
+        "source_name": "Buy Me a Coffee",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_35d3b36987b74c6bb9",
+        "source_key": "onlyfans",
+        "source_name": "OnlyFans",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_36ae47f2ffc64d11b0",
+        "source_key": "ghost",
+        "source_name": "Ghost.org",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b417ed91de16493fb8",
+        "source_key": "shopify",
+        "source_name": "Shopify",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_fe83bb274d47468b84",
+        "source_key": "bigcommerce",
+        "source_name": "BigCommerce",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3d823c9bdac14852b4",
+        "source_key": "gumroad",
+        "source_name": "Gumroad",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c447a49d7efd43d5bb",
+        "source_key": "teachable",
+        "source_name": "Teachable",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_65f42fdceb6a45c9b3",
+        "source_key": "udemy",
+        "source_name": "Udemy",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_aff3684ca1664188aa",
+        "source_key": "thinkific",
+        "source_name": "Thinkific",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_9389d6a43df64620bd",
+        "source_key": "kajabi",
+        "source_name": "Kajabi",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_abce38f09c384a2ba3",
+        "source_key": "shutterstock_contributor",
+        "source_name": "Shutterstock Contributor",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_54f71f9beeb54c7cb4",
+        "source_key": "adobe_stock",
+        "source_name": "Adobe Stock Contributor",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_c5edfc62b9ca4dd3b8",
+        "source_key": "respondent",
+        "source_name": "Respondent.io",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_27b0c43b067e433b82",
+        "source_key": "clickworker",
+        "source_name": "Clickworker",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_12a0acd7536348f885",
+        "source_key": "microworkers",
+        "source_name": "Microworkers",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3a544bf5c5574921b5",
+        "source_key": "appen",
+        "source_name": "Appen",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_212fa073ceb34dc09b",
+        "source_key": "telus_international",
+        "source_name": "TELUS International AI",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_a970c57d8add4beab0",
+        "source_key": "swagbucks",
+        "source_name": "Swagbucks",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_5f30d63bc2294c748d",
+        "source_key": "surveyjunkie",
+        "source_name": "SurveyJunkie",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f2fb96c5d382429399",
+        "source_key": "hackerearth",
+        "source_name": "HackerEarth",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_14ad57ba6beb4f5caf",
+        "source_key": "devfolio",
+        "source_name": "Devfolio",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_b6967dce5321476dbe",
+        "source_key": "issuehunt",
+        "source_name": "IssueHunt",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_4710ef5dd82246ee9b",
+        "source_key": "gotranscript",
+        "source_name": "GoTranscript",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_d02e861f9eec435083",
+        "source_key": "transcribeme",
+        "source_name": "TranscribeMe",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_579ecc77b94e406eb5",
+        "source_key": "unbabel",
+        "source_name": "Unbabel",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_3f69cc8b48d443e7ba",
+        "source_key": "scale_ai",
+        "source_name": "Scale AI (Remotasks)",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_f2e574bd660a4ae283",
+        "source_key": "labelbox",
+        "source_name": "Labelbox",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_931512b51b7b42f185",
+        "source_key": "kaggle_datasets",
+        "source_name": "Kaggle Datasets",
+        "total": 1,
+        "verified": 0
+      },
+      {
+        "source_id": "opsrc_8753742b895f43dcb0",
+        "source_key": "clarity",
+        "source_name": "Clarity.fm",
+        "total": 1,
+        "verified": 0
+      }
+    ],
+    "sourcesTotal": 107,
+    "sourcesActive": 107,
+    "ingestionQueue": {
+      "pending": 0,
+      "processing": 0,
+      "failed": 0,
+      "completed": 0
+    }
+  },
+  "totalNew": 4885,
+  "totalFetched": 5088,
+  "perSource": {
+    "github_bounties": {
+      "fetched": 88,
+      "new": 86,
+      "duplicate": 2,
+      "failed": 0,
+      "pages": 1,
+      "exhausted": true
+    },
+    "github_good_first_issue": {
+      "fetched": 1000,
+      "new": 1000,
+      "duplicate": 0,
+      "failed": 0,
+      "pages": 10,
+      "exhausted": true
+    },
+    "github_help_wanted": {
+      "fetched": 1000,
+      "new": 875,
+      "duplicate": 125,
+      "failed": 0,
+      "pages": 10,
+      "exhausted": true
+    },
+    "github_hacktoberfest": {
+      "fetched": 1000,
+      "new": 954,
+      "duplicate": 46,
+      "failed": 0,
+      "pages": 10,
+      "exhausted": true
+    },
+    "github_bug_bounty_label": {
+      "fetched": 1000,
+      "new": 1000,
+      "duplicate": 0,
+      "failed": 0,
+      "pages": 10,
+      "exhausted": true
+    },
+    "github_security": {
+      "fetched": 1000,
+      "new": 970,
+      "duplicate": 30,
+      "failed": 0,
+      "pages": 10,
+      "exhausted": true
+    },
+    "remotive": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "arbeitnow": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "jobicy": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "remoteok": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "himalayas": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "themuse": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "remotejobs_org": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "working_nomads": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "hacker_news_jobs": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "reddit_forhire": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "reddit_remotejobs": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "lobsters_jobs": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "topcoder": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "devpost": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "challenge_gov": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 0,
+      "pages": 1,
+      "exhausted": true
+    },
+    "grants_gov": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "greenhouse": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "lever": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    },
+    "ashby": {
+      "fetched": 0,
+      "new": 0,
+      "duplicate": 0,
+      "failed": 1,
+      "pages": 0,
+      "exhausted": false,
+      "lastError": "fetch failed"
+    }
+  },
+  "freeSourcesAttempted": 25,
+  "githubSourcesExhausted": 6,
+  "blockedSources": [
+    {
+      "key": "remotive",
+      "error": "fetch failed"
+    },
+    {
+      "key": "arbeitnow",
+      "error": "fetch failed"
+    },
+    {
+      "key": "jobicy",
+      "error": "fetch failed"
+    },
+    {
+      "key": "remoteok",
+      "error": "fetch failed"
+    },
+    {
+      "key": "himalayas",
+      "error": "fetch failed"
+    },
+    {
+      "key": "themuse",
+      "error": "fetch failed"
+    },
+    {
+      "key": "remotejobs_org",
+      "error": "fetch failed"
+    },
+    {
+      "key": "working_nomads",
+      "error": "fetch failed"
+    },
+    {
+      "key": "hacker_news_jobs",
+      "error": "fetch failed"
+    },
+    {
+      "key": "reddit_forhire",
+      "error": "fetch failed"
+    },
+    {
+      "key": "reddit_remotejobs",
+      "error": "fetch failed"
+    },
+    {
+      "key": "lobsters_jobs",
+      "error": "fetch failed"
+    },
+    {
+      "key": "topcoder",
+      "error": "fetch failed"
+    },
+    {
+      "key": "devpost",
+      "error": "fetch failed"
+    },
+    {
+      "key": "grants_gov",
+      "error": "fetch failed"
+    },
+    {
+      "key": "greenhouse",
+      "error": "fetch failed"
+    },
+    {
+      "key": "lever",
+      "error": "fetch failed"
+    },
+    {
+      "key": "ashby",
+      "error": "fetch failed"
+    }
+  ]
+}

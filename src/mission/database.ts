@@ -1,16 +1,18 @@
+import { financialTransaction } from '../db/financial-transaction';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Database, resolveDbEngine, type DbEngine } from '../db/database';
+import { Database, resolveDbEngine, type DbEngine } from '../db/driver';
+import { displayDatabaseTarget } from '../db/display-target';
 
 /**
  * PRIVATE MISSION DATABASE — its own file, its own schema, its own migrations.
  *
  * ISOLATION IS BY CONNECTION AND SCHEMA, NOT BY DRIVER: the mission opens its
  * own connection to ZA141251SA_DATABASE_URL (default ./mission.db) and applies
- * only db/migrations-mission/, so a mission query can never reach a customer
- * table (and vice versa). The driver class itself is shared with the platform
- * (`src/db/database.ts`) purely so that both engines — SQLite for a single-box
+ * only db/migrations-mission/. Operators must configure a separate database
+ * target; sharing the driver does not open the platform default connection.
+ * The connection-free driver class (`src/db/driver.ts`) is shared purely so that both engines — SQLite for a single-box
  * deployment, PostgreSQL for a managed/serverless host — behave identically:
  * one bridge, one dialect translation, one transaction implementation.
  *
@@ -21,7 +23,12 @@ import { Database, resolveDbEngine, type DbEngine } from '../db/database';
  *   · table introspection uses each engine's own catalogue.
  */
 
-const DEFAULT_DATABASE_URL = 'file:./mission.db';
+const DEFAULT_DATABASE_URL = (() => {
+  // Honour DATA_DIR so the mission DB lives under the same writable volume
+  // as the main DB (/data in production, ./data in dev).
+  const dataDir = (process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data')).trim();
+  return `file:${dataDir}/mission.db`;
+})();
 
 export interface MissionEnv {
   databaseUrl: string;
@@ -33,7 +40,8 @@ export interface MissionEnv {
 }
 
 export function missionEnv(): MissionEnv {
-  const raw = (process.env.ZA141251SA_DATABASE_URL ?? process.env.MISSION_DATABASE_URL ?? DEFAULT_DATABASE_URL).trim();
+  const dataDir = (process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data')).trim();
+  const raw = (process.env.ZA141251SA_DATABASE_URL ?? process.env.MISSION_DATABASE_URL ?? `file:${dataDir}/mission.db`).trim();
   return {
     databaseUrl: raw.length > 0 ? raw : DEFAULT_DATABASE_URL,
     sessionSecret: (process.env.ZA141251SA_SESSION_SECRET ?? '').trim() || null,
@@ -85,7 +93,7 @@ class MissionDatabase {
 
   /** Connection target. PostgreSQL URLs are returned with credentials stripped. */
   path(): string {
-    if (this.engine === 'postgres') return this.target.replace(/\/\/[^@]*@/, '//***@');
+    if (this.engine === 'postgres') return displayDatabaseTarget(this.target);
     return this.target;
   }
 
@@ -172,7 +180,7 @@ class MissionDatabase {
     }
     this.depth = 1;
     try {
-      return db.transaction(() => fn());
+      return financialTransaction(db, 'mission', fn);
     } finally {
       this.depth = 0;
     }

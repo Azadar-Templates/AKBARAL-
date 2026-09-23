@@ -1,0 +1,1824 @@
+{
+  "schemaVersion": 1,
+  "verifiedSourceCommit": "ed591eae678f162b3bac21267c6bef1f2cf9e159",
+  "preservedStartingCommit": "99ec471921511f9203f23fc9f0d7939cd9976e40",
+  "previousProviderImplementationsUnchanged": true,
+  "summary": {
+    "fingerprint": "3c39254a7aaa9e1d7d08cae36d0312abb8483a6a5b6c88ce1d509ce5d45026cd",
+    "completedFiles": 114,
+    "totalFiles": 114,
+    "complete": true,
+    "tests": 1551,
+    "suites": 114,
+    "pass": 1551,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "next": null
+  },
+  "normalExit": true,
+  "forcedExit": false,
+  "focusedSqlite": {
+    "tests": 231,
+    "pass": 231,
+    "fail": 0,
+    "skipped": 0
+  },
+  "nativePostgresql": {
+    "version": "18.4",
+    "freshDatabase": "contra_fixture",
+    "tests": 150,
+    "pass": 150,
+    "fail": 0,
+    "skipped": 0,
+    "serverStopped": true
+  },
+  "ci": {
+    "name": "verify",
+    "headSha": "ed591eae678f162b3bac21267c6bef1f2cf9e159",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35493215624"
+  },
+  "checkpoint": {
+    "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/checkpoint.json",
+    "sha256": "ef6a8caac8d5f9dd705335f358e95e1f4c47a6790f586b2950bed4900afb7025",
+    "originalRunDirectory": "/dev/shm/contra-full-ed591ea",
+    "temporaryDirectory": "/dev/shm/contra-full-temp"
+  },
+  "evidence": {
+    "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence.tar.xz",
+    "bytes": 12417688,
+    "sha256": "0df4a1547f9bfe7e73542d4f2b864e2084137755f07ddddd812de5bf2cb0b157",
+    "format": "decoded-snapshot-tar-xz-v1",
+    "codecPath": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence-codec.mjs",
+    "codecSha256": "2f4098df34fdc79fde7dc311cd0f90000d7cb29fd393bc161eb9e56b8cce2146",
+    "manifestPath": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-evidence.tar.xz.manifest.json",
+    "manifestSha256": "5b7f64ec540c31487bd545d880f99cd0df15f9d7e81eb1346d2216c4f116e231",
+    "capturedOriginalFiles": 2096,
+    "losslesslyReencodedSnapshots": 115,
+    "roundTripAllOriginalByteHashesMatch": true,
+    "originalsRetained": true,
+    "node": "v22.22.3",
+    "brotli": "1.1.0"
+  },
+  "storageCleanup": {
+    "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-storage-cleanup.json",
+    "sha256": "5643b029b0143ed837ea29372615817d417833563807d2b56ca5e0373e387fda",
+    "scope": "Only three redundant temporary compression outputs; canonical archive hash checked; all original databases/snapshots/logs and prior canonical archives retained"
+  },
+  "checks": {
+    "focused": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-focused-checkpoint.log",
+      "sha256": "6378037efd02494eeb97caead3a9957016834ede19996ebbd0ab0b297d45b6ed"
+    },
+    "nativePostgresql": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-native-checkpoint.log",
+      "sha256": "e1c768c03781da9b5de16996d68d26475ed46978ce3b9202948a39f3562a9a1c"
+    },
+    "types": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-types-checkpoint.log",
+      "sha256": "aac5162f47de6f0f49a5981782b75664321c039f96a80bf914a16881b375701d"
+    },
+    "backendCompilation": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-backend-checkpoint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "secretScan": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-secrets-checkpoint.log",
+      "sha256": "22865d48aa7f2878567ff4f9efd173241fb5cd7d9fc1b2f91464d585e3cd5025"
+    },
+    "fullRegression": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-full-ed591ea.log",
+      "sha256": "f447679771215efd6f2e0cbcb30fb16e644b4109a2e7541772c990622eb6b512"
+    },
+    "validatedReuse": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-full-reuse.log",
+      "sha256": "c281814fc36251ed308ebb176def78f036e0b5990958f005326ba3ef12a9d3e8"
+    },
+    "archiveRoundTrip": {
+      "path": "logs/test-checkpoints/3c39254a7aaa9e1d7d08cae36/contra-archive-verification.log",
+      "sha256": "92e7b1283c9aaf444ec386553f4773ceb22edcbb944e56b0718cf441a795c59d"
+    }
+  },
+  "files": [
+    {
+      "file": "src/agents/access.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "e747c026a3a3d60f043316c68ba027c1f5a90c1718556f791fd8dbebe136d91c",
+      "snapshotSha256": "e41663f10f6e0798bc4eadb82b3147e4c49986b322663e19b42067fe6dd29210",
+      "snapshotRawSha256": "803490fe89919646026b664dda747a243df4a87b9927d878c9d35dd56125b2d9"
+    },
+    {
+      "file": "src/agents/registry.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "70d20cae93b12d15774bbf93c97b9e0100d213f943565ad96ddf8d6c21ea03f2",
+      "snapshotSha256": "15ee4f25fd227735758dee35308335cf425e2558b88872be295fe5826c6ebe36",
+      "snapshotRawSha256": "8e02408e6b373b3a56faec8369d6109e5bdd461dce93f63f1e71c60c807453d7"
+    },
+    {
+      "file": "src/agents/search-providers.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "23c4b293769f1e2930e86e37202a3ec2641b677fbc371ba6ba3bc904941af4b4",
+      "snapshotSha256": "35593389d3b5adc42078653bedcf6378cf1e1306d59894d3ea0ca758b8dddb55",
+      "snapshotRawSha256": "823e1901b8bdfb50ff318a78796a7e90bca7d738714b3fb49df5fab06ab0c992"
+    },
+    {
+      "file": "src/agents/web-research.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "1ba95e05434f8f24dc0ac0cd63cd3cd75a0753a8ed7a7a51da63f1603d457ab0",
+      "snapshotSha256": "b04526b0218b33c8de0f69628ee9bc7e720e3f9027dadb2b6338e7d046026d16",
+      "snapshotRawSha256": "2e258b52f318deef6f320052b12d5b18ae525790a4a99b0d26d33923eb1786a1"
+    },
+    {
+      "file": "src/app/asset-delivery.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f1012442194c825e5f39ddef74ad4141b5ba89577a5ad48cc86d3e43e78bc747",
+      "snapshotSha256": "57c6f33b2ffaac621f89339bd130680261941b8d163e1c10799bd6125cb8c83f",
+      "snapshotRawSha256": "c78fe88ab9d822dcd10925e0a8addf9a4f716c45386d26935ecfa681201a0e98"
+    },
+    {
+      "file": "src/app/auth-provider-ux.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "197069c6713f99887af08c190b55832a880b6e542311e7192c272f2bdbcbd59d",
+      "snapshotSha256": "b373a698b37fe2f43d267f64d3c56fca609248ff50defa1c13e82ed8d9e39e32",
+      "snapshotRawSha256": "10eea28ad2e5440f9ecd05655ad50f95dccfd34ffb6200c422c373f3002cfdcc"
+    },
+    {
+      "file": "src/app/build-runtime-assets.test.ts",
+      "counts": {
+        "tests": 1,
+        "suites": 0,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "669825aee261ad2e64349128b8c18b576f987e120fc38f1587532ac2916e8bb3",
+      "snapshotSha256": "4a726204c04c4040f25d135ec549ad7263489a5546f1a2adcd5d0a3337762048",
+      "snapshotRawSha256": "deff6c2db53a4288da06390a7a9553cbb75a228b10312f1f6022632c6b0c3750"
+    },
+    {
+      "file": "src/app/deep-link-refresh.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "d171d8ff2609494c02bfca635d4c0e2199d345d6cc4a2c8bd463d06fd5b7ee53",
+      "snapshotSha256": "ed5d5d41e3313f39237b384c4838c68788ec3d36600e69e2e740b218673113d2",
+      "snapshotRawSha256": "c58cf59d48eaa7173e4a96388c03e2cc5ae9fd3dc64a9b7e65a3943f65dfa476"
+    },
+    {
+      "file": "src/app/final-ui-ux.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "418e6e3ec0921c3d7b78445742c8c01d66c2d0a3ffe67dbbc7e9b24b922684c9",
+      "snapshotSha256": "4371a5701651ba507413c5ea1603a2b542b68e44960d1963ab557e07eb71f9e1",
+      "snapshotRawSha256": "3983b488e0bc8e087911cee70cb523ea1350e0b49c86aa8e7ad9fa3b6084b956"
+    },
+    {
+      "file": "src/app/master-routing.test.ts",
+      "counts": {
+        "tests": 10,
+        "suites": 1,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "d3009267c2dcfd5ce1d6e925b9ceea77cfe5ec6818318b4d0a6d26144f93dc87",
+      "snapshotSha256": "c01d73ead038061353a16aabbbe1c4bf063a2018351103157f0cf16081936dd5",
+      "snapshotRawSha256": "3064708b176857e8d29e77daf24c2e5863f195e77723e857d4f4df24c0d1eedc"
+    },
+    {
+      "file": "src/app/preview-stack.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "33e5b2ea9effd5745bdf4c9be2cf7b1637f4ba876042d9f4eaafe24d7d0bb859",
+      "snapshotSha256": "d954f2b6342d823333eb46761d0b15f3bdb99ba530a9bb6a41374571db83c241",
+      "snapshotRawSha256": "6ea6552cb6720d727f26c20a6bfbebba8dfa37c3ba70de682668bc99865165a6"
+    },
+    {
+      "file": "src/app/preview-supervisor.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 0,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "217a6687ca89a287880ae34eab8fb7be50693e06c9c8573c65b0a6fd94b6841d",
+      "snapshotSha256": "464ce1e77745054b9f59cd7202b5fc6da685b64d5625116646e249da56edd63d",
+      "snapshotRawSha256": "7639ef3979ffb7bdf3540ddf9fc4b30f5903fff53bfd3f991ec42722adefd534"
+    },
+    {
+      "file": "src/app/prod-roles.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "078d1452d076d31f9a35688c848b4e0f8a650c88b9bb9dfd6915f935412166ae",
+      "snapshotSha256": "b1eed6454c5996db10159e9dd28ec1216c3811f066ae5004ef69a327474b8838",
+      "snapshotRawSha256": "56759a60eed93689a50116332ee0b9dc70bfb7ff87bedf55c1d137e608ac6335"
+    },
+    {
+      "file": "src/app/responsive-contract.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 1,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "c2829a266ee91b8d862b78d10651b395bdded46b85ae6e66898a0ada17403d34",
+      "snapshotSha256": "036af36649148d031b5e9f030783a8bb5f3c481f34b2465b2eeb5d7e26468780",
+      "snapshotRawSha256": "d668694dabe1162a4af76d8ac2b5315bf9ba8eb5cb506242283321e07483c156"
+    },
+    {
+      "file": "src/app/result-state-contract.test.ts",
+      "counts": {
+        "tests": 20,
+        "suites": 4,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "7f449bdab3d40f7a190702bc8093721100bd34bc1d5e590d8bd7e6bca68186b4",
+      "snapshotSha256": "1944f69b2f5ab3d1034cedb58c968be6d77fbab1934195cd5eb913e25eb62fe1",
+      "snapshotRawSha256": "ee7f663b8078fa02092896d42a935401d2171ce1cca5a16da5b0ccef9246a680"
+    },
+    {
+      "file": "src/app/stackhost-deploy.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f49210d2aa46c1a291f78d29c325af35fc7b45bd0867d0aeb8e5df26f465fad8",
+      "snapshotSha256": "c2894ba08ad422111d5a812883f8713f6f0a816352ee8ab3e55bf085d87b4a84",
+      "snapshotRawSha256": "50d4bc4c010ee590eb54aa1af1d3b85fd5c3837ecdf5dd25c6d57029842d85be"
+    },
+    {
+      "file": "src/app/user-journey.test.ts",
+      "counts": {
+        "tests": 16,
+        "suites": 1,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "cf7b697019f5eac878f4ca3d212aa75b72a9bf117bf6436eef7a42c15c48f0e2",
+      "snapshotSha256": "c2bc614c1b83f2fed136015ee649e4615010ef65987747c380439cfb75187a4b",
+      "snapshotRawSha256": "7a15ea24af3e36015a77e127c4f774561ded230d5a86eef5c9fa44cf94a39834"
+    },
+    {
+      "file": "src/app/website-builder.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 3,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f0704cf7fee77d67a6754fd3555516dd81bbdda21a64f7e72e5fca6d9cceaae1",
+      "snapshotSha256": "87ea5e0d73900791d5a2ff5d8b3bddb6da29f40eec75d69c53831f2e49fed3ec",
+      "snapshotRawSha256": "2a7c0a56d4a6657f5cf85574b484de01dd79d74187bc0dd9843783b618f0d38a"
+    },
+    {
+      "file": "src/app/workspace-ux-contract.test.ts",
+      "counts": {
+        "tests": 25,
+        "suites": 3,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "ee38fd1b34bd3a9ebc986999230ca65bc3e0c68f4972d016ce51695ce0a4cb0a",
+      "snapshotSha256": "28b7148b10933152f2d2cda5e2bd71ad81287242bfc7be41f51d672bc17a447d",
+      "snapshotRawSha256": "b64a283c8692062a4744016cc95ae32aa1436144f68135dad8a79f3c39f1d0be"
+    },
+    {
+      "file": "src/auth/oauth.test.ts",
+      "counts": {
+        "tests": 20,
+        "suites": 1,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "01d64842305dca2c3a324cb027258466bb66599f3507654da6d885d327146e06",
+      "snapshotSha256": "1b6d3022d02df7d3e4929a0a21b27889b0c448fe00144add581e8b86ffdda1f7",
+      "snapshotRawSha256": "3d110c115975ca5bf3d594cbc542e37125c1778f4fbb2408c0237ce38b83e0b7"
+    },
+    {
+      "file": "src/auth/service.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "40445b4d690ee10579743393d636a43922298138eb82e8572861076eb0d3d3a6",
+      "snapshotSha256": "0103a66f85ec36c86f3ae2580de61f619d526a20d6e62b845d5b964a4a9c281b",
+      "snapshotRawSha256": "914b2dee3c980c24e9ac2ddf3d7f585913b0005fe6919c8f60b84fa0624978c3"
+    },
+    {
+      "file": "src/automation/automation.test.ts",
+      "counts": {
+        "tests": 18,
+        "suites": 1,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "68e40ebc3cebd7899b83f9727254103d44f1b64199aaa974bc92808d7db03d7d",
+      "snapshotSha256": "0314d3d98925a9c3e0214ac1f98b0411b99c678b6100a03a4983331b70bf8f05",
+      "snapshotRawSha256": "74d7e489c2adad772883d5a42cf1ea3cb28a37c397f1f93b6c605b8aef6248d8"
+    },
+    {
+      "file": "src/automation/cron.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 1,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4b7c1bc1851bd6ff5933c3a8094f0b4a837ea290e526aeeeeb1f0c2db71a8347",
+      "snapshotSha256": "33aae142f0c868f32f38ebb9ddd71126d889dd90bc607d8f633a33136b5fe3b9",
+      "snapshotRawSha256": "94e1869ae295eacbe76996373c8e8c9890d6f8bf300bb46772b6b245a92c9531"
+    },
+    {
+      "file": "src/billing/billing.test.ts",
+      "counts": {
+        "tests": 19,
+        "suites": 1,
+        "pass": 19,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "dcb8a3005ad0cb8519bf80a2030305892517985fe9b7cf9462915cf22548694a",
+      "snapshotSha256": "51cf2985c620b22b379b822c2cea24c7d6964afee4540e71e5578c40e20612b4",
+      "snapshotRawSha256": "289b42137a557042f6cfb08440871449cdb6267e5ca62e82c1cef4b1e9660127"
+    },
+    {
+      "file": "src/billing/stripe-webhook.http.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "d3bd691c01eb381324a6a8b11cef7a66dd2b0face8316f3c4bce88d9ac5d3778",
+      "snapshotSha256": "f3bad93c7d14e5cf99683b93fac96a501aea03dab866ad0edc4ce97e8d51b57c",
+      "snapshotRawSha256": "f6c8c6ebc28a84ce9330ed399f0cd5a863ea8fc99a6430590999a2e864d1edb3"
+    },
+    {
+      "file": "src/billing/stripe-webhook.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 2,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "0fdb7c7eca840b87b5cc9ef40eba6c6ba2204fd6b65de833495eb20dd5eda7fd",
+      "snapshotSha256": "715507482b29d03c266094a38fa359865c204c19913aaeac37238f8d2e3eaff6",
+      "snapshotRawSha256": "13937e6aec0073ed20c18a520039de676672470212c138c4399a1b1faa231770"
+    },
+    {
+      "file": "src/business/owner-analytics.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 2,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "0ae4223defb0056d5b269e05d78f896e03ac4eb914b891e5f1d4aa2d4bb4e6d9",
+      "snapshotSha256": "2b0d88166905a9eaa0eea984caf275fced1ed3f78fead52fcb712ed4dfa02609",
+      "snapshotRawSha256": "5f1d28c6f41a0fa9b0f1dc7f5ad54d3a37e7d3d5bfe9a9f0ed1dddeb9aa9e1d8"
+    },
+    {
+      "file": "src/config/env.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 4,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "d337599a6f034926f8079174d010975f096250928cb5893f9fc9b022298116ff",
+      "snapshotSha256": "d443c7391a3968b7af2bf83ae18d9d5ddf2047998e3da10fd2f947f4fe8bc661",
+      "snapshotRawSha256": "d4ffe07bdc684bd989174cf2db338f2b8f1b605b1474de5437fea647045e5057"
+    },
+    {
+      "file": "src/db/business.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "0f7ac803ea5813ea8cc6836787f9954f42975623795bd708dfefd95247424778",
+      "snapshotSha256": "aed46f076a1d9d3f0e25703d1914ad487dba57b47ddc517af12fc11ba6e09d0b",
+      "snapshotRawSha256": "f2e3bfe575d05e4d543ef50080f929fb641f39dd23a8642ab205e4d0506b6ff3"
+    },
+    {
+      "file": "src/db/database-display.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "2661b7316903cac5612b0e4d341020ea491655374b17c8d6d2f31a59eb38ca17",
+      "snapshotSha256": "8c07c4aae71f475cf2a01e80e0774050fca580a919fe9333e81f785a96691c8b",
+      "snapshotRawSha256": "7fcf0a17bda2951e923bf9e4636f527d4cf5f1268311685c8f532aac77a63cde"
+    },
+    {
+      "file": "src/db/database.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "bec896a17992bcad2d694f1a37dc0773648e2e9a816ba610cf7eea0b6c6f7c24",
+      "snapshotSha256": "3f746f4c7a9858324e2db67acb33f4c591636e337f1333343439b5d3d89cf27b",
+      "snapshotRawSha256": "016386128fb812dd73dc11dea58ce55a5f0487dbd7fa3d3be933935f54e05b21"
+    },
+    {
+      "file": "src/db/migration-parity.test.ts",
+      "counts": {
+        "tests": 2,
+        "suites": 1,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "0dcec51aca285d20066a0394f8f9efdae3698aedf3f85cfc73629ddc746f6d2b",
+      "snapshotSha256": "36daef937e6acf79ff2cb6d0c1a515248e9fa60158ad88eff884224950962989",
+      "snapshotRawSha256": "0b59e5a58dcd29b4654e960c64ee2d2d0ed2d6861639f1dc49bd4b12588f4781"
+    },
+    {
+      "file": "src/db/pg-bridge-wakeup.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "aefa71a8165b3147d636afd72470e1180f19a486c9a61d16f986035ed6a411a0",
+      "snapshotSha256": "8692b4c1dfa0492fce40324bec82d16f572a2db925cf42116a980303dc6437dc",
+      "snapshotRawSha256": "733bcfa2f61a274cc3bb7117c94c81b79566c2e7a208bacf73dfc45854c8bdcb"
+    },
+    {
+      "file": "src/db/pg-connection.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "8b3fd38b58eabb079db26e394d7989e7dcf451b2d21b31314e436f42cc5eab52",
+      "snapshotSha256": "b9e6b599919dc356b8bcf256a0b2b93a04e299956e2b240e883a4c70e0be69e5",
+      "snapshotRawSha256": "26f40a513408087a8fd141957d8e53dec87ab7bbdc482c7306b4bdbd53e38c3c"
+    },
+    {
+      "file": "src/db/postgres.integration.test.ts",
+      "counts": {
+        "tests": 0,
+        "suites": 3,
+        "pass": 0,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "5206ea3ee9e026e4438f4e123b7fc174635175544552ad5240f5d5331d26e5a2",
+      "snapshotSha256": "794eb5f4801269691209ae92dfb76a7059110950e70c88514fb99484942f65fc",
+      "snapshotRawSha256": "f7c872a03897ab5c25c2170f8b60bd829c318bd26566921ebc34e526a7b384c0"
+    },
+    {
+      "file": "src/db/trust.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "90ffc5fb790f1dc71593adfa14ade8cfa6cffb6ac236739916a9a459743fb522",
+      "snapshotSha256": "c887c98a587e26d7fba894416d809648fc2e62fea9b7e95fe4b03413a525b369",
+      "snapshotRawSha256": "78196ef1671601bbed048eefd18974778f1071bb549f2b5c16bdcaed3118c602"
+    },
+    {
+      "file": "src/db/workforce-parity.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "021f704a13ebd71e2b7fbe12f439d1d1ac272da4ddc78fc6b38dcef14c3445a4",
+      "snapshotSha256": "5a17e29f4f3b37205f46054d7a03f2f04661f02ae62b12aa3396d98f29b634af",
+      "snapshotRawSha256": "d15b0901942be21b1065628f7dfba424aa9ccd789633722711b3b7db5b899b7c"
+    },
+    {
+      "file": "src/economy/delegation-scale.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "7ebd7aa1f85cdf04978e36f4d1d80f0348bbd5740e241587b1b9275bc6025801",
+      "snapshotSha256": "ccd84b2758a1504f54ef4571d3f39aa8925defd3ea05d307f0a88ee28866fff8",
+      "snapshotRawSha256": "c90a51a49dec46b9389259223d4c4423ef522956cbd0728443e3a4e0893469ec"
+    },
+    {
+      "file": "src/economy/discovery.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f09fb87cf6ca8b6f46f89f8d6e816a0bb4946ec583a806aa3d97de5d738306b5",
+      "snapshotSha256": "9aa7d1a2c5ab5e4a2394d0f40b41d2e4cce16e94de4a7317cbd069faf9e0e008",
+      "snapshotRawSha256": "3b3b6ce77ec6de4f1ef28a557cf605c07a04a4e0d28f8dc1bc2669774eb11abf"
+    },
+    {
+      "file": "src/economy/economy.test.ts",
+      "counts": {
+        "tests": 46,
+        "suites": 4,
+        "pass": 46,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "0459820bb0979cc1e75b0cd06350157933dfb251667fcb884153ce53e4a86a1b",
+      "snapshotSha256": "c27beb6e001b41d146dbd166954d444fb8d474b1b4f2ddde653f2fa957ad996c",
+      "snapshotRawSha256": "69dbbc19e4f086fa4a46c88be756bd7678c194742885388411eb8eb58a5f9d24"
+    },
+    {
+      "file": "src/economy/financial-atomicity.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "7786ecb49dfc3b347523c27e4c389b62e0a938a14e5a5bb3890915c8a72ac701",
+      "snapshotSha256": "3abc024622ccecb3d4b150738c2827968acca1e5c2c471432d9fe8a85e501a9f",
+      "snapshotRawSha256": "f27aa1b2ff601cac377f8f5e2b0118a6d86b4e910ee1417a5b4c82dc2dc9b550"
+    },
+    {
+      "file": "src/economy/hierarchy.test.ts",
+      "counts": {
+        "tests": 22,
+        "suites": 3,
+        "pass": 22,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "b4f50657e844e50565a68c189c390c48cfa3fd4b1352461c0f51c96dd9e6f2e7",
+      "snapshotSha256": "4fffaab183b9f53f699bef252c15b51a69446c7e70c022a2c42b046fad92da1e",
+      "snapshotRawSha256": "10d14b2d26c90b5a3f1b0f7b2feaf0713add7bd7f6951bf8c1329c031605c7d6"
+    },
+    {
+      "file": "src/economy/mission-chat.test.ts",
+      "counts": {
+        "tests": 10,
+        "suites": 2,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "39f5e75d43da0e4eaa5d73a6a210fc1634faa68217d53eab171ff315f1cb5b2a",
+      "snapshotSha256": "f1f73bb7b48d49f06a5c673800a919a84a172b6b8d99713f29edba34b7a9224e",
+      "snapshotRawSha256": "38dfe9047b4f43066e5a9f70d5c7e34b3168dd050f0077df83af3efd251cc4f7"
+    },
+    {
+      "file": "src/economy/payment-concurrency.test.ts",
+      "counts": {
+        "tests": 2,
+        "suites": 0,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "048441b3ef46b32f784ca84f1dbd6aec744ab6922b2e697465fab64f75c42438",
+      "snapshotSha256": "b9578cd75073180db89b55068871cc24a45181724d138b66725deea17d8b3ee4",
+      "snapshotRawSha256": "f1f7224db111110f0878e3dfac9d2253b037612fad08daf65583e99926ab02fe"
+    },
+    {
+      "file": "src/integrations/smtp.test.ts",
+      "counts": {
+        "tests": 1,
+        "suites": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "9ba06dddd3fb268c80d932d98dfc51db98460e94c974b67d07fdf38380372ba9",
+      "snapshotSha256": "eeba6633538f3da8bf641d3154677912c7841f2e0ca80f53dd5505896b5aaf41",
+      "snapshotRawSha256": "4b39ce3591d6e07f279374e91c06674d1e573f607964bbb916f39e3f57fa1d94"
+    },
+    {
+      "file": "src/launch/checks.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 3,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "38c73daa40d63b4d9efd9ec7f3f69a6a6075716c2a14d7543701cade9b57116d",
+      "snapshotSha256": "36217be4b529975f5e0fe235e7da4e522f2c0d68016ce0d6f0cabfd626201c5d",
+      "snapshotRawSha256": "83ef7fcc0ef4ef59dca16b0ae91a3fd8a02d3bd99f2120c59bcd479f9ce1b015"
+    },
+    {
+      "file": "src/mission/chat-worker.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "1885235b2589cd9cf53b2f6e5ea6070e400566a4335091dc86b8c9bcdd500869",
+      "snapshotSha256": "6db6e8e1bc29ea95030b0757b9cdc2a95335711e76adae5f354d5e3c69ee1172",
+      "snapshotRawSha256": "199386e2915f8f9ffec078c69b380cd49f3cfc7a899e5360d92b35867072425c"
+    },
+    {
+      "file": "src/mission/database-isolation.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "41b26302f9491d2f68174f3b6f3c8260373290b3ee70273e9afd05a5d72f0e34",
+      "snapshotSha256": "4d9c70833900cbc1d8f4041ee17fa521381dbdbe6f281f8fd745cd0f72e7a4c3",
+      "snapshotRawSha256": "4f02ca2d42eacbadae6237d1e18c31cb8c288ab513880e119fda105c8458b5a9"
+    },
+    {
+      "file": "src/mission/earning/awin-workflow.test.ts",
+      "counts": {
+        "tests": 32,
+        "suites": 0,
+        "pass": 32,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "03f001b55739559c904197825452d392195f3663f2ae3bcc1775e2bd07a37266",
+      "snapshotSha256": "826909d5fc6ccf561f3589b6c434fb17df004ff693a159bd7c8976b9abc17667",
+      "snapshotRawSha256": "95f120367bb3ab325b45102d28d2e1bfa2c3165f4697cf31c811e991cca4315c"
+    },
+    {
+      "file": "src/mission/earning/awin.test.ts",
+      "counts": {
+        "tests": 24,
+        "suites": 0,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "aedd89c04637cb521014e2b188736a46f03b52b78af53236f5fe9eb9404edf0d",
+      "snapshotSha256": "2b00a93d9c18863728b24ac1ba6b06466c4bf04d64b53a6f099fcc787726a40a",
+      "snapshotRawSha256": "c43432491ad20a8b87bc772c275564292756be0a30f9c0f99d692205f62568d4"
+    },
+    {
+      "file": "src/mission/earning/contra-workflow.test.ts",
+      "counts": {
+        "tests": 150,
+        "suites": 0,
+        "pass": 150,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "6c4cd0495dfe8da5a40903c356d29b03622df5cbc9a822246746f49f1af24fff",
+      "snapshotSha256": "9c76ea908a435cda84e2e7fde3bbf14cbeb89006219aa0bf6607b7300ee2c818",
+      "snapshotRawSha256": "ce46314420134c72ee3a40685c4cfdb0b23935becc4bd642d3667057ec619f1c"
+    },
+    {
+      "file": "src/mission/earning/fiverr-workflow.test.ts",
+      "counts": {
+        "tests": 119,
+        "suites": 0,
+        "pass": 119,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "a01a511935799775c36e8de71fe11e79e04938b3ce27d10ae599eac848274ce6",
+      "snapshotSha256": "e06e7bd13a7e5b9f9870ba2ffcf5c3d0e9034a48146f10c1e8563763ee774b73",
+      "snapshotRawSha256": "0c9bc8bccad5e1cd20ff3dc1ae46a5f302c77ad57626100d947de0e34e5ee1b1"
+    },
+    {
+      "file": "src/mission/earning/freelancer-settlement.test.ts",
+      "counts": {
+        "tests": 53,
+        "suites": 0,
+        "pass": 53,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "7d5233f281caf1f7537d7cefd87184142b8ac710856ab3a16f628e8caaed1ff9",
+      "snapshotSha256": "f0fdc86637e028cf7c4597a1f31b649af103821c7fc58c7c599b8a0c5e615bdb",
+      "snapshotRawSha256": "2620770310478f9a8e1e520dae7397deeb1c984763e19c70926408f013a9b6d1"
+    },
+    {
+      "file": "src/mission/earning/freelancer-workflow.test.ts",
+      "counts": {
+        "tests": 30,
+        "suites": 0,
+        "pass": 30,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4fa512b773fda247c597195c08c33a9f009b6b16fff01227179219a2fc7abd42",
+      "snapshotSha256": "29cca8e9a65e09c3a506e18c0b268a60d7d971e5116dda1fafff75cce9611d92",
+      "snapshotRawSha256": "3d3fa42e076fe4a14924a2a8b16d66815a23a9d41a1206f51d1e75719bb621d9"
+    },
+    {
+      "file": "src/mission/earning/freelancer.test.ts",
+      "counts": {
+        "tests": 13,
+        "suites": 0,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "3977234df2f18b25110693c01b987d5f45398c382631fb5d9ca82f39020b180b",
+      "snapshotSha256": "a2815dc9f1dd5f3b09df262166777809f5a7b5c7634b8bc639a4bfbc265cf97b",
+      "snapshotRawSha256": "7a2d40ac23f37da40b6498f086450b5a5ad4f74cd67816dbbb47508ef6b42e9f"
+    },
+    {
+      "file": "src/mission/earning/upwork-workflow.test.ts",
+      "counts": {
+        "tests": 105,
+        "suites": 0,
+        "pass": 105,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "aaad35e5d6919e96d31d8766e26223b548263ca7714f0de0039a639b22443326",
+      "snapshotSha256": "cd4861c00907758d241d5d5502d1ebb75c08dd163deea8539d306de1d9b774ef",
+      "snapshotRawSha256": "7edda4f1504612b415d1047017ff4a6106683b187c753acfe7fc73facf23dcc2"
+    },
+    {
+      "file": "src/mission/mission-core.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 0,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "9c75760690357bc84c5c74239af6261a0f3c27cb0119bec358509a568172acf9",
+      "snapshotSha256": "89b47f7e748bea6b53b52b3045e1cd4529865d36fcdf69b21b5d5c7d49379174",
+      "snapshotRawSha256": "5f23e9546314d3345c8522826f1c764755c54e570c6bee33c17015a52e77a32a"
+    },
+    {
+      "file": "src/mission/mission-dashboard-render.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "024ead9baa4a5a966c9d219c07d075cfe778b2475b5b81380c15b87a4702eda2",
+      "snapshotSha256": "c842e3a50f15f52630aea982cac23ab0a79ea2ab3a528663d268a11faa23e903",
+      "snapshotRawSha256": "df3eb5fed2d74292cf445ca421005bd589cd261cf9b117f70bea036d973e8a0a"
+    },
+    {
+      "file": "src/mission/mission-financial-atomicity.test.ts",
+      "counts": {
+        "tests": 24,
+        "suites": 0,
+        "pass": 24,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f24921c5b0771388a676602b9cfb55b42255e792ea2a37722e532f4da24d61b7",
+      "snapshotSha256": "445f9cf161fd95a4c0a67a3248ebfd238532527af9b57f14fb34ea9ffa19bf4e",
+      "snapshotRawSha256": "19688ecbb9213a6ef43c916fba515f0d0d1542e138ef1b088067f39a0cde17ea"
+    },
+    {
+      "file": "src/mission/mission-identity-lock.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 0,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4ab041b755edea0f44241bac3869ca65bf0ac6abcc2a1e48c23c36670a2e1464",
+      "snapshotSha256": "2a11c915695f683cf8b6b9ea7f783b6ece032ccb3b8a6cb3934cdfcd177fcd0c",
+      "snapshotRawSha256": "4ef20cc5049c441bc560e104a5ef35089285bad40a7e328ec1f565babc960385"
+    },
+    {
+      "file": "src/mission/mission-payout-verification.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "2ae78a36961c6037b25b58764693a3ef3f9be4f0cfbda09da7c2713775f9a613",
+      "snapshotSha256": "6b8a999bc228b07381ae5be23bec2f061fb9f564a3480fd04ed9ad5f63cd7326",
+      "snapshotRawSha256": "04df0e69f166d3afdf585c88fdb437f827534b9dff2bf8cc24dab38109e9e30c"
+    },
+    {
+      "file": "src/mission/mission-probe-policy.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "5d552b950b832e789bde4e7eb34ebc81c4941ec2c6fc8448686f56dd7ec97014",
+      "snapshotSha256": "9adb34c057ae3203fe533799e22a0b5b27484808a3feac1127e3a1912f3b4bf8",
+      "snapshotRawSha256": "85dd9963ebad6fe0bbc9d6883baebff3c0735da0f8bd35e2d203c8a014f6d0bc"
+    },
+    {
+      "file": "src/mission/mission-reinvestment.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 0,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "608b7edc13a94671ac317bc47a83642592684182a70a0d4851e2f73c0db4ddff",
+      "snapshotSha256": "e25593a1cfdaf9294bef11d2066259eb629326df50d132c6d2f2226144e951bf",
+      "snapshotRawSha256": "90780b73f7070e927ce7db2b36604ad89c5056dcf3c7ece25bf9e0c4c197ec4e"
+    },
+    {
+      "file": "src/mission/mission-server.test.ts",
+      "counts": {
+        "tests": 40,
+        "suites": 0,
+        "pass": 40,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "c6375c42f093295b3b796becf44a3326354ac75b4fc4bd379be29dec448512b7",
+      "snapshotSha256": "5a0b70bf2cf066d15ab0eee557aae38740a7c69d6f279861555102aa736bcf0f",
+      "snapshotRawSha256": "531907db046cb6ef7e0746a32a61273822c5568a88360d4f8ecde5d24cba5fd9"
+    },
+    {
+      "file": "src/mission/mission-social.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f15b880de8bc254c7bf2349fbeee472cf39dd7724f6b86c1c4eef1edf3621c26",
+      "snapshotSha256": "2042f89818742291450cb6cddc8a92aef12add0fe9d7e0577729044e0e3895a3",
+      "snapshotRawSha256": "5363ab8e31e9275c54ce23ddac917b3d73ae1734f99e70c657fe9bcf70545c60"
+    },
+    {
+      "file": "src/mission/mission-treasury.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "1f3f5d886c2d4730016d04117e2a6ce801590fc36f0c91eb6d0cd24cb7f81740",
+      "snapshotSha256": "85a0701b4faaea790c41d964a59b9724b6be381de8f08ef3941332a442de76a2",
+      "snapshotRawSha256": "5efb395a3b3796df3ef247c33948aa6e70fa448af06fe75cba084e9c7b48112b"
+    },
+    {
+      "file": "src/mission/money-concurrency.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 0,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "6599ede8c482659a9584a4f01ab34b6fc8b2711471c55309a2cd987494ec4343",
+      "snapshotSha256": "bee9ef84aa38bdac5c345313594c518f6265245bcae2bdf7b5732c8aed15bd4a",
+      "snapshotRawSha256": "3d585bf7d480f5af691b75ba8d8cacd5d7768a84eb2e761ec64b161aefe35fc3"
+    },
+    {
+      "file": "src/mission/money-stripe.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 0,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "fa64f71f6a6072d37baec007d51b45bb5b4eb63621efb6e9eb38cc1ffa26ce2f",
+      "snapshotSha256": "9e800b8a360bd67e18414d5909c3ae55e0e712d936c848c855896cfffe0cc646",
+      "snapshotRawSha256": "65b10a5e028fa5415fbf32ee831ea0e38d9f94e5fab5911fdde81d7843463de5"
+    },
+    {
+      "file": "src/mission/money.test.ts",
+      "counts": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 41,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "a7408300ee322bbb97ce4f485e8787240f8d309074a8c34f8787afebaddb1bc1",
+      "snapshotSha256": "f62b96cd91e519aa34bb7b419d9d1fb1906e9a905ab37bc48aa80462215f82a2",
+      "snapshotRawSha256": "d3b080d58da0dbff7c3d37fe6390fae4446195b82f18fe7057a46b8aadcddf35"
+    },
+    {
+      "file": "src/mission/registry-sync.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 0,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "e71d46edcea8fb49a8c4fe8379baf5cdc698077be1f5812d378e20738fb4675e",
+      "snapshotSha256": "e986bd68f0b2db700446d1bfc49cd59a53770a75c5b609b3b75f7a8bf804a50a",
+      "snapshotRawSha256": "3fc5cb85b7ffb0727ec5ffdff185dd583891a49f399e88fabd3323904f22a361"
+    },
+    {
+      "file": "src/mission/resource-budgets.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 0,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "a7bd4ef05c13d9d8df4f6fb038e31e5db8dc7877b28e4fda86082d17620be98a",
+      "snapshotSha256": "b55f02cb78399496dc0eb803236cdabfd802cd7f945fdcd76cbc45a5bb054f8c",
+      "snapshotRawSha256": "99bff5510c80057a419a04b456190ad914f1f44424fb9dda6fe52e6c8545785f"
+    },
+    {
+      "file": "src/mission/resource-calls.test.ts",
+      "counts": {
+        "tests": 20,
+        "suites": 0,
+        "pass": 20,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "f5e8c944a190e3cb0ac0cec389d19d623b89d2ace6a0c76a6c2c321372ad931d",
+      "snapshotSha256": "28d1938e1d4d57db06f161c51af61149bd748021afe6b1721107dafb831080c8",
+      "snapshotRawSha256": "9637753842e60b320788391fe0508c21006fcd40d48e61ea1988b8874b4a36ef"
+    },
+    {
+      "file": "src/mission/resource-periods.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 0,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "2d7543177dc59ecfb3b5d2746ed8456b6137fe1a968a55ccebd2e28f2948e527",
+      "snapshotSha256": "4d77a973de7c1190dfaf0907ca369e0fe13970471d3d3366041b0a7ce4970bcd",
+      "snapshotRawSha256": "c1e2b64f45cfe40bcae0a13e2bac1bf9aa0eb13a655dcecfa392389e0a81f3f6"
+    },
+    {
+      "file": "src/models/catalog-contract.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "b24f636a7c4e1f26f20cd15ad13998d85ae8001cd35ecf134a1035b1ac1f161a",
+      "snapshotSha256": "856ac95be7169c7bf6de6fbf20afcde09e4b93ba6bae9aecc75b95e4eaefc360",
+      "snapshotRawSha256": "d6123ba9f329ae4af7664693f33234521713798d516c4c261c8166deae37edd5"
+    },
+    {
+      "file": "src/models/models-api.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "8bde61900761e2360e68bbe525ce43e6cb66da40e6187c43bbcab876f578cc88",
+      "snapshotSha256": "632d5ad0f56e9caf3bc0065044f6e4609c9a5a7cffd1ba183c4c0fa7dfd9bf10",
+      "snapshotRawSha256": "463e73b1662e47e6e2955f6dec77d24315f21ce98673b97bd70fc1ad77683b70"
+    },
+    {
+      "file": "src/models/provider-hardening.test.ts",
+      "counts": {
+        "tests": 10,
+        "suites": 1,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "0e327c4524595e904d5a024cce255e01e05222b9eaf57798ef1e0132c1437838",
+      "snapshotSha256": "6721e504a52e6b1c1ab676da7a1efe5f1bcdce6338edf98f7d221d40713e8f5e",
+      "snapshotRawSha256": "3f6cefd6511cbbe965f942546fe11f31e05cf4b232c2aa8af42e2bd98964989e"
+    },
+    {
+      "file": "src/models/router.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "969381949dc25bb691836c25a33e86e72b455bbee920fa3bb10af7594c267bcf",
+      "snapshotSha256": "dc4e5b3b7d6ba824ffc602d04347eb5e7041657f61d8d93d20595c63725fee23",
+      "snapshotRawSha256": "454be7909278f121f4892c3b96ef407756f5db63dd1bf4d31a8e7139368d0747"
+    },
+    {
+      "file": "src/orchestrator/executor.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "96c6f6110b7c0cfa1c09828af6cc814de9f1bfce5a34312c4ad6022e9ce35f07",
+      "snapshotSha256": "ad8b0fe0d7ddeabfbfd52d56af1d923343c8feb983e4e0a573d1aa3881409325",
+      "snapshotRawSha256": "93e3c4f9ead4c25cbc025f8932c4b4d434da26a2b5749b1b9295d37862206cf3"
+    },
+    {
+      "file": "src/orchestrator/factory-templates.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "35555581c16b78eb81fa0a07e972eafaae8ea1a69a4a00aad436a2ca55da6bbb",
+      "snapshotSha256": "0cac0d06d468469c8f63342803f8cf59b5e5a72a4b08faa8c2ced42135e2dfa1",
+      "snapshotRawSha256": "9e1596f1696509db2a3d8caeb75bd065229e3e17bb5e55acd1ad327019e01c23"
+    },
+    {
+      "file": "src/orchestrator/factory.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "049d1744db6068727d388ec03d882fbfc4afa7f6a551f0e8276f4857da175af3",
+      "snapshotSha256": "010b61547c9759301990d1962853fb893968a40e4ba55b9a5c2c8639597bb211",
+      "snapshotRawSha256": "24d18b7b6b97c64c770d30a313f01e2ff5855cd515fb7f81c15989e3b1a0cc5e"
+    },
+    {
+      "file": "src/orchestrator/goal-analyzer.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 3,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "11e7a3efa7c44aade17ca280d6ace7acbc6bec3472ae75438bcdb72921b632a0",
+      "snapshotSha256": "67e20f64e4f412c6ca05c1b582c0e1067f3ff58f778e86c497f1658e908edf38",
+      "snapshotRawSha256": "90498eb9cff5f3cb0d49cc93783bef8cba8c44098ea76b268a04307bd08de851"
+    },
+    {
+      "file": "src/orchestrator/master-flow.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4bb2f39a902f48628fbcd7000e52c48273af51b975a63d001d0c7d9b8ca02052",
+      "snapshotSha256": "99cc46ee6afe89f91c673163406eddf28ada5ba91cc393c4509a77255ecca230",
+      "snapshotRawSha256": "8e7f4ceccef408a3121104b1fc7d72edd20443bfa7593eff979a373f9ca01a77"
+    },
+    {
+      "file": "src/orchestrator/owner-entitlement.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 3,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "b2ac6d394cf8ecbbb697e4bd8e225323f94abd982d6a3e670ba3942d4c7487fc",
+      "snapshotSha256": "3c679c898a448f625d92336989ae9f905df8e0b86f5180fe1bd0ca27f070dfa5",
+      "snapshotRawSha256": "142f936a83c15aa205668e8ae4d1b80f2679d992538959c808e2163a02de19a0"
+    },
+    {
+      "file": "src/orchestrator/queue.test.ts",
+      "counts": {
+        "tests": 18,
+        "suites": 1,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "619429edf4cf045875522919bb028f79426252de8d818aac4f10899c6bcb8eb2",
+      "snapshotSha256": "a973b7f12fd5fd82f0fa20e4aa674f1424782c1e1d90dba89ae7f2fe4134faed",
+      "snapshotRawSha256": "e72f571ffb4c6f2f79081ef28a1d2b8c5d0e3a2252fba72f55085d9566b3a64a"
+    },
+    {
+      "file": "src/orchestrator/recovery.test.ts",
+      "counts": {
+        "tests": 2,
+        "suites": 1,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "576fc7595ae009eafb00010cb7ad92c0ff43892684f06b78fc53146d9035a711",
+      "snapshotSha256": "509564d620a2aa0d2ebd0a2e7b30e4b61fb343a41e5346e791c2b2a6f44f7b79",
+      "snapshotRawSha256": "14d3e48a512fe2ff0c75870564f15b6626a7cb1a25e91fb86fa776ea02eb8fef"
+    },
+    {
+      "file": "src/orchestrator/synthesizer.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 2,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "7d448a28cd89422f5eecc75876b5a79284544364e84ef56727d70c7ba60095e8",
+      "snapshotSha256": "129396d7917c4f127111df043e023bc216555a45e00cbdf62476791d61ff0b65",
+      "snapshotRawSha256": "f2327e15da470965b03fc5f51ce363d7ca1de9fe8019684186454befb87cdd4b"
+    },
+    {
+      "file": "src/orchestrator/tool-stage.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "df071eb2007b82032522944f4ea37dce8507b6e1adaa7277ae6f1a21f664a47e",
+      "snapshotSha256": "4dd8a73d7e8a72a6877567d595b440e43c1b7f6599104a2b9fbe19af18dafd01",
+      "snapshotRawSha256": "fdb72309002fb5c691e86a2387b28b12a6e66f61cae9c8e26cbef87d914f684e"
+    },
+    {
+      "file": "src/orchestrator/verifier.test.ts",
+      "counts": {
+        "tests": 11,
+        "suites": 2,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "6244a176a8a41f0d1a3e523bde2e4e8d176fe2f3f70411de3fea7a6247291ecf",
+      "snapshotSha256": "fe3d155483b617bd665dd5165350f3d185341e65d478a962fa7be69844443979",
+      "snapshotRawSha256": "0a35ed477d25cc3c77f21019b8bca1af7841fac92e70726c5ae454a288dbe4bf"
+    },
+    {
+      "file": "src/push/push.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4db0b80d553dffaa9277e58986039d9f0ec9c49a116e3d6c6089ab44b1967d05",
+      "snapshotSha256": "6304e3d424d34d1c7c879a9211e9036e2ba0f09aa2abd2a054743eabdf925bc3",
+      "snapshotRawSha256": "dde880ed29351c52b40394f1ba3f3af1c8c3921c4c0c313be75099c77fdfcd3c"
+    },
+    {
+      "file": "src/realtime/execution-stream.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 2,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "71a91a0fc53de9e1bffbbc462fb3f85d277bb7973b0af25717718b5572990fe9",
+      "snapshotSha256": "08e228ed16f926ce0d27af1b98e3b077809652c57fd519a021eaccf87de15358",
+      "snapshotRawSha256": "367f2d419ab6d0aeedfe980f9012b9dcd2b1169e7dbfd52666db8b42c7f37aee"
+    },
+    {
+      "file": "src/routes/contact.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "fb3f44e295f2f9ee3a19ee2909e78b0155656ee7bcab597f207d1de6e7161c45",
+      "snapshotSha256": "f257f6da3fec92c98d9814626576cc1ab741c4d75d0630de0a59fb2d6daeb9cc",
+      "snapshotRawSha256": "01f8d051ac6921a1c7bf2566b648b457482ff89a9af5adfe9296d1fe7550085a"
+    },
+    {
+      "file": "src/routes/marketplace-world.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "3ec7d86d162b811602f518b35f978d02e94d0498a4dca532718cd2fa2507b13a",
+      "snapshotSha256": "5e863e510299946eb6e5e9f3562054664f2cc510bf7b956b70f595afa6e675f6",
+      "snapshotRawSha256": "098a3f5ed46aba4f8e627d0885bb55e84ca22a7ecbac85d2d698a290bc5ec19d"
+    },
+    {
+      "file": "src/routes/public.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "3a095bb45af44b7aa5aeb5693ed7d5539364442f2da8b20281828fa4da2867c3",
+      "snapshotSha256": "109d2a58e33035aa98998fca4f94c0753b7bea4aeda80e395b4bb984c22929f7",
+      "snapshotRawSha256": "7af0daa81a64eb98d1a3c223dff4c1ca5e0d97d5aecfe1494eb9816cd2480007"
+    },
+    {
+      "file": "src/routes/workspace.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "8601e2a5079cacafcada9da5ca70309ec663f956bbe74b54a8b3a6effe24af22",
+      "snapshotSha256": "2d7c62872fd9226d1a88ebf12770a264f8594de7549f67a012dcf6b052d5d39c",
+      "snapshotRawSha256": "9aa8e025abde692b8bf2f8a3c0b7d12078c8c08ab6eb04f6d9070d1ba906eb29"
+    },
+    {
+      "file": "src/scripts/backup.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "62bb4f1e21bec3110c355d906675d0c962ba71b2b20d228d8107af7b89a6e9ea",
+      "snapshotSha256": "472135209c10184e566c04d30f0ac5a5012012f8d3619616cd66b7d3bab8bb1c",
+      "snapshotRawSha256": "305332cf6819c042bad7e8564186c445d831ce763879a0cf421f6e58e9047430"
+    },
+    {
+      "file": "src/security/attack-surface.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 1,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4e1b122479e316ef6df7ef1ec47a66c10803c3e254d1b6488f13d0e0a63053c7",
+      "snapshotSha256": "c6e4151efef901febba092c7aad403844ac84f3925337f8990c1db1a7c64f833",
+      "snapshotRawSha256": "042ddb61e31b72a82fa776659f9890521932bb444e784be7dcc5396834f974da"
+    },
+    {
+      "file": "src/security/mission-cash-boundary.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 0,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "889b290b7df8a12a60deaa2f1c3d88c74f92fcead055bcab1d9238206daf84cc",
+      "snapshotSha256": "efb92ae60ff6bd88c749ff5ba00a5aed8422653be36691a6d2e30acaf6095a13",
+      "snapshotRawSha256": "e907c36cdc115ccbf302e5ca74da6daf19adcc2ab1ef7509a215380bc0ad63be"
+    },
+    {
+      "file": "src/security/password.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "5ce49c316d748f66363e94122e4ca1fc97e9f951fb2af05233547cdca7f312b7",
+      "snapshotSha256": "dba1043df5e6dc96978da906b16a1607a6f61fc961ee18a6903cfd87050aec83",
+      "snapshotRawSha256": "a46e28f82274407f8e05790a9e663dc704726beb132d6021488e377c478a53e2"
+    },
+    {
+      "file": "src/security/role-separation.test.ts",
+      "counts": {
+        "tests": 14,
+        "suites": 6,
+        "pass": 14,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "3d7054b307f02c463c977cf9db83b5a9d69ea5c18c0f81f067a5b7339f58ab7f",
+      "snapshotSha256": "472a60c3e00bd8feb351225e90c6555eff22f8e79791d89497aca4ef3505cc76",
+      "snapshotRawSha256": "457095b1c139bef7ab8f09cfc7feb3e65d72f5ad81acb3a8bb17f635600a7066"
+    },
+    {
+      "file": "src/security/scan-secrets.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "bef652992e97dc341a4dec362fc21301b7ac9d2409905364484e661b49a055d4",
+      "snapshotSha256": "4e3366917e9bf1268cb54773f60918533505244e3d5e9668f98f176f196d17e6",
+      "snapshotRawSha256": "df65c59474cf4127ca78a8613a7c19412fd8e9139ef220cd97e0c7e533e863b6"
+    },
+    {
+      "file": "src/server/app.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "cefd1eb396ce5faedbec71397b310a918145d62c9c6ccc67df06a29c9b5e88ca",
+      "snapshotSha256": "0fbd3c479f912e993f20b847dde6824fc3396407d4b8fb79cf3080915e405799",
+      "snapshotRawSha256": "91626af0e890bc02f3e2cb4c92c9614d2cd9b528df7add7c641febe6e3938cfa"
+    },
+    {
+      "file": "src/server/health.test.ts",
+      "counts": {
+        "tests": 7,
+        "suites": 1,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "821320f4468f1423acd66542845f1d820734dc2fe1aa8eeb62d3b0d70a279b69",
+      "snapshotSha256": "7e68ac9d21c6f6b22a42c4432172ad3b7481960ed815b6a2131dfe43ea185f61",
+      "snapshotRawSha256": "39b05d0c39f6c1a5e2861a1c268050d0b5d1547fe0d1a4a98e0d2272513af352"
+    },
+    {
+      "file": "src/server/middleware/rate-limit.test.ts",
+      "counts": {
+        "tests": 3,
+        "suites": 1,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "bd0839695658e7fe6017b30f4b8be21d674056c1fac652424d360017975d0fdc",
+      "snapshotSha256": "5572d3b884e20d97491d4cd4bbc8e213a5d367140fca02bc18d095bf0d55302c",
+      "snapshotRawSha256": "d7879750c23be259789a361f00a9c45a22c4878c9c43acbc36f8fcc389757127"
+    },
+    {
+      "file": "src/testing/checkpoint-runner.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 0,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "77d8eb2356b901d15c3d0ef6bdd2a8da0583e77e260c9f080d54d044aa9fb781",
+      "snapshotSha256": "b9c5735415bf9eb45fab7ba60f0309cb560527ac7e7633b310e4f3da4ad74e60",
+      "snapshotRawSha256": "879455fd9ecb5b07ce75a122441be2fbe1ef1b7d8a12d86a75eaba8ed210456f"
+    },
+    {
+      "file": "src/tools/tools.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "b1c38696594795f49d87b1990269cde390b16d92bb4cee5a8257630e07a926eb",
+      "snapshotSha256": "5e416359f1d6dad3cdfdec7977c6ab9692292728bbcf1c00d57f616d58688ca0",
+      "snapshotRawSha256": "fcfe3c46ed5c58ce4ebed2252f3d492f80138b2f74412273b3e84dd33d1e543e"
+    },
+    {
+      "file": "src/workforce/alerts.test.ts",
+      "counts": {
+        "tests": 8,
+        "suites": 1,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "c1a960307e3540f178ded7b17def3762a271ccbc66f5c3c219d2937cb1c3f7f0",
+      "snapshotSha256": "752dc471bc737670c2feba8624edbb765bf109942ceb8471c87e50c88c69c500",
+      "snapshotRawSha256": "1ef481fdb693069a64f1f38b540081a445d2cf769b9671ecf4d0debb6dbd0295"
+    },
+    {
+      "file": "src/workforce/catalog-validation.test.ts",
+      "counts": {
+        "tests": 1,
+        "suites": 0,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "a579c7338602d8f038bad469dd0da1f43bb9ca97d397268affa3b597f21846bf",
+      "snapshotSha256": "33f548e273435d01d6971f28bb32459a25bfaab4a164f9e54b083b39908bde6e",
+      "snapshotRawSha256": "5b025c4f8652d256118db7c8bbf5ee68252af010802ab01698bd2130b8731893"
+    },
+    {
+      "file": "src/workforce/earning.test.ts",
+      "counts": {
+        "tests": 12,
+        "suites": 4,
+        "pass": 12,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4e333b3869e8b13d6da1795b3193c2b327cde9794d844ff67892e19b2d4d2331",
+      "snapshotSha256": "217e46471e9a0cb34ecd22dc00af46a90c04c8117d9d5bf72513aefc6419b8f7",
+      "snapshotRawSha256": "297ff94176056ace8dfb74e379ebbcdb7c9afa5f6c162d22b689525e87f03551"
+    },
+    {
+      "file": "src/workforce/execution-cost.test.ts",
+      "counts": {
+        "tests": 4,
+        "suites": 1,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "e8222fc6735e6f6fd11ea3f0772eefe9b0ffdb2c60044a57f9ee904ac1c44e61",
+      "snapshotSha256": "166c572fd433bf48551e143f88947ed38299fe051b2bb0b3fed382f33fa45e3e",
+      "snapshotRawSha256": "99d64c567b7e01f00b282ddfcca6f26995ebbdf5f79bcc351336553f2d83b690"
+    },
+    {
+      "file": "src/workforce/execution-integrity.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 0,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "db7cfbdda123439f1d3f47c183d0215180ba00f5ce3063d5632cd4c21bd7dcd0",
+      "snapshotSha256": "0f6ea07471a0419f28fcb76796f25d3aac6d9ac2543ca1eda73723268f06071e",
+      "snapshotRawSha256": "52b4b6ec5a04489713d9f5ecf2d2adfe588a3908ea4b3e1ee6fc5e4d026b798a"
+    },
+    {
+      "file": "src/workforce/images.test.ts",
+      "counts": {
+        "tests": 5,
+        "suites": 1,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "ae543442ffded18e707021abc98829c0ece3cbc5e5a0ec774ce9d18cf4248ace",
+      "snapshotSha256": "eb3d2ab2d1c2610c62ff0373fda2730e7b3bf41a315fe83920b3a88fe36464ac",
+      "snapshotRawSha256": "10f645f3db8a01b0deccb7d9eeb65762d4dd69d35dc6adefeb808ae47e0f8e99"
+    },
+    {
+      "file": "src/workforce/primary.test.ts",
+      "counts": {
+        "tests": 9,
+        "suites": 1,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "19eaf8d29242c7feae7e36ecacafb3004a79c0041408048dcb5b27c475a8f3f4",
+      "snapshotSha256": "3defb673cbfafc52b7fd6cd147ab5db65bf191dc9387d4a9fc3e46249e31a993",
+      "snapshotRawSha256": "d668958e9b2f6579d4ceb3f5ee6757f0890613828cf965c5a68999edab9db6fe"
+    },
+    {
+      "file": "src/workforce/staging.test.ts",
+      "counts": {
+        "tests": 6,
+        "suites": 1,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "4f4b9646546500d015493a6e03c241ece0d53a75c135d8ebd3fb2bfd12826907",
+      "snapshotSha256": "d193b71a9c83cdc58ecf38954a894bee96193130df3db0c6e5f12e75d003c437",
+      "snapshotRawSha256": "c87fd6f5b429702f413b838ad278a71e63c319097dd19ee1c41887bc46a00c04"
+    },
+    {
+      "file": "src/workforce/workforce.test.ts",
+      "counts": {
+        "tests": 15,
+        "suites": 1,
+        "pass": 15,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "logSha256": "7dba2c7991bbf94caf28f87d2550c0e25364dce7ce4bbe72d2b39d01bfbc4070",
+      "snapshotSha256": "45475370732e4cf9bc995b5024ec27631ae71bf3eca813af0716b99650a14358",
+      "snapshotRawSha256": "7b0bbc429d67930165163786ae48ec4e9b5514c244be15706273e288f9214687"
+    }
+  ],
+  "live": {
+    "enabled": false,
+    "operationalProviderCalls": false,
+    "verifiedEarningsClaimed": false,
+    "spendingEnabled": false,
+    "withdrawalEnabled": false
+  }
+}

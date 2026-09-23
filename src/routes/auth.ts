@@ -25,10 +25,15 @@ authRouter.post(
   '/register',
   asyncRoute(async (req, res) => {
     const body = getBody(req);
+    const country = optionalString(body, 'country');
+    const metadata: Record<string, unknown> | undefined = country
+      ? { country: country.toUpperCase().slice(0, 2) }
+      : undefined;
     const user = await register({
       email: requireString(body, 'email', 'email'),
       password: requireString(body, 'password', 'password'),
       name: optionalString(body, 'name'),
+      metadata,
     });
     res.status(201).json({ user });
   }),

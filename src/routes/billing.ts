@@ -8,12 +8,24 @@ import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError, asyncRoute } from '../server/http';
 import { getBody, optionalNumber, optionalString } from '../server/middleware/validation';
 import { renderInvoicePdf } from '../billing/invoice-pdf';
+import { getPaymentCapabilities } from '../billing/capability-detection';
 
 export function createBillingRouter(): Router {
   const router = Router();
 
   router.get('/plans', (_req, res) => {
     res.status(200).json({ plans: billingService.listPlans() });
+  });
+
+  /**
+   * Payment capability detection — exposes honest configuration status
+   * without revealing secrets. Used by Owner Console to decide whether
+   * to present paid checkout options.
+   */
+  router.get('/capabilities', (_req, res) => {
+    const merchantCountry = optionalString(_req.query as Record<string, unknown>, 'country') ?? undefined;
+    const capabilities = getPaymentCapabilities(merchantCountry);
+    res.status(200).json(capabilities);
   });
 
   router.get('/account', requireAuth, (req: AuthenticatedRequest, res) => {

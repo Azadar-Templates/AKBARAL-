@@ -152,9 +152,12 @@ const SESSION_SECRET_PLACEHOLDERS = new Set([
 ]);
 
 function resolveSessionSecretFilePath() {
-  return process.env.AKBARAL_SESSION_SECRET_FILE
-    ? path.resolve(process.env.AKBARAL_SESSION_SECRET_FILE)
-    : path.resolve(process.cwd(), 'data', '.session-secret');
+  if (process.env.AKBARAL_SESSION_SECRET_FILE) {
+    return path.resolve(process.env.AKBARAL_SESSION_SECRET_FILE);
+  }
+  // Use DATA_DIR (defaults to /data in production, ./data in dev)
+  const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : 'data');
+  return path.resolve(dataDir, '.session-secret');
 }
 
 function ensureSessionSecret() {

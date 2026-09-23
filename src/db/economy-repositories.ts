@@ -1,3 +1,4 @@
+import { financialTransaction } from './financial-transaction';
 import { db, type SqlValue } from './database';
 import { createId } from './id';
 
@@ -48,12 +49,20 @@ export interface EconomyPolicyRow {
   provider_access_revoked: number;
   economy_model_key: string | null;
   discovery_categories_json: string;
+  /** 0022: autonomous upgrade gates. Default OFF — an agent may REQUEST an
+   *  upgrade, but executing one autonomously needs both flags plus affordability
+   *  from realized earnings. Zero upfront investment is preserved. */
+  auto_upgrade_enabled: number;
+  max_auto_upgrade_cost_cents: number;
 }
 
 export function getEconomyPolicy(): EconomyPolicyRow {
   const row = db.get<EconomyPolicyRow>("SELECT * FROM economy_policy WHERE id = 'global'");
   if (!row) {
-    db.run("INSERT OR IGNORE INTO economy_policy (id) VALUES ('global')");
+    // D9: fresh policy rows start at the 4,001-agent scale cap (existing rows
+    // still on the shipped default are moved by migration 0019; owner-tuned
+    // caps are never touched by either path).
+    db.run("INSERT OR IGNORE INTO economy_policy (id, max_economy_agents) VALUES ('global', 5000)");
     return db.get<EconomyPolicyRow>("SELECT * FROM economy_policy WHERE id = 'global'")!;
   }
   return row;
@@ -115,6 +124,7 @@ export interface OpportunityRow {
   time_hours: number;
   risk_level: string;
   platform_rules: string | null;
+  platform_key: string | null;
   probability: number;
   expected_net_cents: number;
   roi: number | null;
@@ -139,6 +149,7 @@ export function insertOpportunity(input: {
   riskLevel: string;
   probability: number;
   platformRules?: string | null;
+  platformKey?: string | null;
   estimateBasis?: string;
 }): { id: string; duplicate: boolean } {
   const existing = db.get<{ id: string }>('SELECT id FROM economy_opportunities WHERE source_url_hash = ?', [input.sourceUrlHash]);
@@ -147,11 +158,11 @@ export function insertOpportunity(input: {
   db.run(
     `INSERT INTO economy_opportunities
        (id, source_url_hash, source_url, category, title, summary, expected_revenue_cents, expected_cost_cents,
-        time_hours, risk_level, platform_rules, probability, estimate_basis, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered')`,
+        time_hours, risk_level, platform_rules, platform_key, probability, estimate_basis, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered')`,
     [id, input.sourceUrlHash, input.sourceUrl, input.category, input.title, input.summary ?? null,
       input.expectedRevenueCents, input.expectedCostCents, input.timeHours, input.riskLevel,
-      input.platformRules ?? null, input.probability, input.estimateBasis ?? 'category_default'],
+      input.platformRules ?? null, input.platformKey ?? null, input.probability, input.estimateBasis ?? 'category_default'],
   );
   return { id, duplicate: false };
 }
@@ -198,13 +209,14 @@ export interface ExecutionRow {
 }
 
 export function insertExecution(input: { opportunityId: string; agentSlug: string; timeoutMs: number; maxAttempts?: number }): { id: string; created: boolean } {
-  const key = `opp:${input.opportunityId}:live`;
-  const existing = db.get<ExecutionRow>('SELECT * FROM economy_executions WHERE idempotency_key = ?', [key]);
-  if (existing && !['completed', 'failed', 'cancelled', 'timed_out'].includes(existing.status)) {
-    return { id: existing.id, created: false };
-  }
-  // A settled execution may be retried by bumping the round inside the key.
-  const round = existing ? Number(existing.idempotency_key.split('#')[1] || 0) + 1 : 0;
+  return financialTransaction(db, 'economy', () => {
+  const history = db.all<ExecutionRow>('SELECT * FROM economy_executions WHERE opportunity_id = ?', [input.opportunityId]);
+  const live = history.find(row => ['authorized', 'running'].includes(row.status));
+  if (live) return { id: live.id, created: false };
+  const round = history.reduce((max, row) => {
+    const value = Number(row.idempotency_key.split('#')[1] ?? 0);
+    return Math.max(max, Number.isSafeInteger(value) ? value : 0);
+  }, -1) + 1;
   const id = createId('eco_exe');
   db.run(
     `INSERT INTO economy_executions (id, opportunity_id, agent_slug, idempotency_key, status, attempts, max_attempts, timeout_at)
@@ -213,6 +225,7 @@ export function insertExecution(input: { opportunityId: string; agentSlug: strin
       new Date(Date.now() + input.timeoutMs).toISOString()],
   );
   return { id, created: true };
+  });
 }
 
 export function getExecution(id: string): ExecutionRow | undefined {
@@ -451,16 +464,20 @@ export function postLedger(input: {
   refId: string;
   policyDecision?: string | null;
 }): { id: string; duplicate: boolean } {
-  if (input.amountCents === 0) return { id: '', duplicate: true };
-  const existing = db.get<{ id: string }>('SELECT id FROM economy_ledger WHERE ref_id = ?', [input.refId]);
-  if (existing) return { id: existing.id, duplicate: true };
-  const id = createId('eco_lgr');
-  db.run(
-    `INSERT INTO economy_ledger (id, agent_slug, direction, category, amount_cents, purpose, ref_type, ref_id, policy_decision)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.agentSlug ?? null, input.direction, input.category, input.amountCents, input.purpose, input.refType, input.refId, input.policyDecision ?? null],
-  );
-  return { id, duplicate: false };
+  return financialTransaction(db, 'economy', () => {
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents < 0) throw new Error('ledger amount must be nonnegative integer cents');
+    if (input.amountCents === 0) return { id: '', duplicate: true };
+    const existing = db.get<{ id: string }>('SELECT id FROM economy_ledger WHERE ref_id = ?', [input.refId]);
+    if (existing) return { id: existing.id, duplicate: true };
+    const id = createId('eco_lgr');
+    db.run(
+      `INSERT INTO economy_ledger (id, agent_slug, direction, category, amount_cents, purpose, ref_type, ref_id, policy_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.agentSlug ?? null, input.direction, input.category, input.amountCents, input.purpose, input.refType, input.refId, input.policyDecision ?? null],
+    );
+    return { id, duplicate: false };
+
+  });
 }
 
 export function listLedger(limit = 100): LedgerRow[] {
@@ -555,13 +572,17 @@ export interface UpgradeRow {
   applied_at: string | null;
   rolled_back_at: string | null;
   created_at: string;
+  /** 0022: what the upgrade costs, and which agent asked for it (NULL = owner). */
+  cost_cents: number;
+  requested_by_agent: string | null;
 }
 
-export function insertUpgrade(input: { target: string; currentValue: string; candidateValue: string; benchmark?: Record<string, unknown> | null }): UpgradeRow {
+export function insertUpgrade(input: { target: string; currentValue: string; candidateValue: string; benchmark?: Record<string, unknown> | null; costCents?: number; requestedByAgent?: string | null }): UpgradeRow {
   const id = createId('eco_upg');
   db.run(
-    'INSERT INTO economy_upgrades (id, target, current_value, candidate_value, benchmark_json) VALUES (?, ?, ?, ?, ?)',
-    [id, input.target, input.currentValue, input.candidateValue, input.benchmark ? JSON.stringify(input.benchmark) : null],
+    'INSERT INTO economy_upgrades (id, target, current_value, candidate_value, benchmark_json, cost_cents, requested_by_agent) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, input.target, input.currentValue, input.candidateValue, input.benchmark ? JSON.stringify(input.benchmark) : null,
+     Math.max(0, Math.round(input.costCents ?? 0)), input.requestedByAgent ?? null],
   );
   return db.get<UpgradeRow>('SELECT * FROM economy_upgrades WHERE id = ?', [id])!;
 }
@@ -667,6 +688,9 @@ export interface AgentProfileRow {
   spend_cents: number;
   paused_at: string | null;
   paused_reason: string | null;
+  /** 0022: per-agent spend caps in minor units. NULL = uncapped. */
+  daily_spend_quota_cents: number | null;
+  monthly_spend_quota_cents: number | null;
 }
 
 /** Children count for a parent agent (hierarchy gate). */
@@ -1016,6 +1040,87 @@ export function executedTransferTotalForAgent(agentSlug: string): number {
   const row = db.get<{ total: number | null }>(
     "SELECT SUM(amount_cents) AS total FROM economy_transfers WHERE source_agent_slug = ? AND status = 'executed'",
     [agentSlug],
+  );
+  return Number(row?.total ?? 0);
+}
+
+// ── Owner command flow (0022) ────────────────────────────────────────────────
+
+export interface CommandRow {
+  id: string;
+  idempotency_key: string;
+  owner_user_id: string;
+  agent_slug: string;
+  instruction: string;
+  status: string;
+  opportunity_id: string | null;
+  execution_id: string | null;
+  delivery_id: string | null;
+  result_summary: string | null;
+  verification: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function insertCommand(input: { idempotencyKey: string; ownerUserId: string; agentSlug: string; instruction: string }): { row: CommandRow; duplicate: boolean } {
+  const existing = db.get<CommandRow>('SELECT * FROM economy_commands WHERE idempotency_key = ?', [input.idempotencyKey]);
+  if (existing) return { row: existing, duplicate: true };
+  const id = createId('eco_cmd');
+  db.run(
+    'INSERT INTO economy_commands (id, idempotency_key, owner_user_id, agent_slug, instruction) VALUES (?, ?, ?, ?, ?)',
+    [id, input.idempotencyKey, input.ownerUserId, input.agentSlug, input.instruction],
+  );
+  const row = db.get<CommandRow>('SELECT * FROM economy_commands WHERE id = ?', [id]);
+  if (!row) throw new Error('command insert did not persist (id ' + id + ')');
+  return { row, duplicate: false };
+}
+
+export function getCommand(id: string): CommandRow | undefined {
+  return db.get<CommandRow>('SELECT * FROM economy_commands WHERE id = ?', [id]);
+}
+
+export function updateCommand(id: string, patch: { status?: string; opportunityId?: string | null; executionId?: string | null; deliveryId?: string | null; resultSummary?: string | null; verification?: string | null }): void {
+  const sets = [];
+  const vals = [];
+  if (patch.status !== undefined) { sets.push('status = ?'); vals.push(patch.status); }
+  if (patch.opportunityId !== undefined) { sets.push('opportunity_id = ?'); vals.push(patch.opportunityId); }
+  if (patch.executionId !== undefined) { sets.push('execution_id = ?'); vals.push(patch.executionId); }
+  if (patch.deliveryId !== undefined) { sets.push('delivery_id = ?'); vals.push(patch.deliveryId); }
+  if (patch.resultSummary !== undefined) { sets.push('result_summary = ?'); vals.push(patch.resultSummary); }
+  if (patch.verification !== undefined) { sets.push('verification = ?'); vals.push(patch.verification); }
+  if (sets.length === 0) return;
+  sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+  db.run('UPDATE economy_commands SET ' + sets.join(', ') + ' WHERE id = ?', [...vals, id]);
+}
+
+export function listCommands(input: { agentSlug?: string; status?: string; limit?: number } = {}): CommandRow[] {
+  const conds = [];
+  const vals = [];
+  if (input.agentSlug) { conds.push('agent_slug = ?'); vals.push(input.agentSlug); }
+  if (input.status) { conds.push('status = ?'); vals.push(input.status); }
+  const where = conds.length > 0 ? 'WHERE ' + conds.join(' AND ') : '';
+  return db.all<CommandRow>('SELECT * FROM economy_commands ' + where + ' ORDER BY created_at DESC LIMIT ?', [...vals, Math.min(500, Math.max(1, input.limit ?? 100))]);
+}
+
+// ── Per-agent spend quotas (0022) ────────────────────────────────────────────
+
+export function setAgentQuotas(agentSlug: string, quotas: { dailySpendQuotaCents?: number | null; monthlySpendQuotaCents?: number | null }): void {
+  const profile = getAgentProfileBySlug(agentSlug);
+  if (!profile) throw new Error('agent profile "' + agentSlug + '" does not exist');
+  const entries: Array<[keyof typeof quotas, string]> = [['dailySpendQuotaCents', 'daily_spend_quota_cents'], ['monthlySpendQuotaCents', 'monthly_spend_quota_cents']];
+  for (const [key, column] of entries) {
+    const value = quotas[key];
+    if (value === undefined) continue;
+    if (value !== null && (!Number.isInteger(value) || value < 0)) throw new Error('quota "' + key + '" must be a non-negative integer or null (got ' + value + ')');
+    db.run('UPDATE economy_agent_profiles SET ' + column + ' = ? WHERE agent_slug = ?', [value, agentSlug]);
+  }
+}
+
+/** Ledger debits attributed to one agent since the given ISO instant. */
+export function agentSpendSince(agentSlug: string, sinceIso: string): number {
+  const row = db.get<{ total: number | null }>(
+    "SELECT SUM(amount_cents) AS total FROM economy_ledger WHERE agent_slug = ? AND direction = 'debit' AND ts >= ?",
+    [agentSlug, sinceIso],
   );
   return Number(row?.total ?? 0);
 }

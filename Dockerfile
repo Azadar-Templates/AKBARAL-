@@ -26,14 +26,17 @@ RUN npm run build
 FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ENV DATA_DIR=/data
 ENV AKBARAL_UPLOAD_DIR=/data/uploads
 ENV DATABASE_URL=file:/data/akbaral.db
+ENV ZA141251SA_DATABASE_URL=file:/data/mission.db
 ENV HOST=0.0.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates postgresql-client && rm -rf /var/lib/apt/lists/*
 # Blitz fix (2026-09-22): blitz.cloud runs as user 1000:1000 with all caps dropped, never as root.
 # The image must be writable by 1000, otherwise /data/akbaral.db open fails with SQLITE_CANTOPEN
 # and the container shows Internal Server Error with no useful log.
-RUN mkdir -p /data/uploads /data/backups /app/data && chown -R 1000:1000 /data /app && chmod -R 755 /app && chmod -R 777 /data
+# /app is read-only application code; /data is the writable persistent volume.
+RUN mkdir -p /data/uploads /data/backups && chown -R 1000:1000 /data && chmod -R 777 /data && chown -R 1000:1000 /app && chmod -R 755 /app
 VOLUME ["/data"]
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

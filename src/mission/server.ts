@@ -1,3 +1,36 @@
+import { CustomerWork, type CustomerRequestInput } from './earning/customer-work';
+import { OpportunityDiscovery, type InboundOpportunityInput, type PermittedFeedItem } from './earning/opportunity-discovery';
+import { rankedOpportunities, permittedAutonomousClasses } from './earning/opportunity-registry';
+import { autonomousDiscover, discoveryRankingSnapshot, pursuitInfrastructureStatus, canAssignExclusively, servicesForClass } from './earning/autonomous-discovery';
+import * as EarningEngine from './earning/earning-engine';
+import * as PlatformConnectors from './earning/platform-connectors';
+import * as PlatformDiscovery from './earning/platform-discovery';
+import * as GlobalDiscovery from './earning/global-discovery';
+import * as Allocator from './earning/workload-allocator';
+import * as Scheduler from './earning/continuous-scheduler';
+import * as CommandCenter from './earning/owner-command-center';
+import * as ProviderReadiness from './earning/provider-capability-registry';
+import * as Eligibility from './earning/opportunity-eligibility';
+import * as ConnectorContracts from './earning/connector-execution-contracts';
+import * as ExecutionPipeline from './earning/execution-pipeline';
+import * as SettlementVerification from './earning/settlement-verification';
+import { configuredToptalWorkflow } from './earning/toptal-workflow';
+import { configuredContraWorkflow } from './earning/contra-workflow';
+import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
+import { configuredUpworkWorkflow } from './earning/upwork-workflow';
+import { FreelancerError } from './earning/freelancer';
+import { configuredFreelancerWorkflow, configuredFreelancerSettlementWorkflow } from './earning/freelancer-workflow';
+import { AwinError } from './earning/awin';
+import { configuredAwinWorkflow } from './earning/awin-workflow';
+import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
+import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
+import { configuredMoneyProvider } from './money-stripe';
+import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
+import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
+import { recordResourceCallCost } from './resource-budgets';
+import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
+import { bindResourceCredential } from './self-management';
+import { appendAgentMessage, listAgentMessages } from './messaging';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,6 +83,8 @@ import {
   configurePayoutSlot,
   createWallet,
   decidePayout,
+  ensureAgentWallets,
+  ensureMissionTreasury,
   ensurePayoutSlots,
   listApprovals,
   listExpenses,
@@ -64,8 +99,8 @@ import {
   setPayoutSlotStatus,
   settlePayout,
   treasurySummary,
-  verifyPayoutSlot,
   verifyLedger,
+  withdrawalStatusForPayout,
   type Wallet,
   getWallet,
   walletForAgent,
@@ -85,6 +120,8 @@ import {
   MissionSelfServiceError,
   credentialRotations,
   decideResource,
+  provisionResource,
+  resourceReadiness,
   decideToolRequest,
   decideUpgrade,
   applyUpgrade,
@@ -140,7 +177,7 @@ import {
   listDistinctCountries,
   listDistinctSkills,
 } from './opportunity-catalog';
-import { seedLegitimateSources, seedPlatformOpportunities } from './opportunity-sources';
+import { seedLegitimateSources, seedPlatformOpportunities, seedRealOpportunities } from './opportunity-sources';
 import {
   enqueueIngestionJob,
   listPendingJobs,
@@ -253,12 +290,12 @@ function requireOwner(context: RequestContext, mutation = false): SessionContext
 }
 
 /** Agent-scoped authorization for the self-management surface. */
-function requireAgent(context: RequestContext, agentSlugOrId: string | null): { agentId: string; actorId: string; actorType: 'agent' } {
+function requireAgent(context: RequestContext, agentSlugOrId: string | null, readOnly=false): { agentId: string; actorId: string; actorType: 'agent' } {
   // One enforcement point for every agent-initiated mutation (work, tools,
   // resources, services, upgrades, expenses): an agent that is not 'active'
   // cannot act. Pausing is therefore a real brake, not a label.
   const assertActive = (agent: AgentRow): void => {
-    if (String(agent.status) !== 'active') {
+    if (!readOnly && String(agent.status) !== 'active') {
       throw new HttpProblem(409, `agent ${agent.slug} is ${agent.status} — an operator paused it, so it cannot act until it is resumed`, 'agent_not_active');
     }
   };
@@ -377,6 +414,727 @@ async function handleApi(
     return Number.isFinite(value) ? value : fallback;
   };
 
+  if (head === 'customer-work') {
+    const resolveActor = (): MoneyActor => {
+      if (context.session) return {kind:'owner',id:requireOwner(context,method !== 'GET').owner.id};
+      if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent',id:((context.link as any).link?.agentId || (context.link as any).agentId)};
+      if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent',id:(context.link as any).agentId};
+      throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+    };
+    const work = new CustomerWork();
+    if(method === 'GET' && rest.length === 0){
+      // Overview remains owner-only per original isolation test; agents use POST /discover for autonomous discovery
+      const actor: MoneyActor = {kind:'owner',id:requireOwner(context,false).owner.id};
+      json(res,200,work.overview(actor));return true;
+    }
+    if(method === 'GET' && rest.length === 1){
+      const actor: MoneyActor = {kind:'owner',id:requireOwner(context,false).owner.id};
+      json(res,200,work.detail(actor,rest[0]));return true;
+    }
+    if(method !== 'POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if(rest.length !== 1) throw new HttpProblem(404,'unknown customer-work command','not_found');
+    let result: unknown;
+    const actor=resolveActor();
+    switch(rest[0]){
+      case 'listing': result=work.listing(actor,param('serviceId','')!,num('quoteCents'));break;
+      case 'preview': result=work.preview(actor,param('serviceId','')!,param('input','')!,body.configuration??null,body.dataRightsReviewed===true,body.nonSensitiveDataOnly===true);break;
+      case 'record': result=work.record(actor,body as unknown as CustomerRequestInput);break;
+      case 'response': result=work.response(actor,param('requestId','')!);break;
+      case 'stop': result=work.stop(actor,param('requestId','')!,param('reasonRef','')!);break;
+      case 'bind': result=work.bind(actor,param('requestId','')!,param('connector','')!,param('workId','')!,param('identityReviewRef')??undefined);break;
+      case 'produce': result=work.produce(actor,param('requestId','')!,param('input','')!);break;
+      case 'verify': result=work.verify(actor,param('requestId','')!);break;
+      case 'approve': result=work.approve(actor,param('requestId','')!,param('artifactHash','')!,param('qualityRef','')!);break;
+      case 'discover': result=work.discover(actor,num('limit')||20);break;
+      case 'qualify': result=work.qualify(actor,param('requestId','')!);break;
+      default: throw new HttpProblem(404,'unknown customer-work command','not_found');
+    }
+    json(res,200,{result});return true;
+  }
+
+  if (head === 'discovery') {
+    const discovery = new OpportunityDiscovery();
+    // Inbound ingestion is public: real customer-initiated request with explicit consent.
+    // No owner session required; validated and deduplicated, never counted as revenue.
+    if (rest[0]==='ingest-inbound' && method==='POST') {
+      const input = body as unknown as InboundOpportunityInput;
+      const result = discovery.ingestInbound(input);
+      json(res,201,{result, note:'Inbound opportunity retained with source/evidence/dedup; not revenue. Await qualification and owner promotion.'});return true;
+    }
+    if (rest[0]==='ingest-feed' && method==='POST') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const items = Array.isArray(body.items) ? body.items as PermittedFeedItem[] : [];
+      const result = discovery.ingestPermittedFeed(actor, items);
+      json(res,200,{result});return true;
+    }
+    // discover / qualify allow agent autonomously when permitted
+    if (rest[0]==='discover' && method==='POST') {
+      const resolveActor = (): MoneyActor => {
+        if (context.session) return {kind:'owner', id: requireOwner(context, true).owner.id};
+        if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+        if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+        throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+      };
+      const actor = resolveActor();
+      const result = discovery.discover(actor, Number(body.limit ?? 20));
+      json(res,200,{result});return true;
+    }
+    if (rest[0]==='qualify' && method==='POST') {
+      const resolveActor = (): MoneyActor => {
+        if (context.session) return {kind:'owner', id: requireOwner(context,true).owner.id};
+        if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+        if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+        throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+      };
+      const actor = resolveActor();
+      const result = discovery.qualify(actor, String(body.id ?? body.opportunityId ?? ''));
+      json(res,200,{result});return true;
+    }
+    if (rest[0]==='promote' && method==='POST') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = discovery.promote(actor, String(body.id ?? body.opportunityId ?? ''), body.identityReviewRef? String(body.identityReviewRef): undefined);
+      json(res,201,{result});return true;
+    }
+    if (rest[0]==='dismiss' && method==='POST') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = discovery.dismiss(actor, String(body.id ?? body.opportunityId ?? ''), String(body.reasonRef ?? 'owner_dismissed'));
+      json(res,200,{result});return true;
+    }
+    if (method==='GET' && rest.length===0) {
+      requireRead(context);
+      const rows = discovery.list(Number(url.searchParams.get('limit') ?? 20));
+      json(res,200,{opportunities: rows, count: rows.length, verifiedCustomerCount:0, note:'Discovered opportunities are not revenue; only verified USD settlement counts.'});return true;
+    }
+    // Inventory & autonomous infrastructure — factual, no income claim
+    if (method==='GET' && rest[0]==='inventory' && rest.length===1) {
+      requireRead(context);
+      const ranked = rankedOpportunities();
+      json(res,200,{totalClasses: ranked.length, inventory: ranked.map(o=> ({key:o.key,label:o.label,overallScore:o.overallScore,status:o.status,autonomousPermitted:o.autonomousPermitted,paymentVerifiable:o.paymentVerifiable,exclusivelyAssignable:o.exclusivelyAssignable,services:servicesForClass(o.key),integrations:o.integrations.slice(0,6),representativePlatforms:o.representativePlatforms})), note:'Integrations are infrastructure, not earning claims; no listing is a job; no estimate is revenue.'});return true;
+    }
+    if (method==='GET' && rest[0]==='ranking' && rest.length===1) {
+      requireRead(context);
+      json(res,200,{ranking: discoveryRankingSnapshot(Number(url.searchParams.get('limit') ?? 10))});return true;
+    }
+    if (method==='GET' && rest[0]==='permitted' && rest.length===1) {
+      requireRead(context);
+      const permitted = permittedAutonomousClasses();
+      json(res,200,{permitted, count: permitted.length, note:'Only these classes may be autonomously pursued with existing verified-money chain; others require owner account + payout verification.'});return true;
+    }
+    if (method==='GET' && rest[0]==='infrastructure' && rest.length===1) {
+      requireRead(context);
+      json(res,200,pursuitInfrastructureStatus());return true;
+    }
+    if (rest[0]==='autonomous' && method==='POST') {
+      const resolveActor = (): MoneyActor => {
+        if (context.session) return {kind:'owner', id: requireOwner(context, true).owner.id};
+        if (context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+        if (context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+        throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+      };
+      const actor = resolveActor();
+      const result = autonomousDiscover(actor, Number(body.limit ?? 20));
+      json(res,200,{result});return true;
+    }
+    if (rest[0]==='can-assign' && method==='GET' && rest.length===2) {
+      requireRead(context);
+      json(res,200,canAssignExclusively(String(rest[1])));return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      requireRead(context);
+      const row = discovery.get(String(rest[0]));
+      if(!row) throw new HttpProblem(404,'opportunity not found','not_found');
+      json(res,200,{opportunity: row});return true;
+    }
+    throw new HttpProblem(404,'unknown discovery command','not_found');
+  }
+
+  if (head === 'platforms') {
+    const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200,{platforms: PlatformDiscovery.listPlatforms(Number(url.searchParams.get('limit')??100)), connectors: PlatformConnectors.listConnectors().slice(0,60)});
+      return true;
+    }
+    if(method==='GET' && rest[0]==='connectors'){
+      requireRead(context);
+      json(res,200,{earningSources: PlatformConnectors.earningSources(), infrastructure: PlatformConnectors.infrastructureConnectors().slice(0,20), paymentRails: PlatformConnectors.paymentRails()});
+      return true;
+    }
+    if(method==='GET' && rest[1]==='status'){
+      requireRead(context);
+      const p = PlatformDiscovery.getPlatform(rest[0]);
+      if(!p) throw new HttpProblem(404,'platform not found','not_found');
+      json(res,200,{platform: p, log: missionDb.all<Row>('SELECT * FROM mission_platform_discovery_log WHERE platform_id=? ORDER BY created_at DESC LIMIT 20',[rest[0]])});
+      return true;
+    }
+    if(method!=='POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if(rest[0]==='discover'){
+      json(res,201,{platform: PlatformDiscovery.discoverPlatform({id:String(body.id??''), label:String(body.label??''), kind: body.kind as any, opportunityClass: body.opportunityClass? String(body.opportunityClass): undefined, officialUrl:String(body.officialUrl??''), evidence:String(body.evidence??''), payoutVerifiable:Boolean(body.payoutVerifiable), apiPermitted:Boolean(body.apiPermitted), humanOnlyActions: Array.isArray(body.humanOnlyActions)? body.humanOnlyActions as string[]: []})});
+      return true;
+    }
+    if(rest[0]==='qualify'){ json(res,200,{platform: PlatformDiscovery.qualifyPlatform(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='policy-review'){ json(res,200,{platform: PlatformDiscovery.submitForPolicyReview(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='payment-ready'){ json(res,200,{platform: PlatformDiscovery.markPaymentVerificationReady(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='permit'){ json(res,200,{platform: PlatformDiscovery.permitPlatform(String(body.id??rest[1]??''), actor)}); return true; }
+    if(rest[0]==='activate'){ json(res,200,{platform: PlatformDiscovery.activatePlatform(String(body.id??rest[1]??''), actor)}); return true; }
+    throw new HttpProblem(404,'unknown platform command','not_found');
+  }
+
+  if (head === 'global-discovery') {
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200,{categories: GlobalDiscovery.GLOBAL_CATEGORIES, candidates: GlobalDiscovery.GENERIC_CANDIDATES.slice(0,20), runs: GlobalDiscovery.listGlobalDiscoveryRuns(5)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='discover'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = GlobalDiscovery.runGlobalDiscoveryCycle(actor, Number(body.limit ?? 6));
+      json(res,201,{result, note:'Generic discovery beyond 57 connectors; each source independently classified before use'});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='ingest'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const src = body as unknown as GlobalDiscovery.GenericSource;
+      json(res,201,{platform: GlobalDiscovery.ingestGenericSource(actor, {id:String(src.id), label:String(src.label), category:String(src.category), opportunityClass: src.opportunityClass? String(src.opportunityClass): undefined, officialUrl:String(src.officialUrl), evidence:String(src.evidence), payoutVerifiable:Boolean(src.payoutVerifiable), apiPermitted:Boolean(src.apiPermitted), humanOnlyActions: Array.isArray(src.humanOnlyActions)? src.humanOnlyActions as string[]: []})});
+      return true;
+    }
+    throw new HttpProblem(404,'unknown global-discovery command','not_found');
+  }
+
+  if (head === 'allocator') {
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200, Allocator.allocatorStatus());
+      return true;
+    }
+    if(method==='POST' && rest[0]==='allocate' && rest[1]){
+      requireRead(context);
+      const result = Allocator.allocateBestAgent(String(rest[1]));
+      json(res,200,{result});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='batch'){
+      requireRead(context);
+      json(res,200,{assignments: Allocator.allocateBatch(Number(body.limit ?? 5))});
+      return true;
+    }
+    if(method==='GET' && rest[0]==='idle'){
+      requireRead(context);
+      json(res,200,{idle: Allocator.idleAgents().slice(0,20), count: Allocator.idleAgents().length});
+      return true;
+    }
+    throw new HttpProblem(404,'unknown allocator command','not_found');
+  }
+
+  if (head === 'scheduler') {
+    if(method==='GET' && rest.length===0){
+      requireRead(context);
+      json(res,200,{state: Scheduler.schedulerStatus(), ticks: Scheduler.listSchedulerTicks(5)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='tick'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      json(res,200,{result: Scheduler.tickScheduler(actor)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='enable'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      json(res,200,{state: Scheduler.enableScheduler(actor)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='disable'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      json(res,200,{state: Scheduler.disableScheduler(actor)});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='start-auto'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      Scheduler.startAutoScheduler(actor, Number(body.intervalMs ?? 60000));
+      json(res,200,{state: Scheduler.schedulerStatus(), note:'Auto scheduler started; ticks every intervalMs'});
+      return true;
+    }
+    if(method==='POST' && rest[0]==='stop-auto'){
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      Scheduler.stopAutoScheduler(actor);
+      json(res,200,{state: Scheduler.schedulerStatus()});
+      return true;
+    }
+    throw new HttpProblem(404,'unknown scheduler command','not_found');
+  }
+
+  if (head === 'command-center') {
+    requireRead(context);
+    json(res,200, CommandCenter.buildCommandCenter());
+    return true;
+  }
+
+  if (head === 'provider-readiness') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const kind = url.searchParams.get('kind') ?? undefined;
+      if (url.searchParams.get('summary')==='1') json(res,200, ProviderReadiness.providerReadinessSummary());
+      else json(res,200, { readiness: kind ? ProviderReadiness.listProviderReadiness(kind) : ProviderReadiness.listProviderReadiness(), summary: ProviderReadiness.providerReadinessSummary() });
+      return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const r = ProviderReadiness.getProviderReadiness(rest[0]);
+      if (!r) throw new HttpProblem(404,'provider not found','not_found');
+      json(res,200,{readiness: r}); return true;
+    }
+    // Eligible: returns whether provider's connector is ready for assignment
+    if (method==='GET' && rest.length===2 && rest[1]==='eligible') {
+      const r = ProviderReadiness.getProviderReadiness(rest[0]);
+      if (!r) throw new HttpProblem(404,'provider not found','not_found');
+      const eligible = r.status==='ready';
+      json(res,200,{providerId: rest[0], eligible, readiness: r, blockers: eligible?[]: r.ownerActions}); return true;
+    }
+    if (method==='POST' && rest[1]==='failure') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      void actor;
+      const cat = String(body.category ?? 'transient') as any;
+      const row = ProviderReadiness.recordProviderFailure(rest[0], {code: String(body.code ?? 'unknown'), category: cat, detail: body.detail? String(body.detail): undefined, retryAfterMs: body.retryAfterMs? Number(body.retryAfterMs): undefined});
+      json(res,201,{failure: row}); return true;
+    }
+    if (method==='POST' && rest[1]==='recover') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      void actor;
+      const n = ProviderReadiness.clearProviderFailures(rest[0]);
+      json(res,200,{recovered: n}); return true;
+    }
+    throw new HttpProblem(404,'unknown provider-readiness command','not_found');
+  }
+
+  if (head === 'eligibility') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const registryKey = String(url.searchParams.get('registryKey') ?? body.registryKey ?? '');
+      const platformId = String(url.searchParams.get('platformId') ?? body.platformId ?? '');
+      if (!registryKey) throw new HttpProblem(400,'registryKey required','validation_error');
+      json(res,200, Eligibility.eligibilityDecision(registryKey, platformId||undefined)); return true;
+    }
+    if (method==='GET' && rest[0]==='opportunities') {
+      json(res,200, Eligibility.listEligibleOpportunities(Number(url.searchParams.get('limit')??20))); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const dec = Eligibility.canAssignExclusivelyWithGate(rest[0]);
+      json(res,200, dec); return true;
+    }
+    throw new HttpProblem(404,'unknown eligibility command','not_found');
+  }
+
+  if (head === 'connector-contracts') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      json(res,200,{contracts: ConnectorContracts.listConnectorContracts(), count: ConnectorContracts.listConnectorContracts().length}); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const c = ConnectorContracts.getConnectorContract(rest[0]);
+      if (!c) throw new HttpProblem(404,'contract not found','not_found');
+      json(res,200,{contract: c}); return true;
+    }
+    throw new HttpProblem(404,'unknown connector-contracts command','not_found');
+  }
+
+  if (head === 'executions') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const filter: Record<string,string> = {};
+      const oppId = url.searchParams.get('opportunityId');
+      const agentId = url.searchParams.get('agentId');
+      const state = url.searchParams.get('state');
+      if (oppId) filter.opportunityId = oppId;
+      if (agentId) filter.agentId = agentId;
+      if (state) filter.state = state;
+      json(res,200,{executions: ExecutionPipeline.listExecutions(filter as any), health: ExecutionPipeline.executionPipelineHealth()}); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const row = missionDb.get<Row>('SELECT * FROM mission_earning_executions WHERE id=?', [rest[0]]);
+      if (!row) throw new HttpProblem(404,'execution not found','not_found');
+      json(res,200,{execution: row}); return true;
+    }
+    if (method!=='POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    if (rest[0]==='health') { json(res,200, ExecutionPipeline.executionPipelineHealth()); return true; }
+    if (rest[0]==='retry-due') { json(res,200,{retried: ExecutionPipeline.retryDueExecutions(Number(body.limit ?? 10))}); return true; }
+    if (rest[0]==='start') {
+      const actor = context.session ? {kind:'owner', id: requireOwner(context,true).owner.id} as MoneyActor : (()=>{ const a=requireAgent(context, String(body.agentId ?? ''), false); return {kind:'agent', id:a.agentId} as MoneyActor })();
+      void actor;
+      const row = ExecutionPipeline.startExecution({opportunityId: String(body.opportunityId ?? ''), agentId: String(body.agentId ?? (actor.kind==='agent'? actor.id: '')), connectorId: body.connectorId ? String(body.connectorId): undefined, scopeHash: body.scopeHash ? String(body.scopeHash): undefined});
+      json(res,201,{execution: row}); return true;
+    }
+    if (rest[0]==='complete') {
+      const row = ExecutionPipeline.completeExecution(String(body.executionId ?? ''), {delivered: Boolean(body.delivered), evidenceHash: body.evidenceHash ? String(body.evidenceHash): undefined});
+      json(res,200,{execution: row}); return true;
+    }
+    if (rest[0]==='verify') {
+      const verifiers = Array.isArray(body.verifiers) ? body.verifiers as Array<{agentId:string; confidence:number; passed:boolean}> : [];
+      const result = ExecutionPipeline.verifyExecution(String(body.executionId ?? ''), verifiers);
+      json(res,200, result); return true;
+    }
+    if (rest[0]==='provider-confirm') {
+      const row = ExecutionPipeline.confirmProviderPayment(String(body.executionId ?? ''), String(body.providerRef ?? ''), {grossCents: Number(body.grossCents), feesCents: Number(body.feesCents ?? 0), netCents: Number(body.netCents)});
+      json(res,200,{execution: row}); return true;
+    }
+    if (rest[0]==='settle') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const row = ExecutionPipeline.settleExecution({executionId: String(body.executionId ?? ''), actor, rail: String(body.rail ?? ''), externalId: String(body.externalId ?? ''), grossCents: Number(body.grossCents), feeCents: Number(body.feeCents ?? 0), netCents: Number(body.netCents), providerRef: body.providerRef ? String(body.providerRef): undefined});
+      json(res,200,{execution: row}); return true;
+    }
+    if (rest[0]==='fail') {
+      const row = ExecutionPipeline.failExecutionWithRetry(String(body.executionId ?? ''), String(body.code ?? 'unknown'), String(body.category ?? 'transient') as any);
+      json(res,200,{execution: row}); return true;
+    }
+    throw new HttpProblem(404,'unknown executions command','not_found');
+  }
+
+  if (head === 'settlement-verifications') {
+    requireRead(context);
+    if (method==='GET' && rest.length===0) {
+      const oppId = url.searchParams.get('opportunityId') ?? undefined;
+      json(res,200,{verifications: SettlementVerification.listSettlementVerifications(oppId ?? undefined)}); return true;
+    }
+    if (method==='GET' && rest.length===1) {
+      const rows = SettlementVerification.listSettlementVerifications(rest[0]);
+      json(res,200,{verifications: rows}); return true;
+    }
+    if (method==='POST' && rest[0]==='verify') {
+      const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
+      const result = SettlementVerification.verifySettlementAgainstProvider({opportunityId: String(body.opportunityId ?? ''), rail: String(body.rail ?? ''), externalId: String(body.externalId ?? ''), providerRef: body.providerRef ? String(body.providerRef): null, grossCents: Number(body.grossCents), feeCents: Number(body.feeCents ?? 0), netCents: Number(body.netCents), executionId: body.executionId ? String(body.executionId): null, actor});
+      json(res,201,result); return true;
+    }
+    throw new HttpProblem(404,'unknown settlement-verifications command','not_found');
+  }
+
+  if (head === 'earning-engine') {
+    // 17-component HIGH-VALUE USD MODE — owner dashboard + verified payout
+    const resolveMoneyActor = (): MoneyActor => {
+      if(context.session) return {kind:'owner', id: requireOwner(context, method!=='GET').owner.id};
+      if(context.link && (context.link as any).link?.scope==='agent:self' && ((context.link as any).link?.agentId || (context.link as any).agentId)) return {kind:'agent', id: ((context.link as any).link?.agentId || (context.link as any).agentId)};
+      if(context.link && (context.link as any).scope==='agent:self' && (context.link as any).agentId) return {kind:'agent', id: (context.link as any).agentId};
+      throw new HttpProblem(401,'mission sign-in or agent link required','unauthorized');
+    };
+    const ownerActor = (): MoneyActor => ({kind:'owner', id: requireOwner(context,true).owner.id});
+    // GET /api/earning-engine/dashboard — owner ledger + opportunity states
+    if(method==='GET' && rest[0]==='dashboard'){
+      requireRead(context);
+      json(res,200,EarningEngine.ownerDashboard()); return true;
+    }
+    if(method==='GET' && rest[0]==='analytics'){
+      requireRead(context);
+      json(res,200,EarningEngine.earningsAnalytics()); return true;
+    }
+    if(method==='GET' && rest[0]==='roi'){
+      requireRead(context);
+      json(res,200,{roi: EarningEngine.listROI()}); return true;
+    }
+    if(method==='GET' && rest[0]==='learnings'){
+      requireRead(context);
+      json(res,200,{learnings: EarningEngine.listLearnings(String(url.searchParams.get('registryKey')??'' ) || undefined)}); return true;
+    }
+    if(method==='GET' && rest[0]==='opportunities'){
+      requireRead(context);
+      json(res,200,{opportunities: EarningEngine.listEngineOpportunities(Number(url.searchParams.get('limit')??20))}); return true;
+    }
+    if(method==='GET' && rest[0]==='earnings' && rest[1]){
+      requireRead(context);
+      json(res,200,EarningEngine.getAgentEarnings(rest[1])); return true;
+    }
+    if(method==='GET' && rest.length===2){
+      requireRead(context);
+      const row = EarningEngine.getEngineOpportunity(rest[0]);
+      if(!row) throw new HttpProblem(404,'opportunity not found','not_found');
+      json(res,200,{opportunity: row, score: EarningEngine.scoreOpportunity(rest[0])}); return true;
+    }
+    if(method!=='POST') throw new HttpProblem(405,'use POST','method_not_allowed');
+    // POST /api/earning-engine/discover
+    if(rest[0]==='discover'){
+      const actor = resolveMoneyActor();
+      const expiry = String(body.opportunityExpiry ?? new Date(Date.now()+ 7*24*3600*1000).toISOString());
+      const result = EarningEngine.discoverOpportunity({
+        registryKey: String(body.registryKey??''),
+        provider: String(body.provider??''),
+        platform: String(body.platform??''),
+        grossCents: Number(body.grossCents),
+        expectedFeesCents: Number(body.expectedFeesCents ?? 0),
+        expectedCostsCents: Number(body.expectedCostsCents ?? 0),
+        paymentMethod: String(body.paymentMethod??''),
+        settlementEvidence: String(body.settlementEvidence??''),
+        opportunityExpiry: expiry,
+        evidenceJson: body.evidenceJson as Record<string,unknown>|undefined,
+        source: body.source as any,
+        brief: body.brief? String(body.brief): undefined,
+      });
+      void actor;
+      json(res,201,{result}); return true;
+    }
+    if(rest[0]==='match' && rest[1]){
+      json(res,200,EarningEngine.matchBestAgent(rest[1], body.candidateAgentIds as string[]|undefined)); return true;
+    }
+    if(rest[0]==='lock' && rest[1]){
+      const actor = resolveMoneyActor();
+      // actor must be owner or the agent being locked
+      const agentId = String(body.agentId ?? (actor.kind==='agent'? actor.id : ''));
+      if(!agentId) throw new HttpProblem(400,'agentId required','validation_error');
+      json(res,200,{result: EarningEngine.lockOpportunityExclusive(rest[1], agentId)}); return true;
+    }
+    if(rest[0]==='unlock' && rest[1]){
+      const actor = ownerActor();
+      EarningEngine.unlockOpportunity(rest[1], actor);
+      json(res,200,{result:{unlocked:true}}); return true;
+    }
+    if(rest[0]==='schedule' && rest[1]){
+      const actor = resolveMoneyActor();
+      const agentId = String(body.agentId ?? (actor.kind==='agent'? actor.id : ''));
+      json(res,200,{result: EarningEngine.scheduleWork(rest[1], agentId)}); return true;
+    }
+    if(rest[0]==='verify' && rest[1]){
+      const verifiers = (Array.isArray(body.verifiers)? body.verifiers: []) as Array<{agentId:string; confidence:number; passed:boolean}>;
+      json(res,200,{result: EarningEngine.verifyWorkMultiAgent(rest[1], verifiers)}); return true;
+    }
+    if(rest[0]==='provider-confirm' && rest[1]){
+      json(res,200,{result: EarningEngine.verifyProviderPayment(rest[1], {
+        providerRef: String(body.providerRef??''),
+        grossCents: Number(body.grossCents),
+        feesCents: Number(body.feesCents ?? 0),
+        netCents: Number(body.netCents),
+        evidenceUrl: body.evidenceUrl? String(body.evidenceUrl): undefined,
+      })}); return true;
+    }
+    if(rest[0]==='reconcile' && rest[1]){
+      const actor = ownerActor();
+      json(res,200,{result: EarningEngine.reconcileSettlement(rest[1], actor, {
+        externalId: String(body.externalId??''),
+        rail: String(body.rail??''),
+        grossCents: Number(body.grossCents),
+        feeCents: Number(body.feeCents ?? 0),
+        netCents: Number(body.netCents),
+      })}); return true;
+    }
+    if(rest[0]==='fail' && rest[1]){
+      json(res,200,{result: EarningEngine.recordFailure(rest[1], String(body.reason??'unspecified'))}); return true;
+    }
+    if(rest[0]==='scale'){
+      const actor = ownerActor();
+      void actor;
+      const result = EarningEngine.scaleWinningClass(String(body.registryKey??''), String(body.sourceOpportunityId??''), String(body.parentAgentId??''), String(body.newAgentName??''));
+      if((result as any).skipped) json(res,409,{result}); else json(res,201,{result});
+      return true;
+    }
+    if(rest[0]==='register-class'){
+      const actor = ownerActor();
+      json(res,201,{result: EarningEngine.registerNewOpportunityClass(actor, body as any)}); return true;
+    }
+    throw new HttpProblem(404,'unknown earning-engine command','not_found');
+  }
+
+  if (head === 'toptal') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredToptalWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Toptal command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('periodId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('periodId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Toptal command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'contra') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredContraWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Contra command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('projectId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('projectId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Contra command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'fiverr') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredFiverrWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Fiverr command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('orderId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('orderId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Fiverr command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'upwork') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    const workflow = configuredUpworkWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    if (rest.length !== 1) throw new HttpProblem(404, 'unknown Upwork command', 'not_found');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'inspect': result = await workflow.inspect(actor, param('contractId','')!, param('milestoneId','')!); break;
+      case 'authorize-account': result = await workflow.authorizeAccount(actor, {agentId:param('agentId','')!,reviewRef:param('reviewRef','')!,expiresAt:param('expiresAt','')!}); break;
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('contractId','')!, param('milestoneId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!, param('qualityRef','')!); break;
+      case 'begin-manual-delivery': result = await workflow.beginManualDelivery(actor, param('workId','')!); break;
+      case 'confirm-delivery': result = await workflow.confirmDelivery(actor, param('workId','')!, param('submissionId','')!); break;
+      case 'observe-payment': result = await workflow.observePayment(actor, param('workId','')!); break;
+      case 'observe-payout': result = await workflow.observePayout(actor, param('workId','')!, param('payoutId','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcile(actor, param('workId','')!, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('workId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Upwork command', 'not_found');
+    }
+    json(res, 200, {result:result??null}); return true;
+  }
+
+  if (head === 'freelancer') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    assertMoneyOwner(actor);
+    const workflow = configuredFreelancerWorkflow(), settlement = configuredFreelancerSettlementWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, { ...workflow.overview(actor), settlement: settlement.status(actor) }); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'discover': result = await workflow.discover(actor, param('query','')!, num('offset')); break;
+      case 'authorize-account': {
+        if (!Array.isArray(body.checks) || !body.checks.every(c => typeof c === 'string')) throw new HttpProblem(400, 'compliance checks required', 'invalid_input');
+        result = await workflow.authorizeAccount(actor, { agentId: param('agentId','')!, reference: param('reference','')!, expiresAt: param('expiresAt','')!, checks: body.checks as string[] }); break;
+      }
+      case 'revoke-account': result = workflow.revokeAccount(actor); break;
+      case 'assign': result = await workflow.assign(actor, param('projectId','')!, param('bidId','')!, param('milestoneId','')!, param('scopeReference','')!); break;
+      case 'draft': result = workflow.draft(actor, param('workId','')!, param('content','')!); break;
+      case 'approve-delivery': result = workflow.approve(actor, param('workId','')!, param('contentHash','')!); break;
+      case 'deliver': result = await workflow.deliver(actor, param('workId','')!); break;
+      case 'reconcile-delivery': result = await workflow.reconcileDelivery(actor, param('workId','')!, param('fileId','')!); break;
+      case 'sync-milestone': result = await workflow.syncMilestone(actor, param('workId','')!); break;
+      case 'observe-payout': result = await settlement.observePayout(actor, param('payoutId','')!); break;
+      case 'authorize-historical-settlement': result = settlement.authorizeHistoricalWork(actor, param('workId','')!); break;
+      case 'reconcile-payout': result = await settlement.reconcilePayout(actor, param('payoutId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await settlement.reconcileReversal(actor, param('payoutId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Freelancer command', 'not_found');
+    }
+    json(res, 200, { result: result ?? null }); return true;
+  }
+
+  if (head === 'awin') {
+    const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
+    assertMoneyOwner(actor);
+    const workflow = configuredAwinWorkflow();
+    if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
+    if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
+    let result: unknown;
+    switch (rest[0]) {
+      case 'discover': result = await workflow.discover(actor); break;
+      case 'assign': result = await workflow.assign(actor, { agentId: param('agentId','')!, opportunityId: param('opportunityId','')!, destinationUrl: param('destinationUrl','')! }); break;
+      case 'refresh-assignment': result = await workflow.refreshAssignment(actor, param('assignmentId','')!); break;
+      case 'revoke': result = workflow.revoke(actor, param('assignmentId','')!); break;
+      case 'draft': result = workflow.draft(actor, param('assignmentId','')!, { key: param('idempotencyKey','')!, title: param('title','')!, body: param('body','')! }); break;
+      case 'prepare': result = await workflow.prepare(actor, param('publicationId','')!); break;
+      case 'approve-publication': result = workflow.approvePublication(actor, param('publicationId','')!, param('contentHash','')!); break;
+      case 'publish': result = await workflow.publish(actor, param('publicationId','')!); break;
+      case 'reconcile-publication': result = await workflow.reconcilePublication(actor, param('publicationId','')!); break;
+      case 'sync': {
+        if (!Array.isArray(body.ids) || !body.ids.every(id => typeof id === 'string')) throw new HttpProblem(400, 'transaction IDs required', 'invalid_input');
+        result = await workflow.sync(actor, param('publicationId','')!, body.ids as string[]); break;
+      }
+      case 'scan': result = await workflow.scan(actor, param('publicationId','')!, param('startDate','')!, param('endDate','')!); break;
+      case 'reconcile-payout': result = await workflow.reconcilePayout(actor, param('paymentId','')!, param('externalId','')!); break;
+      case 'reconcile-reversal': result = await workflow.reconcileReversal(actor, param('paymentId','')!, param('reversalExternalId','')!); break;
+      default: throw new HttpProblem(404, 'unknown Awin command', 'not_found');
+    }
+    json(res, 200, { result: result ?? null }); return true;
+  }
+
+  if (head === 'money') {
+    if (method === 'GET') {
+      let agentId:string|undefined;
+      if(context.session){const session=requireOwner(context);assertMoneyOwner({kind:'owner',id:session.owner.id});}
+      else agentId=requireAgent(context,url.searchParams.get('agentId'),true).agentId;
+      const action=rest[0];
+      if(action&& !['ledger','operations','jobs'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
+      const data=action==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200),agentId)}:
+        action==='operations'?{operations:listMoneyOperations(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
+        action==='jobs'?{jobs:listEarningJobs(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
+        agentId?agentMoneyOverview(agentId):moneyOverview();
+      json(res,200,data);return true;
+    }
+    let actor: MoneyActor;
+    if (context.session) actor={kind:'owner',id:requireOwner(context,true).owner.id};
+    else { const bound=requireAgent(context,param('agentId')); actor={kind:'agent',id:bound.agentId}; }
+    if(method!=='POST')throw new HttpProblem(405,'use POST for money mutations','method_not_allowed');
+    const action=rest[0];
+    let result: unknown;
+    try {
+    if(action==='bootstrap')result=bootstrapMoneyAgents(actor);
+    else if(action==='opportunities')result=approveOpportunity(actor,{title:param('title','')!,evidenceUrl:param('evidenceUrl','')!,activity:param('activity','')!,provider:param('provider','')!});
+    else if(action==='revoke-opportunity')result=revokeOpportunity(actor,param('id','')!);
+    else if(action==='grants')result=setMoneyGrant(actor,param('agentId','')!,{spendLimitCents:num('spendLimitCents'),delegationCents:num('delegationCents'),canCreate:body.canCreate===true,expiresAt:param('expiresAt','')!,status:param('status')==='revoked'?'revoked':'active',opportunityId:param('opportunityId')??undefined,autoAllocateCents:num('autoAllocateCents')});
+    else if(action==='allocate')result=allocateCash(actor,param('agentId','')!,num('amountCents'),param('idempotencyKey','')!);
+    else if(action==='freeze')result=freezeCash(actor,param('accountId','')!,body.frozen!==false);
+    else if(action==='request')result=requestMoney(actor,{kind:param('kind') as 'expense'|'withdrawal',agentId:param('agentId')??undefined,provider:param('provider','')!,destination:param('destination','')!,category:param('category','')!,amountCents:num('amountCents'),maxCostCents:num('maxCostCents'),idempotencyKey:param('idempotencyKey','')!});
+    else if(action==='cancel')result=cancelMoney(actor,param('id','')!);
+    else if(action==='decide')result=decideMoney(actor,param('id','')!,body.approve===true);
+    else if(action==='receipt'){assertMoneyOwner(actor);result=await verifyMoneyReceipt(actor,configuredMoneyProvider(),param('externalId','')!);}
+    else if(action==='dispatch')result=await dispatchMoney(actor,configuredMoneyProvider(),param('id','')!);
+    else if(action==='reconcile'){assertMoneyOwner(actor);result=await reconcileMoney(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='reconcile-earning'){assertMoneyOwner(actor);result=await reconcileEarningPayment(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='earn')result=queueEarning(actor,param('agentId','')!,param('idempotencyKey','')!,param('costOperationId')??undefined);
+    else throw new HttpProblem(404,'unknown money action','not_found');
+    } catch(error) {
+      appendMissionAudit({actorType:actor.kind,actorId:actor.id,action:'money.action_refused',subjectType:'verified_cash',subjectId:action,detail:{code:error instanceof MoneyError?error.code:'internal_error'}});
+      throw error;
+    }
+    json(res,200,{result:result??null});return true;
+  }
+  // Legacy entries are owner-reported accounting, not verified external cash.
+  // Refuse HTTP paths that previously accepted a note as payment confirmation.
+  if (method !== 'GET' && ((head==='wallets' && rest[1]==='fund') ||
+      (head==='revenue' && param('status')==='received') || head==='expenses' ||
+      (head==='payouts' && ['settle','decide'].includes(rest[1])) ||
+      (head==='work' && rest[1]==='status' && param('status')==='paid'))) {
+    requireRead(context);
+    throw new HttpProblem(409,'Use /api/money: provider-verified cash is required; legacy notes cannot fund or settle real payments.','provider_verification_required');
+  }
+
   switch (head) {
     // ── Session ─────────────────────────────────────────────────────────────
     case 'session': {
@@ -419,7 +1177,21 @@ async function handleApi(
     }
     case 'treasury': {
       requireRead(context);
-      json(res, 200, { treasury: treasurySummary(), wallets: listWallets(), ledgerIntegrity: verifyLedger() });
+      try{ ensureMissionTreasury(); ensureAgentWallets(); }catch{}
+      json(res, 200, {
+        treasury: treasurySummary(),
+        wallets: listWallets(),
+        ledgerIntegrity: verifyLedger(),
+        walletArchitecture: {
+          missionTreasury: ensureMissionTreasury(),
+          agentWalletCount: Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets WHERE kind IN ('agent','worker')`)?.c ?? 0),
+          totalWallets: Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets`)?.c ?? 0),
+          payoutSlots: ensurePayoutSlots(),
+          withdrawalLifecycle: 'REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID or FAILED',
+          atomicProtection: 'All ledger movements are in missionDb.transaction with SAVEPOINT nesting, hash-chained seq/idempotency payout:reserve / payout:refund prevents double withdrawal; FAILED restores via credit adjustment.',
+          separation: 'Mission wallets/ledger (mission.db) are separate from AKBARAL! customer funds (platform DB). Agent wallets hold 0 until verified revenue sweep; treasury aggregates only received verified revenue.',
+        },
+      });
       return true;
     }
     case 'ledger': {
@@ -445,18 +1217,22 @@ async function handleApi(
       if (method === 'POST' && rest[0] && rest[1] === 'decide') {
         const session = requireOwner(context, true);
         const decision = param('decision', '') === 'approved' ? 'approved' : 'rejected';
-        const result = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
-        if (!result.ok) throw new HttpProblem(result.status === 'not_found' ? 404 : 409, result.reason ?? 'approval not actionable', result.status === 'not_found' ? 'not_found' : 'conflict');
-        // Approving an EXPENSE approval must pay the expense: the queue is a
-        // real control surface, not a status toggle that strands the request.
-        const subject = result.approval
-          ? { type: String(result.approval.subject_type), id: String(result.approval.subject_id) }
-          : null;
-        if (subject?.type === 'expense') {
-          const expense = decideExpense({ id: subject.id, decision , actorId: session.owner.id, note: param('note'), actorType: 'owner' });
-          json(res, 200, { ...result, expense });
-          return true;
-        }
+        const result = missionDb.transaction(() => {
+          const decisionResult = decideApproval({ id: rest[0], decision, decidedBy: session.owner.id, note: param('note') });
+          if (!decisionResult.ok) throw new HttpProblem(decisionResult.status === 'not_found' ? 404 : 409, decisionResult.reason ?? 'approval not actionable', decisionResult.status === 'not_found' ? 'not_found' : 'conflict');
+          const subject = decisionResult.approval;
+          if(decision==='approved' && (['expense','payout'].includes(String(subject?.subject_type)) || (subject?.subject_type==='upgrade' && Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[String(subject.subject_id)])?.requested_cost_cents)>0))) throw new HttpProblem(409,'Legacy approvals cannot move verified cash; use /api/money.','provider_verification_required');
+          if (subject?.subject_type === 'expense') {
+            return { ...decisionResult, expense: decideExpense({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
+          }
+          if (subject?.subject_type === 'payout') {
+            return { ...decisionResult, payout: decidePayout({ id: String(subject.subject_id), decision, actorId: session.owner.id, note: param('note'), actorType: 'owner' }) };
+          }
+          if (subject?.subject_type === 'resource') return { ...decisionResult, resource: decideResource({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
+          if (subject?.subject_type === 'upgrade') return { ...decisionResult, upgrade: decideUpgrade({ id: String(subject.subject_id), decision, actorId: session.owner.id }) };
+          if (subject?.subject_type === 'tool') return { ...decisionResult, toolRequest: decideToolRequest({ id: String(subject.subject_id), decision, actorId: session.owner.id, actorType: 'owner' }) };
+          return decisionResult;
+        });
         json(res, 200, result);
         return true;
       }
@@ -506,7 +1282,7 @@ async function handleApi(
         // Root-agent creation (owner only). Without this, a POST here used to
         // fall through to the LIST handler and answer 200 with a page of
         // agents — a silent fake success. Creation is real: policy gates,
-        // contract, funded wallet, audit entry.
+        // contract, unfunded accounting subledger, audit entry.
         const session = requireOwner(context, true);
         const created = createRootAgent({
           name: param('name', '') ?? '',
@@ -536,6 +1312,39 @@ async function handleApi(
         return true;
       }
       const slug = rest[0];
+      if (rest[1] === 'chat-config' || rest[1] === 'chat-jobs') {
+        const session = requireOwner(context, method !== 'GET');
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (rest.length !== 2) throw new HttpProblem(404, 'chat route not found', 'not_found');
+        if (method === 'GET' && rest[1] === 'chat-jobs') {
+          json(res, 200, listAgentChatJobs(agent.id, Number(url.searchParams.get('before') ?? Number.MAX_SAFE_INTEGER), Number(url.searchParams.get('limit') ?? 50)));
+          return true;
+        }
+        if (method === 'GET') {
+          json(res, 200, { agentId: agent.id, config: agentChatConfig(agent.id), workerLivenessVerified: false, providerActivated: false });
+          return true;
+        }
+        if (method === 'POST' && rest[1] === 'chat-config') {
+          json(res, 200, { config: configureAgentChat(agent.id, body as unknown as AgentChatConfig, { actorType: 'owner', actorId: session.owner.id }), providerActivated: false });
+          return true;
+        }
+        throw new HttpProblem(405, 'unsupported chat operation', 'method_not_allowed');
+      }
+      if (rest[1] === 'messages') {
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        if (!context.session && (context.link?.link.scope !== 'agent:self' || context.link.agentId !== agent.id)) throw new HttpProblem(403, 'this conversation belongs to another agent', 'forbidden');
+        if (method === 'GET') {
+          json(res, 200, listAgentMessages(agent.id, Number(url.searchParams.get('after') ?? 0), Number(url.searchParams.get('limit') ?? 100)));
+          return true;
+        }
+        if (method === 'POST') {
+          const actor = context.session ? { actorType: 'owner' as const, actorId: requireOwner(context, true).owner.id } : requireAgent(context, slug);
+          json(res, 201, appendAgentMessage({ agentId: agent.id, actorType: actor.actorType, actorId: actor.actorId, body: param('message', '')!, idempotencyKey: param('idempotencyKey', '')!, replyTo: param('replyTo') }));
+          return true;
+        }
+      }
       if (rest[1] === undefined) {
         const agent = findAgentBySlug(slug);
         if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
@@ -603,15 +1412,15 @@ async function handleApi(
       }
       if (rest[1] === 'children' && method === 'POST') {
         // Controlled sub-agent creation: contract + limits + audit, or refused.
-        const session = requireOwner(context, true);
+        const actor=context.session?{actorId:requireOwner(context,true).owner.id,actorType:'owner' as const}:requireAgent(context,slug);
         const created = createSubAgent({
           parentSlug: slug,
           name: param('name', '') ?? '',
           specialization: param('specialization', '') ?? '',
           activityKey: param('activity', 'general') ?? 'general',
           budgetCents: num('budgetCents'),
-          actorId: session.owner.id,
-          actorType: 'owner',
+          actorId: actor.actorId,
+          actorType: actor.actorType,
         });
         json(res, 201, created);
         return true;
@@ -707,9 +1516,40 @@ async function handleApi(
     // ── Resources ───────────────────────────────────────────────────────────
     case 'resources': {
       requireRead(context);
+      if (rest[1] === 'periods') {
+        const session = requireOwner(context, method !== 'GET');
+        const actor = { actorType: 'owner' as const, actorId: session.owner.id };
+        if (rest.length !== 2) throw new HttpProblem(404, 'resource period route not found', 'not_found');
+        if (method === 'GET') json(res, 200, listResourcePeriods(rest[0], actor, { before: url.searchParams.get('before') ?? undefined, limit: Number(url.searchParams.get('limit') ?? 50) }));
+        else if (method === 'POST') json(res, 200, recordResourcePeriod(rest[0], body as unknown as ResourcePeriodInput, actor));
+        else throw new HttpProblem(405, 'unsupported resource period operation', 'method_not_allowed');
+        return true;
+      }
+      if (rest[1] === 'calls') {
+        const session = requireOwner(context, method !== 'GET');
+        const actor = { actorType: 'owner' as const, actorId: session.owner.id };
+        if (method === 'GET' && rest.length === 2) {
+          json(res, 200, listOwnerResourceCalls(rest[0], actor, { before: url.searchParams.get('before') ?? undefined, limit: Number(url.searchParams.get('limit') ?? 50) }));
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'cancel') {
+          json(res, 200, { call: cancelOwnerResourceCall(rest[0], rest[2], actor), moneyMoved: false, providerCalled: false });
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'record-cost') {
+          json(res, 200, recordResourceCallCost(rest[0], rest[2], actor, { actualCostCents: body.actualCostCents as number, providerRef: param('providerRef', '')!, evidence: param('evidence', '')! }));
+          return true;
+        }
+        if (method === 'POST' && rest.length === 4 && rest[3] === 'reconcile') {
+          if (body.outcome !== 'succeeded' && body.outcome !== 'failed') throw new HttpProblem(400, 'choose the actual provider outcome', 'validation_error');
+          json(res, 200, reconcileOwnerResourceCall(rest[0], rest[2], actor, { outcome: body.outcome, actualUsage: body.actualUsage as Record<string, number>, providerRef: param('providerRef', '')!, evidence: param('evidence', '')! }));
+          return true;
+        }
+        throw new HttpProblem(404, 'resource call route not found', 'not_found');
+      }
       if (method === 'GET') {
         const expiring = url.searchParams.get('expiring');
-        json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined), expiring: expiring === '1' });
+        json(res, 200, { resources: listResources(url.searchParams.get('agentId') ?? undefined).map(row => ({ ...row, readiness: resourceReadiness(String(row.id)) })), expiring: expiring === '1' });
         return true;
       }
       if (rest.length === 0 && method === 'POST') {
@@ -730,13 +1570,24 @@ async function handleApi(
         return true;
       }
       if (rest[1] === 'usage' && method === 'POST') {
-        requireAgent(context, param('agentSlug'));
-        json(res, 200, { resource: recordResourceUsage({ id: rest[0], usage: (body.usage as Record<string, unknown>) ?? {}, actorId: context.session?.owner.id ?? null }) });
+        const agent = requireAgent(context, param('agentSlug'));
+        json(res, 200, { resource: recordResourceUsage({ id: rest[0], usage: (body.usage as Record<string, unknown>) ?? {}, actorType: context.session ? 'owner' : 'agent', actorId: context.session?.owner.id ?? agent.agentId }) });
         return true;
       }
       if (rest[1] === 'decide' && method === 'POST') {
         const session = requireOwner(context, true);
         json(res, 200, { resource: decideResource({ id: rest[0], decision: param('decision') === 'approved' ? 'approved' : 'rejected', actorId: session.owner.id, note: param('note') }) });
+        return true;
+      }
+      if (rest[1] === 'provision' && method === 'POST') {
+        const session = requireOwner(context, true);
+        json(res, 200, { resource: provisionResource({ id: rest[0], walletId: param('walletId') ?? undefined, actualCostCents: num('actualCostCents'), providerRef: param('providerRef', '')!, evidence: param('evidence', '')!, actorId: session.owner.id }), accounting:'legacy_owner_reported',providerVerified:false,externalPaymentExecuted:false });
+        return true;
+      }
+      if (rest[1] === 'credential' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const resource = bindResourceCredential({ id: rest[0], credentialId: param('credentialId', '')!, expectedCredentialId: param('expectedCredentialId') ?? null, reason: param('reason', '')!, actorId: session.owner.id, actorType: 'owner' });
+        json(res, 200, { resource, readiness: resourceReadiness(String(resource.id)), providerVerified: false });
         return true;
       }
       if (rest[1] === 'retire' && method === 'POST') {
@@ -792,11 +1643,13 @@ async function handleApi(
       }
       if (rest[1] === 'decide' && method === 'POST') {
         const session = requireOwner(context, true);
+        if(param('decision')!=='rejected' && Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[rest[0]])?.requested_cost_cents)>0)throw new HttpProblem(409,'Paid upgrades require provider-verified money operations.','provider_verification_required');
         json(res, 200, { upgrade: decideUpgrade({ id: rest[0], decision: param('decision') === 'approved' ? 'approved' : 'rejected', actorId: session.owner.id, note: param('note') }) });
         return true;
       }
       if (rest[1] === 'apply' && method === 'POST') {
         const session = requireOwner(context, true);
+        if(Number(missionDb.get<Row>('SELECT requested_cost_cents FROM mission_upgrades WHERE id=?',[rest[0]])?.requested_cost_cents)>0)throw new HttpProblem(409,'Legacy approval is not verified payment.','provider_verification_required');
         json(res, 200, { upgrade: applyUpgrade(rest[0], session.owner.id) });
         return true;
       }
@@ -910,7 +1763,17 @@ async function handleApi(
     case 'wallets': {
       requireRead(context);
       if (method === 'GET') {
-        json(res, 200, { wallets: listWallets() });
+        // Ensure wallets exist lazily on first read so the dashboard never shows 0 for active agents due to a missed migration.
+        try{ ensureMissionTreasury(); ensureAgentWallets(); }catch{}
+        json(res, 200, { wallets: listWallets(), treasury: treasurySummary(), walletArchitecture: { agentWalletCount: Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets WHERE kind IN ('agent','worker')`)?.c ?? 0), treasuryWallet: listWallets('mission')[0] ?? null, ledgerIntegrity: verifyLedger(), note: 'ZA141251SA wallet architecture: per-agent wallets + central Mission Treasury (mission_wallets) + hash-chained mission_ledger. Separate from AKBARAL! customer funds (platform DB).' } });
+        return true;
+      }
+      if (rest[0] === 'ensure' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const result = ensureAgentWallets();
+        // Audit already inside ensureAgentWallets; add API-level audit as well
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'wallet.ensure_requested', subjectType: 'wallet', subjectId: 'ensure', detail: result });
+        json(res, 200, { ...result, treasury: ensureMissionTreasury(), wallets: listWallets() });
         return true;
       }
 
@@ -1045,8 +1908,7 @@ async function handleApi(
           json(res, 200, { slot: confirmed.slot, verification: confirmed.verification, status: payoutSlotVerificationStatus(slotNumber) });
           return true;
         }
-        json(res, 200, { slot: verifyPayoutSlot(slotNumber, session.owner.id), warning: 'this activation path records no evidence — use the verification flow to confirm the control checks and attestation' });
-        return true;
+        throw new HttpProblem(400, 'destination verification requires control checks and a signed attestation', 'verification_required');
       }
       if (rest[1] === 'verification' && rest[2] === 'start' && method === 'POST') {
         json(res, 200, {
@@ -1110,10 +1972,32 @@ async function handleApi(
       }
       break;
     }
+    case 'withdraw': {
+      requireRead(context);
+      if (method === 'GET') {
+        const payouts = listPayouts(Number(url.searchParams.get('limit') ?? 100)).map(row => ({ ...row, withdrawalStatus: withdrawalStatusForPayout(row) }));
+        json(res, 200, { payouts, withdrawals: payouts, note: 'Withdrawal lifecycle: REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID or FAILED. VERIFYING is payout-destination verification; APPROVED atomically debits the treasury (payout:reserve); FAILED restores via payout:refund.' });
+        return true;
+      }
+      if (method === 'POST' && rest.length === 0) {
+        const session = requireOwner(context, true);
+        const created = requestPayout({
+          slot: Number(body.slot ?? 0),
+          amountCents: num('amountCents'),
+          idempotencyKey: param('idempotencyKey', `pay-${Date.now()}`)!,
+          requestedBy: session.owner.id,
+          memo: param('memo'),
+        });
+        json(res, 201, { payout: created, withdrawalStatus: withdrawalStatusForPayout(created), withdrawal: created });
+        return true;
+      }
+      break;
+    }
     case 'payouts': {
       requireRead(context);
       if (method === 'GET') {
-        json(res, 200, { payouts: listPayouts(Number(url.searchParams.get('limit') ?? 100)) });
+        const payouts = listPayouts(Number(url.searchParams.get('limit') ?? 100)).map(row => ({ ...row, withdrawalStatus: withdrawalStatusForPayout(row) }));
+        json(res, 200, { payouts, note: 'Withdrawal lifecycle: REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID or FAILED. Only verified destinations, atomic debit (payout:reserve), restore on FAILED (payout:refund).' });
         return true;
       }
       if (rest.length === 0 && method === 'POST') {
@@ -1513,8 +2397,9 @@ async function handleApi(
         const session = requireOwner(context, true);
         const sourcesResult = seedLegitimateSources();
         const platformsResult = seedPlatformOpportunities();
-        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'opportunity_source.seeded', detail: { ...sourcesResult, platforms: platformsResult } });
-        json(res, 200, { sources: sourcesResult, platforms: platformsResult, stats: getCatalogStats() });
+        const realOppsResult = seedRealOpportunities();
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'opportunity_source.seeded', detail: { ...sourcesResult, platforms: platformsResult, realOpportunities: realOppsResult } });
+        json(res, 200, { sources: sourcesResult, platforms: platformsResult, realOpportunities: realOppsResult, stats: getCatalogStats() });
         return true;
       }
       break;
@@ -1699,7 +2584,8 @@ function createRootAgent(input: {
   budgetCents: number;
   missionRole: 'worker' | 'supervisor' | 'director';
   actorId: string;
-}): { agent: Row; contract: Row; wallet: Wallet } {
+}): { agent: Row; contract: Row; wallet: Wallet; cashAccount:Row } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
   if (!policy.allowAgentCreation) throw new HttpProblem(403, 'agent creation is disabled by policy', 'policy_denied');
   if (policy.killSwitch) throw new HttpProblem(409, 'the mission kill switch is engaged', 'policy_denied');
@@ -1745,6 +2631,7 @@ function createRootAgent(input: {
       ],
     );
     const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    provisionMoneyAgent(agentId,input.actorId);
     appendMissionAudit({
       actorType: 'owner',
       actorId: input.actorId,
@@ -1757,7 +2644,9 @@ function createRootAgent(input: {
       agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
+      cashAccount:cashAccount(agentId),
     };
+  });
   });
 }
 
@@ -1773,7 +2662,8 @@ function createSubAgent(input: {
   budgetCents: number;
   actorId: string;
   actorType: 'owner' | 'agent';
-}): { agent: Row; contract: Row; wallet: Wallet } {
+}): { agent: Row; contract: Row; wallet: Wallet; cashAccount:Row } {
+  return missionDb.transaction(() => {
   const policy = currentPolicy();
   const parent = findAgentBySlug(input.parentSlug);
   if (!parent) throw new HttpProblem(404, 'parent agent not found', 'not_found');
@@ -1829,6 +2719,7 @@ function createSubAgent(input: {
       ],
     );
     const wallet = createWallet({ kind: 'agent', label: `${input.name} wallet`, agentId, currency: policy.currency, budgetCents: input.budgetCents });
+    provisionMoneyAgent(agentId,input.actorId,input.actorType==='agent'?String(parent.id):undefined,input.actorType==='agent'?input.budgetCents:0);
     appendMissionAudit({
       actorType: input.actorType,
       actorId: input.actorId,
@@ -1841,7 +2732,9 @@ function createSubAgent(input: {
       agent: missionDb.get<Row>('SELECT * FROM mission_agents WHERE id = ?', [agentId])!,
       contract: missionDb.get<Row>('SELECT * FROM mission_agent_contracts WHERE id = ?', [contractId])!,
       wallet,
+      cashAccount:cashAccount(agentId),
     };
+  });
   });
 }
 
@@ -1876,12 +2769,18 @@ export function createMissionServer(): http.Server {
         const status =
           error instanceof HttpProblem ? error.status
             : error instanceof MissionAuthError ? error.statusCode
+              : error instanceof FreelancerError ? (error.code === 'freelancer_rate_limited' ? 429 : 409)
+              : error instanceof AwinError ? (error.code === 'awin_rate_limited' ? 429 : 409)
+              : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
                 : error instanceof MissionSelfServiceError ? error.statusCode
                   : 500;
         const code =
           error instanceof HttpProblem ? error.code
             : error instanceof MissionAuthError ? error.code
+              : error instanceof FreelancerError ? error.code
+              : error instanceof AwinError ? error.code
+              : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code
                 : error instanceof MissionSelfServiceError ? error.code
                   : 'internal_error';
@@ -1897,10 +2796,18 @@ export function createMissionServer(): http.Server {
 
 export async function startMissionServer(options: { port?: number; host?: string } = {}): Promise<MissionServer> {
   const env = missionEnv();
-  applyMissionMigrations();
+  applyMissionMigrations(missionDb);
   ensurePolicy(env.currency);
   seedTools();
   ensurePayoutSlots();
+  try{ ensureMissionTreasury(); }catch{}
+  try{ ensureAgentWallets(); }catch{}
+  try{ PlatformDiscovery.seedPlatforms(); }catch{}
+  // Runtime foundation — fail-safe seeds (idempotent, no fake revenue, no credentials)
+  try{ ProviderReadiness.seedProviderReadiness(); }catch{}
+  try{ Allocator.ensureCatalogPersisted(); }catch{}
+  try{ Scheduler.schedulerStatus(); }catch{} // ensures mission_scheduler_state row exists disabled=0
+  try{ const s = Scheduler.schedulerStatus(); if (s.enabled) Scheduler.disableScheduler({kind:'owner', id:'system-startup'} as any); }catch{}
   const host = options.host ?? env.bindHost;
   const port = options.port ?? env.port;
   const server = createMissionServer();
