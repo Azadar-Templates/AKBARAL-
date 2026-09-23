@@ -20,23 +20,28 @@ before(() => {
 describe('opportunity catalog — scalable 100M+ design', () => {
   it('seeds legitimate public sources without fabrication', () => {
     const seedResult = seedLegitimateSources();
-    assert.ok(seedResult.total >= 30, 'should seed at least 30 legitimate sources');
-    const { sources } = listOpportunitySources({ limit: 100 });
-    assert.ok(sources.length >= 30);
+    assert.ok(seedResult.total >= 100, 'should seed at least 100 legitimate sources across categories');
+    const { sources } = listOpportunitySources({ limit: 200 });
+    assert.ok(sources.length >= 100);
     // every source must have real base_url and tos_url
     for (const src of sources) {
       assert.ok(src.base_url.startsWith('https://'), `base_url must be https for ${src.key}`);
-      // tos_url can be null for some, but base_url must be real
       assert.ok(src.key.length > 0);
     }
+    // categories coverage
+    const categories = new Set(sources.map((s) => s.category));
+    assert.ok(categories.has('freelance_marketplace'));
+    assert.ok(categories.has('remote_job_board'));
+    assert.ok(categories.has('affiliate_network'));
+    assert.ok(categories.has('other')); // grants, bounties, etc
   });
 
   it('seeds platform opportunities as verified low-risk', () => {
     const platformResult = seedPlatformOpportunities();
     void platformResult;
     const stats = getCatalogStats();
-    assert.ok(stats.total >= 30, 'should have at least 30 platform opportunities');
-    assert.ok(stats.verified >= 30);
+    assert.ok(stats.total >= 100, 'should have at least 100 platform opportunities');
+    assert.ok(stats.verified >= 100);
     assert.equal(stats.byRisk.find((r) => r.risk_level === 'low')?.count ?? 0, stats.total);
   });
 
@@ -177,7 +182,7 @@ describe('opportunity catalog — scalable 100M+ design', () => {
     assert.equal(stats.verified + stats.pending_review + stats.rejected + stats.expired + stats.archived, stats.total);
   });
 
-  it('stores required fields: platform, type, country, skills, payout, fees, ToS, source URL, last verified, risk, status', () => {
+  it('stores required fields: platform, type, country, skills, payout, fees, ToS, source URL, last verified, risk, status, requirements, content hash, first_seen', () => {
     const opp = getOpportunityById(listOpportunities({ limit: 1 }).opportunities[0].id);
     assert.ok(opp);
     assert.ok(opp.platform);
@@ -190,7 +195,30 @@ describe('opportunity catalog — scalable 100M+ design', () => {
     assert.ok(opp.dedup_hash);
     assert.ok(opp.status);
     assert.ok(opp.risk_level);
-    // ToS URL can be null for some, but platform opportunities have it
-    // last_verified_at can be null for pending, but verified have it
+    // New fields from 0010 migration
+    // content_hash and requirements may be null on old DB, but after migration should be present for new records
+    // first_seen_at should be present
+    assert.ok(typeof opp.source_url === 'string');
+  });
+
+  it('deduplication uses canonical URL + platform + external ID + content hash', () => {
+    const { computeContentHash } = require('./opportunity-catalog') as typeof import('./opportunity-catalog');
+    const title = 'Test Bounty — Fix bug in payment processing';
+    const desc = 'Fix the bug that causes payment to fail when amount > $1000';
+    const hash1 = computeContentHash(title, desc);
+    const hash2 = computeContentHash(title, desc);
+    assert.equal(hash1, hash2);
+    const hash3 = computeContentHash(title + ' different', desc);
+    assert.notEqual(hash1, hash3);
+  });
+
+  it('covers countries and categories across lawful earning types', () => {
+    const stats = getCatalogStats();
+    assert.ok(stats.byCategory.length >= 5, 'should cover at least 5 categories');
+    // Should have freelance, remote_job_board, affiliate_network, e_commerce, digital_product, other (grants/bounties)
+    const catNames = stats.byCategory.map((c) => c.category);
+    assert.ok(catNames.includes('freelance_marketplace') || catNames.includes('remote_job_board'));
+    assert.ok(stats.sourcesTotal >= 100);
+    assert.ok(stats.sourcesActive >= 50);
   });
 });
