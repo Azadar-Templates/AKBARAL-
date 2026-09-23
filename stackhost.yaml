@@ -65,7 +65,7 @@
 # .github/workflows/docker-publish.yml, contains dist/.next + entrypoint) so
 # StackHost only creates the runtime container (no build RAM).
 runtime:
-  image: ghcr.io/azadar-templates/akbaral:latest
+  image: mrzain555/akbaral:c8bcf07d9360d1d5ffa9b56c9fafa2b0dfa1e637
 
 commands:
   package: ""
