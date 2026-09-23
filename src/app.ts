@@ -6,6 +6,7 @@ import { authRouter } from './routes/auth';
 import { agentsRouter } from './routes/agents';
 import { meRouter } from './routes/me';
 import { userDashboardRouter } from './routes/user-dashboard';
+import { bossDashboardRouter } from './routes/boss-dashboard';
 import { createTasksRouter } from './routes/tasks';
 import { createWorkflowsRouter } from './routes/workflows';
 import { createAutomationsRouter } from './routes/automations';
@@ -203,6 +204,7 @@ export function createApiServer(): ApiServer {
   app.use('/api', createFilesRouter());
   app.use('/api/billing', createBillingRouter());
   app.use('/api/dashboard', userDashboardRouter);
+  app.use('/api/boss', bossDashboardRouter);
   app.use('/api/admin', createAdminRouter());
   app.use('/api/tools', createToolsRouter());
   app.use('/api/models', createModelsRouter());

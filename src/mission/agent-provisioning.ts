@@ -143,30 +143,25 @@ export function provisionAgentGrants(actor: MoneyActor, opts: {
   const spendLimitCents = opts.spendLimitCents ?? 10000; // $100 default per agent
   const delegationCents = opts.delegationCents ?? 0;
   const expiresDays = opts.expiresDays ?? 30;
-  const expiresAt = new Date(Date.now() + expiresDays * 86400000).toISOString();
 
   const agents = db.all<Row>("SELECT id FROM mission_agents WHERE status='active'");
   let granted = 0;
   let skipped = 0;
   let errors = 0;
 
+  // Use bootstrapMoneyAgents for the standard path, or provisionMoneyAgent for individual grants
+  const { provisionMoneyAgent } = require('./money') as typeof import('./money');
+
   for (const agent of agents) {
     const agentId = String(agent.id);
     // Check if grant already exists
-    const existing = db.get<Row>('SELECT id FROM mission_money_grants WHERE agent_id=? AND status=?', [agentId, 'active']);
+    const existing = db.get<Row>('SELECT agent_id FROM mission_money_grants WHERE agent_id=? AND status=?', [agentId, 'active']);
     if (existing) {
       skipped++;
       continue;
     }
     try {
-      const { setMoneyGrant } = require('./money') as typeof import('./money');
-      setMoneyGrant(actor, agentId, {
-        spendLimitCents,
-        delegationCents,
-        canCreate: false,
-        expiresAt,
-        status: 'active',
-      });
+      provisionMoneyAgent(agentId, actor.id);
       granted++;
     } catch (e) {
       errors++;
