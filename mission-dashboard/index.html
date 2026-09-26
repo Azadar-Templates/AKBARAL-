@@ -41,6 +41,89 @@
       </section>
 
       <section id="app" hidden>
+        <nav class="mainnav" id="mainnav" aria-label="Mission">
+          <button data-view="home" class="navbtn active" type="button">
+            <span class="navicon" aria-hidden="true">◎</span><span>Overview</span>
+          </button>
+          <button data-view="agents" class="navbtn" type="button">
+            <span class="navicon" aria-hidden="true">✦</span><span>Agents</span>
+          </button>
+          <button data-view="withdraw" class="navbtn" type="button">
+            <span class="navicon" aria-hidden="true">↑</span><span>Withdraw</span>
+          </button>
+          <button data-view="card" class="navbtn" type="button">
+            <span class="navicon" aria-hidden="true">▭</span><span>Card</span>
+          </button>
+        </nav>
+
+        <div id="banner" class="banner" hidden></div>
+
+        <!-- 1. OVERVIEW ------------------------------------------------- -->
+        <section data-view-panel="home" class="view">
+          <div id="home-alerts" class="alerts"></div>
+          <div id="home-money" class="tiles"></div>
+          <div class="split">
+            <div class="block">
+              <h2>Current work</h2>
+              <div id="home-work" class="list"></div>
+            </div>
+            <div class="block">
+              <h2>Recent activity</h2>
+              <div id="home-activity" class="list"></div>
+            </div>
+          </div>
+          <p class="muted tiny" id="home-note"></p>
+        </section>
+
+        <!-- 2. AGENTS + CHAT --------------------------------------------- -->
+        <section data-view-panel="agents" class="view" hidden>
+          <form id="agent-quick-search" class="searchbar">
+            <input name="q" placeholder="Search agents" autocomplete="off" />
+            <button type="submit">Search</button>
+          </form>
+          <div id="agent-summary" class="chips"></div>
+          <div id="agent-detail" class="drawer" hidden></div>
+          <div id="agent-cards" class="list"></div>
+        </section>
+
+        <!-- 3. WITHDRAW --------------------------------------------------- -->
+        <section data-view-panel="withdraw" class="view" hidden>
+          <div id="withdraw-tiles" class="tiles"></div>
+          <div class="block">
+            <h2>Withdraw</h2>
+            <div id="withdraw-action"></div>
+          </div>
+          <div class="split">
+            <div class="block">
+              <h2>Payout destination</h2>
+              <div id="withdraw-destinations" class="list"></div>
+            </div>
+            <div class="block">
+              <h2>Withdrawals</h2>
+              <div id="withdraw-history" class="list"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. CARD -------------------------------------------------------- -->
+        <section data-view-panel="card" class="view" hidden>
+          <div id="card-face"></div>
+          <div id="card-detail" class="block"></div>
+        </section>
+
+        <div class="advanced-bar">
+          <button id="advanced-toggle" class="ghost small" type="button" aria-expanded="false">
+            Advanced / Owner settings
+          </button>
+          <span class="muted tiny">Ledger, policy, approvals, credentials, publishing, accounting and customer work — unchanged.</span>
+        </div>
+
+        <section id="advanced" hidden>
+          <p class="muted small">
+            Advanced owner controls. Everything here is the full mission system: the same ledger,
+            audit chain, policy engine, approvals, credential vault, payout destinations, publishing
+            connections and customer/work records as before.
+          </p>
         <nav class="tabs" id="tabs" aria-label="Mission sections">
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
@@ -55,7 +138,6 @@
           <button data-tab="audit" class="tab">Audit</button>
         </nav>
 
-        <div id="banner" class="banner" hidden></div>
 
         <section data-panel="customer-work" class="panel" hidden>
           <h2>Real customer → real work → verified USD</h2>
@@ -358,6 +440,7 @@
           <h2>Immutable audit trail</h2>
           <div id="audit-verification" class="table-wrap"></div>
           <div id="audit" class="table-wrap"></div>
+        </section>
         </section>
       </section>
     </main>

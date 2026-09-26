@@ -89,6 +89,8 @@ const uiState = () =>
       app: Boolean(app) && !app.hidden,
       login: Boolean(login) && !login.hidden,
       identity: document.querySelector('#identity')?.textContent?.trim() ?? '',
+      views: document.querySelectorAll('#mainnav .navbtn').length,
+      tiles: document.querySelectorAll('[data-view-panel]:not([hidden]) .tile').length,
       tabs: document.querySelectorAll('#tabs .tab').length,
       cards: document.querySelectorAll('#overview .card, #overview .stat, [data-panel="overview"] .card').length,
       token: Boolean(sessionStorage.getItem('za_mission_token')),
@@ -133,10 +135,41 @@ try {
     !closedAt && afterDwell.app && !afterDwell.login,
     closedAt ? `closed at ${closedAt}` : `still open after ${samples} samples, identity="${afterDwell.identity}"`,
   );
-  record('dashboard data loads', afterDwell.tabs >= 10, `tabs=${afterDwell.tabs}`);
+  record(
+    'dashboard data loads',
+    afterDwell.views === 4 && afterDwell.tiles >= 4,
+    `views=${afterDwell.views} tiles=${afterDwell.tiles}`,
+  );
 
-  // ── tabs ──────────────────────────────────────────────────────────────────
+  // ── the four primary sections ─────────────────────────────────────────────
   if (TAB_CLICKS && afterDwell.app) {
+    const views = await page.$$eval('#mainnav .navbtn', (nodes) => nodes.map((node) => node.getAttribute('data-view')));
+    const viewFailures = [];
+    for (const view of views) {
+      await page.click(`#mainnav .navbtn[data-view="${view}"]`);
+      await page.waitForTimeout(900);
+      const state = await uiState();
+      if (!state.app) {
+        viewFailures.push(`${view} closed the dashboard`);
+        break;
+      }
+      const shown = await page
+        .$$eval('[data-view-panel]', (nodes) => nodes.filter((node) => !node.hidden).map((node) => node.getAttribute('data-view-panel')))
+        .catch(() => []);
+      if (shown.length !== 1 || shown[0] !== view) viewFailures.push(`${view} not shown alone (${shown.join(',') || 'none'})`);
+    }
+    record('primary sections remain usable', viewFailures.length === 0, viewFailures.join('; ') || `${views.length} sections opened`);
+    await page.click('#mainnav .navbtn[data-view="home"]');
+    await page.waitForTimeout(600);
+  }
+
+  // ── advanced tabs ─────────────────────────────────────────────────────────
+  if (TAB_CLICKS && afterDwell.app) {
+    const advancedHidden = await page.$eval('#advanced', (node) => node.hidden).catch(() => true);
+    if (advancedHidden) {
+      await page.click('#advanced-toggle');
+      await page.waitForTimeout(2500);
+    }
     const tabs = await page.$$eval('#tabs .tab', (nodes) => nodes.map((node) => node.getAttribute('data-tab')));
     let tabFailures = [];
     for (const tab of tabs) {

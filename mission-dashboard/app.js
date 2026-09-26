@@ -50,6 +50,10 @@ const state = {
   cookieAuth: false,
   owner: null,
   overview: null,
+  summary: null,
+  view: 'home',
+  openAgent: null,
+  advancedOpen: false,
   activeTab: 'overview',
   verifyingSlot: null,
 };
@@ -237,16 +241,10 @@ async function start() {
   // Identify the operator from the session state we already hold, before any
   // network round-trip: a signed-in person must never see "not signed in".
   showIdentity();
-  try {
-    const overview = await api('/overview');
-    state.overview = overview;
-    showIdentity();
-    renderOverview(overview);
-  } catch (error) {
-    if (error.status !== 401) banner(error.message, 'error');
-  }
-  await loadTab(state.activeTab);
-  await loadActivityOptions();
+  // The simple shell only needs the compact summary; the full mission report
+  // (4000+ wallets, policy, catalogues) is loaded lazily when the owner opens
+  // Advanced, so opening the mission stays fast.
+  await loadView(state.view);
 }
 
 /** The identity line, kept true from whatever session state the tab holds. */
@@ -1700,6 +1698,374 @@ async function loadAudit() {
   ], payload.entries, 'No audit entries.'));
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simple owner shell — four sections.
+//
+// Every number rendered here comes from GET /api/summary, which reads the
+// mission ledger directly: verified money means revenue that was received AND
+// verified. Expected or contracted amounts are shown separately and are never
+// added to a balance. Nothing below invents a figure.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VIEWS = ['home', 'agents', 'withdraw', 'card'];
+
+function tile(label, value, hint, kind = '') {
+  return el('div', { class: `tile ${kind}` }, [
+    el('span', { class: 'label', text: label }),
+    el('span', { class: 'value', text: value }),
+    hint ? el('span', { class: 'hint', text: hint }) : null,
+  ].filter(Boolean));
+}
+
+function row(title, sub, sideNodes = [], onClick = null, wrap = false) {
+  const node = el('div', { class: `row${onClick ? ' clickable' : ''}${wrap ? ' wrap' : ''}` }, [
+    el('div', { class: 'main' }, [
+      el('span', { class: 'title', text: title }),
+      sub ? el('span', { class: 'sub', text: sub }) : null,
+    ].filter(Boolean)),
+    el('div', { class: 'side' }, sideNodes),
+  ]);
+  if (onClick) node.addEventListener('click', onClick);
+  return node;
+}
+
+function chip(text, kind = '') {
+  return el('span', { class: `chip ${kind}`.trim(), text });
+}
+
+function statusChip(status) {
+  const value = String(status || '').toLowerCase();
+  if (['active', 'settled', 'paid', 'delivered', 'received'].includes(value)) return chip(value, 'ok');
+  if (['paused', 'pending_approval', 'pending_verification', 'in_progress', 'approved', 'sent', 'proposed'].includes(value)) return chip(value.replace(/_/g, ' '), 'warn');
+  if (['retired', 'failed', 'rejected', 'frozen', 'unconfigured'].includes(value)) return chip(value, value === 'unconfigured' ? '' : 'bad');
+  return chip(value || 'unknown');
+}
+
+function fill(target, nodes, emptyMessage) {
+  const node = $(target);
+  if (!node) return;
+  node.replaceChildren();
+  const list = [].concat(nodes).filter(Boolean);
+  if (!list.length) {
+    node.appendChild(el('p', { class: 'empty', text: emptyMessage || 'Nothing yet.' }));
+    return;
+  }
+  for (const child of list) node.appendChild(child);
+}
+
+async function loadSummary() {
+  state.summary = await api('/summary');
+  return state.summary;
+}
+
+// ── 1. OVERVIEW ─────────────────────────────────────────────────────────────
+async function loadHome() {
+  const data = await loadSummary();
+  const currency = data.currency || 'USD';
+
+  fill('#home-alerts', (data.alerts || []).map((alert) => el('div', { class: `alert ${alert.level}`, text: alert.message })), '');
+  if (!(data.alerts || []).length) $('#home-alerts').replaceChildren();
+
+  fill('#home-money', [
+    tile('Verified available', money(data.money.verifiedAvailableCents, currency), 'ready to withdraw', 'primary'),
+    tile('Verified earned', money(data.money.verifiedEarnedTotalCents, currency), `today ${money(data.money.verifiedEarnedTodayCents, currency)}`),
+    tile('Active agents', String(data.agents.active), `${data.agents.working} with open work`),
+    tile('Work in progress', String(data.work.inProgress), `${data.work.total} recorded in total`),
+    data.money.expectedNotEarnedCents
+      ? tile('Expected (not money)', money(data.money.expectedNotEarnedCents, currency), 'not verified — never counted as balance', 'muted-tile')
+      : null,
+  ].filter(Boolean));
+
+  fill(
+    '#home-work',
+    (data.work.recent || []).map((item) =>
+      row(item.title, `${item.agentName || item.agentSlug || 'unassigned'} · ${when(item.updatedAt)}`, [statusChip(item.status)]),
+    ),
+    'No work has been recorded yet.',
+  );
+
+  fill(
+    '#home-activity',
+    (data.activity || []).slice(0, 6).map((entry) => row(entry.summary, when(entry.at), [chip(entry.actor)])),
+    'No activity recorded yet.',
+  );
+
+  $('#home-note').textContent = data.money.note;
+}
+
+// ── 2. AGENTS + CHAT ────────────────────────────────────────────────────────
+async function loadAgentsSimple(query = '') {
+  const data = state.summary || (await loadSummary());
+  fill('#agent-summary', [
+    chip(`${data.agents.active} active`, 'ok'),
+    data.agents.paused ? chip(`${data.agents.paused} paused`, 'warn') : null,
+    data.agents.retired ? chip(`${data.agents.retired} retired`) : null,
+    chip(`${data.agents.working} working`),
+  ].filter(Boolean));
+
+  const params = new URLSearchParams({ limit: query ? '25' : '10' });
+  if (query) params.set('q', query);
+  const payload = await api(`/agents?${params.toString()}`);
+  const work = (data.work.recent || []).reduce((map, item) => {
+    if (item.agentSlug && !map[item.agentSlug]) map[item.agentSlug] = item;
+    return map;
+  }, {});
+
+  fill(
+    '#agent-cards',
+    (payload.agents || []).map((agent) => {
+      const current = work[agent.slug];
+      const doing = current ? `${current.status.replace(/_/g, ' ')}: ${current.title}` : agent.status === 'active' ? 'idle — no open work' : `agent ${agent.status}`;
+      return row(agent.name, `${agent.slug} · ${doing}`, [statusChip(agent.status)], () => openAgentSimple(agent.slug));
+    }),
+    query ? `No agent matches “${query}”.` : 'No agents yet.',
+  );
+
+  if (payload.total > (payload.agents || []).length) {
+    $('#agent-cards').appendChild(
+      el('p', { class: 'empty', text: `Showing ${payload.agents.length} of ${payload.total} agents — search by name or slug to narrow.` }),
+    );
+  }
+}
+
+async function openAgentSimple(slug) {
+  const drawer = $('#agent-detail');
+  drawer.hidden = false;
+  drawer.replaceChildren(el('p', { class: 'empty', text: 'Loading agent…' }));
+  drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  let report;
+  try {
+    report = await api(`/agents/${encodeURIComponent(slug)}`);
+  } catch (error) {
+    drawer.replaceChildren(el('p', { class: 'empty', text: error.message }));
+    return;
+  }
+  state.openAgent = { slug, id: report.agent.id };
+
+  const head = el('div', { class: 'drawer-head' }, [
+    el('div', {}, [
+      el('h3', { text: report.agent.name }),
+      el('p', { class: 'muted tiny', text: `${report.agent.slug} · ${report.agent.mission_role || 'worker'} · ${report.agent.category || 'general'}` }),
+    ]),
+    el('div', { class: 'side' }, [statusChip(report.agent.status), el('button', { class: 'ghost small', type: 'button', text: 'Close' })]),
+  ]);
+  head.querySelector('button').addEventListener('click', () => { drawer.hidden = true; state.openAgent = null; });
+
+  const wallet = report.wallet || {};
+  const facts = el('div', { class: 'tiles' }, [
+    tile('Wallet balance', money(wallet.balanceCents ?? wallet.balance_cents ?? 0, wallet.currency || 'USD'), 'verified ledger'),
+    tile('Open work', String((report.work || []).filter((item) => ['approved', 'in_progress'].includes(item.status)).length), `${(report.work || []).length} total`),
+    tile('Verified revenue', money(report.revenue?.realizedCents ?? 0, wallet.currency || 'USD'), 'received + verified'),
+  ]);
+
+  const controls = el('div', { class: 'side' }, []);
+  if (canMutate()) {
+    const pauseButton = el('button', {
+      class: report.agent.status === 'active' ? 'ghost small' : 'small',
+      type: 'button',
+      text: report.agent.status === 'active' ? 'Pause agent' : 'Resume agent',
+    });
+    pauseButton.addEventListener('click', async () => {
+      const next = report.agent.status === 'active' ? 'paused' : 'active';
+      const reason = next === 'paused' ? window.prompt('Reason for pausing this agent (required):') : '';
+      if (next === 'paused' && (!reason || reason.trim().length < 3)) return;
+      try {
+        await api(`/agents/${encodeURIComponent(slug)}/status`, { method: 'POST', body: { status: next, reason: reason || '' } });
+        banner(next === 'paused' ? 'Agent paused.' : 'Agent resumed.', 'ok');
+        await openAgentSimple(slug);
+        await loadAgentsSimple($('#agent-quick-search')?.querySelector('input')?.value || '');
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+    controls.appendChild(pauseButton);
+  }
+
+  const chatLog = el('div', { class: 'chat-log', id: 'chat-log' });
+  const chatForm = el('form', { class: 'chat-form', id: 'chat-form' }, [
+    el('input', { name: 'message', placeholder: `Message ${report.agent.name}`, maxlength: '2000', autocomplete: 'off', required: 'required' }),
+    el('button', { type: 'submit', text: 'Send' }),
+  ]);
+  const chatNote = el('p', { class: 'muted tiny', id: 'chat-note' });
+
+  drawer.replaceChildren(head, facts, controls, el('div', { class: 'chat' }, [chatLog, canMutate() ? chatForm : el('p', { class: 'empty', text: 'A read-only link cannot send messages.' }), chatNote]));
+
+  if (canMutate()) {
+    chatForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const input = chatForm.querySelector('input');
+      const message = input.value.trim();
+      if (!message) return;
+      input.value = '';
+      try {
+        await api(`/agents/${encodeURIComponent(slug)}/messages`, {
+          method: 'POST',
+          body: { message, idempotencyKey: `owner-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` },
+        });
+        await loadAgentChat(slug);
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+  }
+  await loadAgentChat(slug);
+}
+
+async function loadAgentChat(slug) {
+  const log = $('#chat-log');
+  if (!log) return;
+  let payload;
+  try {
+    payload = await api(`/agents/${encodeURIComponent(slug)}/messages?after=0&limit=100`);
+  } catch (error) {
+    log.replaceChildren(el('p', { class: 'empty', text: error.message }));
+    return;
+  }
+  const messages = payload.messages || [];
+  log.replaceChildren();
+  if (!messages.length) {
+    log.appendChild(el('p', { class: 'empty', text: 'No messages yet. Anything you send is stored in the mission log and delivered to this agent.' }));
+  }
+  for (const message of messages) {
+    log.appendChild(
+      el('div', { class: `msg ${message.actor_type === 'owner' ? 'owner' : 'agent'}` }, [
+        el('span', { class: 'who', text: `${message.actor_type} · ${when(message.created_at)}` }),
+        el('span', { text: message.body }),
+      ]),
+    );
+  }
+  log.scrollTop = log.scrollHeight;
+  const note = $('#chat-note');
+  if (note) {
+    note.textContent = payload.automaticRepliesConfigured
+      ? 'Automatic replies are configured for this agent; answers appear here when the worker processes the message.'
+      : 'Messages are recorded and delivered to this agent. Automatic replies are NOT configured, so no answer is generated until a chat provider is connected in Advanced.';
+  }
+}
+
+// ── 3. WITHDRAW ─────────────────────────────────────────────────────────────
+async function loadWithdrawSimple() {
+  const data = await loadSummary();
+  const currency = data.currency || 'USD';
+  const withdraw = data.withdraw;
+
+  fill('#withdraw-tiles', [
+    tile('Verified available', money(withdraw.availableCents, currency), 'received + verified only', 'primary'),
+    tile('Withdrawals in progress', money(withdraw.pendingCents, currency), `${withdraw.pendingCount} request${withdraw.pendingCount === 1 ? '' : 's'}`),
+    tile('Paid out', money(withdraw.settledCents, currency), `${withdraw.settledCount} settled`),
+    tile('Expected (not money)', money(data.money.expectedNotEarnedCents, currency), 'cannot be withdrawn', 'muted-tile'),
+  ]);
+
+  const action = $('#withdraw-action');
+  action.replaceChildren();
+  const payable = (withdraw.destinations || []).filter((slot) => withdraw.payableSlots.includes(slot.slot));
+
+  if (withdraw.availableCents <= 0) {
+    action.appendChild(el('p', { class: 'empty', text: 'There is no verified balance to withdraw yet. Verified earnings appear here as soon as real money is received and verified.' }));
+  } else if (!payable.length) {
+    action.appendChild(el('p', { class: 'empty', text: 'Add and verify a payout destination before withdrawing. Open Advanced → Withdraw to configure and verify a destination.' }));
+  } else {
+    const form = el('form', { class: 'simple-form', id: 'simple-withdraw-form' }, [
+      el('div', { class: 'form-row' }, [
+        el('select', { name: 'slot' }, payable.map((slot) => el('option', { value: String(slot.slot), text: `${slot.label} (${slot.masked || 'verified'})` }))),
+        el('input', { name: 'amount', type: 'number', min: '0.01', step: '0.01', placeholder: `Amount in ${currency}`, required: 'required' }),
+      ]),
+      el('input', { name: 'memo', placeholder: 'Reference (optional)' }),
+      el('button', { type: 'submit', text: 'Request withdrawal' }),
+      el('p', { class: 'muted tiny', text: 'A withdrawal needs your approval and a provider settlement reference. The amount is reserved from the verified balance when approved.' }),
+    ]);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const slot = Number(form.querySelector('[name="slot"]').value);
+      const amountCents = Math.round(Number(form.querySelector('[name="amount"]').value) * 100);
+      if (!Number.isFinite(amountCents) || amountCents <= 0) return;
+      try {
+        await api('/withdraw', { method: 'POST', body: { slot, amountCents, memo: form.querySelector('[name="memo"]').value || undefined } });
+        banner('Withdrawal requested — it now waits for your approval.', 'ok');
+        await loadWithdrawSimple();
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+    action.appendChild(form);
+  }
+
+  fill(
+    '#withdraw-destinations',
+    (withdraw.destinations || []).map((slot) =>
+      row(
+        slot.label || `Slot ${slot.slot}`,
+        slot.masked ? `${slot.destinationType || 'destination'} · ${slot.masked}` : 'not configured',
+        [statusChip(slot.status)],
+      ),
+    ),
+    'No payout destination configured.',
+  );
+
+  fill(
+    '#withdraw-history',
+    (withdraw.payouts || []).map((payout) =>
+      row(money(payout.amountCents, payout.currency), `${payout.label} · ${when(payout.createdAt)}`, [statusChip(payout.status)]),
+    ),
+    'No withdrawals yet.',
+  );
+}
+
+// ── 4. CARD ─────────────────────────────────────────────────────────────────
+async function loadCardSimple() {
+  const data = await loadSummary();
+  const currency = data.currency || 'USD';
+  const card = data.card;
+
+  $('#card-face').replaceChildren(
+    el('div', { class: 'cardface' }, [
+      el('div', { class: 'brandline' }, [
+        el('span', { class: 'mark', text: 'ZA141251SA' }),
+        chip(card.status, card.status === 'NOT ISSUED' ? 'warn' : 'ok'),
+      ]),
+      el('div', {}, [
+        el('span', { class: 'label muted tiny', text: 'Available (verified)' }),
+        el('div', { class: 'amount', text: money(card.availableCents, currency) }),
+      ]),
+      el('div', { class: 'number', text: '•••• •••• •••• ••••' }),
+      el('div', { class: 'meta' }, [
+        el('span', { text: 'Mission treasury' }),
+        el('span', { text: card.providerConnected ? 'provider connected' : 'no card provider connected' }),
+      ]),
+    ]),
+  );
+
+  const detail = $('#card-detail');
+  detail.replaceChildren(
+    el('h2', { text: 'Card status' }),
+    el('p', { class: 'muted small', text: `No mission card has been issued. ${card.note}` }),
+    el('div', { class: 'list' }, [
+      row('Card status', 'no card programme is connected', [chip(card.status, 'warn')]),
+      row('Payment provider', card.providerName, [card.providerConnected ? chip('connected', 'ok') : chip('not connected', 'warn')]),
+      row('Available to fund a card', money(card.availableCents, currency), [chip('verified only', 'ok')]),
+    ]),
+    el('h3', { text: 'What a real card needs' }),
+    el('div', { class: 'list' }, (card.requirements || []).map((requirement) => row(requirement, '', [], null, true))),
+  );
+}
+
+// ── view routing ────────────────────────────────────────────────────────────
+async function loadView(view) {
+  state.view = VIEWS.includes(view) ? view : 'home';
+  $$('#mainnav .navbtn').forEach((button) => button.classList.toggle('active', button.getAttribute('data-view') === state.view));
+  $$('[data-view-panel]').forEach((panel) => { panel.hidden = panel.getAttribute('data-view-panel') !== state.view; });
+  try {
+    if (state.view === 'home') await loadHome();
+    if (state.view === 'agents') await loadAgentsSimple();
+    if (state.view === 'withdraw') await loadWithdrawSimple();
+    if (state.view === 'card') await loadCardSimple();
+  } catch (error) {
+    if (error.status !== 401) banner(error.message, 'error');
+  }
+}
+
 // ── wiring ──────────────────────────────────────────────────────────────────
 function wire() {
   $('#login-form').addEventListener('submit', async (event) => {
@@ -1722,6 +2088,45 @@ function wire() {
   $('#signout').addEventListener('click', async () => {
     try { await api('/session/logout', { method: 'POST' }); } catch { /* session may already be gone */ }
     signOut();
+  });
+
+  // ── simple shell navigation ───────────────────────────────────────────
+  $('#mainnav').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-view]');
+    if (!button) return;
+    await loadView(button.getAttribute('data-view'));
+  });
+
+  $('#agent-quick-search').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const query = (new FormData(event.target).get('q') || '').toString().trim();
+    try {
+      await loadAgentsSimple(query);
+    } catch (error) {
+      if (error.status !== 401) banner(error.message, 'error');
+    }
+  });
+
+  // Advanced keeps every existing mission control; it is collapsed by default
+  // so the primary dashboard stays a four-section owner view.
+  $('#advanced-toggle').addEventListener('click', async () => {
+    state.advancedOpen = !state.advancedOpen;
+    $('#advanced').hidden = !state.advancedOpen;
+    $('#advanced-toggle').setAttribute('aria-expanded', String(state.advancedOpen));
+    $('#advanced-toggle').textContent = state.advancedOpen ? 'Hide advanced / owner settings' : 'Advanced / Owner settings';
+    if (state.advancedOpen && !state.advancedLoaded) {
+      state.advancedLoaded = true;
+      try {
+        const overview = await api('/overview');
+        state.overview = overview;
+        renderOverview(overview);
+        await loadTab(state.activeTab);
+        await loadActivityOptions();
+      } catch (error) {
+        if (error.status !== 401) banner(error.message, 'error');
+      }
+    }
+    if (state.advancedOpen) $('#advanced').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   $('#tabs').addEventListener('click', async (event) => {

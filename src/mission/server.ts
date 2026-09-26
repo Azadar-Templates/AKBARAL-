@@ -61,6 +61,7 @@ import {
   type SessionContext,
 } from './auth';
 import { identityLockStatus } from './identity-lock';
+import { buildOwnerSummary } from './owner-summary';
 import {
   attestRecentSession,
   completeOwnerSetup,
@@ -1280,6 +1281,14 @@ async function handleApi(
     case 'overview': {
       requireRead(context);
       json(res, 200, buildMissionOverview());
+      return true;
+    }
+    // Compact owner summary behind the simplified dashboard. Same database,
+    // same verified-only rules — just the few figures the four main sections
+    // need, instead of the full 4000-wallet mission report.
+    case 'summary': {
+      requireRead(context);
+      json(res, 200, buildOwnerSummary());
       return true;
     }
     case 'treasury': {
