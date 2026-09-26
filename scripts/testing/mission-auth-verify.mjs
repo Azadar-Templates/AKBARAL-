@@ -76,7 +76,7 @@ const dashboardOpen = () =>
       app: Boolean(app) && !app.hidden,
       login: Boolean(login) && !login.hidden,
       identity: document.querySelector('#identity')?.textContent?.trim() ?? '',
-      tabs: Array.from(document.querySelectorAll('#tabs .tab')).length,
+      sections: Array.from(document.querySelectorAll('#mainnav .navbtn')).length,
     };
   });
 
@@ -132,8 +132,8 @@ state = await dashboardOpen();
 await shot('04-owner-signed-in');
 record(
   'the configured owner signs in and the private dashboard opens',
-  state.app && !state.login && state.tabs > 0,
-  `identity="${state.identity}" tabs=${state.tabs}`,
+  state.app && !state.login && state.sections === 4,
+  `identity="${state.identity}" sections=${state.sections}`,
 );
 
 // ── 5. a hard refresh keeps the session ─────────────────────────────────────

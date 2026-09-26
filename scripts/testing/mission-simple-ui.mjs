@@ -3,9 +3,9 @@
  * ZA141251SA — simplified owner dashboard checks (real Chromium).
  *
  * Verifies the four primary sections work end to end against the running
- * mission server: Overview, Agents + chat, Withdraw, Card — plus the
- * collapsed Advanced area that still contains the full mission systems, and a
- * mobile-width pass over all four.
+ * mission server: Overview, Agents (fleet list + chat workspace), Withdraw and
+ * Card, that the removed Advanced area is really gone while the protected
+ * mission systems still answer behind owner auth, and a 390px mobile pass.
  *
  * Env: MISSION_BASE, ZA141251SA_OWNER_EMAIL, ZA141251SA_OWNER_PASSWORD
  */
@@ -72,8 +72,17 @@ try {
   // ── navigation is four sections only ────────────────────────────────────
   const navLabels = await page.$$eval('#mainnav .navbtn', (nodes) => nodes.map((node) => node.textContent.trim()));
   record('primary navigation has exactly 4 sections', navLabels.length === 4, navLabels.join(' | '));
-  const advancedHidden = await page.$eval('#advanced', (node) => node.hidden);
-  record('advanced controls are collapsed by default', advancedHidden === true);
+  const removed = await page.evaluate(() => ({
+    advanced: Boolean(document.querySelector('#advanced') || document.querySelector('#advanced-toggle') || document.querySelector('.advanced-bar')),
+    tabs: document.querySelectorAll('#tabs .tab').length,
+    panels: document.querySelectorAll('[data-panel]').length,
+    text: /Advanced \/ Owner settings/.test(document.body.innerText),
+  }));
+  record(
+    'the Advanced / Owner settings surface is gone from the dashboard',
+    !removed.advanced && removed.tabs === 0 && removed.panels === 0 && !removed.text,
+    `advanced element=${removed.advanced} tabs=${removed.tabs} panels=${removed.panels} label=${removed.text}`,
+  );
 
   // ── 1. OVERVIEW ─────────────────────────────────────────────────────────
   const tiles = await page.$$eval('#home-money .tile', (nodes) =>
@@ -96,40 +105,78 @@ try {
   await page.click('#mainnav .navbtn[data-view="agents"]');
   await page.waitForTimeout(1500);
   record('agents section opens alone', (await visibleSections()).join(',') === 'agents');
+  const subs = await page.$$eval('#agentnav .subbtn', (nodes) => nodes.map((node) => node.textContent.trim()));
+  record('agents offers an agent list and a chat workspace', subs.length === 2, subs.join(' | '));
+
   const agentRows = await page.$$eval('#agent-cards .row', (nodes) => nodes.length);
   record('agent list renders with status and current activity', agentRows > 0, `${agentRows} agents listed`);
+  await page.fill('#agent-quick-search input[name="q"]', 'youtube');
+  await page.click('#agent-quick-search button[type="submit"]');
+  await page.waitForTimeout(2000);
+  const searched = await page.$$eval('#agent-cards .row', (nodes) => nodes.map((node) => node.textContent.toLowerCase()));
+  record(
+    'agent search filters the fleet',
+    searched.length > 0 && searched.every((text) => text.includes('youtube')),
+    `${searched.length} results for “youtube”`,
+  );
 
-  const firstAgent = await page.$eval('#agent-cards .row .title', (node) => node.textContent.trim());
-  await page.click('#agent-cards .row');
-  await page.waitForSelector('#agent-detail:not([hidden])', { timeout: 15000 });
-  await page.waitForSelector('#chat-log', { timeout: 15000 });
-  record('an agent opens with detail and chat', true, `opened “${firstAgent}”`);
+  // open the chat workspace
+  await page.click('#agentnav .subbtn[data-sub="chat"]');
+  await page.waitForTimeout(2500);
+  const sidebarAgents = await page.$$eval('#chat-agent-list .chatitem', (nodes) => nodes.length);
+  const chatVisible = await page.isVisible('#chat-log');
+  record('the chat workspace opens with a selectable agent list', chatVisible && sidebarAgents > 0, `${sidebarAgents} agents in the chat sidebar`);
+
+  const chatNames = await page.$$eval('#chat-agent-list .chatitem', (nodes) => nodes.map((node) => node.textContent.trim()));
+  await page.click('#chat-agent-list .chatitem');
+  await page.waitForTimeout(2500);
+  const headerText = (await page.textContent('#chat-header')) ?? '';
+  record('selecting an agent opens its conversation', headerText.trim().length > 0, headerText.replace(/\s+/g, ' ').trim().slice(0, 90));
+  const contextText = ((await page.textContent('#chat-context')) ?? '').replace(/\s+/g, ' ').trim();
+  record(
+    'the conversation shows the agent’s real context',
+    /work/i.test(contextText) && /wallet/i.test(contextText),
+    contextText.slice(0, 110),
+  );
 
   const message = `Owner dashboard check ${new Date().toISOString()}`;
   await page.fill('#chat-form input[name="message"]', message);
   await page.click('#chat-form button[type="submit"]');
-  await page.waitForTimeout(2000);
-  const chatText = await page.textContent('#chat-log');
-  record('owner can send a command/message to an agent', chatText.includes(message), 'message appears in the agent conversation');
-  const chatNote = (await page.textContent('#chat-note')) ?? '';
+  await page.waitForTimeout(3000);
+  const chatText = (await page.textContent('#chat-log')) ?? '';
+  record('a message actually reaches the backend for that agent', chatText.includes(message), 'the message is stored in the agent conversation');
   const readiness = (await page.textContent('#chat-readiness')) ?? '';
+  const chatNote = (await page.textContent('#chat-note')) ?? '';
   record(
     'chat states the real reply capability',
-    /READY|AI PROVIDER NOT CONFIGURED|BLOCKED/.test(readiness),
+    /READY|AI PROVIDER NOT CONFIGURED|BLOCKED|NOT CONFIGURED/.test(readiness),
     readiness.replace(/\s+/g, ' ').trim().slice(0, 120),
   );
+  const agentReplies = await page.$$eval('#chat-log .msg.agent', (nodes) => nodes.length);
   record(
     'an unconfigured provider is reported truthfully instead of a fabricated reply',
-    /AI PROVIDER NOT CONFIGURED/.test(readiness) ? !/\bagent\b · /.test(chatText.replace(message, '')) : true,
-    /AI PROVIDER NOT CONFIGURED/.test(readiness) ? 'no answer invented while the provider is unconfigured' : 'provider configured — replies come from the chat pipeline',
-  );
-  const agentState = (await page.textContent('.agent-state')) ?? '';
-  record(
-    'the agent shows its real current work, history and capabilities',
-    /Current work/.test(agentState) && /Completed work/.test(agentState) && /Capabilities/.test(agentState),
-    agentState.replace(/\s+/g, ' ').trim().slice(0, 110),
+    /NOT CONFIGURED|BLOCKED/.test(readiness) ? agentReplies === 0 : true,
+    /NOT CONFIGURED|BLOCKED/.test(readiness)
+      ? `no answer invented (${agentReplies} agent replies); note: ${chatNote.replace(/\s+/g, ' ').trim().slice(0, 70)}`
+      : 'provider configured — replies come from the chat pipeline',
   );
   await shot('02-agents-chat');
+
+  // switching agents must rebind the conversation
+  if (sidebarAgents > 1) {
+    await page.click('#chat-agent-list .chatitem:nth-child(2)');
+    await page.waitForTimeout(2500);
+    const secondHeader = ((await page.textContent('#chat-header')) ?? '').replace(/\s+/g, ' ').trim();
+    const secondLog = (await page.textContent('#chat-log')) ?? '';
+    record(
+      'switching agents rebinds the conversation to the selected agent',
+      secondHeader.length > 0 && secondHeader !== headerText.replace(/\s+/g, ' ').trim() && !secondLog.includes(message),
+      `switched from “${chatNames[0]?.split('\n')[0] ?? ''}” — the first agent’s message is not shown`,
+    );
+    await shot('02b-agent-switch');
+  } else {
+    record('switching agents rebinds the conversation to the selected agent', false, 'only one agent available in the chat sidebar');
+  }
 
   // ── 3. WITHDRAW ─────────────────────────────────────────────────────────
   await page.click('#mainnav .navbtn[data-view="withdraw"]');
@@ -174,15 +221,20 @@ try {
   record('the card section exposes the same withdrawal methods', cardMethodsVisible, 'add-method control present in Card');
   await shot('04-card');
 
-  // ── advanced still holds the full mission systems ───────────────────────
-  await page.click('#advanced-toggle');
-  await page.waitForTimeout(2500);
-  const advancedTabs = await page.$$eval('#tabs .tab', (nodes) => nodes.map((node) => node.textContent.trim()));
-  const advancedVisible = await page.$eval('#advanced', (node) => !node.hidden);
-  record('advanced area still exposes every original system', advancedVisible && advancedTabs.length === 11, advancedTabs.join(' | '));
-  await shot('05-advanced');
-  await page.click('#advanced-toggle');
-  await page.waitForTimeout(500);
+  // ── the protected mission systems stay on their own API routes ──────────
+  const protectedRoutes = await page.evaluate(async () => {
+    const out = {};
+    for (const route of ['/api/policy', '/api/audit?limit=1', '/api/approvals', '/api/credentials']) {
+      const response = await fetch(route, { headers: { 'x-mission-client': 'dashboard', 'x-mission-auth': sessionStorage.getItem('za_mission_token') || localStorage.getItem('za_mission_token') || '' } });
+      out[route] = response.status;
+    }
+    return out;
+  });
+  record(
+    'ledger, policy, approvals and credential systems still exist behind owner auth',
+    Object.values(protectedRoutes).every((status) => status === 200),
+    Object.entries(protectedRoutes).map(([route, status]) => `${route}=${status}`).join(' '),
+  );
 
   // ── mobile pass ─────────────────────────────────────────────────────────
   await page.setViewportSize({ width: 390, height: 844 });
@@ -192,11 +244,31 @@ try {
     await page.waitForTimeout(1200);
     const open = await visibleSections();
     if (open.join(',') !== view) mobileIssues.push(`${view} did not open`);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+    const overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > window.innerWidth + 2);
     if (overflow) mobileIssues.push(`${view} overflows horizontally`);
     await shot(`06-mobile-${view}`);
   }
   record('all four sections work at 390px wide with no horizontal overflow', mobileIssues.length === 0, mobileIssues.join('; ') || 'home, agents, withdraw, card');
+
+  // the chat workspace has to stay usable on a phone: one column, no overflow
+  await page.click('#mainnav .navbtn[data-view="agents"]');
+  await page.click('#agentnav .subbtn[data-sub="chat"]');
+  await page.waitForTimeout(1800);
+  const mobileChat = await page.evaluate(() => {
+    const space = document.querySelector('.chatspace');
+    const composer = document.querySelector('#chat-form');
+    return {
+      columns: space ? getComputedStyle(space).gridTemplateColumns.split(' ').length : 0,
+      overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > window.innerWidth + 2,
+      composerVisible: Boolean(composer && !composer.hidden && composer.getBoundingClientRect().width > 0),
+    };
+  });
+  record(
+    'the chat workspace collapses to one column on a phone and keeps its composer',
+    mobileChat.columns === 1 && !mobileChat.overflow && mobileChat.composerVisible,
+    `columns=${mobileChat.columns} overflow=${mobileChat.overflow} composer=${mobileChat.composerVisible}`,
+  );
+  await shot('06-mobile-chat');
 
   // ── still signed in, no runtime errors ──────────────────────────────────
   await page.setViewportSize({ width: 1280, height: 950 });
@@ -204,6 +276,17 @@ try {
   await page.waitForTimeout(2500);
   const stillIn = await page.$eval('#app', (node) => !node.hidden);
   record('refresh keeps the simplified dashboard open', stillIn);
+  await page.waitForTimeout(2000);
+  const restored = await page.evaluate(() => ({
+    view: [...document.querySelectorAll('[data-view-panel]')].filter((node) => !node.hidden).map((node) => node.dataset.viewPanel).join(','),
+    sub: document.querySelector('#agentnav .subbtn.active')?.dataset.sub ?? '',
+    agent: document.querySelector('#chat-header .chathead .name')?.textContent?.trim() ?? document.querySelector('#chat-header')?.textContent?.trim() ?? '',
+  }));
+  record(
+    'refresh restores the same section, chat area and selected agent',
+    restored.view === 'agents' && restored.sub === 'chat' && restored.agent.length > 0,
+    `view=${restored.view} area=${restored.sub} agent=${restored.agent.replace(/\s+/g, ' ').slice(0, 40)}`,
+  );
   record('no runtime errors or 5xx responses', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
   fs.writeFileSync(path.join(outDir, 'result.json'), JSON.stringify({ base: BASE, results, errors: errors.map(scrub) }, null, 2));

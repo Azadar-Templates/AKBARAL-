@@ -244,7 +244,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 .chat { display: grid; gap: 8px; }
 .chat-log {
-  display: grid; gap: 6px; max-height: 260px; overflow-y: auto; padding: 4px;
+  display: grid; gap: 6px; align-content: start; max-height: 260px; overflow-y: auto; padding: 4px;
   background: #0e141c; border: 1px solid var(--line); border-radius: 10px;
 }
 .msg { padding: 7px 10px; border-radius: 9px; font-size: 13px; max-width: 88%; }
@@ -271,10 +271,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
 }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-.advanced-bar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin: 22px 0 10px; padding-top: 14px; border-top: 1px dashed var(--line);
-}
 #advanced { border-top: 0; }
 .tiny { font-size: 11px; }
 
@@ -326,4 +322,66 @@ html, body { max-width: 100%; overflow-x: hidden; }
 @media (max-width: 720px) {
   .block-head { flex-direction: column; align-items: stretch; }
   .form-fields { grid-template-columns: 1fr; }
+}
+
+/* ── Agents ⇄ Chat workspace ────────────────────────────────────────────── */
+.subnav { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 12px; border: 1px solid #1e2a3d; border-radius: 10px; background: #0d1522; }
+.subbtn { background: transparent; border: 1px solid transparent; color: #9fb0c3; border-radius: 8px; padding: 6px 16px; font-size: 13px; cursor: pointer; }
+.subbtn.active { background: #13203a; border-color: #2f4870; color: #e6edf3; }
+
+.chatspace { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.chatside { border: 1px solid #1e2a3d; border-radius: 12px; background: #0d1522; padding: 10px; position: sticky; top: 88px; }
+.searchbar.compact { margin-bottom: 8px; }
+.searchbar.compact input { font-size: 12px; }
+.chatlist { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.chatitem { display: flex; flex-direction: column; gap: 2px; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 9px; cursor: pointer; color: #c6d2e0; }
+.chatitem:hover { background: #111c2e; }
+.chatitem.active { background: #13203a; border-color: #2f4870; }
+.chatitem .name { font-size: 13px; font-weight: 600; color: #e6edf3; }
+.chatitem .slug { font-size: 11px; color: #7f92a8; }
+
+.chatmain { display: flex; flex-direction: column; min-height: 520px; border: 1px solid #1e2a3d; border-radius: 12px; background: #0d1522; padding: 14px; }
+.chathead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; border-bottom: 1px solid #1a2436; padding-bottom: 10px; }
+.chathead h3 { margin: 0; font-size: 16px; }
+.chathead p { margin: 2px 0 0; }
+.chatcontext { margin: 10px 0; }
+.chatcontext .chips { gap: 5px; }
+.chatmain .chat-log { flex: 1; align-content: end; min-height: 240px; max-height: 46vh; overflow-y: auto; border: 1px solid #1a2436; border-radius: 10px; padding: 10px; background: #0a1120; }
+.chatmain .msg { max-width: 82%; }
+.chatmain .msg .body { display: block; white-space: pre-wrap; line-height: 1.5; }
+.chatmain .chat-form { position: sticky; bottom: 0; background: #0d1522; padding-top: 8px; }
+
+@media (max-width: 720px) {
+  .chatspace { grid-template-columns: minmax(0, 1fr); }
+  .chatside { position: static; }
+  .chatlist { max-height: 180px; }
+  .chatmain { min-height: 0; padding: 10px; }
+  .chatmain .chat-log { max-height: 50vh; }
+  .chatmain .msg { max-width: 95%; }
+  .subnav { display: flex; width: 100%; }
+  .subbtn { flex: 1; }
+}
+
+/* ── Narrow-width containment ───────────────────────────────────────────────
+   A grid item's automatic minimum is its content, so one long slug, table or
+   chip row used to stretch a whole section past the viewport: the dashboard
+   scrolled sideways on a phone even though html/body clip overflow. Every
+   section track is explicitly allowed to shrink, and long unbroken strings
+   wrap instead of widening their column. */
+.view { grid-template-columns: minmax(0, 1fr); }
+.tiles { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+.view > *, .block, .list, .row .main, .method, .cardface, .chatmain, .chatside, .chat-log, .msg { min-width: 0; }
+.chips, .chips.quick, .row .side { flex-wrap: wrap; }
+.msg .body, .row .sub, .method .mono, .chatitem .slug { overflow-wrap: anywhere; }
+/* Chips break between words only: "active" must never split into "acti/ve". */
+.chip { overflow-wrap: break-word; word-break: normal; }
+
+@media (max-width: 720px) {
+  .row { flex-wrap: wrap; }
+  .row .title { white-space: normal; }
+  /* A long chip ("Find legitimate earning opportunities…") must wrap on a
+     phone rather than push the whole conversation sideways. */
+  .chip { white-space: normal; max-width: 100%; text-align: left; }
+  .chathead .chip { flex: none; }
+  .table-wrap { overflow-x: auto; }
 }

@@ -13,7 +13,8 @@
  *   ZA141251SA_OWNER_EMAIL       owner identity
  *   ZA141251SA_OWNER_PASSWORD    owner password (never printed; scrubbed)
  *   DWELL_SECONDS                how long to watch after sign-in (default 60)
- *   TAB_CLICKS                   1 to click through every dashboard tab
+ *   TAB_CLICKS                   1 to click through the sections, the agents
+ *                                and chat areas, and several agent switches
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -91,8 +92,8 @@ const uiState = () =>
       identity: document.querySelector('#identity')?.textContent?.trim() ?? '',
       views: document.querySelectorAll('#mainnav .navbtn').length,
       tiles: document.querySelectorAll('[data-view-panel]:not([hidden]) .tile').length,
-      tabs: document.querySelectorAll('#tabs .tab').length,
-      cards: document.querySelectorAll('#overview .card, #overview .stat, [data-panel="overview"] .card').length,
+      subs: document.querySelectorAll('#agentnav .subbtn').length,
+      cards: document.querySelectorAll('[data-view-panel]:not([hidden]) .card, [data-view-panel]:not([hidden]) .row').length,
       token: Boolean(sessionStorage.getItem('za_mission_token')),
       cookies: document.cookie.length,
       banner: document.querySelector('#banner')?.textContent?.trim() ?? '',
@@ -163,27 +164,38 @@ try {
     await page.waitForTimeout(600);
   }
 
-  // ── advanced tabs ─────────────────────────────────────────────────────────
+  // ── the agents ⇄ chat workspace ───────────────────────────────────────────
   if (TAB_CLICKS && afterDwell.app) {
-    const advancedHidden = await page.$eval('#advanced', (node) => node.hidden).catch(() => true);
-    if (advancedHidden) {
-      await page.click('#advanced-toggle');
-      await page.waitForTimeout(2500);
-    }
-    const tabs = await page.$$eval('#tabs .tab', (nodes) => nodes.map((node) => node.getAttribute('data-tab')));
-    let tabFailures = [];
-    for (const tab of tabs) {
-      await page.click(`#tabs .tab[data-tab="${tab}"]`);
-      await page.waitForTimeout(1200);
+    const areaFailures = [];
+    await page.click('#mainnav .navbtn[data-view="agents"]');
+    await page.waitForTimeout(1200);
+    for (const sub of ['chat', 'browse', 'chat']) {
+      await page.click(`#agentnav .subbtn[data-sub="${sub}"]`);
+      await page.waitForTimeout(1500);
       const state = await uiState();
       if (!state.app) {
-        tabFailures.push(`${tab} closed the dashboard`);
+        areaFailures.push(`${sub} closed the dashboard`);
         break;
       }
-      const visible = await page.$eval(`[data-panel="${tab}"]`, (node) => !node.hidden).catch(() => false);
-      if (!visible) tabFailures.push(`${tab} panel not shown`);
+      const visible = await page.$eval(`[data-sub-panel="${sub}"]`, (node) => !node.hidden).catch(() => false);
+      if (!visible) areaFailures.push(`${sub} area not shown`);
     }
-    record('mission tabs remain usable', tabFailures.length === 0, tabFailures.join('; ') || `${tabs.length} tabs opened`);
+    // selecting agents repeatedly must not drop the session or the conversation
+    const agents = await page.$$eval('#chat-agent-list .chatitem', (nodes) => nodes.length);
+    for (let index = 1; index <= Math.min(agents, 3); index += 1) {
+      await page.click(`#chat-agent-list .chatitem:nth-child(${index})`);
+      await page.waitForTimeout(1500);
+      const state = await uiState();
+      if (!state.app) {
+        areaFailures.push(`agent ${index} closed the dashboard`);
+        break;
+      }
+      const header = await page.textContent('#chat-header').catch(() => '');
+      if (!header || header.trim().length === 0) areaFailures.push(`agent ${index} opened an empty conversation`);
+    }
+    record('the agents and chat workspace stays stable', areaFailures.length === 0, areaFailures.join('; ') || `2 areas + ${Math.min(agents, 3)} agent switches`);
+    await page.click('#mainnav .navbtn[data-view="home"]');
+    await page.waitForTimeout(600);
   }
 
   // ── hard refresh ──────────────────────────────────────────────────────────

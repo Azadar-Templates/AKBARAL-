@@ -1,311 +1,230 @@
+/**
+ * ZA141251SA owner console — client behaviour, rendered in a real DOM.
+ *
+ * The console is deliberately four sections (Overview, Agents + Chat,
+ * Withdraw, Card). The protected mission systems (ledger, policy, approvals,
+ * credentials, publishing, accounting, customer work) keep their own
+ * authenticated API routes and are NOT part of this owner UI, so these tests
+ * assert the console's own guarantees: it renders stored text as text, it
+ * binds every conversation to the selected agent, it never fabricates an agent
+ * reply, and a read-only access link cannot act.
+ */
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 const { JSDOM } = require('jsdom');
 
+const HTML = fs.readFileSync(path.resolve('mission-dashboard/index.html'), 'utf8');
+
+const summary = {
+  generatedAt: '2026-01-01T00:00:00.000Z',
+  currency: 'USD',
+  money: { verifiedAvailableCents: 0, verifiedEarnedTotalCents: 0, verifiedEarnedTodayCents: 0, verifiedEarned30dCents: 0, expectedNotEarnedCents: 0, pendingWithdrawalCents: 0, settledWithdrawalCents: 0, note: 'Verified money only.' },
+  agents: { total: 2, active: 2, paused: 0, retired: 0, working: 0 },
+  work: { total: 0, inProgress: 0, delivered: 0, recent: [] },
+  activity: [],
+  alerts: [],
+  withdraw: { availableCents: 0, pendingCents: 0, pendingCount: 0, settledCents: 0, settledCount: 0, methods: [], methodCount: 0, maxMethods: 4, payableMethods: [], destinations: [], payouts: [] },
+  card: { cards: [], count: 0, maxCards: 4, status: 'NOT ISSUED', availableCents: 0, providerConnected: false, providerName: 'Stripe Issuing (mission-dedicated keys)', canIssue: false, blockers: ['CREDENTIAL REQUIRED — no mission card provider is connected.'], requirements: ['A mission-dedicated card provider account.'], note: 'No card credentials are stored.', methods: [] },
+  integrity: { auditOk: true, auditRows: 1, ledgerOk: true, identityLocked: true, killSwitch: false },
+};
+
+const AGENTS = [
+  { id: 'agent-one', slug: 'agent-0001', name: 'Agent 0001', category: 'research', mission_role: 'worker', status: 'active' },
+  { id: 'agent-two', slug: 'agent-0002', name: 'Agent 0002', category: 'writing', mission_role: 'worker', status: 'active' },
+];
+
+const briefing = (slug: string, name: string) => ({
+  agentId: slug, slug, name, role: 'worker', category: 'research', status: 'active',
+  capabilities: ['research'], currentWork: [], completedWork: [], workCounts: { total: 0, open: 0, delivered: 0 },
+  walletBalanceCents: 0, verifiedRevenueCents: 0, expectedRevenueCents: 0, tools: [], resources: [], lastActivity: [], text: 'context',
+});
+
+const readiness = {
+  ready: false, configured: false, enabled: false, provider: 'google', model: 'gemini-2.5-flash',
+  blockers: ['No AI provider is configured for this agent.'],
+  status: 'AI PROVIDER NOT CONFIGURED',
+  message: 'AI provider not configured. This agent has no model credential, resource binding or chat budget, so no reply can be generated.',
+};
+
 function consoleFixture() {
-  const html = fs.readFileSync(path.resolve('mission-dashboard/index.html'), 'utf8');
   const source = fs.readFileSync(path.resolve('mission-dashboard/app.js'), 'utf8').replace("document.addEventListener('DOMContentLoaded', boot);", '');
-  const dom = new JSDOM(html, { url: 'https://mission.example.test/', runScripts: 'outside-only' });
-  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
-  const resource = { id: 'resource-fixture', agent_id: 'agent-fixture', provider: 'google', status: 'approved', monthly_cost_cents: 100, readiness: { usable: false, blockers: ['resource_not_provisioned'] } };
-  const wallet = { id: 'wallet-fixture', label: 'Synthetic reserve', currency: 'USD', balanceCents: 1000, budgetCents: 1000, spentCents: 0, agentId: 'agent-fixture', kind: 'reserve', status: 'active' };
-  const payloads: Record<string, unknown> = {
-    '/api/customer-work': {offers:[{id:'html-release-check',title:'<img src=x onerror=alert(1)>',customer:'Website owner',deliverables:'Offline report',limit:'128 KiB'}],requests:[],limit:200,totalRecords:0,note:'No inferred customers or earnings'},
-    '/api/treasury': { treasury: { currency: 'USD', totals: { totalBalanceCents: 1000 }, daily: {} } },
-    '/api/payout-slots': { slots: [] }, '/api/ledger?limit=50': { entries: [] },
-    '/api/agents/agent-fixture/chat-config': { agentId: 'agent-fixture', config: null, workerLivenessVerified: false },
-    '/api/agents/agent-fixture/chat-jobs?limit=50': { jobs: [], nextCursor: null },
-    '/api/agents/agent-fixture/messages?after=0': { messages: [], nextCursor: 0, hasMore: false },
-    '/api/wallets': { wallets: [wallet] }, '/api/tools': { tools: [] }, '/api/credentials': { credentials: [{ id: 'credential-fixture', provider: 'google', status: 'active', label: 'Synthetic stored credential' }, { id: 'other-provider', provider: 'other', status: 'active', label: 'Not for this resource' }] },
-    '/api/policy': { policy: { currency: 'USD' } },
-    '/api/resources/resource-fixture/periods?limit=50': { periods: [], nextCursor: null },
-    '/api/resources/resource-fixture/calls?limit=50': { calls: [{ id: 'held-fixture', status: 'reserved', reservedUsage: { requests: 1 }, actualUsage: null }, { id: 'uncertain-fixture', status: 'uncertain', reservedUsage: { requests: 1 }, actualUsage: null, evidence: '<img src=x> Synthetic evidence text' }, { id: 'cost-fixture', status: 'succeeded', reservedUsage: { requests: 1 }, actualUsage: { requests: 1 }, budget: { status: 'held', reservedCents: 40, actualCents: null, currency: 'USD' } }], nextCursor: null },
-    '/api/resources': { resources: [resource] }, '/api/services': { services: [] },
-    '/api/payouts': { payouts: [{ id: 'payout-fixture', status: 'approved', amount_cents: 100, slot: 1, currency: 'USD', source_wallet_id: wallet.id, destination_snapshot: JSON.stringify({ providerRef: 'synthetic-destination', currency: 'USD' }) }] },
+  const dom = new JSDOM(HTML, { url: 'https://mission.example.test/', runScripts: 'outside-only' });
+  const requests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+  const messages: Record<string, Array<Record<string, unknown>>> = {
+    'agent-0001': [{ id: 'm1', seq: 1, actor_type: 'owner', body: '<img src=x onerror="window.__xss=1">', created_at: '2026-01-01T00:00:00.000Z' }],
+    'agent-0002': [],
   };
   dom.window.fetch = async (url: string, init: RequestInit = {}) => {
-    if (init.method === 'POST') {
-      const body = JSON.parse(String(init.body));
-      requests.push({ url, body });
-      if (url.endsWith('/messages')) payloads['/api/agents/agent-fixture/messages?after=0'] = { messages: [{ seq: 1, actor_type: 'owner', body: body.message }], nextCursor: 1, hasMore: false };
+    const method = init.method ?? 'GET';
+    const body = init.body ? JSON.parse(String(init.body)) : {};
+    requests.push({ url, method, body });
+    const slug = (url.match(/\/api\/agents\/([^/?]+)/) ?? [])[1];
+    if (method === 'POST' && url.endsWith('/messages')) {
+      messages[slug].push({ id: `m-${messages[slug].length + 1}`, seq: messages[slug].length + 1, actor_type: 'owner', body: body.message, created_at: '2026-01-01T00:01:00.000Z' });
+      return new Response(JSON.stringify({ message: { id: 'new' } }), { status: 201 });
     }
-    return new Response(JSON.stringify(payloads[url] ?? {}), { status: 200 });
+    if (url.startsWith('/api/summary')) return new Response(JSON.stringify(summary), { status: 200 });
+    if (url.startsWith('/api/agents?')) {
+      const query = new URL(url, 'https://mission.example.test').searchParams.get('q');
+      const list = query ? AGENTS.filter((agent) => agent.name.toLowerCase().includes(query.toLowerCase()) || agent.slug.includes(query)) : AGENTS;
+      return new Response(JSON.stringify({ total: AGENTS.length, agents: list }), { status: 200 });
+    }
+    if (url.includes('/chat-status')) {
+      const agent = AGENTS.find((entry) => entry.slug === slug)!;
+      return new Response(JSON.stringify({ agentId: agent.id, slug: agent.slug, readiness, briefing: briefing(agent.slug, agent.name), jobs: [] }), { status: 200 });
+    }
+    if (url.includes('/messages')) return new Response(JSON.stringify({ messages: messages[slug] ?? [], nextCursor: 0, hasMore: false, automaticReplies: false, automaticRepliesConfigured: false }), { status: 200 });
+    if (url.startsWith('/api/withdrawal-methods')) {
+      return new Response(JSON.stringify({ methods: [], count: 0, max: 4, types: [{ key: 'bank_local', label: 'Local bank account', description: 'd', availability: 'a', maskFrom: 'accountNumber', fields: [{ key: 'accountNumber', label: 'Account number', secret: true, required: true }, { key: 'currency', label: 'Currency', secret: false, required: true }] }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 200 });
   };
-  dom.window.eval(`${source}\nwindow.fixture = { state, loadCustomerWork, loadCustomerDetail, loadTools, loadTreasury, renderResourceProvision, renderAgentMessages, renderResourceCredentialBinding, renderResourceCalls, renderAgentChatControls, renderResourcePeriods, wire };`);
+  dom.window.eval(`${source}\nwindow.fixture = { state, loadView, loadAgentSub, renderChatAgentList, openAgentChat, loadAgentConversation, sendChatMessage, openMethodForm, loadWithdrawSimple, loadCardSimple, wire };`);
+  dom.window.fixture.wire();
   dom.window.fixture.state.token = 'synthetic-dom-session';
-  return { dom, win: dom.window, requests, resource };
+  return { dom, win: dom.window, requests };
 }
 
-it('owner payout controls show the authorized destination and record failure evidence without sending money', async () => {
-  const { dom, win, requests } = consoleFixture();
-  try {
-    await win.fixture.loadTreasury();
-    assert.match(win.document.querySelector('#payouts').textContent, /wallet-fixture/);
-    assert.match(win.document.querySelector('#payouts').textContent, /synthetic-destination/);
-    win.prompt = () => 'Synthetic provider failure evidence';
-    win.document.querySelector('[data-settle][data-state="failed"]').click();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(requests[0], { url: '/api/payouts/payout-fixture/settle', body: { status: 'failed', failureReason: 'Synthetic provider failure evidence' } });
-    assert.match(win.document.querySelector('#banner').textContent, /No external payment/);
-    win.fixture.state.token = '';
-    await win.fixture.loadTreasury();
-    assert.equal(win.document.querySelectorAll('[data-settle], [data-payout]').length, 0, 'read-only links do not expose owner controls');
-  } finally { dom.window.close(); }
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+it('the owner console exposes only the four sections, with no legacy admin surface', () => {
+  const dom = new JSDOM(HTML);
+  const document = dom.window.document;
+  const views = [...document.querySelectorAll('[data-view-panel]')].map((node) => node.getAttribute('data-view-panel'));
+  assert.deepEqual(views, ['home', 'agents', 'withdraw', 'card']);
+  assert.equal(document.querySelectorAll('[data-panel]').length, 0, 'the legacy 11-panel admin interface must not exist in the owner console');
+  assert.equal(document.querySelector('#tabs'), null);
+  assert.equal(document.querySelector('#advanced'), null);
+  assert.equal(document.querySelector('#advanced-toggle'), null);
+  assert.ok(!/Advanced \/ Owner settings/.test(HTML));
+  assert.deepEqual(
+    [...document.querySelectorAll('#agentnav .subbtn')].map((node) => node.getAttribute('data-sub')),
+    ['browse', 'chat'],
+    'Agents carries exactly two areas: the fleet list and the chat workspace',
+  );
+  dom.window.close();
 });
 
-it('owner provisioning form sends the selected mission wallet and evidence, not credentials', async () => {
-  const { dom, win, requests, resource } = consoleFixture();
-  try {
-    await win.fixture.loadTools();
-    assert.match(win.document.querySelector('#resources').textContent, /resource_not_provisioned/);
-    await win.fixture.renderResourceProvision(resource);
-    const form = win.document.querySelector('#resource-provision form');
-    form.elements.walletId.value = 'wallet-fixture';
-    form.elements.actualCostCents.value = '75';
-    form.elements.providerRef.value = 'synthetic-invoice';
-    form.elements.evidence.value = 'Synthetic provisioning proof, not a real purchase.';
-    form.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/provision', body: { walletId: 'wallet-fixture', actualCostCents: 75, providerRef: 'synthetic-invoice', evidence: 'Synthetic provisioning proof, not a real purchase.' } });
-    assert.match(win.document.querySelector('#resource-provision').textContent, /readiness is shown separately/);
-    assert.equal(win.document.querySelector('#resource-provision input[type="password"]'), null);
-  } finally { dom.window.close(); }
-});
-
-it('owner messaging renders actual stored text safely and never fabricates an agent reply', async () => {
-  const { dom, win, requests } = consoleFixture();
-  try {
-    const host = win.document.createElement('section');
-    win.document.body.appendChild(host);
-    await win.fixture.renderAgentMessages(host, 'agent-fixture');
-    const form = host.querySelector('form');
-    form.elements.message.value = '<img src=x onerror=alert(1)> Synthetic owner message';
-    form.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests[0].url, '/api/agents/agent-fixture/messages');
-    assert.equal(typeof requests[0].body.idempotencyKey, 'string');
-    assert.equal(host.querySelector('img'), null, 'untrusted message text is never parsed as HTML');
-    assert.match(host.textContent, /Synthetic owner message/);
-    assert.match(host.textContent, /not simulated agent replies/);
-  } finally { dom.window.close(); }
-});
-
-it('overlapping transcript refreshes are coalesced without duplicate messages', async () => {
+it('a conversation renders stored text as text and never fabricates an agent reply', async () => {
   const { dom, win } = consoleFixture();
   try {
-    let release!: () => void;
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    let calls = 0;
-    win.fetch = async () => {
-      calls++;
-      await gate;
-      return new Response(JSON.stringify({ messages: [{ id: 'synthetic-one', seq: 1, actor_type: 'owner', body: 'Synthetic single message' }], nextCursor: 1, hasMore: false }));
-    };
-    const host = win.document.createElement('section');
-    win.document.body.appendChild(host);
-    const rendering = win.fixture.renderAgentMessages(host, 'agent-fixture');
-    host.querySelector('button').dispatchEvent(new win.Event('click'));
-    host.querySelector('button').dispatchEvent(new win.Event('click'));
-    assert.equal(calls, 1);
-    release();
-    await rendering;
-    assert.equal(host.querySelectorAll('tbody tr').length, 1);
-    assert.equal(host.querySelector('button').disabled, false);
-  } finally { dom.window.close(); }
+    await win.fixture.openAgentChat('agent-0001');
+    await settle();
+    const log = win.document.querySelector('#chat-log');
+    assert.match(log.textContent, /onerror/, 'the stored message is shown literally');
+    assert.equal(log.querySelectorAll('img').length, 0, 'stored text is never parsed as markup');
+    assert.equal(win.__xss, undefined);
+    assert.equal(log.querySelectorAll('.msg.agent').length, 0, 'no agent reply exists, so none is displayed');
+    assert.match(win.document.querySelector('#chat-readiness').textContent, /AI PROVIDER NOT CONFIGURED/);
+    assert.match(win.document.querySelector('#chat-note').textContent, /No answer is invented/i);
+  } finally {
+    dom.window.close();
+  }
 });
 
-it('message submission rejects double clicks, reuses uncertain retry keys and rotates keys for edited content', async () => {
-  const { dom, win } = consoleFixture();
-  try {
-    const attempts: Array<{ message: string; idempotencyKey: string }> = [];
-    win.fetch = async (_url: string, init: RequestInit) => {
-      if (init.method === 'POST') {
-        attempts.push(JSON.parse(String(init.body)));
-        return new Response(JSON.stringify({ error: { message: 'Synthetic uncertain response; retry permitted.' } }), { status: 503 });
-      }
-      return new Response(JSON.stringify({ messages: [], nextCursor: 0, hasMore: false }));
-    };
-    const host = win.document.createElement('section');
-    win.document.body.appendChild(host);
-    await win.fixture.renderAgentMessages(host, 'agent-fixture');
-    const form = host.querySelector('form');
-    const submit = () => form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    form.elements.message.value = 'Synthetic initial message';
-    submit(); submit();
-    assert.equal(attempts.length, 1);
-    await new Promise(resolve => setImmediate(resolve));
-    submit();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(attempts.length, 2);
-    assert.equal(attempts[0].idempotencyKey, attempts[1].idempotencyKey);
-    form.elements.message.value = 'Synthetic revised message';
-    submit();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(attempts.length, 3);
-    assert.notEqual(attempts[1].idempotencyKey, attempts[2].idempotencyKey);
-    assert.equal(form.elements.message.readOnly, false);
-  } finally { dom.window.close(); }
-});
-
-it('owner credential binding selects same-provider metadata and submits no plaintext secrets', async () => {
-  const { dom, win, requests, resource } = consoleFixture();
-  try {
-    await win.fixture.loadTools();
-    assert.equal(win.document.querySelectorAll('[data-bind-credential]').length, 1);
-    await win.fixture.renderResourceCredentialBinding(resource);
-    const form = win.document.querySelector('#resource-credential form');
-    assert.equal(form.elements.credentialId.options.length, 2);
-    form.elements.credentialId.value = 'credential-fixture';
-    form.elements.reason.value = 'Synthetic owner review of replacement binding.';
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/credential', body: { credentialId: 'credential-fixture', expectedCredentialId: null, reason: 'Synthetic owner review of replacement binding.' } });
-    assert.match(win.document.querySelector('#resource-credential').textContent, /not provider verification/);
-    win.fixture.state.token = '';
-    await win.fixture.loadTools();
-    assert.equal(win.document.querySelectorAll('[data-bind-credential]').length, 0);
-  } finally { dom.window.close(); }
-});
-
-it('owner quota-call controls submit actual evidence, never guessed zero, and render text safely', async () => {
-  const { dom, win, requests, resource } = consoleFixture();
-  try {
-    await win.fixture.loadTools();
-    assert.equal(win.document.querySelectorAll('[data-resource-calls]').length, 1);
-    await win.fixture.renderResourceCalls(resource);
-    const host = win.document.querySelector('#resource-calls');
-    assert.equal(host.querySelector('img'), null);
-    assert.match(host.textContent, /Unknown \/ not reconciled/);
-    host.querySelector('[data-reconcile-call]').click();
-    const form = host.querySelector('form');
-    assert.equal(form.querySelector('input[type="number"]').value, '', 'usage is never prefilled with guessed zero');
-    form.elements.outcome.value = 'succeeded';
-    form.querySelector('input[type="number"]').value = '1';
-    form.elements.providerRef.value = 'synthetic-owner-receipt';
-    form.elements.evidence.value = 'Synthetic owner usage evidence, not a real provider receipt.';
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/calls/uncertain-fixture/reconcile', body: { outcome: 'succeeded', actualUsage: { requests: 1 }, providerRef: 'synthetic-owner-receipt', evidence: 'Synthetic owner usage evidence, not a real provider receipt.' } });
-    assert.match(host.textContent, /No provider verification, payment or refund/);
-    host.querySelector('[data-cancel-call]').click();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests[1].url, '/api/resources/resource-fixture/calls/held-fixture/cancel');
-    win.fixture.state.token = '';
-    await win.fixture.loadTools();
-    assert.equal(win.document.querySelectorAll('[data-resource-calls], [data-reconcile-call], [data-cancel-call]').length, 0);
-  } finally { dom.window.close(); }
-});
-
-it('financial receipt control requires an explicit actual charge and distinguishes accounting from payment', async () => {
-  const { dom, win, requests, resource } = consoleFixture();
-  try {
-    await win.fixture.renderResourceCalls(resource);
-    const host = win.document.querySelector('#resource-calls');
-    assert.match(host.textContent, /40 USD minor units reserved; actual unknown/);
-    host.querySelector('[data-record-call-cost]').click();
-    const form = host.querySelector('form');
-    assert.equal(form.elements.actualCostCents.value, '');
-    form.elements.actualCostCents.value = '25';
-    form.elements.providerRef.value = 'synthetic-financial-ref';
-    form.elements.evidence.value = 'Synthetic financial evidence, not a real payment.';
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests.length, 1, 'double submit records one request');
-    assert.deepEqual(requests[0], { url: '/api/resources/resource-fixture/calls/cost-fixture/record-cost', body: { actualCostCents: 25, providerRef: 'synthetic-financial-ref', evidence: 'Synthetic financial evidence, not a real payment.' } });
-    assert.match(host.textContent, /No external payment executed/);
-  } finally { dom.window.close(); }
-});
-
-it('automatic reply controls require owner opt-in and explicit financial assumptions without claiming activation', async () => {
+it('each message is posted to the selected agent with its own idempotency key', async () => {
   const { dom, win, requests } = consoleFixture();
   try {
-    const host = win.document.createElement('div'); win.document.body.appendChild(host);
-    await win.fixture.renderAgentChatControls(host, 'agent-fixture');
-    const form = host.querySelector('form');
-    assert.equal(form.elements.enabled.value, 'false');
-    assert.equal(form.elements.maxCostCents.value, '');
-    form.elements.resourceId.value = 'resource-fixture';
-    form.elements.walletId.value = 'wallet-fixture';
-    form.elements.maxCostCents.value = '40';
-    form.elements.costBasis.value = 'Synthetic owner-reviewed test pricing assumption.';
-    form.elements.enabled.value = 'true';
-    let confirmed = 0; win.confirm = () => { confirmed++; return true; };
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(confirmed, 1);
-    assert.equal(requests[0].url, '/api/agents/agent-fixture/chat-config');
-    assert.deepEqual(requests[0].body, { enabled: true, resourceId: 'resource-fixture', walletId: 'wallet-fixture', model: 'gemini-2.5-flash', maxInputBytes: 2000, maxOutputTokens: 1024, maxCostCents: 40, costBasis: 'Synthetic owner-reviewed test pricing assumption.' });
-    assert.match(win.document.querySelector('#banner').textContent, /does not activate a provider or prove a live worker/);
-    win.fixture.state.token = '';
-    const privateHost = win.document.createElement('div');
-    await win.fixture.renderAgentChatControls(privateHost, 'agent-fixture');
-    assert.equal(privateHost.children.length, 0);
-  } finally { dom.window.close(); }
+    await win.fixture.openAgentChat('agent-0001');
+    await settle();
+    const form = win.document.querySelector('#chat-form');
+    const input = form.querySelector('input');
+    input.value = 'What are you doing right now?';
+    await win.fixture.sendChatMessage(new win.Event('submit'));
+    await settle();
+    input.value = 'What should you do next?';
+    await win.fixture.sendChatMessage(new win.Event('submit'));
+    await settle();
+    const posts = requests.filter((request) => request.method === 'POST');
+    assert.equal(posts.length, 2);
+    assert.ok(posts.every((post) => post.url === '/api/agents/agent-0001/messages'), 'messages go to the selected agent only');
+    assert.notEqual(posts[0].body.idempotencyKey, posts[1].body.idempotencyKey);
+    assert.equal(posts[0].body.message, 'What are you doing right now?');
+
+    // An empty composer never posts.
+    input.value = '   ';
+    await win.fixture.sendChatMessage(new win.Event('submit'));
+    await settle();
+    assert.equal(requests.filter((request) => request.method === 'POST').length, 2);
+  } finally {
+    dom.window.close();
+  }
 });
 
-it('owner period controls require explicit starting usage and cost and retain one idempotency key per attempt', async () => {
-  const { dom, win, requests, resource } = consoleFixture();
-  try {
-    await win.fixture.renderResourcePeriods({ ...resource, status: 'active', provisioned_at: '2026-08-01T00:00:00Z', expires_at: '2026-09-01T00:00:00Z', limits: '{"requests":10}' });
-    const host = win.document.querySelector('#resource-periods'), form = host.querySelector('form');
-    assert.equal(form.elements.actualCostCents.value, '');
-    assert.equal(form.querySelector('[aria-label="Starting requests usage"]').value, '');
-    form.elements.periodStart.value = '2026-09-01T00:00'; form.elements.periodEnd.value = '2026-10-01T00:00';
-    form.elements.walletId.value = 'wallet-fixture'; form.elements.actualCostCents.value = '5';
-    form.querySelector('[aria-label="Starting requests usage"]').value = '2';
-    form.elements.providerRef.value = 'synthetic-period-ui'; form.elements.evidence.value = 'Synthetic current provider-period evidence only.';
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, '/api/resources/resource-fixture/periods');
-    assert.deepEqual(requests[0].body.startingUsage, { requests: 2 });
-    assert.equal(requests[0].body.actualCostCents, 5); assert.equal(requests[0].body.currency, 'USD');
-    assert.ok(String(requests[0].body.idempotencyKey).length >= 8);
-    assert.match(host.textContent, /No purchase or external payment executed/);
-    win.fixture.state.token = ''; await win.fixture.loadTools();
-    assert.equal(host.querySelectorAll('form').length, 0);
-  } finally { dom.window.close(); }
-});
-
-it('credential creation requires explicit local model permission and blocks duplicate secret submissions', async () => {
+it('switching agents rebinds the conversation to the newly selected agent', async () => {
   const { dom, win, requests } = consoleFixture();
   try {
-    win.fixture.wire();
-    const form = win.document.querySelector('#credential-form');
-    assert.equal(form.elements.scope.value, '');
-    form.elements.provider.value = 'google'; form.elements.label.value = 'Synthetic scoped credential';
-    form.elements.secret.value = 'synthetic-credential-not-real'; form.elements.scope.value = 'model.call';
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    form.dispatchEvent(new win.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests.length, 1); assert.deepEqual(requests[0].body.scope, ['model.call']);
-    assert.equal(form.elements.secret.value, '');
-    assert.match(win.document.querySelector('#banner').textContent, /does not activate or verify a provider/);
-    win.fixture.state.token = ''; await win.fixture.loadTools(); assert.equal(form.hidden, true);
-  } finally { dom.window.close(); }
+    await win.fixture.openAgentChat('agent-0001');
+    await settle();
+    assert.match(win.document.querySelector('#chat-header').textContent, /Agent 0001/);
+    await win.fixture.openAgentChat('agent-0002');
+    await settle();
+    assert.match(win.document.querySelector('#chat-header').textContent, /Agent 0002/);
+    assert.equal(win.fixture.state.chatAgent.slug, 'agent-0002');
+    assert.match(win.document.querySelector('#chat-log').textContent, /No messages yet with Agent 0002/);
+    assert.ok(requests.some((request) => request.url.startsWith('/api/agents/agent-0002/chat-status')));
+
+    const input = win.document.querySelector('#chat-form input');
+    input.value = 'Explain your current task.';
+    await win.fixture.sendChatMessage(new win.Event('submit'));
+    await settle();
+    const post = requests.filter((request) => request.method === 'POST').pop()!;
+    assert.equal(post.url, '/api/agents/agent-0002/messages', 'the message follows the selected agent, not the first one opened');
+  } finally {
+    dom.window.close();
+  }
 });
 
-it('hidden owner forms remain visually hidden when their layout class declares display grid', async () => {
+it('the selected agent and section survive a reload through storage', async () => {
   const { dom, win } = consoleFixture();
   try {
-    const style = win.document.createElement('style');
-    style.textContent = fs.readFileSync(path.resolve('mission-dashboard/styles.css'), 'utf8');
-    win.document.head.appendChild(style);
-    win.fixture.state.token = ''; await win.fixture.loadTools();
-    const form = win.document.querySelector('#credential-form');
-    assert.equal(form.hidden, true);
-    assert.equal(win.getComputedStyle(form).display, 'none');
-  } finally { dom.window.close(); }
+    await win.fixture.openAgentChat('agent-0002');
+    await settle();
+    assert.equal(win.localStorage.getItem('za_mission_chat_agent'), 'agent-0002');
+    assert.equal(win.localStorage.getItem('za_mission_view'), 'agents');
+    assert.equal(win.localStorage.getItem('za_mission_agent_sub'), 'chat');
+  } finally {
+    dom.window.close();
+  }
 });
 
-
-it('customer workbench labels unpublished offers and empty demand without executing listing text',async()=>{
- const {dom,win,requests}=consoleFixture();try{await win.fixture.loadCustomerWork();const host=win.document.querySelector('#customer-work');assert.match(host.textContent,/No customer requests/);assert.match(host.textContent,/unpublished listing/);assert.equal(host.querySelector('img'),null);const form=host.querySelector('form[aria-label="Prepare unpublished listing"]');form.elements.quoteCents.value='20000';form.dispatchEvent(new win.Event('submit',{bubbles:true,cancelable:true}));await new Promise(resolve=>setImmediate(resolve));assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/customer-work/listing');assert.equal(requests[0].body.quoteCents,20000);}finally{dom.window.close();}
+it('a read-only access link cannot send messages or change withdrawal methods', async () => {
+  const { dom, win, requests } = consoleFixture();
+  try {
+    win.fixture.state.token = '';
+    win.fixture.state.cookieAuth = false;
+    win.fixture.state.link = 'synthetic-read-only-link';
+    await win.fixture.openAgentChat('agent-0001');
+    await settle();
+    assert.equal(win.document.querySelector('#chat-form').hidden, true, 'a read-only link has no composer');
+    await win.fixture.loadWithdrawSimple();
+    await settle();
+    assert.equal(win.document.querySelectorAll('#withdraw-destinations button').length, 0);
+    assert.equal(requests.filter((request) => request.method === 'POST').length, 0);
+  } finally {
+    dom.window.close();
+  }
 });
-it('customer briefs and acquisition controls are not requested for read-only access links',async()=>{
- const {dom,win,requests}=consoleFixture();try{win.fixture.state.token='';win.fixture.state.link='synthetic-read-only';win.fetch=()=>{throw new Error('must not request private customers');};await win.fixture.loadCustomerWork();assert.match(win.document.querySelector('#customer-work').textContent,/Owner sign-in required/);assert.equal(win.document.querySelector('#customer-work form'),null);assert.equal(requests.length,0);}finally{dom.window.close();}
+
+it('the withdrawal method form keeps secret fields masked in the DOM and posts them once', async () => {
+  const { dom, win, requests } = consoleFixture();
+  try {
+    await win.fixture.openMethodForm('#withdraw-method-form', async () => {});
+    await settle();
+    const secret = win.document.querySelector('#withdraw-method-form [name="accountNumber"]');
+    assert.equal(secret.getAttribute('type'), 'password');
+    assert.equal(secret.getAttribute('autocomplete'), 'off');
+    secret.value = '12345678901234';
+    win.document.querySelector('#withdraw-method-form [name="currency"]').value = 'PKR';
+    win.document.querySelector('#withdraw-method-form form').dispatchEvent(new win.Event('submit'));
+    await settle();
+    const post = requests.find((request) => request.url === '/api/withdrawal-methods' && request.method === 'POST');
+    assert.ok(post, 'the method is submitted to the encrypted-store endpoint');
+    assert.equal((post!.body as any).values.accountNumber, '12345678901234');
+    assert.ok(!win.document.body.innerHTML.includes('12345678901234'), 'the typed secret is cleared from the DOM after submission');
+  } finally {
+    dom.window.close();
+  }
 });
