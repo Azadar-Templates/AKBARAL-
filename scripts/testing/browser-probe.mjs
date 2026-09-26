@@ -1,0 +1,18 @@
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
+import { execFileSync } from 'node:child_process'; import { brotliDecompressSync } from 'node:zlib';
+import { chromium } from '@playwright/test';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const runtime = (await import('@sparticuz/chromium')).default;
+const packageRoot = path.resolve(path.dirname(require.resolve('@sparticuz/chromium')), '..');
+const libs = fs.mkdtempSync(path.join(os.tmpdir(), 'akb-libs-'));
+execFileSync('tar', ['-xf','-','-C',libs], { input: brotliDecompressSync(fs.readFileSync(path.join(packageRoot,'bin/al2023.tar.br'))) });
+const exe = await runtime.executablePath();
+console.log('exe', exe, fs.existsSync(exe));
+const browser = await chromium.launch({ executablePath: exe, headless: true, env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), LD_LIBRARY_PATH: path.join(libs,'lib') } });
+const page = await browser.newPage();
+await page.goto('http://127.0.0.1:3000/', { waitUntil: 'domcontentloaded' });
+console.log('title:', await page.title());
+await browser.close();
+console.log('BROWSER OK');
+fs.writeFileSync('/tmp/chromium-path.txt', exe + '\n' + path.join(libs,'lib'));

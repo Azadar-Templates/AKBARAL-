@@ -98,6 +98,21 @@ function corsHeaders(req: express.Request, res: express.Response, next: express.
   next();
 }
 
+/**
+ * Is the ZA141251SA BOSS bridge deliberately enabled on the PUBLIC tier?
+ *
+ * Requires BOTH an explicit opt-in flag AND a dashboard token, because the
+ * router behind it serves the private mission database. Missing either one
+ * means the route is never mounted (404), never "mounted but open".
+ */
+export function missionBossBridgeEnabled(): boolean {
+  const optIn = String(process.env.AKBARAL_ENABLE_MISSION_BOSS_BRIDGE ?? '').trim() === '1';
+  const token = String(
+    process.env.ZA141251SA_DASHBOARD_TOKEN ?? process.env.MISSION_DASHBOARD_TOKEN ?? '',
+  ).trim();
+  return optIn && token.length >= 32;
+}
+
 export function createApiServer(): ApiServer {
   // Embedded/test callers get the same mandatory-config validation. The
   // production SESSION_SECRET requirement is enforced by validateEnvironment().
@@ -204,7 +219,23 @@ export function createApiServer(): ApiServer {
   app.use('/api', createFilesRouter());
   app.use('/api/billing', createBillingRouter());
   app.use('/api/dashboard', userDashboardRouter);
-  app.use('/api/boss', bossDashboardRouter);
+  // ZA141251SA BOSS bridge — OFF by default (isolation).
+  //
+  // SECURITY FIX 2026-09-26: this router reads the PRIVATE mission database
+  // (src/mission/database) and was mounted unconditionally on the PUBLIC
+  // AKBARAL! API. Its guard also failed OPEN when no dashboard token was
+  // configured, so `GET http://<public-host>/api/boss/overview` returned the
+  // whole private fleet, treasury and audit totals to anonymous callers
+  // (reproduced live through the :3000 → :4000 proxy before this change).
+  //
+  // The private mission surface belongs to the separate mission process
+  // (`npm run mission:serve`, its own port, own database, own session auth).
+  // This bridge now exists only when an operator deliberately turns it on AND
+  // supplies a token; without both it is not routed at all, so the public tier
+  // answers 404 exactly as if the code were absent.
+  if (missionBossBridgeEnabled()) {
+    app.use('/api/boss', bossDashboardRouter);
+  }
   app.use('/api/admin', createAdminRouter());
   app.use('/api/tools', createToolsRouter());
   app.use('/api/models', createModelsRouter());

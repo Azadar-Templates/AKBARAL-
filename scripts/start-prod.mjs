@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { ensureSessionSecret, resolveSessionSecretFilePath } from './lib/session-secret.mjs';
 
 /**
  * Production start for the AKBARAL platform.
@@ -144,62 +144,11 @@ if (process.argv.includes('--print-ports')) {
  * volume keep the same signing key instead of invalidating every session on
  * every deploy. The value itself is never logged — only its provenance.
  */
-const SESSION_SECRET_PLACEHOLDERS = new Set([
-  'change-me-in-production',
-  'replace-with-a-long-random-secret',
-  'changeme',
-  'secret',
-]);
-
-function resolveSessionSecretFilePath() {
-  if (process.env.AKBARAL_SESSION_SECRET_FILE) {
-    return path.resolve(process.env.AKBARAL_SESSION_SECRET_FILE);
-  }
-  // Use DATA_DIR (defaults to /data in production, ./data in dev)
-  const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : 'data');
-  return path.resolve(dataDir, '.session-secret');
-}
-
-function ensureSessionSecret() {
-  const explicit = String(process.env.SESSION_SECRET ?? '').trim();
-  if (explicit && !SESSION_SECRET_PLACEHOLDERS.has(explicit.toLowerCase())) {
-    log('SESSION_SECRET is explicitly configured — using it as-is (authoritative).');
-    return { value: explicit, source: 'explicit' };
-  }
-
-  const secretFile = resolveSessionSecretFilePath();
-
-  try {
-    if (existsSync(secretFile)) {
-      const persisted = readFileSync(secretFile, 'utf8').trim();
-      if (persisted.length >= 32) {
-        log(`SESSION_SECRET not set — reusing the previously generated secret persisted at ${secretFile}.`);
-        return { value: persisted, source: 'persisted' };
-      }
-      log(`persisted secret at ${secretFile} is invalid (too short) — generating a new one.`);
-    }
-  } catch (error) {
-    log(`could not read the persisted session secret (${error instanceof Error ? error.message : String(error)}); generating a new one.`);
-  }
-
-  const generated = randomBytes(48).toString('base64url');
-  try {
-    mkdirSync(path.dirname(secretFile), { recursive: true });
-    writeFileSync(secretFile, `${generated}\n`, { mode: 0o600 });
-    chmodSync(secretFile, 0o600);
-    log(`SESSION_SECRET not set — generated a new random secret and persisted it to ${secretFile} (mode 0600). The value is never logged.`);
-    return { value: generated, source: 'generated' };
-  } catch (error) {
-    log(
-      `SESSION_SECRET not set — generated a random secret for this process, but could not persist it ` +
-        `(${error instanceof Error ? error.message : String(error)}). Sessions will not survive a restart ` +
-        'until SESSION_SECRET is configured explicitly or a writable volume is available. The value is never logged.',
-    );
-    return { value: generated, source: 'generated-unpersisted' };
-  }
-}
-
-const sessionSecretResult = ensureSessionSecret();
+// Implementation lives in scripts/lib/session-secret.mjs so the development
+// wrapper (scripts/start-dev.mjs) applies the IDENTICAL contract — it used to
+// have none, which reintroduced the "new secret on every restart" session bug
+// in development while production was fixed.
+const sessionSecretResult = ensureSessionSecret(log);
 const SESSION_SECRET = sessionSecretResult.value;
 process.env.SESSION_SECRET = SESSION_SECRET;
 

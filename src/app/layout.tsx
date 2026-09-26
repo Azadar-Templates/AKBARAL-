@@ -75,12 +75,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Compressed, long-cached text assets (≈3× smaller on the wire) — see
             src/app/assets/[file]/route.ts for why compression lives there and
             not in next.config.mjs (SSE must stay uncompressed). */}
-        <link rel="stylesheet" href="/assets/tokens.css?v=akbaral-lux-18" />
-        <link rel="stylesheet" href="/assets/styles.css?v=akbaral-lux-18" />
+        <link rel="stylesheet" href="/assets/tokens.css?v=akbaral-lux-19" />
+        <link rel="stylesheet" href="/assets/styles.css?v=akbaral-lux-19" />
       </head>
       <body>
         {children}
-        <Script src="/assets/app.js?v=akbaral-lux-18" strategy="afterInteractive" />
+        <Script src="/assets/app.js?v=akbaral-lux-19" strategy="afterInteractive" />
       </body>
     </html>
   );

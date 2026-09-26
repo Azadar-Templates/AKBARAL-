@@ -115,10 +115,17 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
   // free tier at "Creating build environment → Failed to create container".
   // The deployed configuration therefore pulls the prebuilt image published by
   // the docker-publish workflow and runs NO build step on the platform.
+  // The image may be the GHCR original OR its Docker Hub mirror
+  // (.github/workflows/mirror-ghcr-to-dockerhub.yml republishes the very same
+  // digest as docker.io/mrzain555/akbaral, which is what the deployed
+  // stackhost.yaml currently pins). What matters for the 512MB ceiling is that
+  // a PREBUILT image is pulled and no source build runs on the platform.
+  // Before 2026-09-26 this assertion accepted only the ghcr.io spelling, so the
+  // merged Docker Hub pin left `npm test` failing on a clean checkout.
   assert.match(
     stackhostSource,
-    /image:\s*"?ghcr\.io\/azadar-templates\/akbaral:[\w.-]+/,
-    'stackhost.yaml must run the prebuilt GHCR image — a source build needs ~1GB and the free tier has 512MB',
+    /image:\s*"?(?:ghcr\.io\/azadar-templates\/akbaral|(?:docker\.io\/)?mrzain555\/akbaral):[\w.-]+/,
+    'stackhost.yaml must run a prebuilt image (GHCR or its Docker Hub mirror) — a source build needs ~1GB and the free tier has 512MB',
   );
   assert.match(
     stackhostSource,

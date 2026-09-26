@@ -187,9 +187,23 @@ describe('DATA_DIR configuration', () => {
     assert.ok(dockerfile.includes('DATA_DIR=/data'), 'Dockerfile must set DATA_DIR=/data');
     assert.ok(!/mkdir.*\/app\/data/.test(dockerfile), 'Dockerfile must not mkdir /app/data');
 
-    // Check start-prod.mjs uses DATA_DIR
+    // Check the production start path resolves DATA_DIR. Since 2026-09-26 the
+    // persisted-SESSION_SECRET logic lives in scripts/lib/session-secret.mjs so
+    // that `npm run dev` and `npm start` share ONE contract (dev used to mint a
+    // fresh secret per process and silently invalidate every issued JWT on
+    // restart). DATA_DIR may therefore be referenced by the wrapper or by the
+    // shared module it imports — both are the production start path.
     const startProd = fs.readFileSync(resolve(process.cwd(), 'scripts/start-prod.mjs'), 'utf8');
-    assert.ok(startProd.includes('DATA_DIR'), 'start-prod.mjs must reference DATA_DIR');
+    const sharedSecret = fs.readFileSync(resolve(process.cwd(), 'scripts/lib/session-secret.mjs'), 'utf8');
+    assert.ok(
+      startProd.includes('DATA_DIR') || (startProd.includes('session-secret.mjs') && sharedSecret.includes('DATA_DIR')),
+      'the production start path must resolve DATA_DIR (directly or through scripts/lib/session-secret.mjs)',
+    );
+    const startDev = fs.readFileSync(resolve(process.cwd(), 'scripts/start-dev.mjs'), 'utf8');
+    assert.ok(
+      startDev.includes('session-secret.mjs'),
+      'start-dev.mjs must reuse the same persisted-secret module, or dev restarts invalidate every session',
+    );
 
     console.log(`[DATA_DIR] Architectural contract verified: /app is read-only code, DATA_DIR is writable data`);
   });

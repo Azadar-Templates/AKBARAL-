@@ -1917,6 +1917,21 @@
           window.location.href = `/api/auth/oauth/${encodeURIComponent(button.dataset.oauthProvider)}/authorize`;
         });
       });
+      // A disabled control must SAY why, visibly. A `title` tooltip is not an
+      // explanation on touch devices and is invisible to a glance, so the
+      // unavailable providers are also named in plain text under the row.
+      if (note) {
+        const unavailable = providers.filter((p) => !p.configured).map((p) => p.label);
+        if (unavailable.length === providers.length && providers.length > 0) {
+          note.textContent = 'Provider sign-in is not enabled on this deployment — use your email and password above.';
+          note.hidden = false;
+          note.setAttribute('data-kind', 'info');
+        } else if (unavailable.length > 0) {
+          note.textContent = `${unavailable.join(', ')} sign-in ${unavailable.length === 1 ? 'is' : 'are'} not enabled on this deployment.`;
+          note.hidden = false;
+          note.setAttribute('data-kind', 'info');
+        }
+      }
     } catch {
       wrap.hidden = true;
     }

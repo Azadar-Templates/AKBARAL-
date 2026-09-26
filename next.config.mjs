@@ -43,9 +43,23 @@ const nextConfig = {
   // src/app/assets/[file]/route.ts (smaller than gzip; the middleware leaves
   // pre-encoded responses alone).
   compress: true,
-  // Allow the sandbox preview host(s) to reach dev-mode resources (HMR)
-  // so the proxied preview works from the browser.
-  allowedDevOrigins: ['*.e2b.app'],
+  // Dev-mode origin allowlist for Next's own dev resources (/_next/hmr, dev
+  // chunks).
+  //
+  // BUG FIXED 2026-09-26: this list used to contain ONLY '*.e2b.app'. Listing
+  // anything here REPLACES Next's implicit localhost default, so every browser
+  // hitting the dev server on http://localhost:3000 or http://127.0.0.1:3000
+  // got "Blocked cross-origin request to Next.js dev resource /_next/hmr".
+  // The dev client then never finished hydrating, and because the SPA bundle
+  // is injected by <Script strategy="afterInteractive"> (src/app/layout.tsx),
+  // public/app.js was preloaded but NEVER EXECUTED — the browser showed the
+  // static header/footer shell with every .screen hidden: no landing, no auth
+  // card, no dashboard, no MASTER. curl looked healthy the whole time because
+  // the API tier was fine; only a real browser reproduced it.
+  //
+  // Local hosts must therefore stay in the list alongside the sandbox preview
+  // host. Asserted by src/app/dev-origins.test.ts.
+  allowedDevOrigins: ['localhost', '127.0.0.1', '[::1]', '*.e2b.app', '*.app.github.dev', '*.gitpod.io'],
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${backend}/api/:path*` },

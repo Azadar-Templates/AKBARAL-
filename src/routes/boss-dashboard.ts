@@ -9,21 +9,46 @@
  */
 
 import { Router } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { missionDb as db } from '../mission/database';
 import type { Row } from '../mission/database';
 
 export const bossDashboardRouter = Router();
 
-// Simple bearer auth for mission dashboard
+/**
+ * Bearer auth for the mission bridge — FAILS CLOSED.
+ *
+ * SECURITY FIX 2026-09-26: this guard used to call `next()` when no token was
+ * configured, on the assumption that the process binds to 127.0.0.1. The
+ * AKBARAL! API tier does NOT bind to loopback (HOST defaults to 0.0.0.0 and the
+ * public Next tier proxies /api/* straight through), so the effect was an
+ * anonymous, internet-reachable read of the private ZA141251SA fleet, treasury,
+ * opportunity and audit data. Verified live before the fix:
+ *   curl http://<public-host>/api/boss/overview   ->   200 with the full fleet.
+ *
+ * No token configured now means no access, and src/app.ts additionally refuses
+ * to mount this router at all unless the operator explicitly opts in.
+ */
 function requireMissionAuth(req: any, res: any, next: any) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const missionToken = process.env.ZA141251SA_DASHBOARD_TOKEN ?? process.env.MISSION_DASHBOARD_TOKEN;
-  if (!missionToken) {
-    // No token configured — allow local-only access (bind is 127.0.0.1 by default)
-    return next();
+  const header = String(req.headers.authorization ?? '');
+  const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+  const missionToken = String(
+    process.env.ZA141251SA_DASHBOARD_TOKEN ?? process.env.MISSION_DASHBOARD_TOKEN ?? '',
+  ).trim();
+  if (missionToken.length < 32) {
+    return res.status(404).json({
+      error: {
+        code: 'not_found',
+        message: 'not found',
+      },
+    });
   }
-  if (token !== missionToken) {
-    return res.status(401).json({ error: 'unauthorized' });
+  // Constant-time compare so the token cannot be discovered byte by byte.
+  const provided = Buffer.from(token);
+  const expected = Buffer.from(missionToken);
+  const ok = provided.length === expected.length && timingSafeEqual(provided, expected);
+  if (!ok) {
+    return res.status(401).json({ error: { code: 'unauthorized', message: 'unauthorized' } });
   }
   next();
 }
