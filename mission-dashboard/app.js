@@ -16,9 +16,38 @@
 const TOKEN_KEY = 'za_mission_token';
 const LINK_KEY = 'za_mission_link';
 
+/**
+ * Session persistence.
+ *
+ * sessionStorage alone is not enough: when this dashboard is opened through an
+ * embedded preview the frame can be re-created, which hands the page a fresh
+ * (empty) sessionStorage and made a signed-in dashboard fall back to the login
+ * panel seconds after sign-in. The token is therefore mirrored into
+ * localStorage for this origin, and the server additionally keeps an HttpOnly
+ * cookie so the session can be recovered even when no web storage survives.
+ * Every store is cleared on sign-out.
+ */
+const storage = {
+  read(key) {
+    try { const value = sessionStorage.getItem(key); if (value) return value; } catch { /* storage may be partitioned */ }
+    try { return localStorage.getItem(key) || ''; } catch { return ''; }
+  },
+  write(key, value) {
+    try { sessionStorage.setItem(key, value); } catch { /* ignore */ }
+    try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  },
+  clear(key) {
+    try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  },
+};
+
 const state = {
-  token: sessionStorage.getItem(TOKEN_KEY) || '',
-  link: sessionStorage.getItem(LINK_KEY) || '',
+  token: storage.read(TOKEN_KEY) || '',
+  link: storage.read(LINK_KEY) || '',
+  // true when the server recognised us through the HttpOnly session cookie
+  // and this frame holds no token of its own.
+  cookieAuth: false,
   owner: null,
   overview: null,
   activeTab: 'overview',
@@ -100,18 +129,28 @@ function banner(message, kind = 'ok') {
 // ── API ─────────────────────────────────────────────────────────────────────
 async function api(path, options = {}) {
   const headers = { 'content-type': 'application/json' };
-  if (state.token) headers.authorization = `Bearer ${state.token}`;
+  // The session travels in a custom header, not Authorization: proxies in
+  // front of a preview may consume Authorization for their own auth, which
+  // stripped the session from every request while login itself still worked.
+  // x-mission-client marks same-origin dashboard calls, which is what lets the
+  // server accept its HttpOnly cookie without opening a CSRF hole.
+  headers['x-mission-client'] = 'dashboard';
+  if (state.token) headers['x-mission-auth'] = state.token;
   if (state.link) headers['x-mission-link'] = state.link;
   const response = await fetch(`/api${path}`, {
     method: options.method || 'GET',
     headers,
+    credentials: 'same-origin',
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
   const text = await response.text();
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = { raw: text }; }
   if (!response.ok) {
-    if (response.status === 401) signOut(false);
+    // A 401 from one panel used to close the entire dashboard. Only the
+    // session's own verdict may end a session: re-check it, and keep the
+    // dashboard open when the session is still good.
+    if (response.status === 401 && path !== '/session/me') await handleUnauthorized();
     const error = new Error((payload && payload.error && payload.error.message) || `request failed (${response.status})`);
     error.status = response.status;
     error.code = payload && payload.error ? payload.error.code : 'unknown';
@@ -120,9 +159,30 @@ async function api(path, options = {}) {
   return payload;
 }
 
+/**
+ * Decide whether a 401 really means "your session is gone".
+ * The dashboard is only closed when /session/me also refuses — an endpoint
+ * that answers 401 for its own reasons must never log the owner out.
+ */
+async function handleUnauthorized() {
+  if (!state.token && !state.link && !state.cookieAuth) return;
+  try {
+    const me = await api('/session/me');
+    if (me && me.owner) {
+      state.owner = me.owner;
+      showIdentity();
+      return; // session is alive; the 401 belonged to that one request
+    }
+  } catch (error) {
+    if (error.status !== 401) return; // network/5xx: keep the dashboard open
+  }
+  signOut(false);
+  banner('The mission session ended. Sign in again to continue.', 'error');
+}
+
 /** Owner-only actions are hidden for read-only access links. */
 function canMutate() {
-  return Boolean(state.token);
+  return Boolean(state.token) || state.cookieAuth;
 }
 
 function guardMutation() {
@@ -139,7 +199,7 @@ function readLinkFromUrl() {
   const token = decodeURIComponent(match[1]).trim();
   if (token) {
     state.link = token;
-    sessionStorage.setItem(LINK_KEY, token);
+    storage.write(LINK_KEY, token);
   }
   // Remove the token from the address bar so it is not left in history,
   // screenshots or shared links.
@@ -148,8 +208,9 @@ function readLinkFromUrl() {
 
 function signOut(notify = true) {
   state.token = '';
+  state.cookieAuth = false;
   state.owner = null;
-  sessionStorage.removeItem(TOKEN_KEY);
+  storage.clear(TOKEN_KEY);
   $('#app').hidden = true;
   $('#login-panel').hidden = false;
   $('#signout').hidden = true;
@@ -160,11 +221,12 @@ function signOut(notify = true) {
 async function login(email, password) {
   const payload = await api('/session/login', { method: 'POST', body: { email, password } });
   state.token = payload.token;
+  state.cookieAuth = false;
   state.owner = payload.owner;
   showIdentity();
   state.link = '';
-  sessionStorage.setItem(TOKEN_KEY, payload.token);
-  sessionStorage.removeItem(LINK_KEY);
+  storage.write(TOKEN_KEY, payload.token);
+  storage.clear(LINK_KEY);
   await start();
 }
 
@@ -1861,7 +1923,21 @@ function wire() {
 async function boot() {
   readLinkFromUrl();
   wire();
-  if (!state.token && !state.link) return;
+  if (!state.token && !state.link) {
+    // No token in web storage. The frame may simply have been re-created by an
+    // embedded preview, so ask the server whether the HttpOnly session cookie
+    // still identifies us before dropping the operator back to sign-in.
+    try {
+      const me = await api('/session/me');
+      if (me && me.owner) {
+        state.owner = me.owner;
+        state.cookieAuth = true;
+        await start();
+        return;
+      }
+    } catch { /* not signed in: show the login panel */ }
+    return;
+  }
   try {
     if (state.token) {
       const me = await api('/session/me');
@@ -1871,7 +1947,7 @@ async function boot() {
   } catch (error) {
     if (error.status === 401) {
       state.token = '';
-      sessionStorage.removeItem(TOKEN_KEY);
+      storage.clear(TOKEN_KEY);
       if (state.link) {
         try {
           await start();

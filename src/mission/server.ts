@@ -276,10 +276,75 @@ function readBody(req: http.IncomingMessage, limitBytes = 512 * 1024): Promise<R
   });
 }
 
+export const SESSION_COOKIE = 'za_mission_session';
+
+function parseCookies(req: http.IncomingMessage): Record<string, string> {
+  const raw = req.headers.cookie;
+  if (typeof raw !== 'string' || !raw) return {};
+  const jar: Record<string, string> = {};
+  for (const part of raw.split(';')) {
+    const index = part.indexOf('=');
+    if (index < 0) continue;
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    if (key) jar[key] = decodeURIComponent(value);
+  }
+  return jar;
+}
+
+/**
+ * Session transport. Three carriers, in order of preference:
+ *
+ *  1. `x-mission-auth` — the dashboard's own header. A custom header is used
+ *     in preference to `Authorization` because reverse proxies in front of a
+ *     preview (and some corporate gateways) consume or strip `Authorization`
+ *     for their own auth, which silently broke every authenticated request
+ *     while login itself kept working.
+ *  2. `Authorization: Bearer` — kept for API clients, scripts and tests.
+ *  3. the HttpOnly `za_mission_session` cookie — the recovery path for
+ *     contexts where JavaScript storage is unavailable or wiped (embedded
+ *     previews partition or discard sessionStorage). The cookie is only
+ *     honoured when the request also carries `x-mission-client`, a header a
+ *     cross-site page cannot set without a CORS preflight this server never
+ *     answers — so cookie transport adds no CSRF surface.
+ */
 function bearer(req: http.IncomingMessage): string | null {
+  const custom = req.headers['x-mission-auth'];
+  if (typeof custom === 'string' && custom.trim()) return custom.trim();
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) return null;
-  return header.slice('Bearer '.length).trim() || null;
+  if (typeof header === 'string' && header.startsWith('Bearer ')) {
+    const value = header.slice('Bearer '.length).trim();
+    if (value) return value;
+  }
+  const client = req.headers['x-mission-client'];
+  if (typeof client === 'string' && client.trim()) {
+    const cookie = parseCookies(req)[SESSION_COOKIE];
+    if (cookie) return cookie;
+  }
+  return null;
+}
+
+function requestIsSecure(req: http.IncomingMessage): boolean {
+  const proto = req.headers['x-forwarded-proto'];
+  if (typeof proto === 'string' && proto.split(',')[0].trim() === 'https') return true;
+  return Boolean((req.socket as { encrypted?: boolean }).encrypted);
+}
+
+function sessionCookie(req: http.IncomingMessage, token: string | null, maxAgeSeconds: number): string {
+  const secure = requestIsSecure(req);
+  // A preview is served cross-site inside the platform shell, so the cookie
+  // must be SameSite=None there — which the spec only allows together with
+  // Secure. Plain-http local use keeps Lax.
+  const sameSite = secure ? 'None' : 'Lax';
+  const attributes = [
+    `${SESSION_COOKIE}=${token ? encodeURIComponent(token) : ''}`,
+    'Path=/',
+    'HttpOnly',
+    `SameSite=${sameSite}`,
+    `Max-Age=${token ? maxAgeSeconds : 0}`,
+  ];
+  if (secure) attributes.push('Secure');
+  return attributes.join('; ');
 }
 
 function linkToken(req: http.IncomingMessage): string | null {
@@ -1187,11 +1252,14 @@ async function handleApi(
           ip: req.socket.remoteAddress ?? null,
           userAgent: req.headers['user-agent'] ?? null,
         });
+        const ttlSeconds = Math.max(60, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000));
+        res.setHeader('set-cookie', sessionCookie(req, session.token, ttlSeconds));
         json(res, 200, session);
         return true;
       }
       if (method === 'POST' && action === 'logout') {
         const token = bearer(req);
+        res.setHeader('set-cookie', sessionCookie(req, null, 0));
         json(res, 200, { loggedOut: token ? logout(token) : false });
         return true;
       }
@@ -2788,11 +2856,53 @@ export interface MissionServer {
   close(): Promise<void>;
 }
 
+/** Which carrier supplied the session on this request (never the value). */
+function authTransport(req: http.IncomingMessage): string {
+  if (typeof req.headers['x-mission-auth'] === 'string' && req.headers['x-mission-auth']) return 'x-mission-auth';
+  if (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')) return 'authorization';
+  if (parseCookies(req)[SESSION_COOKIE]) return 'cookie';
+  if (typeof req.headers['x-mission-link'] === 'string' && req.headers['x-mission-link']) return 'link-header';
+  return 'none';
+}
+
+/**
+ * Request log for the private mission server. It records how a request was
+ * authenticated, never any token, and it exists because a dashboard that
+ * silently closes in a proxied preview cannot be diagnosed from the client
+ * alone: this is where "the browser sent a session but the proxy removed it"
+ * becomes visible.
+ */
+function logRequest(req: http.IncomingMessage, res: http.ServerResponse, url: URL, startedAt: number): void {
+  const line = [
+    new Date().toISOString(),
+    req.method ?? 'GET',
+    url.pathname,
+    String(res.statusCode),
+    `auth=${authTransport(req)}`,
+    `dest=${String(req.headers['sec-fetch-dest'] ?? '-')}`,
+    `site=${String(req.headers['sec-fetch-site'] ?? '-')}`,
+    `host=${String(req.headers.host ?? '-')}`,
+    `proto=${String(req.headers['x-forwarded-proto'] ?? '-')}`,
+    `ref=${String(req.headers.referer ?? '-').slice(0, 80)}`,
+    `ms=${Date.now() - startedAt}`,
+  ].join(' ');
+  try {
+    const dir = path.resolve(process.cwd(), 'logs/mission');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'access.log'), `${line}\n`);
+  } catch {
+    /* logging must never break a request */
+  }
+  if (res.statusCode >= 400) console.warn('[mission]', line);
+}
+
 export function createMissionServer(): http.Server {
   return http.createServer((req, res) => {
+    const startedAt = Date.now();
     void (async () => {
       try {
         const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+        res.on('finish', () => logRequest(req, res, url, startedAt));
         if (url.pathname.startsWith('/api/')) {
           const context: RequestContext = {
             session: resolveSession(bearer(req)),
