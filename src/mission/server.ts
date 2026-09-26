@@ -31,6 +31,16 @@ import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
+import { agentBriefing, agentChatReadiness } from './agent-briefing';
+import {
+  METHOD_TYPES,
+  listWithdrawalMethods,
+  addWithdrawalMethod,
+  removeWithdrawalMethod,
+  cardProgramme,
+  issueMissionCard,
+  WithdrawalMethodError,
+} from './withdrawal-methods';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1447,6 +1457,22 @@ async function handleApi(
         }
         throw new HttpProblem(405, 'unsupported chat operation', 'method_not_allowed');
       }
+      if (rest[1] === 'chat-status' && method === 'GET') {
+        // Truthful answer to "can this agent actually reply?" — no side effects.
+        requireOwner(context, false);
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        const briefing = agentBriefing(agent.id);
+        json(res, 200, {
+          agentId: agent.id,
+          slug: agent.slug,
+          readiness: agentChatReadiness(agent.id),
+          briefing,
+          jobs: listAgentChatJobs(agent.id, Number.MAX_SAFE_INTEGER, 10).jobs,
+          note: 'Replies are produced only by the mission chat pipeline (queued job → metered provider call → recorded reply). Nothing in this dashboard writes a reply on an agent’s behalf.',
+        });
+        return true;
+      }
       if (rest[1] === 'messages') {
         const agent = findAgentBySlug(slug) ?? findAgentById(slug);
         if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
@@ -2667,6 +2693,59 @@ async function handleApi(
     }
 
     // ── Health ──────────────────────────────────────────────────────────────
+    // ── Withdrawal methods (owner-configured real payout destinations) ──────
+    case 'withdrawal-methods': {
+      requireRead(context);
+      if (method === 'GET') {
+        json(res, 200, {
+          methods: listWithdrawalMethods(),
+          count: listWithdrawalMethods().length,
+          max: 4,
+          types: METHOD_TYPES,
+          note: 'Only methods the owner configured are listed. Account numbers, IBANs, SWIFT codes and payout-provider emails are encrypted with the mission vault key and are never returned by this API — the dashboard receives a masked description only.',
+        });
+        return true;
+      }
+      const session = requireOwner(context, true);
+      try {
+        if (method === 'POST' && rest.length === 0) {
+          const values = body.values && typeof body.values === 'object' && !Array.isArray(body.values) ? (body.values as Record<string, string>) : {};
+          json(res, 201, { method: addWithdrawalMethod({ type: param('type', '') ?? '', label: param('label') ?? undefined, values, actorId: session.owner.id }) });
+          return true;
+        }
+        if (method === 'POST' && rest[1] === 'remove') {
+          json(res, 200, removeWithdrawalMethod(Number(rest[0] ?? 0), session.owner.id));
+          return true;
+        }
+      } catch (error) {
+        if (error instanceof WithdrawalMethodError) throw new HttpProblem(error.status, error.message, error.code);
+        throw error;
+      }
+      break;
+    }
+
+    // ── Mission cards (real provider-issued cards only) ─────────────────────
+    case 'cards': {
+      requireRead(context);
+      const available = Number(ensureMissionTreasury().balanceCents ?? 0);
+      if (method === 'GET') {
+        json(res, 200, { ...cardProgramme(available), methods: listWithdrawalMethods() });
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'issue') {
+        const session = requireOwner(context, true);
+        try {
+          const card = await issueMissionCard({ label: param('label') ?? undefined, currency: param('currency') ?? undefined, actorId: session.owner.id }, available);
+          json(res, 201, { card });
+          return true;
+        } catch (error) {
+          if (error instanceof WithdrawalMethodError) throw new HttpProblem(error.status, error.message, error.code);
+          throw error;
+        }
+      }
+      break;
+    }
+
     case 'health': {
       json(res, 200, {
         status: 'ok',

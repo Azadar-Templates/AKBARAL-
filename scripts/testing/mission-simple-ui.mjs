@@ -112,7 +112,23 @@ try {
   const chatText = await page.textContent('#chat-log');
   record('owner can send a command/message to an agent', chatText.includes(message), 'message appears in the agent conversation');
   const chatNote = (await page.textContent('#chat-note')) ?? '';
-  record('chat states the real reply capability', /automatic replies/i.test(chatNote), chatNote.slice(0, 90));
+  const readiness = (await page.textContent('#chat-readiness')) ?? '';
+  record(
+    'chat states the real reply capability',
+    /READY|AI PROVIDER NOT CONFIGURED|BLOCKED/.test(readiness),
+    readiness.replace(/\s+/g, ' ').trim().slice(0, 120),
+  );
+  record(
+    'an unconfigured provider is reported truthfully instead of a fabricated reply',
+    /AI PROVIDER NOT CONFIGURED/.test(readiness) ? !/\bagent\b · /.test(chatText.replace(message, '')) : true,
+    /AI PROVIDER NOT CONFIGURED/.test(readiness) ? 'no answer invented while the provider is unconfigured' : 'provider configured — replies come from the chat pipeline',
+  );
+  const agentState = (await page.textContent('.agent-state')) ?? '';
+  record(
+    'the agent shows its real current work, history and capabilities',
+    /Current work/.test(agentState) && /Completed work/.test(agentState) && /Capabilities/.test(agentState),
+    agentState.replace(/\s+/g, ' ').trim().slice(0, 110),
+  );
   await shot('02-agents-chat');
 
   // ── 3. WITHDRAW ─────────────────────────────────────────────────────────
@@ -127,7 +143,15 @@ try {
   const actionText = await page.textContent('#withdraw-action');
   const hasForm = (await page.$('#simple-withdraw-form')) !== null;
   record('withdraw offers a button or explains why not', hasForm || actionText.trim().length > 20, hasForm ? 'withdraw form shown' : actionText.trim().slice(0, 90));
-  const destinations = await page.$$eval('#withdraw-destinations .row, #withdraw-destinations .empty', (nodes) => nodes.length);
+  const methods = await page.$$eval('#withdraw-destinations .method', (nodes) => nodes.length);
+  const methodsText = (await page.textContent('#withdraw-destinations')) ?? '';
+  const addButton = await page.isVisible('#add-method');
+  record(
+    'withdrawal methods reflect reality and can be added',
+    addButton && (methods > 0 ? !/haven/.test(methodsText) : /haven’t set up any withdrawal methods yet|haven't set up any withdrawal methods yet/.test(methodsText)),
+    `${methods} configured method${methods === 1 ? '' : 's'}; add control ${addButton ? 'present' : 'MISSING'}`,
+  );
+  const destinations = await page.$$eval('#withdraw-destinations .method, #withdraw-destinations .empty', (nodes) => nodes.length);
   const history = await page.$$eval('#withdraw-history .row, #withdraw-history .empty', (nodes) => nodes.length);
   record('withdraw shows destinations and withdrawal history', destinations > 0 && history > 0, `${destinations} destination rows, ${history} history rows`);
   await shot('03-withdraw');
@@ -138,8 +162,16 @@ try {
   record('card section opens alone', (await visibleSections()).join(',') === 'card');
   const cardText = await page.textContent('#card-face');
   const cardDetail = await page.textContent('#card-detail');
-  record('card shows balance and an honest status', /NOT ISSUED/.test(cardText) && /\d/.test(cardText), cardText.replace(/\s+/g, ' ').trim().slice(0, 90));
-  record('card explains what a real card needs', /provider/i.test(cardDetail), cardDetail.replace(/\s+/g, ' ').trim().slice(0, 90));
+  const cardCount = await page.$$eval('#card-face .cardface', (nodes) => nodes.length);
+  const issuedCards = await page.$$eval('#card-face .cardface.issued', (nodes) => nodes.length);
+  record(
+    'the card area shows only real cards',
+    issuedCards === 0 ? /No cards issued/i.test(cardText) && /NOT ISSUED/.test(cardText) : issuedCards === cardCount,
+    `${issuedCards} issued card${issuedCards === 1 ? '' : 's'} rendered`,
+  );
+  record('card explains what a real card needs', /provider/i.test(cardDetail) && /CREDENTIAL REQUIRED|connected/i.test(cardDetail), cardDetail.replace(/\s+/g, ' ').trim().slice(0, 90));
+  const cardMethodsVisible = await page.isVisible('#card-add-method');
+  record('the card section exposes the same withdrawal methods', cardMethodsVisible, 'add-method control present in Card');
   await shot('04-card');
 
   // ── advanced still holds the full mission systems ───────────────────────

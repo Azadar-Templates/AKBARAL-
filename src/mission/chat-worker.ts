@@ -4,6 +4,14 @@ import { appendAgentMessage } from './messaging';
 import { reserveResourceCall, cancelResourceCall, markResourceCallUncertain, runResourceCall, type ReserveResourceCall } from './resource-calls';
 import { chatTokenReservation, invokeGoogleChat, assertVerifiedChatBillingConfigured, type ChatAdapter } from './chat-provider';
 import { MissionSelfServiceError } from './self-management';
+import { agentBriefing } from './agent-briefing';
+
+/** Factual, bounded agent context sent with every chat call (never secrets). */
+function briefingContext(agentId: string): string {
+  const briefing = agentBriefing(agentId);
+  if (!briefing) return '';
+  return briefing.text.slice(0, 6000);
+}
 
 function finishJob(job: Row, status: string, reason: string | null = null, replyId: string | null = null): void {
   missionDb.run('UPDATE mission_agent_chat_jobs SET status = ?, reason = ?, reply_message_id = ?, resolved_at = ? WHERE id = ?', [status, reason, replyId, nowIso(), job.id]);
@@ -37,10 +45,11 @@ export async function runNextAgentChat(adapter: ChatAdapter = invokeGoogleChat, 
       if (!message || message.actor_type !== 'owner' || message.agent_id !== job.agent_id || sha256(String(message.body)) !== job.message_fingerprint || Buffer.byteLength(String(message.body), 'utf8') > config.maxInputBytes) throw new MissionSelfServiceError(409, 'message is unavailable or exceeds the configured byte bound', 'chat_message_unavailable');
       if (missionDb.get("SELECT id FROM mission_agent_messages WHERE reply_to = ? AND actor_type = 'agent'", [message.id])) { finishJob(job, 'superseded', 'agent_already_replied'); return { job }; }
       chatResourcePreflight(String(job.agent_id), config);
-      const input: ReserveResourceCall = { resourceId: config.resourceId, agentId: String(job.agent_id), ...actor, idempotencyKey: `chat:${job.id}`, operationFingerprint: sha256(JSON.stringify({ message: message.body, config, instructionVersion: 1 })), units: { requests: 1, tokens: chatTokenReservation(String(message.body), config) }, budget: { walletId: config.walletId, maxCostCents: config.maxCostCents } };
+      const context = briefingContext(String(job.agent_id));
+      const input: ReserveResourceCall = { resourceId: config.resourceId, agentId: String(job.agent_id), ...actor, idempotencyKey: `chat:${job.id}`, operationFingerprint: sha256(JSON.stringify({ message: message.body, config, instructionVersion: 2, context: sha256(context) })), units: { requests: 1, tokens: chatTokenReservation(String(message.body), config, context) }, budget: { walletId: config.walletId, maxCostCents: config.maxCostCents } };
       const call = reserveResourceCall(input);
       missionDb.run("UPDATE mission_agent_chat_jobs SET status = 'running', call_id = ?, started_at = ? WHERE id = ?", [call.id, nowIso(), job.id]);
-      return { job: { ...job, call_id: call.id } as Row, input, body: String(message.body), config };
+      return { job: { ...job, call_id: call.id } as Row, input, body: String(message.body), config, context };
     } catch (error) {
       if (!(error instanceof MissionSelfServiceError)) throw error;
       finishJob(job, 'blocked', error.code);
@@ -54,7 +63,7 @@ export async function runNextAgentChat(adapter: ChatAdapter = invokeGoogleChat, 
       const config = claimed.config;
       const result = await runResourceCall(claimed.input, async (permit, signal) => {
         assertAgentChatReady(String(job.agent_id), config);
-        return adapter(permit, signal, { body: claimed.body!, config });
+        return adapter(permit, signal, { body: claimed.body!, config, context: claimed.context });
       });
       missionDb.transaction(() => {
         const live = missionDb.get<Row>('SELECT status FROM mission_agent_chat_jobs WHERE id = ?', [job.id]);

@@ -21,6 +21,7 @@ import { currentPolicy } from './policy';
 import { verifyMissionAudit } from './database';
 import { ensureMissionTreasury, ensurePayoutSlots, verifyLedger } from './treasury';
 import { identityLockStatus } from './identity-lock';
+import { listWithdrawalMethods, cardProgramme } from './withdrawal-methods';
 
 const num = (value: unknown): number => Number(value ?? 0) || 0;
 
@@ -134,6 +135,9 @@ export function buildOwnerSummary(): Record<string, unknown> {
     }));
 
   // ── withdrawal surface ────────────────────────────────────────────────────
+  // Only methods the owner actually configured. An unconfigured slot is not a
+  // destination and is never shown as one.
+  const methods = listWithdrawalMethods();
   const slots = ensurePayoutSlots().map((slot) => ({
     slot: num(slot.slot),
     label: String(slot.label ?? ''),
@@ -226,25 +230,17 @@ export function buildOwnerSummary(): Record<string, unknown> {
       settledCents: num(settledWithdrawals?.total),
       settledCount: num(settledWithdrawals?.count),
       maxPayoutCents: policy.maxPayoutCents,
+      methods,
+      methodCount: methods.length,
+      maxMethods: 4,
+      payableMethods: methods.filter((method) => method.payable).map((method) => method.slot),
       destinations: slots,
       payableSlots: payableSlots.map((slot) => slot.slot),
       payouts,
     },
-    card: {
-      // There is no issued mission card: no card programme is connected and no
-      // card credential exists. This is reported as-is — never as a balance on
-      // a card that does not exist.
-      status: 'NOT ISSUED',
-      availableCents: verifiedAvailableCents,
-      providerConnected: Boolean((process.env.ZA141251SA_STRIPE_SECRET_KEY ?? '').trim()),
-      providerName: 'Stripe (mission-dedicated keys)',
-      requirements: [
-        'A mission-dedicated payment provider account (ZA141251SA_STRIPE_SECRET_KEY / ZA141251SA_STRIPE_ACCOUNT_ID).',
-        'A verified payout destination in the Withdraw section.',
-        'Verified balance to fund the card — cards are never funded from expected revenue.',
-      ],
-      note: 'Agents never hold card or bank credentials; unrestricted card APIs are blocked by policy.',
-    },
+    // Cards are real or absent: the list is empty until a card provider
+    // confirms an issuance, and every field below comes from that record.
+    card: { ...cardProgramme(verifiedAvailableCents), methods },
     integrity: {
       auditOk: audit.ok,
       auditRows: audit.rows,

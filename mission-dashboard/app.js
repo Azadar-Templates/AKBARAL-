@@ -1795,6 +1795,15 @@ async function loadHome() {
 }
 
 // ── 2. AGENTS + CHAT ────────────────────────────────────────────────────────
+const QUICK_QUESTIONS = [
+  'What are you currently working on?',
+  'What work have you completed?',
+  'What should you work on next?',
+  'What platforms are you researching?',
+  'Find legitimate new earning opportunities.',
+  'Continue your current task.',
+];
+
 async function loadAgentsSimple(query = '') {
   const data = state.summary || (await loadSummary());
   fill('#agent-summary', [
@@ -1824,7 +1833,7 @@ async function loadAgentsSimple(query = '') {
 
   if (payload.total > (payload.agents || []).length) {
     $('#agent-cards').appendChild(
-      el('p', { class: 'empty', text: `Showing ${payload.agents.length} of ${payload.total} agents — search by name or slug to narrow.` }),
+      el('p', { class: 'empty', text: `Showing ${payload.agents.length} of ${payload.total} agents — search by name or slug to find a specific one.` }),
     );
   }
 }
@@ -1836,28 +1845,36 @@ async function openAgentSimple(slug) {
   drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   let report;
+  let live;
   try {
-    report = await api(`/agents/${encodeURIComponent(slug)}`);
+    [report, live] = await Promise.all([
+      api(`/agents/${encodeURIComponent(slug)}`),
+      api(`/agents/${encodeURIComponent(slug)}/chat-status`).catch(() => null),
+    ]);
   } catch (error) {
     drawer.replaceChildren(el('p', { class: 'empty', text: error.message }));
     return;
   }
   state.openAgent = { slug, id: report.agent.id };
+  const briefing = live?.briefing || null;
+  const readiness = live?.readiness || null;
 
   const head = el('div', { class: 'drawer-head' }, [
     el('div', {}, [
       el('h3', { text: report.agent.name }),
-      el('p', { class: 'muted tiny', text: `${report.agent.slug} · ${report.agent.mission_role || 'worker'} · ${report.agent.category || 'general'}` }),
+      el('p', { class: 'muted tiny', text: `${report.agent.slug} · ${report.agent.mission_role || briefing?.role || 'worker'} · ${report.agent.category || 'general'}` }),
     ]),
     el('div', { class: 'side' }, [statusChip(report.agent.status), el('button', { class: 'ghost small', type: 'button', text: 'Close' })]),
   ]);
   head.querySelector('button').addEventListener('click', () => { drawer.hidden = true; state.openAgent = null; });
 
   const wallet = report.wallet || {};
+  const currency = wallet.currency || 'USD';
+  const openWork = briefing ? briefing.currentWork : (report.work || []).filter((item) => ['approved', 'in_progress'].includes(item.status));
   const facts = el('div', { class: 'tiles' }, [
-    tile('Wallet balance', money(wallet.balanceCents ?? wallet.balance_cents ?? 0, wallet.currency || 'USD'), 'verified ledger'),
-    tile('Open work', String((report.work || []).filter((item) => ['approved', 'in_progress'].includes(item.status)).length), `${(report.work || []).length} total`),
-    tile('Verified revenue', money(report.revenue?.realizedCents ?? 0, wallet.currency || 'USD'), 'received + verified'),
+    tile('Wallet balance', money(wallet.balanceCents ?? wallet.balance_cents ?? 0, currency), 'verified ledger'),
+    tile('Open work', String(openWork.length), `${briefing ? briefing.workCounts.total : (report.work || []).length} recorded`),
+    tile('Verified revenue', money(briefing ? briefing.verifiedRevenueCents : report.revenue?.realizedCents ?? 0, currency), 'received + verified'),
   ]);
 
   const controls = el('div', { class: 'side' }, []);
@@ -1883,14 +1900,58 @@ async function openAgentSimple(slug) {
     controls.appendChild(pauseButton);
   }
 
+  // Real state, straight from the mission database.
+  const stateBlock = el('div', { class: 'agent-state' }, [
+    el('h4', { text: 'Current work' }),
+    el('div', { class: 'list' }, openWork.length
+      ? openWork.slice(0, 5).map((item) => row(item.title, when(item.updatedAt || item.createdAt), [statusChip(item.status)]))
+      : [el('p', { class: 'empty', text: 'No work is assigned to this agent right now.' })]),
+    el('h4', { text: 'Completed work' }),
+    el('div', { class: 'list' }, (briefing?.completedWork || []).length
+      ? briefing.completedWork.slice(0, 5).map((item) => row(item.title, when(item.updatedAt), [statusChip(item.status)]))
+      : [el('p', { class: 'empty', text: 'No delivered work recorded yet.' })]),
+    el('h4', { text: 'Capabilities' }),
+    el('div', { class: 'chips' }, (briefing?.capabilities || []).length
+      ? briefing.capabilities.slice(0, 12).map((capability) => chip(capability))
+      : [el('p', { class: 'empty', text: 'No capabilities recorded for this agent.' })]),
+    el('h4', { text: 'Tools authorised' }),
+    el('div', { class: 'chips' }, (briefing?.tools || []).length
+      ? briefing.tools.map((tool) => chip(tool, 'ok'))
+      : [el('p', { class: 'empty', text: 'No tools approved for this agent.' })]),
+  ]);
+
+  const readinessBox = el('div', { class: `chat-readiness ${readiness?.ready ? 'ok' : readiness?.configured ? 'warn' : 'warn'}`, id: 'chat-readiness' });
   const chatLog = el('div', { class: 'chat-log', id: 'chat-log' });
+  const quick = el('div', { class: 'chips quick', id: 'chat-quick' }, QUICK_QUESTIONS.map((question) => {
+    const button = el('button', { type: 'button', class: 'chip clickable', text: question });
+    button.addEventListener('click', () => {
+      const input = $('#chat-form')?.querySelector('input');
+      if (!input) return;
+      input.value = question;
+      input.focus();
+    });
+    return button;
+  }));
   const chatForm = el('form', { class: 'chat-form', id: 'chat-form' }, [
-    el('input', { name: 'message', placeholder: `Message ${report.agent.name}`, maxlength: '2000', autocomplete: 'off', required: 'required' }),
+    el('input', { name: 'message', placeholder: `Ask ${report.agent.name} a question or give an instruction`, maxlength: '2000', autocomplete: 'off', required: 'required' }),
     el('button', { type: 'submit', text: 'Send' }),
   ]);
   const chatNote = el('p', { class: 'muted tiny', id: 'chat-note' });
 
-  drawer.replaceChildren(head, facts, controls, el('div', { class: 'chat' }, [chatLog, canMutate() ? chatForm : el('p', { class: 'empty', text: 'A read-only link cannot send messages.' }), chatNote]));
+  drawer.replaceChildren(
+    head,
+    facts,
+    controls,
+    stateBlock,
+    el('h4', { text: 'Conversation' }),
+    el('div', { class: 'chat' }, [
+      readinessBox,
+      chatLog,
+      canMutate() ? quick : null,
+      canMutate() ? chatForm : el('p', { class: 'empty', text: 'A read-only link cannot send messages.' }),
+      chatNote,
+    ].filter(Boolean)),
+  );
 
   if (canMutate()) {
     chatForm.addEventListener('submit', async (event) => {
@@ -1898,51 +1959,281 @@ async function openAgentSimple(slug) {
       const input = chatForm.querySelector('input');
       const message = input.value.trim();
       if (!message) return;
+      const button = chatForm.querySelector('button');
       input.value = '';
+      button.disabled = true;
       try {
         await api(`/agents/${encodeURIComponent(slug)}/messages`, {
           method: 'POST',
           body: { message, idempotencyKey: `owner-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` },
         });
         await loadAgentChat(slug);
+        await followAgentReply(slug);
       } catch (error) {
         banner(error.message, 'error');
+      } finally {
+        button.disabled = false;
       }
     });
   }
   await loadAgentChat(slug);
 }
 
+const JOB_LABELS = {
+  queued: 'queued — waiting for the chat worker',
+  running: 'running — model call in progress',
+  succeeded: 'answered',
+  blocked: 'blocked — no reply was generated',
+  needs_review: 'needs review — the call did not complete',
+  superseded: 'superseded',
+};
+
+/** Renders messages, the real per-message job state and the provider truth. */
 async function loadAgentChat(slug) {
   const log = $('#chat-log');
-  if (!log) return;
+  if (!log) return false;
   let payload;
+  let live = null;
   try {
-    payload = await api(`/agents/${encodeURIComponent(slug)}/messages?after=0&limit=100`);
+    [payload, live] = await Promise.all([
+      api(`/agents/${encodeURIComponent(slug)}/messages?after=0&limit=100`),
+      api(`/agents/${encodeURIComponent(slug)}/chat-status`).catch(() => null),
+    ]);
   } catch (error) {
     log.replaceChildren(el('p', { class: 'empty', text: error.message }));
-    return;
+    return false;
   }
+  const readiness = live?.readiness || null;
+  const jobs = new Map((live?.jobs || []).map((job) => [String(job.message_id), job]));
+
+  const box = $('#chat-readiness');
+  if (box && readiness) {
+    box.className = `chat-readiness ${readiness.ready ? 'ok' : 'warn'}`;
+    box.replaceChildren(
+      el('div', { class: 'side' }, [chip(readiness.status, readiness.ready ? 'ok' : 'warn'), chip(`${readiness.provider} · ${readiness.model}`)]),
+      el('p', { class: 'small', text: readiness.message }),
+      readiness.blockers.length
+        ? el('ul', { class: 'blockers' }, readiness.blockers.map((blocker) => el('li', { text: blocker })))
+        : null,
+    );
+  }
+
   const messages = payload.messages || [];
   log.replaceChildren();
   if (!messages.length) {
-    log.appendChild(el('p', { class: 'empty', text: 'No messages yet. Anything you send is stored in the mission log and delivered to this agent.' }));
+    log.appendChild(el('p', { class: 'empty', text: 'No messages yet. Ask this agent what it is working on, or give it an instruction.' }));
   }
   for (const message of messages) {
+    const job = jobs.get(String(message.id));
     log.appendChild(
       el('div', { class: `msg ${message.actor_type === 'owner' ? 'owner' : 'agent'}` }, [
         el('span', { class: 'who', text: `${message.actor_type} · ${when(message.created_at)}` }),
         el('span', { text: message.body }),
-      ]),
+        job && message.actor_type === 'owner'
+          ? el('span', { class: 'jobstate', text: `${JOB_LABELS[job.status] || job.status}${job.reason ? ` (${job.reason})` : ''}` })
+          : null,
+      ].filter(Boolean)),
     );
   }
   log.scrollTop = log.scrollHeight;
+
   const note = $('#chat-note');
   if (note) {
-    note.textContent = payload.automaticRepliesConfigured
-      ? 'Automatic replies are configured for this agent; answers appear here when the worker processes the message.'
-      : 'Messages are recorded and delivered to this agent. Automatic replies are NOT configured, so no answer is generated until a chat provider is connected in Advanced.';
+    note.textContent = readiness?.ready
+      ? 'Every message is executed by the mission chat pipeline against this agent’s own metered budget; the reply below is the model’s real answer, grounded in this agent’s recorded state.'
+      : 'Messages are recorded, delivered and auditable. No answer is invented: until an AI provider is configured for this agent, nothing replies on its behalf.';
   }
+  const pending = (live?.jobs || []).some((job) => ['queued', 'running'].includes(String(job.status)));
+  return pending;
+}
+
+/** Poll briefly while a real chat job is in flight; never fakes a reply. */
+async function followAgentReply(slug, attempts = 10) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    if (state.openAgent?.slug !== slug) return;
+    const pending = await loadAgentChat(slug);
+    if (!pending) return;
+  }
+}
+
+// ── withdrawal methods (shared by Withdraw and Card) ────────────────────────
+function methodRow(method, onChanged) {
+  const side = [chip(method.statusLabel, method.payable ? 'ok' : 'warn')];
+  if (canMutate()) {
+    if (!method.payable) {
+      const verify = el('button', { class: 'ghost small', type: 'button', text: 'Verify' });
+      verify.addEventListener('click', () => openMethodVerification(method, onChanged));
+      side.push(verify);
+    }
+    const remove = el('button', { class: 'ghost small', type: 'button', text: 'Remove' });
+    remove.addEventListener('click', async () => {
+      if (!window.confirm(`Remove ${method.label}? The encrypted details are destroyed.`)) return;
+      try {
+        await api(`/withdrawal-methods/${method.slot}/remove`, { method: 'POST', body: {} });
+        banner('Withdrawal method removed.', 'ok');
+        await onChanged();
+      } catch (error) {
+        banner(error.message, 'error');
+      }
+    });
+    side.push(remove);
+  }
+  return el('div', { class: 'method' }, [
+    row(
+      method.label,
+      `${method.typeLabel}${method.holderName ? ` · ${method.holderName}` : ''} · ${method.masked || 'no account on record'} · ${method.currency}`,
+      side,
+    ),
+  ]);
+}
+
+function renderMethods(target, methods, onChanged) {
+  fill(
+    target,
+    (methods || []).map((method) => methodRow(method, onChanged)),
+    'You haven’t set up any withdrawal methods yet.',
+  );
+}
+
+/** Secure add-method form. Secret fields are password inputs, never logged. */
+async function openMethodForm(host, onChanged) {
+  const node = $(host);
+  if (!node) return;
+  if (node.dataset.open === '1') { node.replaceChildren(); node.dataset.open = '0'; return; }
+  node.dataset.open = '1';
+  node.replaceChildren(el('p', { class: 'empty', text: 'Loading withdrawal method types…' }));
+  let payload;
+  try {
+    payload = await api('/withdrawal-methods');
+  } catch (error) {
+    node.replaceChildren(el('p', { class: 'empty', text: error.message }));
+    return;
+  }
+  if ((payload.methods || []).length >= payload.max) {
+    node.replaceChildren(el('p', { class: 'empty', text: `The maximum of ${payload.max} withdrawal methods is already configured. Remove one to add another.` }));
+    return;
+  }
+  const types = payload.types || [];
+  const select = el('select', { name: 'type' }, types.map((type) => el('option', { value: type.key, text: type.label })));
+  const fields = el('div', { class: 'form-fields' });
+  const availability = el('p', { class: 'muted tiny' });
+
+  const renderFields = () => {
+    const type = types.find((entry) => entry.key === select.value) || types[0];
+    availability.textContent = `${type.description} ${type.availability}`;
+    fields.replaceChildren(
+      ...type.fields.map((field) => {
+        const input = el('input', {
+          name: field.key,
+          type: field.secret ? 'password' : 'text',
+          autocomplete: 'off',
+          autocapitalize: 'off',
+          spellcheck: 'false',
+          placeholder: field.placeholder || field.label,
+          ...(field.required ? { required: 'required' } : {}),
+          ...(field.key === 'currency' ? { value: 'USD' } : {}),
+        });
+        return el('label', { class: 'field' }, [
+          el('span', { class: 'tiny muted', text: `${field.label}${field.secret ? ' · encrypted' : ''}` }),
+          input,
+          field.help ? el('span', { class: 'tiny muted', text: field.help }) : null,
+        ].filter(Boolean));
+      }),
+    );
+  };
+  select.addEventListener('change', renderFields);
+
+  const form = el('form', { class: 'simple-form method-form' }, [
+    el('label', { class: 'field' }, [el('span', { class: 'tiny muted', text: 'Method type' }), select]),
+    availability,
+    fields,
+    el('label', { class: 'field' }, [
+      el('span', { class: 'tiny muted', text: 'Label (optional)' }),
+      el('input', { name: 'label', autocomplete: 'off', placeholder: 'e.g. Main payout account' }),
+    ]),
+    el('div', { class: 'side' }, [
+      el('button', { type: 'submit', text: 'Save withdrawal method' }),
+      el('button', { type: 'button', class: 'ghost small', text: 'Cancel' }),
+    ]),
+    el('p', { class: 'muted tiny', text: 'Account numbers, IBANs, SWIFT codes and provider emails are encrypted with the mission vault key before they are stored. Only a masked form (••••1234) is ever displayed, logged or audited. Saving a method does not verify it — verification is a separate owner step.' }),
+  ]);
+  form.querySelector('button.ghost').addEventListener('click', () => { node.replaceChildren(); node.dataset.open = '0'; });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const type = types.find((entry) => entry.key === select.value);
+    const values = {};
+    for (const field of type.fields) {
+      const input = form.querySelector(`[name="${field.key}"]`);
+      if (input && input.value.trim()) values[field.key] = input.value.trim();
+    }
+    const label = form.querySelector('[name="label"]').value.trim();
+    try {
+      await api('/withdrawal-methods', { method: 'POST', body: { type: type.key, label: label || undefined, values } });
+      // Clear the typed secrets from the DOM immediately.
+      form.reset();
+      node.replaceChildren();
+      node.dataset.open = '0';
+      banner('Withdrawal method saved — details encrypted, only the masked form is shown.', 'ok');
+      await onChanged();
+    } catch (error) {
+      banner(error.message, 'error');
+    }
+  });
+  renderFields();
+  node.replaceChildren(form);
+}
+
+/** Real destination verification: the owner confirms each control check. */
+async function openMethodVerification(method, onChanged) {
+  let status;
+  try {
+    status = await api(`/payout-slots/${method.slot}/verification`);
+  } catch (error) {
+    banner(error.message, 'error');
+    return;
+  }
+  const host = $('#withdraw-method-form') || $('#card-method-form');
+  if (!host) return;
+  const checks = status.checks || [];
+  const form = el('form', { class: 'simple-form' }, [
+    el('h4', { text: `Verify ${method.label}` }),
+    el('p', { class: 'muted tiny', text: 'Confirm each control check honestly. A half-confirmed destination is refused, and verification expires so it must be renewed.' }),
+    el('div', { class: 'checks' }, checks.map((check) =>
+      el('label', { class: 'check' }, [
+        el('input', { type: 'checkbox', name: `check:${check.key}` }),
+        el('span', { text: check.label }),
+      ]),
+    )),
+    el('label', { class: 'field' }, [
+      el('span', { class: 'tiny muted', text: 'Evidence reference (statement id, provider confirmation…)' }),
+      el('input', { name: 'evidenceRef', autocomplete: 'off' }),
+    ]),
+    el('label', { class: 'field' }, [
+      el('span', { class: 'tiny muted', text: 'Attestation — type your confirmation' }),
+      el('textarea', { name: 'attestation', rows: '3', required: 'required' }),
+    ]),
+    el('div', { class: 'side' }, [
+      el('button', { type: 'submit', text: 'Confirm verification' }),
+      el('button', { type: 'button', class: 'ghost small', text: 'Cancel' }),
+    ]),
+  ]);
+  form.querySelector('button.ghost').addEventListener('click', () => host.replaceChildren());
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const body = { checks: {}, attestation: form.querySelector('[name="attestation"]').value.trim(), evidenceRef: form.querySelector('[name="evidenceRef"]').value.trim() || undefined };
+    for (const check of checks) body.checks[check.key] = form.querySelector(`[name="check:${check.key}"]`).checked;
+    try {
+      await api(`/payout-slots/${method.slot}/verification/start`, { method: 'POST', body: { evidenceRef: body.evidenceRef } });
+      await api(`/payout-slots/${method.slot}/verification/confirm`, { method: 'POST', body });
+      host.replaceChildren();
+      banner('Destination verified.', 'ok');
+      await onChanged();
+    } catch (error) {
+      banner(error.message, 'error');
+    }
+  });
+  host.replaceChildren(form);
 }
 
 // ── 3. WITHDRAW ─────────────────────────────────────────────────────────────
@@ -1950,6 +2241,7 @@ async function loadWithdrawSimple() {
   const data = await loadSummary();
   const currency = data.currency || 'USD';
   const withdraw = data.withdraw;
+  const methods = withdraw.methods || [];
 
   fill('#withdraw-tiles', [
     tile('Verified available', money(withdraw.availableCents, currency), 'received + verified only', 'primary'),
@@ -1960,21 +2252,22 @@ async function loadWithdrawSimple() {
 
   const action = $('#withdraw-action');
   action.replaceChildren();
-  const payable = (withdraw.destinations || []).filter((slot) => withdraw.payableSlots.includes(slot.slot));
+  const payable = methods.filter((method) => method.payable);
 
   if (withdraw.availableCents <= 0) {
-    action.appendChild(el('p', { class: 'empty', text: 'There is no verified balance to withdraw yet. Verified earnings appear here as soon as real money is received and verified.' }));
+    action.appendChild(el('p', { class: 'empty', text: 'There is no verified balance to withdraw yet. Verified earnings appear here as soon as real money is received and independently verified.' }));
+    action.appendChild(el('p', { class: 'muted tiny', text: methods.length ? `${methods.length} withdrawal method${methods.length === 1 ? '' : 's'} configured and ready for when verified money arrives.` : 'Add a withdrawal method now so a payout can be made the moment verified money arrives.' }));
   } else if (!payable.length) {
-    action.appendChild(el('p', { class: 'empty', text: 'Add and verify a payout destination before withdrawing. Open Advanced → Withdraw to configure and verify a destination.' }));
+    action.appendChild(el('p', { class: 'empty', text: methods.length ? 'No withdrawal method is verified yet. Verify one below before withdrawing.' : 'Add a withdrawal method below before withdrawing.' }));
   } else {
     const form = el('form', { class: 'simple-form', id: 'simple-withdraw-form' }, [
       el('div', { class: 'form-row' }, [
-        el('select', { name: 'slot' }, payable.map((slot) => el('option', { value: String(slot.slot), text: `${slot.label} (${slot.masked || 'verified'})` }))),
+        el('select', { name: 'slot' }, payable.map((method) => el('option', { value: String(method.slot), text: `${method.label} (${method.masked || 'verified'})` }))),
         el('input', { name: 'amount', type: 'number', min: '0.01', step: '0.01', placeholder: `Amount in ${currency}`, required: 'required' }),
       ]),
-      el('input', { name: 'memo', placeholder: 'Reference (optional)' }),
+      el('input', { name: 'memo', placeholder: 'Reference (optional)', autocomplete: 'off' }),
       el('button', { type: 'submit', text: 'Request withdrawal' }),
-      el('p', { class: 'muted tiny', text: 'A withdrawal needs your approval and a provider settlement reference. The amount is reserved from the verified balance when approved.' }),
+      el('p', { class: 'muted tiny', text: 'A withdrawal needs your approval and a provider settlement reference. It is only reported as paid when the external provider confirms settlement.' }),
     ]);
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1992,17 +2285,11 @@ async function loadWithdrawSimple() {
     action.appendChild(form);
   }
 
-  fill(
-    '#withdraw-destinations',
-    (withdraw.destinations || []).map((slot) =>
-      row(
-        slot.label || `Slot ${slot.slot}`,
-        slot.masked ? `${slot.destinationType || 'destination'} · ${slot.masked}` : 'not configured',
-        [statusChip(slot.status)],
-      ),
-    ),
-    'No payout destination configured.',
-  );
+  renderMethods('#withdraw-destinations', methods, loadWithdrawSimple);
+  const hint = $('#withdraw-destinations');
+  if (hint && !methods.length) {
+    hint.appendChild(el('p', { class: 'muted tiny', text: 'Up to 4 real methods: local bank account, international wire, Payoneer or an existing Wise account. Details are encrypted; only a masked form is displayed.' }));
+  }
 
   fill(
     '#withdraw-history',
@@ -2014,40 +2301,86 @@ async function loadWithdrawSimple() {
 }
 
 // ── 4. CARD ─────────────────────────────────────────────────────────────────
-async function loadCardSimple() {
-  const data = await loadSummary();
-  const currency = data.currency || 'USD';
-  const card = data.card;
-
-  $('#card-face').replaceChildren(
-    el('div', { class: 'cardface' }, [
-      el('div', { class: 'brandline' }, [
-        el('span', { class: 'mark', text: 'ZA141251SA' }),
-        chip(card.status, card.status === 'NOT ISSUED' ? 'warn' : 'ok'),
-      ]),
+function cardFace(card, availableCents, currency, providerConnected) {
+  if (!card) {
+    return el('div', { class: 'cardface' }, [
+      el('div', { class: 'brandline' }, [el('span', { class: 'mark', text: 'ZA141251SA' }), chip('NOT ISSUED', 'warn')]),
       el('div', {}, [
         el('span', { class: 'label muted tiny', text: 'Available (verified)' }),
-        el('div', { class: 'amount', text: money(card.availableCents, currency) }),
+        el('div', { class: 'amount', text: money(availableCents, currency) }),
       ]),
       el('div', { class: 'number', text: '•••• •••• •••• ••••' }),
       el('div', { class: 'meta' }, [
         el('span', { text: 'Mission treasury' }),
-        el('span', { text: card.providerConnected ? 'provider connected' : 'no card provider connected' }),
+        el('span', { text: providerConnected ? 'card provider connected' : 'card provider not connected' }),
       ]),
+    ]);
+  }
+  return el('div', { class: 'cardface issued' }, [
+    el('div', { class: 'brandline' }, [el('span', { class: 'mark', text: 'ZA141251SA' }), chip(String(card.status).toUpperCase(), card.status === 'active' ? 'ok' : 'warn')]),
+    el('div', {}, [
+      el('span', { class: 'label muted tiny', text: 'Available (verified)' }),
+      el('div', { class: 'amount', text: money(availableCents, card.currency || currency) }),
     ]),
-  );
+    el('div', { class: 'number', text: `•••• •••• •••• ${card.last4}` }),
+    el('div', { class: 'meta' }, [
+      el('span', { text: `${card.provider}${card.brand ? ` · ${card.brand}` : ''}` }),
+      el('span', { text: `issued ${when(card.issuedAt)}` }),
+    ]),
+  ]);
+}
+
+async function loadCardSimple() {
+  const data = await loadSummary();
+  const currency = data.currency || 'USD';
+  const card = data.card;
+  const methods = card.methods || data.withdraw?.methods || [];
+  const cards = card.cards || [];
+
+  renderMethods('#card-methods', methods, loadCardSimple);
+
+  const face = $('#card-face');
+  face.replaceChildren();
+  if (!cards.length) {
+    face.appendChild(el('p', { class: 'empty', text: 'No cards issued.' }));
+    face.appendChild(cardFace(null, card.availableCents, currency, card.providerConnected));
+  } else {
+    const grid = el('div', { class: 'cardgrid' }, cards.map((entry) => cardFace(entry, card.availableCents, currency, card.providerConnected)));
+    face.appendChild(grid);
+    face.appendChild(el('p', { class: 'muted tiny', text: `${cards.length} of ${card.maxCards} mission cards issued. Full card number, CVV and PIN are never stored or displayed.` }));
+  }
 
   const detail = $('#card-detail');
+  const issueButton = el('button', { class: 'small', type: 'button', text: cards.length ? 'Issue another mission card' : 'Issue a mission card' });
+  issueButton.disabled = !card.canIssue || !canMutate();
+  issueButton.addEventListener('click', async () => {
+    try {
+      await api('/cards/issue', { method: 'POST', body: {} });
+      banner('Card provider confirmed issuance.', 'ok');
+      await loadCardSimple();
+    } catch (error) {
+      banner(error.message, 'error');
+    }
+  });
+
   detail.replaceChildren(
     el('h2', { text: 'Card status' }),
-    el('p', { class: 'muted small', text: `No mission card has been issued. ${card.note}` }),
+    el('p', { class: 'muted small', text: card.note }),
     el('div', { class: 'list' }, [
-      row('Card status', 'no card programme is connected', [chip(card.status, 'warn')]),
-      row('Payment provider', card.providerName, [card.providerConnected ? chip('connected', 'ok') : chip('not connected', 'warn')]),
+      row('Cards issued', `${cards.length} of ${card.maxCards}`, [chip(card.status, cards.length ? 'ok' : 'warn')]),
+      row('Card provider', card.providerName, [card.providerConnected ? chip('connected', 'ok') : chip('not connected', 'warn')]),
       row('Available to fund a card', money(card.availableCents, currency), [chip('verified only', 'ok')]),
     ]),
+    (card.blockers || []).length
+      ? el('div', {}, [
+          el('h3', { text: cards.length ? 'Why another card cannot be issued yet' : 'Why no card can be issued yet' }),
+          el('div', { class: 'list' }, card.blockers.map((blocker) => row(blocker, '', [], null, true))),
+        ])
+      : null,
     el('h3', { text: 'What a real card needs' }),
     el('div', { class: 'list' }, (card.requirements || []).map((requirement) => row(requirement, '', [], null, true))),
+    el('div', { class: 'side' }, [issueButton]),
+    el('p', { class: 'muted tiny', text: card.canIssue ? 'Issuance calls the connected card provider; a card appears here only if the provider confirms it.' : 'The button stays disabled until a real card provider is connected and the requirements above are met — no placeholder card is created.' }),
   );
 }
 
@@ -2106,6 +2439,10 @@ function wire() {
       if (error.status !== 401) banner(error.message, 'error');
     }
   });
+
+  // Add-withdrawal-method buttons (Withdraw and Card open the same secure form).
+  $('#add-method')?.addEventListener('click', () => openMethodForm('#withdraw-method-form', loadWithdrawSimple));
+  $('#card-add-method')?.addEventListener('click', () => openMethodForm('#card-method-form', loadCardSimple));
 
   // Advanced keeps every existing mission control; it is collapsed by default
   // so the primary dashboard stays a four-section owner view.

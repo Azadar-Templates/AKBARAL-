@@ -93,20 +93,30 @@
             <h2>Withdraw</h2>
             <div id="withdraw-action"></div>
           </div>
-          <div class="split">
-            <div class="block">
-              <h2>Payout destination</h2>
-              <div id="withdraw-destinations" class="list"></div>
+          <div class="block">
+            <div class="block-head">
+              <h2>Withdrawal methods</h2>
+              <button id="add-method" class="small" type="button">+ Add withdrawal method</button>
             </div>
-            <div class="block">
-              <h2>Withdrawals</h2>
-              <div id="withdraw-history" class="list"></div>
-            </div>
+            <div id="withdraw-method-form"></div>
+            <div id="withdraw-destinations" class="list"></div>
+          </div>
+          <div class="block">
+            <h2>Withdrawals</h2>
+            <div id="withdraw-history" class="list"></div>
           </div>
         </section>
 
         <!-- 4. CARD -------------------------------------------------------- -->
         <section data-view-panel="card" class="view" hidden>
+          <div class="block">
+            <div class="block-head">
+              <h2>Withdrawal methods</h2>
+              <button id="card-add-method" class="small" type="button">+ Add method</button>
+            </div>
+            <div id="card-method-form"></div>
+            <div id="card-methods" class="list"></div>
+          </div>
           <div id="card-face"></div>
           <div id="card-detail" class="block"></div>
         </section>
