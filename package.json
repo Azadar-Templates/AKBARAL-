@@ -32,6 +32,7 @@
     "test:pg": "node scripts/pg-test-server.mjs --run sh -c \"npx tsx src/db/migrate.ts && npx tsx src/db/seed.ts && npx tsx --test --test-force-exit src/db/postgres.integration.test.ts && npx tsx --test --test-force-exit src/server/health.test.ts && npx tsx --test --test-force-exit src/db/workforce-parity.test.ts && npx tsx --test --test-force-exit src/economy/financial-atomicity.test.ts\"",
     "mission:init": "tsx scripts/mission-init.ts",
     "mission:set-owner-password": "tsx scripts/mission-set-owner-password.ts",
+    "mission:owner-setup-link": "tsx scripts/mission-owner-setup-link.ts",
     "mission:serve": "tsx scripts/mission-serve.ts",
     "mission:money-worker": "tsx scripts/mission-money-worker.ts",
     "mission:chat-worker": "tsx scripts/mission-chat-worker.ts",

@@ -62,6 +62,13 @@ import {
 } from './auth';
 import { identityLockStatus } from './identity-lock';
 import {
+  attestRecentSession,
+  completeOwnerSetup,
+  ownerSetupAvailability,
+  ownerSetupPageServable,
+  recordOwnerSetupVerification,
+} from './owner-setup';
+import {
   PAYOUT_VERIFICATION_CHECKS,
   PAYOUT_VERIFICATION_VALIDITY_DAYS,
   confirmPayoutVerification,
@@ -372,7 +379,13 @@ const CONTENT_TYPES: Record<string, string> = {
 function serveStatic(res: http.ServerResponse, urlPath: string): boolean {
   const dir = dashboardDir();
   if (!dir) return false;
-  const relative = urlPath === '/' || urlPath === '' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  // The one-time owner setup page exists only while a setup link is active.
+  // With no link outstanding the path 404s like any other unknown route.
+  if (urlPath === '/setup' || urlPath === '/setup.html' || urlPath === '/setup.js') {
+    if (!ownerSetupPageServable()) return false;
+  }
+  let relative = urlPath === '/' || urlPath === '' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  if (!path.extname(relative) && fs.existsSync(path.join(dir, `${relative}.html`))) relative = `${relative}.html`;
   // Path traversal is impossible: only the basename inside the dashboard dir.
   const safe = relative.split('/').filter((segment) => segment !== '..' && segment !== '.').join('/');
   const file = path.join(dir, safe);
@@ -1137,6 +1150,32 @@ async function handleApi(
 
   switch (head) {
     // ── Session ─────────────────────────────────────────────────────────────
+    // ── One-time owner password setup ───────────────────────────────────────
+    // Present only while an unconsumed setup link exists; otherwise these
+    // paths fall through to the generic 404 like any unknown mission route.
+    case 'owner-setup': {
+      const action = rest[0] ?? 'status';
+      const availability = ownerSetupAvailability();
+      if (method === 'GET' && action === 'status') {
+        json(res, 200, availability);
+        return true;
+      }
+      if (method === 'POST' && action === 'complete') {
+        // The password lives only in this call frame: straight into scrypt.
+        const result = completeOwnerSetup({ token: param('token', '') ?? '', password: param('password', '') ?? '' });
+        json(res, 200, { ok: result.ok, email: result.email, identityLock: result.identityLock });
+        return true;
+      }
+      if (method === 'POST' && action === 'verification') {
+        if (!attestRecentSession(bearer(req))) {
+          throw new HttpProblem(403, 'a recent mission session is required to file a verification report', 'forbidden');
+        }
+        json(res, 200, { checks: recordOwnerSetupVerification((body?.checks ?? {}) as Record<string, unknown>) });
+        return true;
+      }
+      break;
+    }
+
     case 'session': {
       const action = rest[0] ?? 'me';
       if (method === 'POST' && action === 'login') {

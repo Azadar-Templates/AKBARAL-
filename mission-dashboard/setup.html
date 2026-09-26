@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <title>ZA141251SA — Set owner password</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">ZA141251SA</span>
+        <span class="sub">Owner password setup</span>
+      </div>
+      <div class="topbar-right">
+        <span id="identity" class="identity">one-time setup link</span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="unavailable" class="panel login" hidden>
+        <h1>This setup link is not active</h1>
+        <p class="muted">
+          The link has already been used, has expired, or was never issued. Ask for a new one-time
+          setup link, then open it again.
+        </p>
+      </section>
+
+      <section id="setup-panel" class="panel login" hidden>
+        <h1>Set the mission owner password</h1>
+        <p class="muted">
+          You are keying <strong id="masked-email">the configured mission owner</strong>. The password
+          is sent once to this private mission server, hashed with scrypt and stored as a hash only.
+          It is never written to a log, a file, the repository or any transcript. Nobody — including
+          the agent that prepared this link — can read it back.
+        </p>
+        <form id="setup-form" autocomplete="off">
+          <label for="new-password">New owner password (minimum 12 characters)</label>
+          <input id="new-password" name="new-password" type="password" autocomplete="new-password" minlength="12" required />
+          <label for="confirm-password">Confirm password</label>
+          <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="12" required />
+          <button type="submit" id="setup-button">Set password and verify sign-in</button>
+          <p id="setup-error" class="error" role="alert" hidden></p>
+        </form>
+        <p class="muted small" id="expiry-note"></p>
+      </section>
+
+      <section id="progress-panel" class="panel" hidden>
+        <h1>Verification</h1>
+        <p class="muted">
+          Your browser is running the real authentication journey against the mission server: sign in
+          with the password you just set, keep the session across a full page reload, sign out, and
+          confirm that no other identity and no wrong password is accepted.
+        </p>
+        <ul id="checklist" class="muted"></ul>
+        <p id="progress-note" class="muted small"></p>
+        <p>
+          <a class="ghost" id="open-dashboard" href="/" hidden>Open the mission dashboard</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Private mission system — separate database, authentication and ledger from any customer platform.
+    </footer>
+
+    <script src="/setup.js"></script>
+  </body>
+</html>
