@@ -899,3 +899,34 @@ test('customer work is owner-only, cannot send/spend/import proof, and produces 
   assert.equal((await owner('/api/customer-work/record',{method:'POST',body:JSON.stringify({customerRef:'invented',paid:true})})).status,409);
   assert.equal(missionDb.get<Row>('SELECT COUNT(*) AS n FROM mission_cash_entries')!.n,before);
 });
+
+test('the verified-cash reconciliation report is owner-only, auditable, and detects tampering', async () => {
+  // Owner session: the full-ledger reconciliation view.
+  const view = await owner('/api/money/reconciliation');
+  assert.equal(view.status, 200);
+  assert.equal(view.body.reconciliation.ok, true);
+  assert.equal(typeof view.body.reconciliation.counts.entries, 'number');
+  assert.equal(view.body.reconciliation.mismatchCount, 0);
+  // Agent-scoped links and anonymous callers must never read it.
+  const agent = missionDb.get<Row>('SELECT id FROM mission_agents LIMIT 1')!;
+  const link = createAccessLink({ scope: 'agent:self', agentId: String(agent.id), label: 'reconciliation denial fixture' });
+  const agentView = await api('/api/money/reconciliation', { headers: { 'x-mission-link': link.token } });
+  assert.equal(agentView.status, 403, 'an agent-scoped link must not read the whole-ledger reconciliation');
+  const anonymous = await api('/api/money/reconciliation');
+  assert.equal(anonymous.status, 401);
+  // Owner-initiated reconciliation is recorded in the tamper-evident audit trail.
+  const recorded = await owner('/api/money/reconcile-ledger', { method: 'POST', body: '{}' });
+  assert.equal(recorded.status, 200);
+  assert.equal(recorded.body.result.ok, true);
+  assert.equal(missionDb.get<Row>("SELECT COUNT(*) AS n FROM mission_audit WHERE action='money.ledger_reconciled'")!.n, 1);
+  // The report detects an out-of-band account edit even with zero entries booked.
+  if (!missionDb.get<Row>("SELECT id FROM mission_cash_accounts WHERE id='treasury'")) missionDb.run("INSERT INTO mission_cash_accounts (id, agent_id, currency) VALUES ('treasury', NULL, 'USD')");
+  missionDb.run("UPDATE mission_cash_accounts SET available_cents = available_cents + 999 WHERE id='treasury'");
+  const tampered = await owner('/api/money/reconciliation');
+  assert.equal(tampered.status, 200);
+  assert.equal(tampered.body.reconciliation.ok, false);
+  assert.ok(tampered.body.reconciliation.mismatches.some((entry: any) => entry.code === 'account_balance_mismatch'));
+  missionDb.run("UPDATE mission_cash_accounts SET available_cents = available_cents - 999 WHERE id='treasury'");
+  const restored = await owner('/api/money/reconciliation');
+  assert.equal(restored.body.reconciliation.ok, true, 'fail-closed is a gate, not a brick: it recovers with the ledger');
+});

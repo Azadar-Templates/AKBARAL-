@@ -27,6 +27,7 @@ import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
+import { reconcileLedger } from './ledger-reconciliation';
 import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
 import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
 import { recordResourceCallCost } from './resource-budgets';
@@ -1110,7 +1111,14 @@ async function handleApi(
       if(context.session){const session=requireOwner(context);assertMoneyOwner({kind:'owner',id:session.owner.id});}
       else agentId=requireAgent(context,url.searchParams.get('agentId'),true).agentId;
       const action=rest[0];
-      if(action&& !['ledger','operations','jobs'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
+      if(action&& !['ledger','operations','jobs','reconciliation'].includes(action))throw new HttpProblem(404,'unknown money view','not_found');
+      // The reconciliation report is a whole-mission integrity view: an agent
+      // (or an agent-scoped link) must never read the ledger's agreement with
+      // accounts, reservations and references it does not own.
+      if(action==='reconciliation'){
+        if(!context.session)throw new HttpProblem(403,'ledger reconciliation is owner-only','forbidden');
+        json(res,200,{reconciliation:reconcileLedger()});return true;
+      }
       const data=action==='ledger'?{entries:listCashEntries(Number(url.searchParams.get('after')??0),Number(url.searchParams.get('limit')??200),agentId)}:
         action==='operations'?{operations:listMoneyOperations(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
         action==='jobs'?{jobs:listEarningJobs(url.searchParams.get('after')??'',Number(url.searchParams.get('limit')??200),agentId)}:
@@ -1137,6 +1145,11 @@ async function handleApi(
     else if(action==='dispatch')result=await dispatchMoney(actor,configuredMoneyProvider(),param('id','')!);
     else if(action==='reconcile'){assertMoneyOwner(actor);result=await reconcileMoney(actor,configuredMoneyProvider(),param('id','')!);}
     else if(action==='reconcile-earning'){assertMoneyOwner(actor);result=await reconcileEarningPayment(actor,configuredMoneyProvider(),param('id','')!);}
+    else if(action==='reconcile-ledger'){
+      assertMoneyOwner(actor);const report=reconcileLedger();
+      appendMissionAudit({actorType:'owner',actorId:actor.id,action:'money.ledger_reconciled',subjectType:'verified_cash',subjectId:'ledger',detail:{ok:report.ok,mismatchCount:report.mismatchCount,codes:Array.from(new Set(report.mismatches.map(m=>m.code)))}});
+      result=report;
+    }
     else if(action==='earn')result=queueEarning(actor,param('agentId','')!,param('idempotencyKey','')!,param('costOperationId')??undefined);
     else throw new HttpProblem(404,'unknown money action','not_found');
     } catch(error) {
