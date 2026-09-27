@@ -31,6 +31,8 @@ on:
     paths:
       - '.github/workflows/live-runtime.yml'
       - 'scripts/live-verification.ts'
+      - 'src/billing/**'
+      - 'src/app.ts'
       - 'scripts/start-prod.mjs'
       - 'src/launch/**'
       - 'src/mission/operating-funds.ts'
