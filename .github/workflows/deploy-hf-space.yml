@@ -1,94 +1,200 @@
 name: deploy-hf-space
 
-# Push this repository to a free Hugging Face Docker Space — from a GitHub
-# runner, so the owner never needs a local toolchain and never pastes a secret
-# anywhere but GitHub's own secret UI.
+# Deploy AKBARAL! to a FREE Hugging Face Docker Space (no credit card, no paid
+# upgrade) from a GitHub runner, so the owner never needs a local toolchain and
+# never pastes a secret anywhere except GitHub's own secret UI.
 #
-# One-time owner setup (all free, no credit card):
-#   1. huggingface.co/join  → New Space → SDK: Docker → hardware: CPU basic (free)
+# Owner setup, one time, all free:
+#   1. huggingface.co/join
 #   2. huggingface.co/settings/tokens → new token, role "write"
-#   3. This repository → Settings → Secrets and variables → Actions →
-#      New repository secret → name HF_TOKEN → paste the token there.
-#   4. Run this workflow with the Space id (owner/space-name).
+#   3. this repository → Settings → Secrets and variables → Actions →
+#      new repository secret named HF_TOKEN
 #
-# The token is only ever read from the secret store into the remote URL of a
-# single git push; it is never printed, never written to a file that is kept,
-# and never committed.
+# With HF_TOKEN present this workflow creates the Space if it does not exist,
+# copies the required runtime secrets into the SPACE's own secret store
+# (never printed, never committed), pushes the code, waits for the Space to
+# answer /api/ready and reports the public URL. Without HF_TOKEN it stops with
+# a clear owner action and fails nothing.
 
 on:
   workflow_dispatch:
     inputs:
-      space_id:
-        description: 'Hugging Face Space id, e.g. your-user/akbaral'
-        required: true
-      branch:
-        description: 'Branch of this repository to deploy'
+      space_name:
+        description: 'Space name under your HF account (default: akbaral)'
         required: false
-        default: 'arena/01a0dd85-akbaral'
+        default: 'akbaral'
+      report_issue:
+        description: 'Issue number for the deployment report'
+        required: false
+        default: '11'
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - '.github/workflows/deploy-hf-space.yml'
+      - 'deploy/free-hf-spaces/**'
 
 permissions:
   contents: read
+  issues: write
+
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: false
 
 jobs:
-  push-to-space:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      SPACE_NAME: ${{ github.event.inputs.space_name || 'akbaral' }}
+      REPORT_ISSUE: ${{ github.event.inputs.report_issue || '11' }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
-      - name: Verify the token exists before touching anything
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - name: Is a free Hugging Face token available?
+        id: gate
         run: |
           if [ -z "${HF_TOKEN}" ]; then
-            echo "::error::HF_TOKEN repository secret is not set. Add it in Settings → Secrets and variables → Actions (free Hugging Face write token). Nothing was sent anywhere."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::HF_TOKEN is not set. Create a free Hugging Face account and a write token, then add it as the HF_TOKEN repository secret. Nothing was sent anywhere."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "HF_TOKEN present (value never printed)."
+          fi
+
+      - name: Resolve the Hugging Face account
+        if: steps.gate.outputs.available == 'true'
+        id: who
+        run: |
+          user=$(curl -sf -H "Authorization: Bearer ${HF_TOKEN}" https://huggingface.co/api/whoami-v2 | jq -r '.name')
+          if [ -z "$user" ] || [ "$user" = "null" ]; then
+            echo "::error::The HF_TOKEN was rejected by huggingface.co (check that it is a *write* token)."
             exit 1
           fi
-          echo "HF_TOKEN is present (value never printed)."
+          echo "user=$user" >> "$GITHUB_OUTPUT"
+          echo "space_id=$user/${SPACE_NAME}" >> "$GITHUB_OUTPUT"
+          # Space hostnames replace '/' and '_' with '-' and lowercase everything.
+          host=$(echo "$user-${SPACE_NAME}" | tr '[:upper:]_' '[:lower:]-')
+          echo "host=$host.hf.space" >> "$GITHUB_OUTPUT"
+          echo "Deploying to space $user/${SPACE_NAME} (https://$host.hf.space)"
 
-      - name: Add the Space front matter Hugging Face requires
+      - name: Create the Space if it does not exist (free CPU basic, Docker SDK)
+        if: steps.gate.outputs.available == 'true'
         run: |
-          # The Space needs a README.md whose YAML front matter selects the
-          # Docker SDK and the port the app listens on. The repository README is
-          # preserved below the front matter.
-          cp deploy/free-hf-spaces/space-README.md /tmp/space-README.md
-          if [ -f README.md ]; then
-            printf '\n\n---\n\n' >> /tmp/space-README.md
-            cat README.md >> /tmp/space-README.md
+          code=$(curl -s -o /tmp/create.json -w '%{http_code}' -X POST https://huggingface.co/api/repos/create \
+            -H "Authorization: Bearer ${HF_TOKEN}" -H 'Content-Type: application/json' \
+            -d "{\"type\":\"space\",\"name\":\"${SPACE_NAME}\",\"private\":false,\"sdk\":\"docker\"}")
+          if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+            echo "Space created."
+          elif grep -qi "already" /tmp/create.json; then
+            echo "Space already exists — reusing it."
+          else
+            echo "::error::Space creation failed (HTTP $code): $(head -c 400 /tmp/create.json)"
+            exit 1
           fi
+
+      - name: Put the runtime secrets in the Space's own secret store
+        if: steps.gate.outputs.available == 'true'
+        env:
+          SPACE_ID: ${{ steps.who.outputs.space_id }}
+        run: |
+          set_secret() {
+            name="$1"; value="$2"
+            [ -z "$value" ] && { echo "skip $name (not available in this runner)"; return 0; }
+            code=$(curl -s -o /tmp/secret.json -w '%{http_code}' -X POST \
+              "https://huggingface.co/api/spaces/${SPACE_ID}/secrets" \
+              -H "Authorization: Bearer ${HF_TOKEN}" -H 'Content-Type: application/json' \
+              --data-binary "$(jq -nc --arg k "$name" --arg v "$value" '{key:$k, value:$v}')")
+            echo "  $name -> HTTP $code"
+          }
+          set_var() {
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+              "https://huggingface.co/api/spaces/${SPACE_ID}/variables" \
+              -H "Authorization: Bearer ${HF_TOKEN}" -H 'Content-Type: application/json' \
+              --data-binary "$(jq -nc --arg k "$1" --arg v "$2" '{key:$k, value:$v}')")
+            echo "  $1=$2 -> HTTP $code"
+          }
+          # Generated here, stored only in the Space: never printed, never committed.
+          set_secret SESSION_SECRET "$(openssl rand -base64 48)"
+          set_secret GOOGLE_API_KEY "${GOOGLE_API_KEY}"
+          set_var NODE_ENV production
+          set_var AKBARAL_LAUNCH_MODE free
+          set_var SEED_DATABASE true
+          set_var DATA_DIR /data
+          echo "DATABASE_URL is intentionally NOT set: without a free Neon project the Space uses its own SQLite file, which is EPHEMERAL (lost on rebuild). Add DATABASE_URL in the Space settings to make it durable."
+
+      - name: Push this repository to the Space
+        if: steps.gate.outputs.available == 'true'
+        env:
+          SPACE_ID: ${{ steps.who.outputs.space_id }}
+        run: |
+          cp deploy/free-hf-spaces/space-README.md /tmp/space-README.md
           cp /tmp/space-README.md README.md
           git config user.name  "akbaral-deploy"
           git config user.email "deploy@akbaral.invalid"
           git add README.md
           git commit -m "deploy: Hugging Face Space front matter (Docker SDK, app_port 3000)" || echo "front matter already current"
-
-      - name: Push to the Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          SPACE_ID: ${{ github.event.inputs.space_id }}
-        run: |
-          # Credentials go in the remote URL of this single command only.
           git remote add space "https://user:${HF_TOKEN}@huggingface.co/spaces/${SPACE_ID}" 2>/dev/null \
             || git remote set-url space "https://user:${HF_TOKEN}@huggingface.co/spaces/${SPACE_ID}"
           git push --force space HEAD:main 2>&1 | sed -e "s/${HF_TOKEN}/***/g"
           git remote remove space
 
-      - name: What the owner must still do
+      - name: Wait for the Space to build and answer /api/ready
+        if: steps.gate.outputs.available == 'true'
+        id: live
+        env:
+          HOSTNAME: ${{ steps.who.outputs.host }}
         run: |
-          cat <<'NOTE'
-          Space pushed. In the Space → Settings → "Variables and secrets" add:
+          echo "waiting for https://${HOSTNAME}/api/ready (a first Docker build takes several minutes)"
+          ready=""
+          for i in $(seq 1 90); do
+            body=$(curl -s --max-time 20 "https://${HOSTNAME}/api/ready" || true)
+            if echo "$body" | grep -q '"status":"ready"'; then ready="$body"; break; fi
+            sleep 20
+          done
+          if [ -n "$ready" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "$ready" > /tmp/space-ready.json
+            echo "Space is live: https://${HOSTNAME}"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The Space did not report ready within 30 minutes. Check the build logs at https://huggingface.co/spaces/${{ steps.who.outputs.space_id }}"
+          fi
 
-            SECRET  DATABASE_URL                 free Neon project #1 connection string
-            SECRET  ZA141251SA_DATABASE_URL      free Neon project #2 connection string (mission)
-            SECRET  SESSION_SECRET               openssl rand -base64 48
-            SECRET  GOOGLE_API_KEY               free Google AI Studio key
-            VAR     NODE_ENV=production
-            VAR     AKBARAL_LAUNCH_MODE=free
-            VAR     SEED_DATABASE=true   (only for the first successful boot, then false)
+      - name: Verify the live Space with real requests
+        if: steps.gate.outputs.available == 'true' && steps.live.outputs.ready == 'true'
+        env:
+          HOSTNAME: ${{ steps.who.outputs.host }}
+        run: |
+          npm ci
+          VERIFY_WEB_URL="https://${HOSTNAME}" \
+          VERIFY_MISSION_URL="https://${HOSTNAME}" \
+          VERIFY_RUNTIME_LABEL="Hugging Face Space https://${HOSTNAME} (free CPU basic)" \
+          npx tsx scripts/live-verification.ts | tee /tmp/space-verification.txt || true
 
-          AKBARAL_SITE_URL is NOT needed: the app detects SPACE_HOST and uses the
-          free *.hf.space hostname. No domain purchase, ever.
-          NOTE
+      - name: Report the deployment
+        if: always() && env.REPORT_ISSUE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Hugging Face Space deployment — run ${{ github.run_id }}"
+            echo
+            if [ "${{ steps.gate.outputs.available }}" != "true" ]; then
+              echo "**BLOCKED — owner action required (free, no card):** create a Hugging Face account, make a *write* token at huggingface.co/settings/tokens, and add it as the repository secret \`HF_TOKEN\`. Then re-run this workflow. Nothing was deployed and no secret left this runner."
+            else
+              echo "- Space: https://huggingface.co/spaces/${{ steps.who.outputs.space_id }}"
+              echo "- Public URL: https://${{ steps.who.outputs.host }}"
+              echo "- Reported ready: ${{ steps.live.outputs.ready }}"
+              echo
+              echo '```'
+              tail -60 /tmp/space-verification.txt 2>/dev/null || echo "no live verification output (the Space was not ready in time)"
+              echo '```'
+            fi
+          } > /tmp/deploy-comment.md
+          gh issue comment "$REPORT_ISSUE" --repo "${{ github.repository }}" --body-file /tmp/deploy-comment.md
