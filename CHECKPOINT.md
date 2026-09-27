@@ -3,7 +3,7 @@
 Purpose: let any session continue **without repeating the audit**. Everything
 below is verified-by-execution state, not intention.
 
-**Checkpoint commit:** `8a86515` on `arena/01a0e339-akbaral`
+**Checkpoint commit:** `5efc8c8` on `arena/01a0e339-akbaral`
 **Remote HEAD:** `8a86515` (confirmed identical via `git ls-remote`)
 **Working tree:** clean
 **Date:** 2026-09-27
@@ -29,6 +29,8 @@ Do **not** re-run them. Deliverables already in the repo:
 | `6068b6e` | Dashboard 500 + 6 schema defects; CI unblock; 3 PostgreSQL defects | ✅ | ✅ |
 | `c67640a` | **Real earning provider**; $0 free-tier chat; closed gate bypass | ✅ | ✅ |
 | `8a86515` | Immutable digest pin; state reconciliation | ✅ | ✅ |
+| `bd22d15` | Resume checkpoint | — | — |
+| `5efc8c8` | **Migrate mission chat off the soon-uncallable gemini-2.5-flash** | see CI | see CI |
 
 ---
 
@@ -36,7 +38,7 @@ Do **not** re-run them. Deliverables already in the repo:
 
 | Check | Result |
 |---|---|
-| Full suite | **2,081 pass / 0 fail / 0 cancelled** (142 files) |
+| Full suite | **2,085 pass / 0 fail / 0 cancelled** (142 files) |
 | TypeScript | 0 errors |
 | `test:pg` (real PostgreSQL) | **48 / 48** |
 | `mission:pg-check` | **10 steps, 0 failures + 75 tests** — 36 migrations, 123 tables |
@@ -71,6 +73,11 @@ Do **not** re-run them. Deliverables already in the repo:
 ## 5. REMAINING BLOCKERS — 5, all human, all $0
 
 1. Free **Google AI Studio** key + `ZA141251SA_CHAT_FREE_TIER=true` → real AI + agent chat **(highest value)**
+   - Platform env var is `GOOGLE_API_KEY`; the mission reads its key from the
+     mission credential vault (provider `google`).
+   - Model is now `gemini-3.8-flash`. Do NOT pin a 2.5 model: since 2026-09-18
+     Google restricts the 2.5 cluster to accounts that already used it, and
+     shuts it down 2026-10-16, so a new key cannot call it.
 2. Make the GHCR package **Public**
 3. Free host + free **Neon** PostgreSQL → public HTTPS
 4. Free **Stripe** keys, payouts **manual** → earning activation
