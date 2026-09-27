@@ -26,6 +26,19 @@ import { executionQueue } from '../orchestrator/queue';
  * statements, subscription state, admin billing overview.
  */
 
+// Determinism on a networked CI runner: this suite asserts the HONEST FAILURE
+// path (no provider configured). Locally there is no egress so every provider
+// attempt fails instantly, but on a runner with real internet the same task
+// would spend its full provider timeout and its search budget on live hosts
+// before failing, which made the 20s wait flaky (the only red step in CI).
+// Fail fast and keep the network out of this suite: the assertions below are
+// unchanged.
+process.env.AKBARAL_PROVIDER_TIMEOUT_MS = process.env.AKBARAL_PROVIDER_TIMEOUT_MS ?? '1500';
+// An explicitly selected but unconfigured search provider refuses immediately
+// instead of reaching the keyless provider over the network.
+process.env.AKBARAL_SEARCH_PROVIDER = 'tavily';
+delete process.env.TAVILY_API_KEY;
+
 const suffix = randomBytes(6).toString('hex');
 const password = 'correct-horse-battery-staple';
 const WEBHOOK_SECRET = 'm8-test-webhook-secret';
@@ -264,7 +277,7 @@ describe('Milestone 8: trial/credits/billing', () => {
     });
     assert.equal(failed.status, 202);
     const failedBody = (await failed.json()) as { task: { id: string } };
-    await waitFor(() => findTaskById(failedBody.task.id)?.status === 'failed', 20_000, 'honest failure');
+    await waitFor(() => findTaskById(failedBody.task.id)?.status === 'failed', 45_000, 'honest failure');
     assert.equal(freeCredits(), before, 'failed task does not consume the free task');
 
     // Successful path: provider fixture configured -> completion consumes once.
@@ -278,7 +291,7 @@ describe('Milestone 8: trial/credits/billing', () => {
       });
       assert.equal(ok.status, 202);
       const okBody = (await ok.json()) as { task: { id: string } };
-      await waitFor(() => findTaskById(okBody.task.id)?.status === 'completed', 60_000, 'successful completion');
+      await waitFor(() => findTaskById(okBody.task.id)?.status === 'completed', 90_000, 'successful completion');
       assert.equal(freeCredits(), before - 1, 'exactly one credit consumed on success');
     } finally {
       delete process.env.OPENAI_API_KEY;
