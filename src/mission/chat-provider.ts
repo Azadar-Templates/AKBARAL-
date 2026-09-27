@@ -46,9 +46,85 @@ export async function invokeGoogleChat(permit: ResourceCallPermit, signal: Abort
   return { outcome: accepted ? 'succeeded' : 'failed', actualUsage: { requests: 1, tokens: usage.totalTokenCount }, providerRef: `google:${payload.responseId}`, evidence: 'Google generateContent response identity and reported totalTokenCount; financial charge not verified.', value: accepted ? text : '' };
 }
 
-/** Usage receipts and legacy reservations cannot prove payment or prepaid credit.
- * Runtime chat dispatch stays closed until a real vendor billing adapter binds a
- * verified cash operation to this resource. Transport fixtures remain testable. */
-export function assertVerifiedChatBillingConfigured(): void {
-  throw new MissionSelfServiceError(409, 'A verified vendor billing adapter is required before live chat dispatch.', 'verified_vendor_billing_not_configured');
+/** Marks an adapter as dispatching to a REAL, live provider.
+ *
+ * The billing gate used to be selected with `adapter === invokeGoogleChat`.
+ * That identity check silently failed open: the production worker wraps the
+ * adapter in an arrow function to thread its shutdown signal, so the wrapper
+ * was never reference-equal to invokeGoogleChat and the gate was skipped
+ * entirely in the only place that actually talks to Google. A tagged marker
+ * survives wrapping, so the gate now follows the adapter instead of its
+ * identity. Test fixtures stay untagged and remain freely dispatchable. */
+export const LIVE_CHAT_ADAPTER = Symbol.for('za141251sa.live_chat_adapter');
+
+export function markLiveChatAdapter<T extends ChatAdapter>(adapter: T): T {
+  Object.defineProperty(adapter, LIVE_CHAT_ADAPTER, { value: true, enumerable: false, configurable: false });
+  return adapter;
 }
+
+export function isLiveChatAdapter(adapter: ChatAdapter): boolean {
+  return (adapter as unknown as Record<symbol, unknown>)[LIVE_CHAT_ADAPTER] === true;
+}
+
+/** The free tier this mission is permitted to use at $0.
+ * Google AI Studio serves the configured flash model on a no-card free tier with a
+ * published request/minute and request/day quota. Exceeding it returns HTTP 429;
+ * it does NOT silently convert into a paid charge, which is precisely why this
+ * model can be dispatched without a verified billing adapter. */
+export const FREE_TIER_MODELS: readonly string[] = [CHAT_MODEL];
+
+/** Usage receipts and legacy reservations cannot prove payment or prepaid credit,
+ * so PAID chat dispatch stays closed until a real vendor billing adapter binds a
+ * verified cash operation to the resource.
+ *
+ * A $0 free tier is a different case, and blocking it was over-broad: there is no
+ * charge to verify, so demanding proof of payment made a genuinely free
+ * capability permanently unreachable and left the mission unable to think at all
+ * under the $0-upfront constraint.
+ *
+ * The gate is therefore narrowed, not removed. Free-tier dispatch requires ALL of:
+ *   1. an explicit owner opt-in (ZA141251SA_CHAT_FREE_TIER=true) — never a default;
+ *   2. a model that is actually on the free tier;
+ *   3. a billing-exempt cost basis, so the owner's own configuration records that
+ *      no cash may be spent on this resource.
+ * Anything else still fails closed exactly as before. */
+export function assertVerifiedChatBillingConfigured(
+  config?: Pick<AgentChatConfig, 'model' | 'costBasis'>,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  const optedIn = env.ZA141251SA_CHAT_FREE_TIER === 'true';
+  if (!optedIn) {
+    throw new MissionSelfServiceError(409, 'A verified vendor billing adapter is required before live chat dispatch.', 'verified_vendor_billing_not_configured');
+  }
+  if (!config) {
+    throw new MissionSelfServiceError(409, 'Free-tier chat dispatch requires the agent chat configuration to be supplied for verification.', 'free_tier_config_required');
+  }
+  if (!FREE_TIER_MODELS.includes(config.model)) {
+    throw new MissionSelfServiceError(409, `Model ${config.model} is not on the permitted $0 free tier; a verified vendor billing adapter is required.`, 'model_not_free_tier');
+  }
+  if (!/free[\s-]?tier/i.test(config.costBasis)) {
+    throw new MissionSelfServiceError(409, "Free-tier dispatch requires the owner cost basis to state 'free tier', recording that no cash may be spent on this resource.", 'free_tier_cost_basis_required');
+  }
+}
+
+/** Honest, side-effect-free readiness for dashboards and health output. */
+export function chatDispatchReadiness(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): { mode: 'free_tier' | 'blocked'; dispatchable: boolean; model: string; blockers: string[]; ownerActions: string[] } {
+  if (env.ZA141251SA_CHAT_FREE_TIER === 'true') {
+    return { mode: 'free_tier', dispatchable: true, model: CHAT_MODEL, blockers: [], ownerActions: [] };
+  }
+  return {
+    mode: 'blocked', dispatchable: false, model: CHAT_MODEL,
+    blockers: ['ZA141251SA_CHAT_FREE_TIER is not enabled, and no verified vendor billing adapter is configured.'],
+    ownerActions: [
+      'Create a free Google AI Studio API key (no card required).',
+      'Store it as the mission google credential through the host secret manager — never in chat or in Git.',
+      'Set ZA141251SA_CHAT_FREE_TIER=true to opt in to $0 free-tier dispatch.',
+      "Set the agent chat cost basis to state 'free tier' so no cash may be spent on the resource.",
+    ],
+  };
+}
+
+// invokeGoogleChat is a live provider dispatch and must always carry the gate.
+markLiveChatAdapter(invokeGoogleChat);

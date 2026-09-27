@@ -18,7 +18,11 @@
 -- event is auditable and reported exactly once per day.
 
 ALTER TABLE mission_policy ADD COLUMN reinvest_share_bps INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE mission_policy ADD COLUMN daily_revenue_target_cents INTEGER NOT NULL DEFAULT 0;
+-- BIGINT (not INTEGER): this holds an aspirational target in CENTS. PostgreSQL's
+-- INTEGER is 32-bit (max 2,147,483,647 = $21.4M) while SQLite's is 64-bit, so an
+-- INTEGER column here made migration 0008's $1B/day value fail on PostgreSQL with
+-- "integer out of range" and blocked the entire mission plane on Neon.
+ALTER TABLE mission_policy ADD COLUMN daily_revenue_target_cents BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS mission_daily_target_days (
   day            TEXT PRIMARY KEY,          -- UTC date, YYYY-MM-DD

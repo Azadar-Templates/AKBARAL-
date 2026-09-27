@@ -964,6 +964,91 @@ const backupCheck: LaunchCheck = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Mission operability: the two gates that decide whether ZA141251SA can
+// actually think and actually earn. Both were previously invisible to
+// launch:check, so the owner's own readiness tool stayed silent about the only
+// two things standing between the mission and operation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const missionChatDispatchCheck: LaunchCheck = {
+  id: 'mission.chat_dispatch',
+  area: 'Mission system',
+  title: 'Private mission agent chat can actually dispatch to a provider',
+  required: false,
+  docsUrl: 'MISSION_SYSTEM.md',
+  run(context) {
+    const base = {
+      id: this.id,
+      area: this.area,
+      title: this.title,
+      required: false,
+      docsUrl: this.docsUrl,
+      envKeys: ['ZA141251SA_CHAT_FREE_TIER'],
+      ownerAction:
+        "Create a free Google AI Studio API key (no card), store it as the mission `google` credential through the host secret manager, set ZA141251SA_CHAT_FREE_TIER=true, and set the agent chat cost basis to state 'free tier'.",
+    };
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const provider = require('../mission/chat-provider') as typeof import('../mission/chat-provider');
+      const readiness = provider.chatDispatchReadiness(context.env);
+      if (!readiness.dispatchable) {
+        return configOnly({ ...base, evidence: `chat dispatch is CLOSED — ${readiness.blockers.join(' ')} No agent can produce a real reply.` }, 'not_configured');
+      }
+      return configOnly(
+        {
+          ...base,
+          evidence: `chat dispatch open in ${readiness.mode} mode on ${readiness.model}; a credentialed agent can reply. This is permission to dispatch, not proof a call succeeded.`,
+          ownerAction: undefined,
+        },
+        'ready',
+      );
+    } catch (error) {
+      return configOnly({ ...base, evidence: `chat readiness check failed: ${error instanceof Error ? error.message : 'unknown'}` }, 'unreachable');
+    }
+  },
+};
+
+const missionEarningProviderCheck: LaunchCheck = {
+  id: 'mission.earning_provider',
+  area: 'Mission system',
+  title: 'At least one earning provider is credentialed (required for any revenue)',
+  required: false,
+  docsUrl: 'MISSION_SYSTEM.md',
+  run(context) {
+    const base = {
+      id: this.id,
+      area: this.area,
+      title: this.title,
+      required: false,
+      docsUrl: this.docsUrl,
+      envKeys: ['ZA141251SA_STRIPE_SECRET_KEY', 'ZA141251SA_STRIPE_ACCOUNT_ID'],
+      ownerAction:
+        'Create a free Stripe account (no card needed to create it), add ZA141251SA_STRIPE_SECRET_KEY and ZA141251SA_STRIPE_ACCOUNT_ID through the host secret manager, and set the payout schedule to manual.',
+    };
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const registry = require('../mission/earning/providers/registry') as typeof import('../mission/earning/providers/registry');
+      const report = registry.earningProviderReadinessReport(context.env);
+      if (!report.earningPossible) {
+        return configOnly({ ...base, evidence: report.summary }, 'not_configured');
+      }
+      return configOnly(
+        {
+          ...base,
+          // Deliberate wording: credentials permit delivery and verification.
+          // They are NOT evidence that any money has been received.
+          evidence: `${report.summary} No revenue is implied — the ledger remains the only source of verified earnings.`,
+          ownerAction: undefined,
+        },
+        'ready',
+      );
+    } catch (error) {
+      return configOnly({ ...base, evidence: `earning provider check failed: ${error instanceof Error ? error.message : 'unknown'}` }, 'unreachable');
+    }
+  },
+};
+
 export const LAUNCH_CHECKS: LaunchCheck[] = [
   sessionSecretCheck,
   publicUrlCheck,
@@ -977,6 +1062,8 @@ export const LAUNCH_CHECKS: LaunchCheck[] = [
   storageCheck,
   backupCheck,
   missionCheck,
+  missionChatDispatchCheck,
+  missionEarningProviderCheck,
   socialCheck,
 ];
 

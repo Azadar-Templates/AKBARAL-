@@ -14,6 +14,8 @@ import * as Eligibility from './earning/opportunity-eligibility';
 import * as ConnectorContracts from './earning/connector-execution-contracts';
 import * as ExecutionPipeline from './earning/execution-pipeline';
 import * as SettlementVerification from './earning/settlement-verification';
+import { earningProviderReadinessReport } from './earning/providers/registry';
+import { chatDispatchReadiness } from './chat-provider';
 import { configuredToptalWorkflow } from './earning/toptal-workflow';
 import { configuredContraWorkflow } from './earning/contra-workflow';
 import { configuredFiverrWorkflow } from './earning/fiverr-workflow';
@@ -666,6 +668,24 @@ async function handleApi(
     requireRead(context);
     json(res,200, CommandCenter.buildCommandCenter());
     return true;
+  }
+
+  // Honest, owner-visible answer to "can this mission actually earn or think yet?"
+  // Reports zero-state explicitly rather than implying capability.
+  if (head === 'earning-readiness') {
+    requireRead(context);
+    if (method === 'GET' && rest.length === 0) {
+      const earning = earningProviderReadinessReport();
+      const chat = chatDispatchReadiness();
+      json(res, 200, {
+        earning,
+        chat,
+        operational: earning.earningPossible && chat.dispatchable,
+        note: 'Readiness means credentials are present and dispatch is permitted. It is NOT a claim that any money has been earned; verified revenue is reported only by the ledger.',
+      });
+      return true;
+    }
+    throw new HttpProblem(404, 'unknown earning-readiness command', 'not_found');
   }
 
   if (head === 'provider-readiness') {

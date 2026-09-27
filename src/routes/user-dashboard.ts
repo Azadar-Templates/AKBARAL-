@@ -23,6 +23,63 @@ import {
 
 export const userDashboardRouter = Router();
 
+/**
+ * TASK PROJECTION — derived, never denormalized.
+ *
+ * `agent_category` and `credits_consumed` are NOT columns on `tasks` (see
+ * db/migrations-pg/0001_init.sql). They were previously selected as if they
+ * were, which made `GET /api/dashboard` fail with
+ * `no such column: agent_category` (HTTP 500) on every engine.
+ *
+ * Both values are real and already stored — just normalized elsewhere:
+ *
+ *   · category  — tasks.agent_id → agents.category_id → agent_categories.slug.
+ *                 A task with no agent (or an agent with no category) honestly
+ *                 reports NULL rather than an invented bucket.
+ *
+ *   · credits   — the credit ledger is the single source of truth. A task
+ *                 consumption writes `consume_task` (amount -1) and a refund
+ *                 writes `refund_task` (amount +1), both `status='completed'`
+ *                 and both idempotent per task (see consumeTaskCredit /
+ *                 refundTaskCredit). Negating the SUM therefore yields exactly
+ *                 what the user was really charged: 1 for a task that consumed
+ *                 a credit, and 0 for one that was refunded or cancelled.
+ *                 This can never drift from the balance the user actually sees,
+ *                 because it IS the same ledger.
+ *
+ * Adding physical columns would have created a second, divergent source of
+ * truth for money. Deriving keeps one.
+ */
+const TASK_CREDITS_CONSUMED_SQL = `-COALESCE((
+  SELECT SUM(ct.amount) FROM credit_transactions ct
+   WHERE ct.task_id = t.id
+     AND ct.status = 'completed'
+     AND ct.type IN ('consume_task', 'refund_task')
+), 0)`;
+
+const TASK_SELECT_SQL = `SELECT t.id, t.title, t.description, t.status, t.priority, t.type,
+       t.input_data, t.output_data, t.error_message, t.started_at, t.completed_at,
+       t.user_id, t.project_id, t.agent_id, t.created_at, t.updated_at,
+       ac.slug AS agent_category,
+       ${TASK_CREDITS_CONSUMED_SQL} AS credits_consumed
+  FROM tasks t
+  LEFT JOIN agents a ON a.id = t.agent_id
+  LEFT JOIN agent_categories ac ON ac.id = a.category_id`;
+
+/** Shape a task row (from TASK_SELECT_SQL) for the dashboard API. */
+function presentTask(t: Record<string, unknown>) {
+  return {
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    agentCategory: (t.agent_category as string | null) ?? null,
+    createdAt: t.created_at,
+    updatedAt: t.updated_at,
+    completedAt: t.completed_at,
+    creditsConsumed: Number(t.credits_consumed ?? 0),
+  };
+}
+
 /** GET /api/dashboard — Full user dashboard data */
 userDashboardRouter.get(
   '/',
@@ -37,8 +94,7 @@ userDashboardRouter.get(
 
     // Get user's tasks (last 50)
     const tasks = db.all(
-      `SELECT id, title, status, agent_category, created_at, updated_at, completed_at, credits_consumed
-       FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      `${TASK_SELECT_SQL} WHERE t.user_id = ? ORDER BY t.created_at DESC LIMIT 50`,
       [userId]
     );
 
@@ -59,9 +115,10 @@ userDashboardRouter.get(
       ? db.get(`SELECT * FROM plans WHERE id = ?`, [String((subscription as any).plan_id)])
       : db.get(`SELECT * FROM plans WHERE key = 'free'`);
 
-    // Get recent invoices
+    // Get recent invoices. The billed figure is `total_cents` (subtotal + tax);
+    // there is no `amount_cents` column on invoices — only on payments.
     const invoices = db.all(
-      `SELECT id, number, amount_cents, currency, status, created_at, paid_at
+      `SELECT id, number, total_cents, currency, status, created_at, paid_at
        FROM invoices WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`,
       [userId]
     );
@@ -123,23 +180,14 @@ userDashboardRouter.get(
         currentPeriodEnd: String((subscription as any).current_period_end ?? ''),
       } : null,
       tasks: {
-        recent: tasks.map((t: any) => ({
-          id: t.id,
-          title: t.title,
-          status: t.status,
-          agentCategory: t.agent_category,
-          createdAt: t.created_at,
-          updatedAt: t.updated_at,
-          completedAt: t.completed_at,
-          creditsConsumed: Number(t.credits_consumed ?? 0),
-        })),
+        recent: tasks.map((t: any) => presentTask(t)),
         counts: Object.fromEntries(taskCounts.map((t: any) => [t.status, Number(t.count)])),
       },
       billing: {
         invoices: invoices.map((i: any) => ({
           id: i.id,
           number: i.number,
-          amountCents: Number(i.amount_cents),
+          amountCents: Number(i.total_cents),
           currency: i.currency,
           status: i.status,
           createdAt: i.created_at,
@@ -224,15 +272,15 @@ userDashboardRouter.get(
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '50'), 10) || 50));
 
-    let query = 'SELECT * FROM tasks WHERE user_id = ?';
+    let query = `${TASK_SELECT_SQL} WHERE t.user_id = ?`;
     const params: any[] = [userId];
 
     if (status) {
-      query += ' AND status = ?';
+      query += ' AND t.status = ?';
       params.push(status);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ?';
+    query += ' ORDER BY t.created_at DESC LIMIT ?';
     params.push(limit);
 
     const tasks = db.all(query, params);
@@ -243,16 +291,7 @@ userDashboardRouter.get(
     );
 
     res.status(200).json({
-      tasks: tasks.map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        agentCategory: t.agent_category,
-        createdAt: t.created_at,
-        updatedAt: t.updated_at,
-        completedAt: t.completed_at,
-        creditsConsumed: Number(t.credits_consumed ?? 0),
-      })),
+      tasks: tasks.map((t: any) => presentTask(t)),
       counts: Object.fromEntries(counts.map((t: any) => [t.status, Number(t.count)])),
     });
   }),
@@ -265,7 +304,7 @@ userDashboardRouter.get(
   asyncRoute(async (req: AuthenticatedRequest, res) => {
     const userId = req.auth!.userId;
     const task = db.get(
-      'SELECT * FROM tasks WHERE id = ? AND user_id = ?',
+      `${TASK_SELECT_SQL} WHERE t.id = ? AND t.user_id = ?`,
       [req.params.id, userId]
     );
     if (!task) throw new HttpError(404, 'task not found', 'not_found');
@@ -278,26 +317,21 @@ userDashboardRouter.get(
 
     // Get execution logs
     const logs = db.all(
-      'SELECT * FROM execution_logs WHERE execution_id IN (SELECT id FROM agent_executions WHERE task_id = ?) ORDER BY created_at ASC LIMIT 100',
+      'SELECT id, level, message, created_at FROM agent_execution_logs WHERE execution_id IN (SELECT id FROM agent_executions WHERE task_id = ?) ORDER BY created_at ASC LIMIT 100',
       [req.params.id]
     );
 
     res.status(200).json({
       task: {
-        id: (task as any).id,
-        title: (task as any).title,
+        ...presentTask(task as Record<string, unknown>),
         description: (task as any).description,
-        status: (task as any).status,
-        agentCategory: (task as any).agent_category,
-        createdAt: (task as any).created_at,
-        updatedAt: (task as any).updated_at,
-        completedAt: (task as any).completed_at,
-        creditsConsumed: Number((task as any).credits_consumed ?? 0),
       },
       events: events.map((e: any) => ({
         id: e.id,
-        eventType: e.event_type,
-        detail: e.detail,
+        // task_events stores `type` + `message` + `data` — there is no
+        // `event_type`/`detail` pair on this table.
+        eventType: e.type,
+        detail: e.message,
         createdAt: e.created_at,
       })),
       logs: logs.map((l: any) => ({
@@ -337,7 +371,7 @@ userDashboardRouter.get(
 
     // Credit transactions
     const transactions = db.all(
-      'SELECT * FROM credit_transactions WHERE account_id = (SELECT id FROM credit_accounts WHERE user_id = ?) ORDER BY created_at DESC LIMIT 50',
+      'SELECT id, type, amount, reason, created_at FROM credit_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
       [userId]
     );
 
@@ -355,7 +389,7 @@ userDashboardRouter.get(
       invoices: invoices.map((i: any) => ({
         id: i.id,
         number: i.number,
-        amountCents: Number(i.amount_cents),
+        amountCents: Number(i.total_cents),
         currency: i.currency,
         status: i.status,
         createdAt: i.created_at,
@@ -396,7 +430,7 @@ userDashboardRouter.get(
 
     const securityLog = db.all(
       `SELECT id, event_type, ip_address, user_agent, created_at
-       FROM security_log WHERE user_id = ?
+       FROM security_logs WHERE user_id = ?
        ORDER BY created_at DESC LIMIT 50`,
       [userId]
     );

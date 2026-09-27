@@ -115,9 +115,13 @@ test('stackhost.yaml uses the documented build/start commands and preserves the 
   // free tier at "Creating build environment → Failed to create container".
   // The deployed configuration therefore pulls the prebuilt image published by
   // the docker-publish workflow and runs NO build step on the platform.
+  // Accepts either a tag (`:latest`, `:<sha>`) or — preferred — an immutable
+  // digest (`@sha256:...`). The requirement being enforced is "pull a prebuilt
+  // image, run no build step here"; a digest satisfies that strictly better
+  // than a tag, because a digest cannot be repointed at a different build.
   assert.match(
     stackhostSource,
-    /image:\s*"?ghcr\.io\/azadar-templates\/akbaral:[\w.-]+/,
+    /image:\s*"?ghcr\.io\/azadar-templates\/akbaral(?::[\w.-]+|@sha256:[a-f0-9]{64})/,
     'stackhost.yaml must run the prebuilt GHCR image — a source build needs ~1GB and the free tier has 512MB',
   );
   assert.match(

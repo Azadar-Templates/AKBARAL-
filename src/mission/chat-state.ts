@@ -3,7 +3,21 @@ import { currentPolicy, checkActivity } from './policy';
 import { MissionSelfServiceError, getCredentialPublic, getTool, resourceReadiness } from './self-management';
 import { getWallet } from './treasury';
 
-export const CHAT_MODEL = 'gemini-2.5-flash';
+// Migrated off gemini-2.5-flash on 2026-09-27.
+//
+// Two independent reasons, either of which alone is fatal for a new deployment:
+//  1. Google's Gemini API deprecations page schedules gemini-2.5-flash for
+//     shutdown on 2026-10-16 (Vertex lifecycle page: 2026-10-20). A shut-down
+//     model's endpoint is turned off and returns 404.
+//  2. More urgently, the 2026-09-18 release note limits access to the 2.5
+//     models to "users who have actively used them in the past" and directs
+//     new projects to 3.5 Flash-Lite or 3.8 Flash. A brand-new free AI Studio
+//     key — exactly what the mission owner would create — therefore could not
+//     call 2.5 at all, today, regardless of the shutdown date.
+//
+// gemini-3.8-flash is the AKBARAL! catalog default and carries no announced
+// shutdown, so both planes now agree on one current model.
+export const CHAT_MODEL = 'gemini-3.8-flash';
 export interface AgentChatConfig {
   enabled: boolean; resourceId: string; walletId: string; model: typeof CHAT_MODEL;
   maxInputBytes: number; maxOutputTokens: number; maxCostCents: number; costBasis: string;

@@ -85,6 +85,69 @@ describe('dialect translation (engine-agnostic unit checks)', { skip: !RUN ? 're
     );
   });
 
+  /**
+   * REGRESSION LOCK (2026-09-27) — the INSERT OR IGNORE rewrite used to be
+   * anchored to the start of the whole string, so it fired for single-statement
+   * run() calls but never for exec(), whose argument is an entire migration
+   * file. Mission migrations 0030/0031 therefore reached PostgreSQL verbatim
+   * and died with `syntax error at or near "OR"`, blocking the whole mission
+   * plane on PostgreSQL. That failure was invisible because the mission-PG CI
+   * job was being skipped.
+   */
+  it('translates INSERT OR IGNORE anywhere in a multi-statement script', () => {
+    const translated = translateSqlForPg(
+      [
+        'CREATE TABLE x (id TEXT);',
+        "INSERT OR IGNORE INTO a (id) VALUES ('one');",
+        "INSERT OR IGNORE INTO b (id) VALUES ('two');",
+      ].join('\n'),
+    );
+    assert.match(translated, /INSERT INTO a \(id\) VALUES \('one'\) ON CONFLICT DO NOTHING;/);
+    assert.match(translated, /INSERT INTO b \(id\) VALUES \('two'\) ON CONFLICT DO NOTHING;/);
+    assert.doesNotMatch(translated, /INSERT OR IGNORE/i, 'no untranslated statement may survive');
+  });
+
+  it('translates INSERT OR IGNORE preceded by a SQL comment line', () => {
+    const translated = translateSqlForPg(
+      "CREATE INDEX i ON t(a);\n\n-- seed guard\nINSERT OR IGNORE INTO mission_provider_readiness (id) VALUES ('seed_guard');",
+    );
+    assert.match(translated, /INSERT INTO mission_provider_readiness \(id\) VALUES \('seed_guard'\) ON CONFLICT DO NOTHING;/);
+    assert.doesNotMatch(translated, /INSERT OR IGNORE/i);
+  });
+
+  it('never treats a semicolon inside a string literal or $$ body as a statement end', () => {
+    const literal = translateSqlForPg(
+      "UPDATE x SET note = 'a; not a boundary';\nINSERT OR IGNORE INTO y (id) VALUES ('z');",
+    );
+    assert.match(literal, /note = 'a; not a boundary'/, 'the literal survives untouched');
+    assert.match(literal, /INSERT INTO y \(id\) VALUES \('z'\) ON CONFLICT DO NOTHING;/);
+
+    const fn = translateSqlForPg(
+      'CREATE OR REPLACE FUNCTION f() RETURNS TRIGGER AS $$ BEGIN NEW.x := 1; RETURN NEW; END $$ LANGUAGE plpgsql;\n' +
+        'INSERT OR IGNORE INTO q (a) VALUES (1);',
+    );
+    assert.match(fn, /BEGIN NEW\.x := 1; RETURN NEW; END \$\$ LANGUAGE plpgsql;/, 'the function body is untouched');
+    assert.match(fn, /INSERT INTO q \(a\) VALUES \(1\) ON CONFLICT DO NOTHING;/);
+  });
+
+  /**
+   * REGRESSION LOCK — datetime('now') is SQLite-only and reached PostgreSQL
+   * untranslated ("function datetime(unknown) does not exist"). The replacement
+   * must reproduce SQLite's OWN format ('YYYY-MM-DD HH:MM:SS'), not the ISO-8601
+   * helper, or stored timestamps would silently change shape between engines.
+   */
+  it("translates datetime('now') to SQLite's exact textual format", () => {
+    assert.equal(
+      translateSqlForPg("INSERT INTO t (updated_at) VALUES (datetime('now'))"),
+      "INSERT INTO t (updated_at) VALUES (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'))",
+    );
+    // ISO-8601 strftime keeps its own distinct, millisecond-precision mapping.
+    assert.match(
+      translateSqlForPg("SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')"),
+      /YYYY-MM-DD"T"HH24:MI:SS\.MS"Z"/,
+    );
+  });
+
   it('blocks PRAGMA on the PostgreSQL engine', () => {
     assert.throws(() => translateSqlForPg('PRAGMA integrity_check'));
   });
@@ -296,13 +359,13 @@ describe('economy + mission chat parity (PG)', { skip: !RUN ? 'requires PG_TEST_
   it('stores and lists mission chat messages + threads identically to SQLite', () => {
     const owner = createUser({ email: `pg-mission-${Date.now()}@akbaral.test`, passwordHash: null, name: 'PG Mission Owner' });
     insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'owner', content: 'status?' });
-    const agentMsg = insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'agent', content: 'All tasks idle; honest zero earnings.', modelKey: 'gemini-2.5-flash' });
+    const agentMsg = insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'agent', content: 'All tasks idle; honest zero earnings.', modelKey: 'gemini-3.8-flash' });
     insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'code-review-001', direction: 'owner', content: 'hello' });
 
     const thread = listMissionMessages(owner.id, 'web-research-001');
     assert.equal(thread.length, 2);
     assert.equal(thread[0].direction, 'owner');
-    assert.equal(thread[1].model_key, 'gemini-2.5-flash');
+    assert.equal(thread[1].model_key, 'gemini-3.8-flash');
 
     const threads = listMissionThreads(owner.id);
     assert.equal(threads.length, 2);

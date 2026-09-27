@@ -652,7 +652,7 @@ test('automatic chat configuration and job visibility require owner identity; co
   const treasury = require('./treasury') as typeof import('./treasury');
   const resource = management.requestResource({ agentId: 'agt_link_a', provider: 'google', kind: 'api' });
   const wallet = treasury.ensureAgentWallet('agt_link_a', 'Synthetic chat HTTP wallet');
-  const config = { enabled: true, resourceId: resource.id, walletId: wallet.id, model: 'gemini-2.5-flash', maxInputBytes: 2000, maxOutputTokens: 128, maxCostCents: 40, costBasis: 'Synthetic configuration, no real model access or pricing claim.' };
+  const config = { enabled: true, resourceId: resource.id, walletId: wallet.id, model: 'gemini-3.8-flash', maxInputBytes: 2000, maxOutputTokens: 128, maxCostCents: 40, costBasis: 'Synthetic configuration, no real model access or pricing claim.' };
   const base = '/api/agents/link-agent-a';
   for (const scope of ['agent:self', 'dashboard:read'] as const) {
     const link = createAccessLink({ label: 'chat configuration denied', scope, agentId: scope === 'agent:self' ? 'agt_link_a' : undefined, expiresInHours: 1, createdBy: 'owner' });
