@@ -1,5 +1,6 @@
 /** Verified mission cash only. Never imports platform DB or trusts legacy balances. */
 import { missionDb as db, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
+import { reconcileLedger } from './ledger-reconciliation';
 import { currentPolicy, checkActivity, setKillSwitch } from './policy';
 import { destinationFingerprint, payoutSlotVerificationStatus } from './payout-verification';
 import { isIdentityPermitted } from './identity-lock';
@@ -26,6 +27,15 @@ export function assertMoneyOwner(actor: MoneyActor): void {
 }
 function running() { if (currentPolicy().killSwitch) deny('kill_switch_engaged'); }
 function solvent() {if(Number(db.get<Row>('SELECT COALESCE(SUM(remaining_cents),0) AS n FROM mission_cash_liabilities')?.n))deny('unresolved_provider_liability');}
+/** Fail-closed reconciliation gate: a mission whose verified-cash ledger does
+ *  not agree with its own accounts, reservations and references must not move
+ *  money. Runs at the start of every mutating transaction (never mid-move, so
+ *  it only ever sees committed, self-consistent state). The denial keeps the
+ *  historical `cash_integrity_failed` contract; owners diagnose the exact
+ *  mismatches through the reconciliation report. */
+function assertLedgerReconciled(): void {
+  if (!reconcileLedger().ok) deny('cash_integrity_failed');
+}
 export function cashAccount(id: string): Row {
   const account = db.get<Row>('SELECT * FROM mission_cash_accounts WHERE id = ?', [id]);
   if (!account) deny('cash_account_missing');
@@ -158,6 +168,7 @@ function authorize(actor:MoneyActor, agentId:string) {
 export function allocateCash(actor:MoneyActor, agentId:string, amount:number, key:string): Row {
   assertMoneyOwner(actor); cents(amount,true); text(key);
   return db.transaction(() => {
+    assertLedgerReconciled();
     const fp=sha256(JSON.stringify([agentId,amount]));
     const old=db.get<Row>('SELECT fingerprint FROM mission_money_transfers WHERE idempotency_key=?',[key]);
     if(old) { if(old.fingerprint!==fp) deny('idempotency_conflict'); return cashAccount(agentId); }
@@ -170,7 +181,9 @@ export function allocateCash(actor:MoneyActor, agentId:string, amount:number, ke
 }
 export function freezeCash(actor:MoneyActor,id:string,frozen:boolean) {
   assertMoneyOwner(actor);
-  return db.transaction(()=> {if(!frozen)solvent();cashAccount(id);db.run('UPDATE mission_cash_accounts SET frozen=? WHERE id=?',[frozen?1:0,id]); audit('freeze_changed',actor,id,{frozen});});
+  // Unfreezing relaxes a restriction, so it must prove the ledger reconciles;
+  // freezing tightens one and stays available even on a broken ledger.
+  return db.transaction(()=> {if(!frozen){assertLedgerReconciled();solvent();}cashAccount(id);db.run('UPDATE mission_cash_accounts SET frozen=? WHERE id=?',[frozen?1:0,id]); audit('freeze_changed',actor,id,{frozen});});
 }
 export interface CashReceipt { externalId:string; amountCents:number; currency:string; kind:'earning'|'refund'|'reversal'; agentId?:string; operationId?:string; originalExternalId?:string; availableBalanceCents?:number }
 export interface PaymentResult { state:'pending'|'completed'|'failed'; providerRef:string; actualCents?:number }
@@ -185,6 +198,7 @@ export interface MoneyProvider {
 function acceptReceipt(provider:MoneyProvider,receipt:CashReceipt,earnedJob?:Row) {
   cents(receipt.amountCents,true); text(receipt.externalId);
   return db.transaction(()=> {
+    assertLedgerReconciled();
     const fp=sha256(JSON.stringify([receipt.externalId,receipt.amountCents,receipt.currency,receipt.kind,receipt.agentId??null,receipt.operationId??null,receipt.originalExternalId??null]));
     const old=db.get<Row>('SELECT * FROM mission_money_receipts WHERE provider=? AND external_id=?',[provider.id,receipt.externalId]);
     if(old){ if(old.fingerprint!==fp && old.fingerprint!==sha256(JSON.stringify(Object.fromEntries(Object.entries(receipt).filter(([key])=>key!=='availableBalanceCents'))))) deny('receipt_conflict');return {duplicated:true}; }
@@ -275,7 +289,7 @@ export function moneyOperation(id:string):Row {
 const categories=['api','tool','hosting','storage','account','property','upgrade'];
 function capacity(op:Row,excludeId?:string) {
   solvent();
-  if(!verifyCashLedger().ok) deny('cash_integrity_failed');
+  assertLedgerReconciled();
   if(op.kind==='withdrawal') {
     const slot=db.get<Row>('SELECT * FROM mission_payout_slots WHERE provider_ref=?',[String(op.destination)]);
     if(!slot||!payoutSlotVerificationStatus(Number(slot.slot)).payable||slot.currency!==op.currency)deny('verified_owner_destination_required');
@@ -336,6 +350,7 @@ export function decideMoney(actor:MoneyActor,id:string,approve:boolean):Row {
 function settle(provider:MoneyProvider,id:string,result:PaymentResult):Row {
   text(result.providerRef);
   return db.transaction(()=> {
+    assertLedgerReconciled();
     const op=moneyOperation(id);
     if(op.provider!==provider.id)deny('provider_mismatch');
     if(op.provider_ref&&op.provider_ref!==result.providerRef)deny('provider_reference_changed');
@@ -508,6 +523,7 @@ export async function moneyWorkerTick(actor:MoneyActor,providers:MoneyProvider[]
 export function cancelMoney(actor:MoneyActor,id:string):Row {
   assertMoneyOwner(actor);
   return db.transaction(()=>{
+    assertLedgerReconciled();
     const op=moneyOperation(id);
     if(!['reserved','approval_required'].includes(String(op.state)))deny('cannot_cancel_dispatched_payment');
     if(op.state==='reserved')move(String(op.account_id),Number(op.max_cost_cents),false,id);
