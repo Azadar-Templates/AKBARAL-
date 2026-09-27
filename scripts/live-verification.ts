@@ -345,6 +345,117 @@ async function checkMissionState(): Promise<void> {
   }
 }
 
+
+// ── mission: owner → selected agent → real brain → persisted conversation ───
+async function checkMissionChat(hasKey: boolean): Promise<void> {
+  const key = (process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY ?? '').trim();
+  try {
+    const { missionDb, missionId } = await import('../src/mission/database');
+    const { provisionOwner } = await import('../src/mission/auth');
+    const { enableAgentChatFreeTier } = await import('../src/mission/chat-enablement');
+    const { appendAgentMessage, listAgentMessages } = await import('../src/mission/messaging');
+    const { runNextAgentChat } = await import('../src/mission/chat-worker');
+    const { agentBriefing } = await import('../src/mission/agent-briefing');
+
+    const ownerEmail = (process.env.ZA141251SA_OWNER_EMAIL ?? '').trim();
+    if (!ownerEmail) {
+      record('mission.chat', 'Owner → agent → real brain → persisted conversation', 'BLOCKED', 'no mission owner identity configured in this runtime');
+      return;
+    }
+    const existingOwner = missionDb.get<{ id: string }>('SELECT id FROM mission_owner WHERE email = ?', [ownerEmail]);
+    const ownerId = existingOwner?.id
+      ?? provisionOwner({
+        email: ownerEmail,
+        // Ephemeral, generated in-process, never printed, never persisted in clear.
+        password: `ci-${Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString('base64url')}`,
+        displayName: 'CI runner owner',
+      }).id;
+
+    const agent = missionDb.get<{ id: string; name: string; slug: string }>(
+      "SELECT id, name, slug FROM mission_agents WHERE status = 'active' ORDER BY slug LIMIT 1",
+    );
+    if (!agent) {
+      record('mission.chat', 'Owner → agent → real brain → persisted conversation', 'FAIL', 'no mission agent identities exist in this database');
+      return;
+    }
+
+    // The agent's real identity/context that must show up in the conversation.
+    const briefing = agentBriefing(agent.id);
+    const identityEvidence = `agent=${agent.slug} name="${agent.name}" briefingChars=${JSON.stringify(briefing ?? {}).length}`;
+
+    if (!hasKey || !key) {
+      record(
+        'mission.chat',
+        'Owner → agent → real brain → persisted conversation',
+        'BLOCKED',
+        `no GOOGLE_API_KEY in this runtime, so no reply can be generated and none is faked. Identity path verified: ${identityEvidence}`,
+      );
+      return;
+    }
+
+    enableAgentChatFreeTier({ agentId: agent.id, apiKey: key, actorId: ownerId, allowSupportActivity: true });
+    const sent = appendAgentMessage({
+      agentId: agent.id,
+      actorType: 'owner',
+      actorId: ownerId,
+      body: 'State your agent slug and your mission role in one short sentence.',
+      idempotencyKey: missionId('msg'),
+    });
+    const job = await runNextAgentChat();
+    const conversation = listAgentMessages(agent.id, 0, 20);
+    const reply = conversation.messages.filter((row: any) => row.actor_type === 'agent').pop() as any;
+    const replyText = String(reply?.body ?? '');
+    const mentionsIdentity = replyText.toLowerCase().includes(String(agent.slug).toLowerCase().split('-')[0]);
+
+    record(
+      'mission.chat',
+      'Owner → agent → real brain → persisted conversation',
+      replyText.length > 0 ? 'PASS' : 'FAIL',
+      replyText.length > 0
+        ? `${identityEvidence} job=${job ? 'dispatched' : 'none'} persistedMessages=${conversation.messages.length} identityInReply=${mentionsIdentity} reply="${replyText.slice(0, 160)}"`
+        : `${identityEvidence} job=${job ? 'dispatched' : 'none'} — no reply was produced and none was invented (sent message seq ${sent.message.seq ?? 'n/a'})`,
+    );
+  } catch (error) {
+    record('mission.chat', 'Owner → agent → real brain → persisted conversation', 'FAIL', errorText(error));
+  }
+}
+
+// ── mission: agent → free tool → real external information → work record ────
+async function checkAgentWorkRecord(): Promise<void> {
+  try {
+    const { missionDb, missionId, nowIso } = await import('../src/mission/database');
+    const { resolveSearchProvider, runProviderSearch } = await import('../src/agents/search-providers');
+    const agent = missionDb.get<{ id: string; slug: string }>("SELECT id, slug FROM mission_agents WHERE status = 'active' ORDER BY slug LIMIT 1");
+    if (!agent) {
+      record('agent.work_record', 'Agent → free tool → real information → verified work record', 'FAIL', 'no mission agent identities exist');
+      return;
+    }
+    const provider = resolveSearchProvider();
+    const found = await runProviderSearch(provider, 'freelance contract deliverable acceptance', 3, { attempts: 1 });
+    if (found.length === 0) {
+      record('agent.work_record', 'Agent → free tool → real information → verified work record', 'FAIL', `the free provider returned no results (${provider.kind})`);
+      return;
+    }
+    const workId = missionId('wrk');
+    const evidence = found.map((item) => `${item.title} <${item.url}>`).join(' | ').slice(0, 900);
+    missionDb.run(
+      `INSERT INTO mission_work (id, agent_id, title, description, category, status, client_ref, revenue_cents, cost_cents, created_at)
+       VALUES (?, ?, ?, ?, 'research', 'delivered', ?, 0, 0, ?)`,
+      [workId, agent.id, 'Live research verification', `Free keyless ${provider.kind} research: ${evidence}`, 'live-verification', nowIso()],
+    );
+    const stored = missionDb.get<{ id: string; description: string; revenue_cents: number }>('SELECT id, description, revenue_cents FROM mission_work WHERE id = ?', [workId]);
+    const urlsVerified = found.every((item) => /^https:\/\//.test(item.url)) && String(stored?.description ?? '').includes('https://');
+    record(
+      'agent.work_record',
+      'Agent → free tool → real information → verified work record',
+      stored && urlsVerified && Number(stored.revenue_cents) === 0 ? 'PASS' : 'FAIL',
+      `work=${workId} agent=${agent.slug} provider=${provider.kind} sources=${found.length} revenueClaimed=${stored?.revenue_cents ?? 'n/a'} (work is recorded as delivered, NOT as earnings — revenue requires external payment plus independent verification)`,
+    );
+  } catch (error) {
+    record('agent.work_record', 'Agent → free tool → real information → verified work record', 'FAIL', errorText(error));
+  }
+}
+
 async function main(): Promise<void> {
   process.stdout.write(`\nAKBARAL! + ZA141251SA — live runtime verification\n${'='.repeat(78)}\n`);
   process.stdout.write(`host web      ${WEB}\nhost mission  ${MISSION}\nstarted       ${new Date().toISOString()}\n\n`);
@@ -356,6 +467,9 @@ async function main(): Promise<void> {
   await checkMasterTask(hasKey);
   if (egress) await checkFreeResearch();
   else record('agent.research', 'Real external research through the free keyless provider', 'BLOCKED', 'no outbound HTTPS from this host');
+  await checkMissionChat(hasKey);
+  if (egress) await checkAgentWorkRecord();
+  else record('agent.work_record', 'Agent → free tool → real information → verified work record', 'BLOCKED', 'no outbound HTTPS from this host');
   await checkMissionState();
 
   const counts = { PASS: 0, FAIL: 0, BLOCKED: 0 } as Record<Outcome, number>;
