@@ -81,12 +81,18 @@
 # github.com/orgs/Azadar-Templates/packages → akbaral → Package settings →
 # Change visibility → Public. Otherwise StackHost gets an unauthorized pull.
 #
-# `:latest` is the rolling tag maintained by docker-publish.yml on every push to
-# main. To pin an immutable build for rollback, replace it with the 40-char
-# commit SHA tag, which the same workflow publishes alongside latest:
-#   image: ghcr.io/azadar-templates/akbaral:<commit-sha>
+# Pinned to an IMMUTABLE DIGEST rather than a moving tag. A digest cannot be
+# repointed, so a deploy can never silently pick up a different build than the
+# one that was verified, and rollback is exact.
+#
+# This digest was published by docker-publish.yml run 36332656558 and
+# corresponds to commit c67640a898706fb91b4d1ec03f3c9b40d36dcc80, whose verify
+# run was green (full suite, PostgreSQL, mission-PostgreSQL, browser, webpack).
+#
+# To roll forward: take the digest printed by the docker-publish run for the
+# commit you want and replace the value below. Do NOT revert to `:latest`.
 runtime:
-  image: ghcr.io/azadar-templates/akbaral:latest
+  image: ghcr.io/azadar-templates/akbaral@sha256:8502cd0a0e6916c2208ee01dc7a25e30bd3e44d00b118022ae2fed0602056fa4
 
 commands:
   package: ""
