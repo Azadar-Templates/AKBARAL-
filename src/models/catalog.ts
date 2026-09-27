@@ -202,14 +202,23 @@ export const MODEL_SPECS: ModelSpec[] = [
     isDefault: true,
     capabilities: ['speed', 'research', 'writing', 'simple_coding'],
   },
+  // Anthropic — corrected 2026-09-27. The previous entry was keyed
+  // 'c3.5-sonnet', which was never a valid Anthropic model ID in any
+  // generation, and client.ts sends model.key verbatim as the API `model`
+  // field — so every Anthropic call would have returned a not_found_error the
+  // moment a key was configured. The model it named (Claude 3.5 Sonnet) was
+  // itself retired on 2025-10-28 and now 404s, so correcting the ID format
+  // alone would not have been enough.
+  // claude-sonnet-4-6 is a live unversioned ID. Anthropic publishes no
+  // `-latest` aliases; 4.6 and newer are already unversioned.
   {
-    key: 'c3.5-sonnet',
-    name: 'Claude 3.5 Sonnet',
+    key: 'claude-sonnet-4-6',
+    name: 'Claude Sonnet 4.6',
     providerKey: 'anthropic',
     capability: 'llm',
     modality: 'multimodal',
     contextTokens: 200000,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 64000,
     costInputPerMillionCents: 300,
     costOutputPerMillionCents: 1500,
     latencyMs: 1800,
