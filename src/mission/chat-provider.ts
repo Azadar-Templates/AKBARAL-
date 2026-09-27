@@ -67,7 +67,7 @@ export function isLiveChatAdapter(adapter: ChatAdapter): boolean {
 }
 
 /** The free tier this mission is permitted to use at $0.
- * Google AI Studio serves gemini-2.5-flash on a no-card free tier with a
+ * Google AI Studio serves the configured flash model on a no-card free tier with a
  * published request/minute and request/day quota. Exceeding it returns HTTP 429;
  * it does NOT silently convert into a paid charge, which is precisely why this
  * model can be dispatched without a verified billing adapter. */

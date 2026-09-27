@@ -35,10 +35,23 @@ const VERIFIED_GOOGLE_MODEL_IDS = new Set([
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
+  // The 2.5 cluster is deliberately EXCLUDED as of 2026-09-27. Google's
+  // 2026-09-18 release note limits access to the 2.5 models to users who have
+  // actively used them before, and directs new projects to 3.5 Flash-Lite or
+  // 3.8 Flash. The deprecations page additionally schedules gemini-2.5-pro,
+  // gemini-2.5-flash and gemini-2.5-flash-lite for shutdown on 2026-10-16
+  // (Vertex lifecycle page: 2026-10-20). A model a new API key cannot call is
+  // not "available" for this project's purposes.
+]);
+
+// Restricted to pre-existing users and scheduled for shutdown 2026-10-16.
+// Not in RETIRED (they still answer for grandfathered keys), but they must
+// never be a DEFAULT or a hardcoded model for a fresh deployment.
+const RESTRICTED_GOOGLE_MODEL_IDS = [
   'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-]);
+];
 
 // Shut down by Google — these IDs return HTTP 404 from
 // generativelanguage.googleapis.com and must never be routable.
@@ -161,3 +174,36 @@ describe('model catalog currency (Google 404 incident)', () => {
   });
 });
 
+/**
+ * The private mission plane hardcodes a single chat model. It previously
+ * pinned gemini-2.5-flash while the AKBARAL! catalog had already moved to the
+ * 3.x generation — a silent divergence that would have surfaced only as a live
+ * API failure the moment an owner added a brand-new free key. This binds the
+ * two planes together so the drift cannot reappear unnoticed.
+ */
+describe('mission chat model tracks the AKBARAL! catalog', () => {
+  const { CHAT_MODEL } = require('../mission/chat-state') as typeof import('../mission/chat-state');
+
+  it('is a model this project considers available', () => {
+    assert.ok(
+      VERIFIED_GOOGLE_MODEL_IDS.has(CHAT_MODEL),
+      `mission CHAT_MODEL ${CHAT_MODEL} is not in the verified Google model list`,
+    );
+  });
+
+  it('is not a retired model id', () => {
+    assert.ok(!RETIRED_GOOGLE_MODEL_IDS.includes(CHAT_MODEL));
+  });
+
+  it('is not restricted to pre-existing users, so a new free key can call it', () => {
+    assert.ok(
+      !RESTRICTED_GOOGLE_MODEL_IDS.includes(CHAT_MODEL),
+      `mission CHAT_MODEL ${CHAT_MODEL} is restricted to accounts that already used it; a new owner key would fail`,
+    );
+  });
+
+  it('is offered by the AKBARAL! model catalog, so both planes agree', () => {
+    const keys = new Set(MODEL_SPECS.map(model => model.key));
+    assert.ok(keys.has(CHAT_MODEL), `mission CHAT_MODEL ${CHAT_MODEL} is absent from the platform catalog`);
+  });
+});

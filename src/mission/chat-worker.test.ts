@@ -149,7 +149,7 @@ it('crash recovery marks old dispatched calls uncertain, keeps exposure and forb
 it('fixed Google adapter uses the encrypted credential only in a header, with no tools or redirects', async () => {
   const f = fixture(); f.message();
   const job = await runChat(f, (permit, signal, request) => invokeGoogleChat(permit, signal, request, (async (url, init) => {
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
     assert.equal(init!.redirect, 'error'); assert.equal(init!.signal, signal);
     assert.equal((init!.headers as Record<string, string>)['x-goog-api-key'], 'synthetic-not-a-real-provider-key');
     const body = JSON.parse(String(init!.body));

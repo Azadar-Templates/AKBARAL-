@@ -359,13 +359,13 @@ describe('economy + mission chat parity (PG)', { skip: !RUN ? 'requires PG_TEST_
   it('stores and lists mission chat messages + threads identically to SQLite', () => {
     const owner = createUser({ email: `pg-mission-${Date.now()}@akbaral.test`, passwordHash: null, name: 'PG Mission Owner' });
     insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'owner', content: 'status?' });
-    const agentMsg = insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'agent', content: 'All tasks idle; honest zero earnings.', modelKey: 'gemini-2.5-flash' });
+    const agentMsg = insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'web-research-001', direction: 'agent', content: 'All tasks idle; honest zero earnings.', modelKey: 'gemini-3.8-flash' });
     insertMissionMessage({ ownerUserId: owner.id, agentSlug: 'code-review-001', direction: 'owner', content: 'hello' });
 
     const thread = listMissionMessages(owner.id, 'web-research-001');
     assert.equal(thread.length, 2);
     assert.equal(thread[0].direction, 'owner');
-    assert.equal(thread[1].model_key, 'gemini-2.5-flash');
+    assert.equal(thread[1].model_key, 'gemini-3.8-flash');
 
     const threads = listMissionThreads(owner.id);
     assert.equal(threads.length, 2);

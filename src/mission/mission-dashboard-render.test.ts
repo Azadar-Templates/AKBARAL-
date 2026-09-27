@@ -237,7 +237,7 @@ it('automatic reply controls require owner opt-in and explicit financial assumpt
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(confirmed, 1);
     assert.equal(requests[0].url, '/api/agents/agent-fixture/chat-config');
-    assert.deepEqual(requests[0].body, { enabled: true, resourceId: 'resource-fixture', walletId: 'wallet-fixture', model: 'gemini-2.5-flash', maxInputBytes: 2000, maxOutputTokens: 1024, maxCostCents: 40, costBasis: 'Synthetic owner-reviewed test pricing assumption.' });
+    assert.deepEqual(requests[0].body, { enabled: true, resourceId: 'resource-fixture', walletId: 'wallet-fixture', model: 'gemini-3.8-flash', maxInputBytes: 2000, maxOutputTokens: 1024, maxCostCents: 40, costBasis: 'Synthetic owner-reviewed test pricing assumption.' });
     assert.match(win.document.querySelector('#banner').textContent, /does not activate a provider or prove a live worker/);
     win.fixture.state.token = '';
     const privateHost = win.document.createElement('div');

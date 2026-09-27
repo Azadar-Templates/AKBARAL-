@@ -451,7 +451,7 @@ async function renderAgentChatControls(host, slug) {
   resource.value = config.resourceId || '';
   const wallet = el('select', { name: 'walletId', required: '', 'aria-label': 'Assigned funded wallet' }, [el('option', { value: '', text: 'Choose this agent’s wallet' }), ...(wallets.wallets || []).filter(row => row.agentId === settings.agentId).map(row => el('option', { value: row.id, text: `${row.label} — ${row.currency}` }))]);
   wallet.value = config.walletId || '';
-  form.append(enabled, resource, wallet, el('p', { text: 'Fixed model: gemini-2.5-flash. Internal reservations are not a provider-enforced billing ceiling.' }));
+  form.append(enabled, resource, wallet, el('p', { text: 'Fixed model: gemini-3.8-flash. Internal reservations are not a provider-enforced billing ceiling.' }));
   for (const [name, label, min, max, fallback] of [['maxInputBytes', 'Maximum message bytes', 128, 48000, 2000], ['maxOutputTokens', 'Maximum output tokens', 64, 4096, 1024], ['maxCostCents', 'Maximum reserved cost in minor units', 1, 1000000, '']]) {
     form.appendChild(el('label', {}, [label, el('input', { name, type: 'number', min, max, step: 1, required: '', value: config[name] ?? fallback, 'aria-label': label })]));
   }
@@ -465,7 +465,7 @@ async function renderAgentChatControls(host, slug) {
     if (enabled.value === 'true' && !confirm('Enable future owner-message jobs? An enabled worker can send their text to Google and incur provider charges within the configured request limits. Review pricing and provider billing caps first.')) return;
     saving = true; form.querySelector('button').disabled = true;
     try {
-      await api(`${base}/chat-config`, { method: 'POST', body: { enabled: enabled.value === 'true', resourceId: resource.value, walletId: wallet.value, model: 'gemini-2.5-flash', maxInputBytes: Number(form.elements.maxInputBytes.value), maxOutputTokens: Number(form.elements.maxOutputTokens.value), maxCostCents: Number(form.elements.maxCostCents.value), costBasis: basis.value } });
+      await api(`${base}/chat-config`, { method: 'POST', body: { enabled: enabled.value === 'true', resourceId: resource.value, walletId: wallet.value, model: 'gemini-3.8-flash', maxInputBytes: Number(form.elements.maxInputBytes.value), maxOutputTokens: Number(form.elements.maxOutputTokens.value), maxCostCents: Number(form.elements.maxCostCents.value), costBasis: basis.value } });
       banner('Reply configuration saved. This does not activate a provider or prove a live worker.', 'ok');
     } catch (error) { banner(error.message, 'error'); }
     finally { saving = false; form.querySelector('button').disabled = false; }
