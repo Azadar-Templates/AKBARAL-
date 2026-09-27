@@ -3,8 +3,8 @@
 Purpose: let any session continue **without repeating the audit**. Everything
 below is verified-by-execution state, not intention.
 
-**Checkpoint commit:** `5efc8c8` on `arena/01a0e339-akbaral`
-**Remote HEAD:** `8a86515` (confirmed identical via `git ls-remote`)
+**Checkpoint commit:** `5643c5f` on `arena/01a0e339-akbaral`
+**Remote HEAD:** `5643c5f` (verify + docker-publish both green)
 **Working tree:** clean
 **Date:** 2026-09-27
 
@@ -30,7 +30,8 @@ Do **not** re-run them. Deliverables already in the repo:
 | `c67640a` | **Real earning provider**; $0 free-tier chat; closed gate bypass | ✅ | ✅ |
 | `8a86515` | Immutable digest pin; state reconciliation | ✅ | ✅ |
 | `bd22d15` | Resume checkpoint | — | — |
-| `5efc8c8` | **Migrate mission chat off the soon-uncallable gemini-2.5-flash** | see CI | see CI |
+| `5efc8c8` | **Migrate mission chat off the soon-uncallable gemini-2.5-flash** | ✅ | ✅ |
+| `5643c5f` | **Fix the invalid Anthropic model id `c3.5-sonnet`; guard non-Google providers** | ✅ | ✅ |
 
 ---
 
@@ -38,7 +39,7 @@ Do **not** re-run them. Deliverables already in the repo:
 
 | Check | Result |
 |---|---|
-| Full suite | **2,085 pass / 0 fail / 0 cancelled** (142 files) |
+| Full suite | **2,090 pass / 0 fail / 0 cancelled** (142 files) |
 | TypeScript | 0 errors |
 | `test:pg` (real PostgreSQL) | **48 / 48** |
 | `mission:pg-check` | **10 steps, 0 failures + 75 tests** — 36 migrations, 123 tables |
@@ -86,6 +87,22 @@ Do **not** re-run them. Deliverables already in the repo:
 Secrets go through the host secret manager. Never into chat or Git.
 
 ---
+
+## 5b. STALE-MODEL SWEEP — COMPLETE
+
+Every provider's hardcoded model id was checked against live vendor status,
+because `client.ts` sends `model.key` verbatim as the provider's `model` field,
+so a stale id is an outage that appears only once a real key is added.
+
+| Provider | Finding | Action |
+|---|---|---|
+| Google (mission) | `gemini-2.5-flash` — restricted to pre-existing users since 2026-09-18, shutdown 2026-10-16 | Migrated to `gemini-3.8-flash` |
+| Anthropic | `c3.5-sonnet` — never a valid id in any generation; named a model retired 2025-10-28 | Fixed to `claude-sonnet-4-6` |
+| OpenAI | Bare `gpt-4o` / `gpt-4o-mini` still resolve on the API; only the dated snapshot has a shutdown, and it is not in the catalog | No change needed |
+| Search | Auto-detect with a keyless DuckDuckGo fallback | Already correct, genuinely free |
+| Router fallback | Skips unconfigured providers correctly | No defect |
+
+Contract tests now enforce all of this, so the drift cannot silently return.
 
 ## 6. OPERATIONAL RULES FOR THE NEXT SESSION
 
