@@ -1,3 +1,9 @@
+import {
+  approveOperatingBudget,
+  revokeOperatingBudget,
+  listBlockedResources,
+  reinvestmentPlan,
+} from './operating-funds';
 import { CustomerWork, type CustomerRequestInput } from './earning/customer-work';
 import { OpportunityDiscovery, type InboundOpportunityInput, type PermittedFeedItem } from './earning/opportunity-discovery';
 import { rankedOpportunities, permittedAutonomousClasses } from './earning/opportunity-registry';
@@ -2270,6 +2276,51 @@ async function handleApi(
             settlementRef: param('settlementRef'),
             failureReason: param('failureReason'),
             actorId: session.owner.id,
+          }),
+        });
+        return true;
+      }
+      break;
+    }
+
+    // ── FREE MODE / operating funds (verified revenue is the only source) ──
+    // GET  /api/funding            posture + blocked resources + reinvestment plan
+    // POST /api/funding/budget     owner approves a capped budget from verified revenue
+    // POST /api/funding/budget/:id/revoke
+    case 'funding': {
+      if (rest.length === 0 && method === 'GET') {
+        requireRead(context);
+        const plan = reinvestmentPlan();
+        json(res, 200, {
+          funding: plan.posture,
+          blocked: listBlockedResources(Number(url.searchParams.get('limit') ?? 100)),
+          reinvestmentPlan: plan.items,
+          note:
+            'Only externally received AND independently verified revenue can fund anything. ' +
+            'In FREE MODE every paid resource requirement is recorded here instead of being bought.',
+        });
+        return true;
+      }
+      if (rest[0] === 'budget' && rest.length === 1 && method === 'POST') {
+        const session = requireOwner(context, true);
+        json(res, 201, {
+          budget: approveOperatingBudget({
+            amountCents: num('amountCents'),
+            purpose: param('purpose', '') ?? '',
+            actorId: session.owner.id,
+            actorType: 'owner',
+          }),
+        });
+        return true;
+      }
+      if (rest[0] === 'budget' && rest[2] === 'revoke' && method === 'POST') {
+        const session = requireOwner(context, true);
+        json(res, 200, {
+          budget: revokeOperatingBudget({
+            id: rest[1],
+            reason: param('reason', '') ?? '',
+            actorId: session.owner.id,
+            actorType: 'owner',
           }),
         });
         return true;

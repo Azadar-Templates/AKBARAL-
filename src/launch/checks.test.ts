@@ -55,7 +55,12 @@ describe('launch checks — honesty and classification', () => {
     assert.match(gemini.ownerAction ?? '', /AI Studio/);
 
     const search = byId.get('provider.search')!;
-    assert.equal(search.status, 'not_configured');
+    // A free keyless provider exists, so a missing paid key is an optional
+    // upgrade rather than a launch blocker — and the evidence must say which
+    // free provider is actually carrying research.
+    assert.equal(search.status, 'optional');
+    assert.equal(search.required, false);
+    assert.match(search.evidence ?? '', /keyless Wikipedia provider/i);
     assert.ok(search.envKeys.includes('TAVILY_API_KEY'));
 
     const payments = byId.get('provider.payments')!;

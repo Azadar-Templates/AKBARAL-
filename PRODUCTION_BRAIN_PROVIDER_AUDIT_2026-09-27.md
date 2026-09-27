@@ -438,28 +438,28 @@ That is a property of *this* sandbox, not of the architecture, and the code now 
 it: `runtime.egress` is a required launch check and every affected capability reports
 RUNTIME BLOCKED rather than "ready".
 
-Production host decision (corrected 2026-09-27 against the repository's own
-live verification, `docs/FINAL_HOSTING_VERIFICATION_2026-09-22.md`): **every
-kit already in `deploy/` is rejected or retired** — SnapDeploy asked the owner's
-live account for a $1 card hold, Caasify demands a balance top-up, ClawCloud
-shut down, Render requires a card at signup, Zeabur dropped free hosted
-compute, Oracle Always Free needs a card identity check, Modal hit its $1 cap.
-The blocker in all of those findings was *persistent `/data` for SQLite*.
+Production host decision (**re-verified 2026-09-27 evening, $0/no-card rule**):
+`docs/FINAL_HOSTING_VERIFICATION_2026-09-22.md` rejected every kit in `deploy/`
+(SnapDeploy $1 card hold, Caasify balance top-up, ClawCloud shut down, Render
+card at signup, Zeabur no free compute, Oracle card identity check, Modal $1
+cap). **Koyeb — recommended earlier today — was withdrawn the same day: it has
+required a card ($29 hold) since February 2026.** The full comparison now lives
+in `deploy/FREE_HOSTING_MATRIX.md`.
 
-Moving both databases to managed Postgres removes that blocker, so the new
-recommended path is **`deploy/free-koyeb`**: Koyeb Hobby (1 always-on 512 MB
-container, free HTTPS subdomain, builds this repository's Dockerfile, usually
-no card) + **two separate free Neon Postgres projects** — one for AKBARAL!
-(`DATABASE_URL`), one for ZA141251SA (`ZA141251SA_DATABASE_URL`) — which also
-keeps the two planes in physically separate databases. Uploads stay ephemeral
-and `SESSION_SECRET` must be set explicitly. If Koyeb's signup asks for a card
-in the owner's region, this path is rejected like the others.
+Chosen free path: **`deploy/free-hf-spaces`** — Hugging Face Spaces (Docker SDK,
+CPU Basic): no card, 2 vCPU / 16 GB RAM, unmetered CPU, free `*.hf.space` HTTPS
+hostname, per-Space secrets, outbound internet, and it only sleeps after 48 h
+idle. Durable state goes to **two separate free Neon Postgres projects** (no
+card, permanent, commercial use allowed) — one for AKBARAL!, one for
+ZA141251SA, which also keeps the two planes in physically separate databases.
+Uploads stay ephemeral; `SESSION_SECRET` is set explicitly. **No domain is
+required**: `src/config/platform-url.ts` detects the host's own free hostname
+and the launch gate accepts it.
 
-`stackhost.yaml` still documents the generic path (`npm ci && npm run build` →
-`node scripts/start-prod.mjs`), and the private tier now has a production entry
-point of its own: `AKBARAL_ROLES=mission` runs `dist/src/mission/serve.js`
-alone, with its own database, auth and port, and is never started by the public
-roles.
+`stackhost.yaml` still documents the generic path, and the private tier has its
+own production entry point: `AKBARAL_ROLES=mission` runs
+`dist/src/mission/serve.js` alone with its own port, database, auth and
+secrets — never started by the public roles.
 
 **Conclusion:** the architecture is configured for a networked production host. Do not
 retry provider endpoints from this sandbox; the first real provider proof must be run

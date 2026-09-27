@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { modelLifecycle, recommendedFreeModel } from '../config/google-model-lifecycle';
+import { detectPlatformPublicUrl, resolvePublicSiteUrl } from '../config/platform-url';
 import path from 'node:path';
 
 /**
@@ -245,7 +246,12 @@ const publicUrlCheck: LaunchCheck = {
   title: 'Public site URL is configured for the production hostname',
   required: true,
   run(context) {
-    const raw = value(context.env, 'AKBARAL_SITE_URL');
+    const explicit = value(context.env, 'AKBARAL_SITE_URL');
+    // A bought domain is NOT required: every free host this project runs on
+    // already serves a working HTTPS hostname, and that hostname is a valid
+    // production URL. A custom domain is a later, optional purchase.
+    const detected = explicit ? null : detectPlatformPublicUrl(context.env as Record<string, string | undefined>);
+    const raw = explicit || detected?.url || '';
     const base = {
       id: this.id,
       area: this.area,
@@ -253,10 +259,29 @@ const publicUrlCheck: LaunchCheck = {
       required: true,
       envKeys: ['AKBARAL_SITE_URL'],
       ownerAction:
-        'Point the domain at the deployment, terminate TLS, then set AKBARAL_SITE_URL=https://your-domain (used by robots.txt, sitemap.xml and payment return URLs).',
+        'No purchase needed: deploy to a free host and the platform hostname is detected automatically (Hugging Face Spaces, Render, Koyeb, Fly, Railway, Vercel). Only set AKBARAL_SITE_URL by hand if you later buy a domain.',
     };
     if (!raw) {
-      return configOnly({ ...base, evidence: 'AKBARAL_SITE_URL is not set; robots/sitemap and payment redirects fall back to the built-in default host' }, isProduction(context.env) ? 'not_configured' : 'optional');
+      return configOnly({ ...base, evidence: 'AKBARAL_SITE_URL is not set and no free platform hostname was detected (SPACE_HOST, RENDER_EXTERNAL_URL, KOYEB_PUBLIC_DOMAIN, FLY_APP_NAME, RAILWAY_PUBLIC_DOMAIN, VERCEL_URL, PUBLIC_URL); robots/sitemap and payment redirects fall back to the built-in default host' }, isProduction(context.env) ? 'not_configured' : 'optional');
+    }
+    if (detected) {
+      let detectedUrl: URL | null = null;
+      try {
+        detectedUrl = new URL(detected.url);
+      } catch {
+        detectedUrl = null;
+      }
+      if (!detectedUrl || detectedUrl.protocol !== 'https:') {
+        return configOnly({ ...base, evidence: `${detected.envKey} did not yield an HTTPS URL` }, 'failed');
+      }
+      return configOnly(
+        {
+          ...base,
+          evidence: `using the free ${detected.source} hostname ${detectedUrl.host} (from ${detected.envKey}) — no domain purchase required`,
+          ownerAction: undefined,
+        },
+        'ready',
+      );
     }
     let parsed: URL;
     try {
@@ -281,6 +306,24 @@ const publicUrlCheck: LaunchCheck = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Database
 // ─────────────────────────────────────────────────────────────────────────────
+
+
+/**
+ * FREE LAUNCH MODE (`AKBARAL_LAUNCH_MODE=free`).
+ *
+ * The project has a hard $0-upfront rule: nothing may be purchased before the
+ * mission has earned and independently verified real revenue. Paid customer
+ * billing is therefore a DEFERRED commercial feature, not a launch
+ * prerequisite — the product is usable on its free plan without it.
+ *
+ * In free mode the payment checks stop being launch blockers and are reported
+ * honestly as deferred. They are NOT reported as ready, nothing is faked, and
+ * the moment a payment credential IS configured the normal (strict) checks run
+ * again — so this can never hide a half-configured payment path.
+ */
+function freeLaunchMode(env: Record<string, string | undefined>): boolean {
+  return String(env.AKBARAL_LAUNCH_MODE ?? '').trim().toLowerCase() === 'free';
+}
 
 const databaseCheck: LaunchCheck = {
   id: 'database.connection',
@@ -496,7 +539,7 @@ const searchCheck: LaunchCheck = {
       docsUrl: this.docsUrl,
       envKeys: ['AKBARAL_SEARCH_PROVIDER', 'TAVILY_API_KEY', 'BRAVE_SEARCH_API_KEY', 'SERPER_API_KEY', 'GOOGLE_CSE_API_KEY', 'GOOGLE_CSE_ID', 'AKBARAL_SEARCH_ENDPOINT'],
       ownerAction:
-        'Pick one search provider and set its key: TAVILY_API_KEY (recommended), BRAVE_SEARCH_API_KEY, or SERPER_API_KEY (+ GOOGLE_CSE_API_KEY & GOOGLE_CSE_ID for Google CSE). Without a key the platform falls back to keyless scraping, which datacenter IPs usually block.',
+        'Optional and free-first: research already works on the keyless Wikipedia provider. For full web coverage set TAVILY_API_KEY, BRAVE_SEARCH_API_KEY or SERPER_API_KEY (+ GOOGLE_CSE_API_KEY & GOOGLE_CSE_ID for Google CSE) — pay for it out of verified mission revenue, never upfront.',
     };
     const tavily = value(context.env, 'TAVILY_API_KEY');
     const brave = value(context.env, 'BRAVE_SEARCH_API_KEY');
@@ -561,12 +604,22 @@ const searchCheck: LaunchCheck = {
       );
       return { ...probe, envKeys: ['AKBARAL_SEARCH_ENDPOINT'], evidence: `custom endpoint — ${probe.evidence}` };
     }
+    // $0 rule: a keyless, free, ToS-permitted provider (Wikipedia) is the
+    // default, so web research WORKS without buying anything. It only covers
+    // encyclopaedic content, so the evidence says exactly that instead of
+    // claiming full web coverage, and a paid/keyed provider stays the
+    // recommended upgrade — to be funded from verified revenue, not upfront.
     return configOnly(
       {
         ...base,
-        evidence: 'no search credential is set — web research falls back to the keyless provider, which is typically blocked from datacenter IPs',
+        required: false,
+        evidence:
+          'no search credential is set — research runs on the free keyless Wikipedia provider (encyclopaedic sources only, no general web index). ' +
+          'Set TAVILY_API_KEY / BRAVE_SEARCH_API_KEY / SERPER_API_KEY later for full web coverage.',
+        ownerAction:
+          'Nothing to buy: the free keyless provider is active. A keyed provider is an optional upgrade (fund it from verified mission revenue).',
       },
-      isProduction(context.env) ? 'not_configured' : 'optional',
+      'optional',
     );
   },
 };
@@ -595,6 +648,20 @@ const paymentsCheck: LaunchCheck = {
     const stripe = value(context.env, 'STRIPE_SECRET_KEY');
     const razorpayId = value(context.env, 'RAZORPAY_KEY_ID');
     const razorpaySecret = value(context.env, 'RAZORPAY_KEY_SECRET');
+    if (!stripe && !razorpayId && !razorpaySecret && freeLaunchMode(context.env)) {
+      return configOnly(
+        {
+          ...base,
+          required: false,
+          evidence:
+            'AKBARAL_LAUNCH_MODE=free — paid customer billing is deliberately deferred until verified revenue exists. ' +
+            'Credit purchases stay unavailable and the UI shows them as unavailable; no payment is ever faked.',
+          ownerAction:
+            'Nothing to buy. Stripe itself costs nothing to open — add STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET whenever you want to accept customer payments.',
+        },
+        'optional',
+      );
+    }
     const stripeWebhookSecret = value(context.env, 'STRIPE_WEBHOOK_SECRET');
     const genericWebhookSecret = value(context.env, 'BILLING_WEBHOOK_SECRET');
 
@@ -658,7 +725,8 @@ const paymentReturnUrlCheck: LaunchCheck = {
   title: 'Checkout return URLs point at the real domain',
   required: true,
   run(context) {
-    const site = value(context.env, 'AKBARAL_SITE_URL');
+    const resolvedSite = resolvePublicSiteUrl(context.env as Record<string, string | undefined>);
+    const site = resolvedSite?.url ?? '';
     const base = {
       id: this.id,
       area: this.area,
@@ -672,14 +740,23 @@ const paymentReturnUrlCheck: LaunchCheck = {
     if (success || cancel) {
       return configOnly({ ...base, evidence: `explicit return URLs configured (success ${success ? 'yes' : 'no'}, cancel ${cancel ? 'yes' : 'no'})`, ownerAction: undefined }, 'ready');
     }
+    if (!value(context.env, 'STRIPE_SECRET_KEY') && !value(context.env, 'RAZORPAY_KEY_ID') && freeLaunchMode(context.env)) {
+      return configOnly(
+        { ...base, required: false, evidence: 'AKBARAL_LAUNCH_MODE=free — no payment provider is configured, so there is no checkout to return from.', ownerAction: undefined },
+        'optional',
+      );
+    }
     if (!site) {
       return configOnly(
-        { ...base, evidence: 'no AKBARAL_SITE_URL: completed payments would redirect to a local placeholder URL instead of the live site' },
+        { ...base, evidence: 'no AKBARAL_SITE_URL and no free platform hostname detected: completed payments would redirect to a local placeholder URL instead of the live site' },
         isProduction(context.env) ? 'failed' : 'optional',
       );
     }
     const normalized = site.replace(/\/+$/, '');
-    return configOnly({ ...base, evidence: `checkout returns to ${normalized}/billing/{success,cancel}`, ownerAction: undefined }, 'ready');
+    return configOnly(
+      { ...base, evidence: `checkout returns to ${normalized}/billing/{success,cancel} (${resolvedSite?.source})`, ownerAction: undefined },
+      'ready',
+    );
   },
 };
 

@@ -204,7 +204,10 @@ describe('production search providers', () => {
 
   it('selects a keyed provider automatically once its credential exists', () => {
     try {
-      assert.equal(resolveSearchProvider().kind, 'duckduckgo', 'keyless default when nothing is configured');
+      // $0 rule: the default must be a genuinely free, keyless, permitted
+      // provider — not DuckDuckGo HTML scraping (opt-in only) and not a
+      // provider that needs a paid key.
+      assert.equal(resolveSearchProvider().kind, 'wikipedia', 'keyless free default when nothing is configured');
       assert.equal(resolveSearchProvider().keyless, true);
 
       process.env.SERPER_API_KEY = STUB_KEY;

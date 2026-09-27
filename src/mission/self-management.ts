@@ -4,6 +4,7 @@ import { debit, getWallet } from './treasury';
 import { missionDb, missionId, nowIso, appendMissionAudit, type Row } from './database';
 import { encryptCredential, vaultConfigured, MissionAuthError } from './auth';
 import { currentPolicy, requestApproval, decideApproval, canAgentSpend, dailySpendCents } from './policy';
+import { assertSpendingUnlocked, consumeOperatingBudget } from './operating-funds';
 
 /**
  * AGENT SELF-MANAGEMENT — the infrastructure that lets agents operate real
@@ -747,6 +748,12 @@ export function provisionResource(input: { id: string; walletId?: string; actual
     const policy = currentPolicy();
     if (policy.killSwitch) throw new MissionSelfServiceError(409, 'mission kill switch is engaged', 'policy_denied');
     if (amount > 0) {
+      // FREE MODE gate: a real purchase is only possible when externally
+      // received, independently verified mission revenue is backing an
+      // owner-approved operating budget. Before the mission has earned
+      // anything this throws, so the system can never spend first and hope to
+      // earn later. Zero-cost (free-tier) resources are unaffected.
+      assertSpendingUnlocked(amount, `provisioning ${String(resource.provider)} resource ${input.id}`);
       const wallet = input.walletId ? getWallet(input.walletId) : null;
       if (!wallet) throw new MissionSelfServiceError(409, 'select a funded mission wallet; customer funds are never used', 'wallet_required');
       if (wallet.agentId && wallet.agentId !== String(resource.agent_id)) throw new MissionSelfServiceError(403, 'resource cannot spend another agent wallet', 'forbidden');
@@ -754,6 +761,9 @@ export function provisionResource(input: { id: string; walletId?: string; actual
       const gate = canAgentSpend({ walletId: wallet.id, agentId: String(resource.agent_id), amountCents: amount, category: 'expense' }, policy, dailySpendCents(nowIso()));
       if (!gate.allowed && !gate.requiresApproval) throw new MissionSelfServiceError(409, `resource funding refused: ${gate.reasons.join('; ')}`, 'policy_denied');
       debit({ walletId: wallet.id, amountCents: amount, category: 'expense', reference: input.id, idempotencyKey: `resource:${input.id}:provision`, actorType: 'owner', actorId: input.actorId, memo: `provider resource ${resource.provider}: ${input.providerRef.trim()}` });
+      // Draw the amount down from the owner-approved, revenue-backed budget in
+      // the same transaction as the ledger debit.
+      consumeOperatingBudget(amount, `resource ${input.id}`);
     }
     missionDb.run('UPDATE mission_resources SET status = ?, funding_wallet_id = ?, provisioning_ref = ?, provisioned_cost_cents = ?, provisioned_at = ?, updated_at = ? WHERE id = ?', ['active', input.walletId ?? null, input.providerRef.trim(), amount, nowIso(), nowIso(), input.id]);
     appendMissionAudit({ actorType: 'owner', actorId: input.actorId, action: 'resource.provisioned', subjectType: 'resource', subjectId: input.id, detail: { providerRef: input.providerRef.trim(), evidence: input.evidence.trim(), amountCents: amount, fundingWalletId: input.walletId ?? null } });

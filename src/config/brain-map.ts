@@ -177,13 +177,13 @@ export const BRAIN_ROWS: BrainRow[] = [
   // ── AKBARAL! — research and knowledge ──────────────────────────────────
   {
     system: 'AKBARAL!', fn: 'Web search', component: 'src/agents/search-providers.ts', symbol: 'resolveSearchProvider',
-    brain: 'external API', provider: 'Tavily / Brave / Serper / Google CSE, else keyless DuckDuckGo HTML',
-    api: 'https://api.tavily.com | https://api.search.brave.com | https://google.serper.dev | https://www.googleapis.com/customsearch/v1',
+    brain: 'external API', provider: 'Wikipedia (keyless, free) by default; Tavily / Brave / Serper / Google CSE when a key exists',
+    api: 'https://en.wikipedia.org/w/api.php | https://api.tavily.com | https://api.search.brave.com | https://google.serper.dev | https://www.googleapis.com/customsearch/v1',
     tool: 'web_search', dataSource: 'none (live web)',
-    requires: [['TAVILY_API_KEY', 'BRAVE_SEARCH_API_KEY', 'SERPER_API_KEY', 'GOOGLE_CSE_API_KEY', 'AKBARAL_SEARCH_ENDPOINT']],
-    egress: true, cost: 'FREE TIER', launch: 'AKBARAL! public launch',
-    degraded: 'Falls back to the keyless DuckDuckGo HTML endpoint, which is rate-limited and can return zero results; zero results are reported as zero, never invented.',
-    ownerAction: 'Optional: a free Tavily/Brave key raises reliability.',
+    requires: NO_ENV,
+    egress: true, cost: 'FREE', launch: 'AKBARAL! public launch',
+    degraded: 'No credential is needed: the default provider is the free keyless Wikipedia API (encyclopaedic sources only, not a general web index). Zero results are reported as zero, never invented.',
+    ownerAction: 'Nothing to buy. A keyed provider (Tavily/Brave/Serper) adds general web coverage and should be funded from verified mission revenue, not upfront.',
     verifiedBy: 'src/agents/search-providers.test.ts',
   },
   {

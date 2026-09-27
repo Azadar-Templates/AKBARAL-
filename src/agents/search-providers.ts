@@ -43,7 +43,7 @@ export interface SearchResultItem {
   description: string;
 }
 
-export type SearchProviderKind = 'tavily' | 'brave' | 'serper' | 'google_cse' | 'endpoint' | 'duckduckgo';
+export type SearchProviderKind = 'tavily' | 'brave' | 'serper' | 'google_cse' | 'endpoint' | 'wikipedia' | 'duckduckgo';
 
 export interface SearchProviderSpec {
   kind: SearchProviderKind;
@@ -101,6 +101,21 @@ export const SEARCH_PROVIDER_SPECS: readonly SearchProviderSpec[] = [
     label: 'Configured search endpoint',
     requiredEnv: ['AKBARAL_SEARCH_ENDPOINT'],
     keyless: false,
+  },
+  {
+    // Genuinely free, keyless and explicitly permitted for third-party use
+    // (CC BY-SA content, documented public REST API, User-Agent required by
+    // the Wikimedia policy). This is the $0 research path: it needs no
+    // account, no card and no quota purchase. It searches encyclopaedic
+    // content only — it is NOT a general web index, and the status payload
+    // says so rather than pretending to be one.
+    kind: 'wikipedia',
+    label: 'Wikipedia (keyless, free, encyclopaedic only)',
+    requiredEnv: [],
+    keyless: true,
+    baseUrlEnv: 'WIKIPEDIA_API_BASE_URL',
+    defaultBaseUrl: 'https://en.wikipedia.org',
+    docsUrl: 'https://www.mediawiki.org/wiki/API:Search',
   },
   {
     kind: 'duckduckgo',
@@ -205,7 +220,12 @@ export function resolveSearchProvider(): ActiveSearchProvider {
     }
   }
 
-  return describe(getProviderSpec('duckduckgo'));
+  // Default: the genuinely free, keyless, ToS-permitted provider. DuckDuckGo
+  // HTML scraping remains available by explicit opt-in
+  // (AKBARAL_SEARCH_PROVIDER=duckduckgo) but is no longer the silent default:
+  // it is rate-limited/blocked from datacenter IPs and is not an API the
+  // project is entitled to scrape.
+  return describe(getProviderSpec('wikipedia'));
 }
 
 /** Operator-facing status for admin/config surfaces: names and booleans only. */
@@ -334,6 +354,8 @@ export function normalizeProviderResults(
       }
       case 'google_cse':
         return asRecordArray(payload.items);
+      case 'wikipedia':
+        return asRecordArray(readNested(payload, ['query', 'search']));
       default: {
         const direct = asRecordArray(payload.results);
         return direct.length > 0 ? direct : asRecordArray(payload.items);
@@ -346,10 +368,17 @@ export function normalizeProviderResults(
     if (results.length >= limit) {
       break;
     }
-    const url =
+    let url =
       kind === 'serper' || kind === 'google_cse'
         ? pickString(item, ['link', 'url'])
         : pickString(item, ['url', 'link']);
+    if (!url && kind === 'wikipedia') {
+      // The MediaWiki search API returns page titles, not URLs. Build the
+      // canonical article URL from the title (percent-encoded, spaces as
+      // underscores) — this is the documented permalink form.
+      const title = pickString(item, ['title']);
+      if (title) url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+    }
     if (!/^https?:\/\//i.test(url)) {
       continue;
     }
@@ -357,7 +386,12 @@ export function normalizeProviderResults(
     if (!title) {
       continue;
     }
-    const description = pickString(item, ['content', 'description', 'snippet', 'text']);
+    let description = pickString(item, ['content', 'description', 'snippet', 'text']);
+    if (kind === 'wikipedia') {
+      // Snippets are HTML fragments with search-match markup; strip tags so a
+      // provider response can never inject markup into the canvas.
+      description = description.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim();
+    }
     results.push({ title, url, description });
   }
   return results;
@@ -381,6 +415,8 @@ export function hasRecognizedResultShape(kind: SearchProviderKind, payload: Reco
       return Array.isArray(payload.organic) || Array.isArray(payload.results);
     case 'google_cse':
       return Array.isArray(payload.items);
+    case 'wikipedia':
+      return Array.isArray(readNested(payload, ['query', 'search']));
     default:
       return Array.isArray(payload.results) || Array.isArray(payload.items);
   }
@@ -449,6 +485,27 @@ export function buildProviderRequest(
       url.searchParams.set('q', query);
       url.searchParams.set('num', String(capped));
       return { url: url.toString(), init: { method: 'GET', headers: { Accept: 'application/json' } } };
+    }
+    case 'wikipedia': {
+      // No credential exists to leak: this is a public, documented endpoint.
+      const url = new URL(`${base}/w/api.php`);
+      url.searchParams.set('action', 'query');
+      url.searchParams.set('list', 'search');
+      url.searchParams.set('srsearch', query);
+      url.searchParams.set('srlimit', String(capped));
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('origin', '*');
+      return {
+        url: url.toString(),
+        init: {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            // Wikimedia's API etiquette requires an identifying User-Agent.
+            'User-Agent': 'AKBARAL/1.0 (https://github.com/Azadar-Templates/AKBARAL-; free-tier research agent)',
+          },
+        },
+      };
     }
     default:
       throw new SearchProviderNotConfiguredError(

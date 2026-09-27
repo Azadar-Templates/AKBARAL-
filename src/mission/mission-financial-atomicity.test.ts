@@ -165,6 +165,7 @@ it('refuses implicit currency conversion on revenue and payouts', () => {
 
 it('resource approval is not provisioning, and funded evidence commits exactly once', () => {
   const management = require('./self-management') as typeof import('./self-management');
+  const funding = require('./operating-funds') as typeof import('./operating-funds');
   const resource = management.requestResource({ agentId: agent, kind: 'compute', provider: 'synthetic-provider', monthlyCostCents: 10, actorId: owner });
   assert.equal(resource.status, 'approved');
   assert.equal(management.resourceReadiness(String(resource.id)).usable, false);
@@ -172,6 +173,10 @@ it('resource approval is not provisioning, and funded evidence commits exactly o
   assert.throws(() => management.provisionResource({ ...input, actualCostCents: 11 }), /approved quote/);
   assert.throws(() => management.provisionResource({ ...input, evidence: '' }), /evidence/);
   assert.throws(() => management.provisionResource({ ...input, providerRef: 'private_key=not-a-provider-reference' }), /instruments or credentials/);
+  // FREE MODE: verified revenue exists in this fixture, but spending still
+  // needs an explicit owner-approved operating budget drawn from it.
+  assert.throws(() => management.provisionResource(input), /has not approved an operating budget/);
+  funding.approveOperatingBudget({ amountCents: 10, purpose: 'fund the synthetic compute resource fixture', actorId: owner });
   const before = snapshot(), balance = getWallet(treasury)!.balanceCents;
   failAfter('UPDATE mission_resources SET status', () => management.provisionResource(input));
   assert.deepEqual(snapshot(), before);

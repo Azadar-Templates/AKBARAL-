@@ -51,6 +51,7 @@ import {
   verifyLedger,
   verifyPayoutSlot,
 } from './treasury';
+import { approveOperatingBudget } from './operating-funds';
 import {
   EXTERNAL_ACTIVATION,
   MissionSelfServiceError,
@@ -463,6 +464,15 @@ test('agents manage resources and upgrades inside their budget, with audit trail
   const approved = decideResource({ id: String(resource.id), decision: 'approved', actorId: OWNER });
   assert.equal(String(approved.status), 'approved', 'approval alone is not actual provisioning');
   const treasuryWallet = missionDb.get<Row>("SELECT id FROM mission_wallets WHERE kind = 'mission' LIMIT 1")!;
+  // FREE MODE: owner approval of the resource is not authorisation to SPEND.
+  // Real money may only leave against an owner-approved operating budget that
+  // is itself backed by externally received, independently verified revenue.
+  assert.throws(
+    () => provisionResource({ id: String(resource.id), walletId: String(treasuryWallet.id), actualCostCents: 100, providerRef: 'synthetic-resource-invoice-unfunded', evidence: 'Attempted provisioning with no operating budget approved.', actorId: OWNER }),
+    /has not approved an operating budget|has not earned yet/i,
+    'no purchase is possible before verified revenue is turned into an approved budget',
+  );
+  approveOperatingBudget({ amountCents: 100, purpose: 'fund the approved openai resource fixture', actorId: OWNER });
   const provisioned = provisionResource({ id: String(resource.id), walletId: String(treasuryWallet.id), actualCostCents: 100, providerRef: 'synthetic-resource-invoice', evidence: 'Synthetic provisioned resource fixture; no provider contacted.', actorId: OWNER });
   assert.equal(String(provisioned.status), 'active');
   const withUsage = recordResourceUsage({ id: String(resource.id), usage: { monthlyRequests: 1_234, costCents: 42 }, actorId: OWNER });
