@@ -53,6 +53,21 @@
 #   AKBARAL_REALTIME_TRANSPORT  sse on hosts that do not proxy WebSockets
 #   TRUST_PROXY=1               behind the platform's proxy
 #   DISABLE_BACKUP_CRON=1       only if the host provides no persistent volume
+#
+# VERIFIED FREE-TIER FACTS (stackhost.org/pricing, checked 2026-09-27):
+#   512MB RAM · 1 app · shared vCPU · 5GB bandwidth/month · SSL included
+#   stackhost.org subdomain · auto-sleep after 30 min idle
+#   NO CREDIT CARD required — sign up with GitHub, Google, Telegram or email.
+# Three consequences that drive the configuration above:
+#   1. 512MB is why runtime.image pulls a prebuilt digest. A source build needs
+#      ~1GB and dies at "Creating build environment -> Failed to create
+#      container". Never switch this file back to a build-from-source path.
+#   2. Auto-sleep stalls the in-process execution queue and scheduler, so
+#      .github/workflows/keep-alive.yml pings /api/health every 13 minutes.
+#      It skips silently until PRODUCTION_PING_URL is set.
+#   3. The free tier gives no persistent volume, so SQLite is lost on every
+#      rebuild. Set DATABASE_URL to a free Neon Postgres for durable data, and
+#      DISABLE_BACKUP_CRON=1 (backups to an ephemeral disk are not backups).
 #   SEED_DATABASE=true          first boot only, if you want the explicit seed;
 #                               the API also self-heals a fresh database
 #   GOOGLE_API_KEY, TAVILY_API_KEY (or BRAVE/SERPER), STRIPE_SECRET_KEY,
@@ -85,14 +100,14 @@
 # repointed, so a deploy can never silently pick up a different build than the
 # one that was verified, and rollback is exact.
 #
-# This digest was published by docker-publish.yml run 36332656558 and
-# corresponds to commit c67640a898706fb91b4d1ec03f3c9b40d36dcc80, whose verify
+# This digest was published by docker-publish.yml run 36342648383 and
+# corresponds to commit a54b3864a245069576c6703560b7d005d9f03fdc, whose verify
 # run was green (full suite, PostgreSQL, mission-PostgreSQL, browser, webpack).
 #
 # To roll forward: take the digest printed by the docker-publish run for the
 # commit you want and replace the value below. Do NOT revert to `:latest`.
 runtime:
-  image: ghcr.io/azadar-templates/akbaral@sha256:8502cd0a0e6916c2208ee01dc7a25e30bd3e44d00b118022ae2fed0602056fa4
+  image: ghcr.io/azadar-templates/akbaral@sha256:300d6bbb0589cab5fd38112a0e0458b76cdaac5e3b65ee8db1c08d88b07dc2b4
 
 commands:
   package: ""
