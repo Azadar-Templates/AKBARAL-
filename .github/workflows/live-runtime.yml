@@ -184,10 +184,16 @@ jobs:
           node-version: '22.22.3'
           cache: npm
       - run: npm ci
-      - name: Full suite on a networked runner
+      - name: Reproduce the exact `verify` workflow invocation
         id: suite
         continue-on-error: true
-        run: npm test 2>&1 | tee /tmp/suite.txt
+        run: |
+          # Same commands, same flags as .github/workflows/verify.yml, so the
+          # long-standing red CI can finally be diagnosed through a channel the
+          # sandbox can read (the API), not the unreachable log storage.
+          npm run typecheck 2>&1 | tee /tmp/suite.txt
+          npm run scan:secrets 2>&1 | tee -a /tmp/suite.txt
+          npm test -- --prune-working-copies --compress-snapshots 2>&1 | tee -a /tmp/suite.txt
       - name: Extract and publish the failures
         if: always() && env.REPORT_ISSUE != ''
         env:
