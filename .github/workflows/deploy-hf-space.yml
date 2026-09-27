@@ -1,0 +1,94 @@
+name: deploy-hf-space
+
+# Push this repository to a free Hugging Face Docker Space — from a GitHub
+# runner, so the owner never needs a local toolchain and never pastes a secret
+# anywhere but GitHub's own secret UI.
+#
+# One-time owner setup (all free, no credit card):
+#   1. huggingface.co/join  → New Space → SDK: Docker → hardware: CPU basic (free)
+#   2. huggingface.co/settings/tokens → new token, role "write"
+#   3. This repository → Settings → Secrets and variables → Actions →
+#      New repository secret → name HF_TOKEN → paste the token there.
+#   4. Run this workflow with the Space id (owner/space-name).
+#
+# The token is only ever read from the secret store into the remote URL of a
+# single git push; it is never printed, never written to a file that is kept,
+# and never committed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      space_id:
+        description: 'Hugging Face Space id, e.g. your-user/akbaral'
+        required: true
+      branch:
+        description: 'Branch of this repository to deploy'
+        required: false
+        default: 'arena/01a0dd85-akbaral'
+
+permissions:
+  contents: read
+
+jobs:
+  push-to-space:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Verify the token exists before touching anything
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "::error::HF_TOKEN repository secret is not set. Add it in Settings → Secrets and variables → Actions (free Hugging Face write token). Nothing was sent anywhere."
+            exit 1
+          fi
+          echo "HF_TOKEN is present (value never printed)."
+
+      - name: Add the Space front matter Hugging Face requires
+        run: |
+          # The Space needs a README.md whose YAML front matter selects the
+          # Docker SDK and the port the app listens on. The repository README is
+          # preserved below the front matter.
+          cp deploy/free-hf-spaces/space-README.md /tmp/space-README.md
+          if [ -f README.md ]; then
+            printf '\n\n---\n\n' >> /tmp/space-README.md
+            cat README.md >> /tmp/space-README.md
+          fi
+          cp /tmp/space-README.md README.md
+          git config user.name  "akbaral-deploy"
+          git config user.email "deploy@akbaral.invalid"
+          git add README.md
+          git commit -m "deploy: Hugging Face Space front matter (Docker SDK, app_port 3000)" || echo "front matter already current"
+
+      - name: Push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SPACE_ID: ${{ github.event.inputs.space_id }}
+        run: |
+          # Credentials go in the remote URL of this single command only.
+          git remote add space "https://user:${HF_TOKEN}@huggingface.co/spaces/${SPACE_ID}" 2>/dev/null \
+            || git remote set-url space "https://user:${HF_TOKEN}@huggingface.co/spaces/${SPACE_ID}"
+          git push --force space HEAD:main 2>&1 | sed -e "s/${HF_TOKEN}/***/g"
+          git remote remove space
+
+      - name: What the owner must still do
+        run: |
+          cat <<'NOTE'
+          Space pushed. In the Space → Settings → "Variables and secrets" add:
+
+            SECRET  DATABASE_URL                 free Neon project #1 connection string
+            SECRET  ZA141251SA_DATABASE_URL      free Neon project #2 connection string (mission)
+            SECRET  SESSION_SECRET               openssl rand -base64 48
+            SECRET  GOOGLE_API_KEY               free Google AI Studio key
+            VAR     NODE_ENV=production
+            VAR     AKBARAL_LAUNCH_MODE=free
+            VAR     SEED_DATABASE=true   (only for the first successful boot, then false)
+
+          AKBARAL_SITE_URL is NOT needed: the app detects SPACE_HOST and uses the
+          free *.hf.space hostname. No domain purchase, ever.
+          NOTE

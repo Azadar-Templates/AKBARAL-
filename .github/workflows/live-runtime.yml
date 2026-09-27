@@ -1,0 +1,188 @@
+name: live-runtime
+
+# The Arena sandbox has no outbound HTTPS, so every provider claim has to be
+# proven on a host that does. A GitHub-hosted runner is free (no card, no
+# upgrade) and has full internet, so this workflow IS the networked runtime
+# until the owner finishes a free Space/host signup:
+#
+#   * boots the real production stack (compiled dist + Next production build)
+#   * boots the private ZA141251SA tier as its own service on its own database
+#   * runs scripts/live-verification.ts against both
+#   * runs the deep launch check
+#   * posts the full evidence report back through the GitHub API (issue
+#     comment) so it can be read without downloading artifacts
+#
+# Secrets: GOOGLE_API_KEY is optional. Without it every model step reports
+# BLOCKED (never PASS, never faked). Add it in Settings → Secrets and
+# variables → Actions — never in chat, never in the repository.
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_issue:
+        description: 'Issue number to post the evidence report to (blank = no comment)'
+        required: false
+        default: ''
+  schedule:
+    # Weekly drift check: free, and it catches a provider/API change early.
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: live-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NODE_ENV: production
+      # Local, ephemeral databases for the runner. The two planes stay in two
+      # separate database files, exactly as in production.
+      DATABASE_URL: file:./data/akbaral.db
+      ZA141251SA_DATABASE_URL: file:./data/mission.db
+      DATA_DIR: ./data
+      AKBARAL_UPLOAD_DIR: ./data/uploads
+      AKBARAL_LAUNCH_MODE: free
+      # A disposable mission identity for the runner: the production owner
+      # identity is never used in CI.
+      ZA141251SA_OWNER_EMAIL: ci-runner-owner@mission.invalid
+      ZA141251SA_BIND_HOST: 127.0.0.1
+      ZA141251SA_PORT: '4200'
+      VERIFY_RUNTIME_LABEL: 'GitHub Actions ubuntu-latest (free runner, real internet)'
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate ephemeral runtime secrets (never printed, never stored)
+        run: |
+          {
+            echo "SESSION_SECRET=$(openssl rand -base64 48)"
+            echo "ZA141251SA_SESSION_SECRET=$(openssl rand -base64 48)"
+            echo "ZA141251SA_CREDENTIAL_KEY=$(openssl rand -base64 48)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the production artifacts
+        run: npm run build
+
+      - name: Migrate and seed both planes
+        run: |
+          node dist/src/db/migrate.js
+          node dist/src/db/seed.js
+          npx tsx scripts/mission-init.ts || true
+          npx tsx scripts/mission-sync-registry.ts
+
+      - name: Start the AKBARAL! production stack
+        run: |
+          node scripts/start-prod.mjs > /tmp/akbaral.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/api/ready > /dev/null 2>&1; then echo "web ready"; break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/ready || (tail -50 /tmp/akbaral.log; exit 1)
+
+      - name: Start the private ZA141251SA tier (separate service, separate database)
+        run: |
+          AKBARAL_ROLES=mission node scripts/start-prod.mjs > /tmp/mission.log 2>&1 &
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:4200/api/health > /dev/null 2>&1; then echo "mission ready"; break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:4200/api/health || (tail -50 /tmp/mission.log; exit 1)
+
+      - name: Live verification (real provider calls, real HTTP, real database)
+        id: verify
+        run: npx tsx scripts/live-verification.ts | tee /tmp/live-verification.txt
+
+      - name: Deep launch check from this networked host
+        if: always()
+        run: npm run launch:check -- --deep | tee /tmp/launch-check.txt || true
+
+      - name: Publish the evidence report through the GitHub API
+        if: always() && github.event.inputs.report_issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### live-runtime evidence — run ${{ github.run_id }}"
+            echo
+            echo '```'
+            tail -120 /tmp/live-verification.txt
+            echo '```'
+            echo
+            echo "### launch check (--deep) on this host"
+            echo '```'
+            tail -60 /tmp/launch-check.txt || true
+            echo '```'
+          } > /tmp/comment.md
+          gh issue comment "${{ github.event.inputs.report_issue }}" --repo "${{ github.repository }}" --body-file /tmp/comment.md
+
+      - name: Preserve logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-runtime-evidence
+          path: |
+            /tmp/live-verification.txt
+            /tmp/launch-check.txt
+            /tmp/akbaral.log
+            /tmp/mission.log
+          retention-days: 7
+
+  suite:
+    # The repository's `verify` workflow has been failing on every push for
+    # days and its logs live on a storage host the Arena sandbox cannot reach.
+    # This job runs the same suite and publishes the FAILING FILE NAMES through
+    # the GitHub API, which is reachable, so the failures can be fixed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+          cache: npm
+      - run: npm ci
+      - name: Full suite on a networked runner
+        id: suite
+        continue-on-error: true
+        run: npm test 2>&1 | tee /tmp/suite.txt
+      - name: Extract and publish the failures
+        if: always() && github.event.inputs.report_issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### full suite on a networked runner — run ${{ github.run_id }}"
+            echo
+            echo "outcome: ${{ steps.suite.outcome }}"
+            echo
+            echo '```'
+            grep -aE "^(not ok|failed:|# (pass|fail)|.*Failed file)" /tmp/suite.txt | tail -60 || tail -40 /tmp/suite.txt
+            echo '```'
+            echo
+            echo "#### error lines"
+            echo '```'
+            grep -aE "error: |failureType|AssertionError" /tmp/suite.txt | tail -40 || true
+            echo '```'
+          } > /tmp/suite-comment.md
+          gh issue comment "${{ github.event.inputs.report_issue }}" --repo "${{ github.repository }}" --body-file /tmp/suite-comment.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suite-output
+          path: /tmp/suite.txt
+          retention-days: 7

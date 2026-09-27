@@ -58,7 +58,8 @@
     "verify:owner-entitlement": "node scripts/verify-owner-entitlement.mjs",
     "test:batch": "node scripts/test-resumable.mjs",
     "test:status": "node scripts/test-resumable.mjs --status",
-    "brains": "tsx scripts/brain-map.ts"
+    "brains": "tsx scripts/brain-map.ts",
+    "verify:live": "tsx scripts/live-verification.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
