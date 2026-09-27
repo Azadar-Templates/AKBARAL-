@@ -19,6 +19,11 @@ import { assertMissionProbeDatabase, missionProbeSpendPolicy } from './testing/m
 
 process.env.ZA141251SA_CREDENTIAL_KEY = process.env.ZA141251SA_CREDENTIAL_KEY ?? 'mission-pg-check-credential-key-32-chars+';
 process.env.ZA141251SA_SESSION_SECRET = process.env.ZA141251SA_SESSION_SECRET ?? 'mission-pg-check-session-secret-32-chars+';
+// The single-identity lockdown stays ENFORCED for this probe, bound to the
+// throwaway owner it is about to create in the throwaway PostgreSQL database.
+// Without this, a real deployment environment (ZA141251SA_OWNER_EMAIL in .env)
+// would refuse the probe owner and the check could never run off a clean box.
+process.env.ZA141251SA_OWNER_EMAIL = 'pg-check@mission.test';
 
 const results: Array<{ step: string; detail: string }> = [];
 function record(step: string, detail: string): void {

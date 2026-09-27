@@ -2,7 +2,7 @@ import { missionDb, nowIso, appendMissionAudit, sha256, type Row } from './datab
 import { agentChatConfig, assertAgentChatReady, chatResourcePreflight, type AgentChatConfig } from './chat-state';
 import { appendAgentMessage } from './messaging';
 import { reserveResourceCall, cancelResourceCall, markResourceCallUncertain, runResourceCall, type ReserveResourceCall } from './resource-calls';
-import { chatTokenReservation, invokeGoogleChat, assertVerifiedChatBillingConfigured, type ChatAdapter } from './chat-provider';
+import { chatTokenReservation, invokeGoogleChat, assertVerifiedChatBillingConfigured, isRealProviderDispatch, type ChatAdapter } from './chat-provider';
 import { MissionSelfServiceError } from './self-management';
 import { agentBriefing } from './agent-briefing';
 
@@ -41,12 +41,17 @@ export async function runNextAgentChat(adapter: ChatAdapter = invokeGoogleChat, 
     const message = missionDb.get<Row>('SELECT * FROM mission_agent_messages WHERE id = ?', [job.message_id]);
     const actor = { actorType: 'agent' as const, actorId: String(job.agent_id) };
     try {
-      if(adapter===invokeGoogleChat)assertVerifiedChatBillingConfigured();
+      // Any dispatcher that really reaches the vendor must carry billing
+      // authority; a free-tier binding is re-validated whatever the dispatcher
+      // is, so a stored free-tier claim can never outlive its zero-cost resource.
+      if (isRealProviderDispatch(adapter) || config.billing === 'free_tier') {
+        assertVerifiedChatBillingConfigured(config, missionDb.get<Row>('SELECT * FROM mission_resources WHERE id = ?', [config.resourceId]));
+      }
       if (!message || message.actor_type !== 'owner' || message.agent_id !== job.agent_id || sha256(String(message.body)) !== job.message_fingerprint || Buffer.byteLength(String(message.body), 'utf8') > config.maxInputBytes) throw new MissionSelfServiceError(409, 'message is unavailable or exceeds the configured byte bound', 'chat_message_unavailable');
       if (missionDb.get("SELECT id FROM mission_agent_messages WHERE reply_to = ? AND actor_type = 'agent'", [message.id])) { finishJob(job, 'superseded', 'agent_already_replied'); return { job }; }
       chatResourcePreflight(String(job.agent_id), config);
       const context = briefingContext(String(job.agent_id));
-      const input: ReserveResourceCall = { resourceId: config.resourceId, agentId: String(job.agent_id), ...actor, idempotencyKey: `chat:${job.id}`, operationFingerprint: sha256(JSON.stringify({ message: message.body, config, instructionVersion: 2, context: sha256(context) })), units: { requests: 1, tokens: chatTokenReservation(String(message.body), config, context) }, budget: { walletId: config.walletId, maxCostCents: config.maxCostCents } };
+      const input: ReserveResourceCall = { resourceId: config.resourceId, agentId: String(job.agent_id), ...actor, idempotencyKey: `chat:${job.id}`, operationFingerprint: sha256(JSON.stringify({ message: message.body, config, instructionVersion: 2, context: sha256(context) })), units: { requests: 1, tokens: chatTokenReservation(String(message.body), config, context) }, budget: config.billing === 'free_tier' ? undefined : { walletId: config.walletId, maxCostCents: config.maxCostCents } };
       const call = reserveResourceCall(input);
       missionDb.run("UPDATE mission_agent_chat_jobs SET status = 'running', call_id = ?, started_at = ? WHERE id = ?", [call.id, nowIso(), job.id]);
       return { job: { ...job, call_id: call.id } as Row, input, body: String(message.body), config, context };

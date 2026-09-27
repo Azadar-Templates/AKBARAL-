@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import { TEST_OWNER_EMAIL } from '../testing/locked-owner';
 process.env.ZA141251SA_DATABASE_URL = process.env.PG_TEST_DATABASE_URL || `file:${path.join(os.tmpdir(), `ledger-isolation-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET = 'synthetic-ledger-isolation-tests-not-live';
 import { before, after, it, describe } from 'node:test';
@@ -16,7 +17,7 @@ before(() => {
   applyMissionMigrations();
   const { provisionOwner } = require('../auth') as typeof import('../auth');
   try {
-    const o = provisionOwner({ email: `isolation-${randomUUID()}@test.local`, password: 'StrongPass!123', displayName: 'Isolation Owner' });
+    const o = provisionOwner({ email: TEST_OWNER_EMAIL, password: 'StrongPass!123', displayName: 'Isolation Owner' });
     ownerId = o.id ?? (o as { owner?: { id?: string } }).owner?.id;
   } catch {
     const r = missionDb.get('SELECT id FROM mission_owner LIMIT 1');

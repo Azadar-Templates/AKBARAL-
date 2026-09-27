@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import { TEST_OWNER_EMAIL } from '../testing/locked-owner';
 process.env.ZA141251SA_DATABASE_URL = process.env.PG_TEST_DATABASE_URL || `file:${path.join(os.tmpdir(), `agent-routing-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET = 'synthetic-agent-routing-tests-not-live';
 import { before, after, it, describe } from 'node:test';
@@ -22,7 +23,7 @@ before(() => {
   PlatformDiscovery.seedPlatforms();
   const { provisionOwner } = require('../auth') as typeof import('../auth');
   try {
-    const o = provisionOwner({ email: `routing-${randomUUID()}@test.local`, password: 'StrongPass!123', displayName: 'Routing Owner' });
+    const o = provisionOwner({ email: TEST_OWNER_EMAIL, password: 'StrongPass!123', displayName: 'Routing Owner' });
     ownerId = o.id ?? (o as { owner?: { id?: string } }).owner?.id;
   } catch {
     const r = db.get('SELECT id FROM mission_owner LIMIT 1');

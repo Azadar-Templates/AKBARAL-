@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -85,6 +86,42 @@ describe('secret scan gate', () => {
       assert.equal(realFindings(scanSecretMarkers({ root, baseDir: REPO_ROOT })).length, 0, 'allowed in normal mode');
       const strict = scanSecretMarkers({ root, baseDir: REPO_ROOT, strict: true });
       assert.equal(strict.length, 1, 'strict mode ignores the allowlist');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skips a file that git can never commit, but never a committable one', () => {
+    const root = makeTempTree();
+    try {
+      const git = (...args: string[]) => spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+      git('init', '-q');
+      git('config', 'user.email', 'fixture@example.test');
+      git('config', 'user.name', 'Fixture');
+      const key = `const key = '${['sk', 'a1b2c3d4e5'.repeat(4)].join('-')}';\n`;
+      write(root, '.gitignore', '.env.local\n');
+      // Untracked AND ignored: a developer's local runtime secret. It cannot
+      // reach a commit, so it must not fail the launch gate.
+      write(root, '.env.local', key);
+      assert.deepEqual(realFindings(scanSecretMarkers({ root, baseDir: REPO_ROOT })), [], 'a git-ignored local file is skipped');
+      // ...but --all still shows it to an auditor.
+      assert.equal(realFindings(scanSecretMarkers({ root, baseDir: REPO_ROOT, includeUncommittable: true })).length, 1);
+      // The same content in a committable (untracked, NOT ignored) file fails.
+      write(root, 'src/leaked.ts', key);
+      const real = realFindings(scanSecretMarkers({ root, baseDir: REPO_ROOT }));
+      assert.deepEqual(real.map((finding) => finding.path), ['src/leaked.ts']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('scans everything when the tree is not a git repository (fails closed)', () => {
+    const root = makeTempTree();
+    try {
+      write(root, '.gitignore', 'secret.ts\n');
+      write(root, 'secret.ts', `const key = '${['sk', 'a1b2c3d4e5'.repeat(4)].join('-')}';\n`);
+      const real = realFindings(scanSecretMarkers({ root, baseDir: REPO_ROOT }));
+      assert.deepEqual(real.map((finding) => finding.path), ['secret.ts'], 'no git work tree means no exemptions');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

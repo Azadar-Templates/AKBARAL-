@@ -40,17 +40,17 @@ ALTER TABLE economy_agent_profiles ADD COLUMN last_active_at TEXT;
 
 -- Workforce policy: reinvestment share + daily realized-revenue target.
 -- (Parity with the mission treasury; 0 = unconfigured, allocates/tracks nothing.)
-ALTER TABLE economy_policy ADD COLUMN reinvest_share_bps INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE economy_policy ADD COLUMN daily_revenue_target_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN reinvest_share_bps BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN daily_revenue_target_cents BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE economy_source_health (
   source_key TEXT PRIMARY KEY,                -- host + category, e.g. 'example.com|freelance'
   domain TEXT NOT NULL,
   category TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',      -- active|unavailable|restricted|unreliable|blocked
-  consecutive_failures INTEGER NOT NULL DEFAULT 0,
-  total_successes INTEGER NOT NULL DEFAULT 0,
-  total_failures INTEGER NOT NULL DEFAULT 0,
+  consecutive_failures BIGINT NOT NULL DEFAULT 0,
+  total_successes BIGINT NOT NULL DEFAULT 0,
+  total_failures BIGINT NOT NULL DEFAULT 0,
   last_error TEXT,
   last_seen_at TEXT,
   blocked_at TEXT,
@@ -70,7 +70,7 @@ CREATE TABLE economy_deliveries (
   title TEXT NOT NULL,
   evidence TEXT NOT NULL,                     -- tool outputs / verification summary (truncated)
   external_ref TEXT,                          -- provider confirmation (URL, listing id, message id)
-  verified INTEGER NOT NULL DEFAULT 0,        -- 1 = passed workforce verification
+  verified BIGINT NOT NULL DEFAULT 0,        -- 1 = passed workforce verification
   delivered_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
@@ -104,8 +104,8 @@ CREATE TABLE economy_workflows (
   category TEXT NOT NULL,
   workflow_key TEXT NOT NULL,                 -- stable key, e.g. 'freelance:proposal'
   status TEXT NOT NULL DEFAULT 'active',      -- active|failed|replaced|retired
-  failure_count INTEGER NOT NULL DEFAULT 0,
-  success_count INTEGER NOT NULL DEFAULT 0,
+  failure_count BIGINT NOT NULL DEFAULT 0,
+  success_count BIGINT NOT NULL DEFAULT 0,
   last_error TEXT,
   replaced_by TEXT,
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),

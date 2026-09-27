@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS execution_jobs (
   task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   workflow_id TEXT REFERENCES workflows(id) ON DELETE SET NULL,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-  priority INTEGER NOT NULL DEFAULT 100,     -- lower runs first
-  attempts INTEGER NOT NULL DEFAULT 0,
-  max_attempts INTEGER NOT NULL DEFAULT 2,
+  priority BIGINT NOT NULL DEFAULT 100,     -- lower runs first
+  attempts BIGINT NOT NULL DEFAULT 0,
+  max_attempts BIGINT NOT NULL DEFAULT 2,
   locked_by TEXT,                            -- worker id that claimed the job
   locked_at TEXT,
   run_after TEXT,                            -- earliest next-run time (retry backoff)
@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_execution_jobs_user ON execution_jobs(user_id, cr
 CREATE TABLE IF NOT EXISTS job_attempts (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL REFERENCES execution_jobs(id) ON DELETE CASCADE,
-  attempt_number INTEGER NOT NULL,
+  attempt_number BIGINT NOT NULL,
   status TEXT NOT NULL DEFAULT 'started',    -- started | completed | failed | timed_out | cancelled
   error_code TEXT,
   error_message TEXT,

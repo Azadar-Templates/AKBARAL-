@@ -110,6 +110,28 @@ try {
 
   const agentRows = await page.$$eval('#agent-cards .row', (nodes) => nodes.length);
   record('agent list renders with status and current activity', agentRows > 0, `${agentRows} agents listed`);
+
+  // the whole registry must be declared and reachable, not just the first page
+  const fleetBanner = ((await page.textContent('#fleet-banner')) ?? '').replace(/\s+/g, ' ').trim();
+  const fleetTotal = Number((fleetBanner.match(/([\d,]+) Agents Available/) ?? [])[1]?.replace(/,/g, '') ?? 0);
+  record('the dashboard states the real size of the fleet', fleetTotal >= 4001, fleetBanner.slice(0, 80));
+
+  const identityRows = await page.$$eval('#agent-cards .row .purpose', (nodes) => nodes.length);
+  record(
+    'every listed agent shows a real identity, not a generic label',
+    identityRows === agentRows && !(await page.$$eval('#agent-cards .row .title', (nodes) => nodes.some((node) => /^(agent|worker)\s*\d+$/i.test(node.textContent.trim())))),
+    `${identityRows}/${agentRows} rows carry a designed purpose line`,
+  );
+
+  const before = agentRows;
+  await page.click('#agent-load-more');
+  await page.waitForTimeout(2000);
+  const after = await page.$$eval('#agent-cards .row', (nodes) => nodes.length);
+  record('pagination exposes more of the fleet on demand', after > before, `${before} → ${after} agents rendered`);
+
+  const categories = await page.$$eval('#agent-category option', (nodes) => nodes.length);
+  record('category filtering is available for the whole registry', categories > 10, `${categories - 1} categories + “All categories”`);
+
   await page.fill('#agent-quick-search input[name="q"]', 'youtube');
   await page.click('#agent-quick-search button[type="submit"]');
   await page.waitForTimeout(2000);
@@ -119,6 +141,31 @@ try {
     searched.length > 0 && searched.every((text) => text.includes('youtube')),
     `${searched.length} results for “youtube”`,
   );
+
+  await page.fill('#agent-quick-search input[name="q"]', 'security reviewer');
+  await page.click('#agent-quick-search button[type="submit"]');
+  await page.waitForTimeout(2000);
+  const roleHits = await page.$$eval('#agent-cards .row', (nodes) => nodes.map((node) => node.textContent.toLowerCase()));
+  record(
+    'agents are searchable by role and capability, not only by name',
+    roleHits.length > 0 && roleHits.every((text) => /security/.test(text)),
+    `${roleHits.length} rendered results for the role query “security reviewer”`,
+  );
+
+  // opening a result must open that exact agent, with its designed profile
+  const targetName = await page.$eval('#agent-cards .row .title', (node) => node.textContent.trim());
+  await page.click('#agent-cards .row');
+  await page.waitForSelector('#agent-detail:not([hidden])', { timeout: 15000 });
+  await page.waitForTimeout(1500);
+  const detail = ((await page.textContent('#agent-detail')) ?? '').replace(/\s+/g, ' ');
+  const sections = ['Designed for', 'Workflow it follows', 'Inputs and outputs', 'Capabilities', 'Approved tools', 'Current work', 'Completed work', 'Provider and readiness', 'Verification rules'];
+  const missing = sections.filter((title) => !detail.includes(title));
+  record(
+    'selecting a result opens that exact agent with a full profile',
+    detail.includes(targetName) && missing.length === 0,
+    missing.length ? `missing sections: ${missing.join(', ')}` : `“${targetName}” with ${sections.length} profile sections`,
+  );
+  await shot('02a-agent-profile');
 
   // open the chat workspace
   await page.click('#agentnav .subbtn[data-sub="chat"]');
@@ -149,7 +196,7 @@ try {
   const chatNote = (await page.textContent('#chat-note')) ?? '';
   record(
     'chat states the real reply capability',
-    /READY|AI PROVIDER NOT CONFIGURED|BLOCKED|NOT CONFIGURED/.test(readiness),
+    /READY|AI PROVIDER NOT CONFIGURED|REPLIES OFF|BLOCKED|NOT CONFIGURED/.test(readiness),
     readiness.replace(/\s+/g, ' ').trim().slice(0, 120),
   );
   const agentReplies = await page.$$eval('#chat-log .msg.agent', (nodes) => nodes.length);
@@ -176,6 +223,68 @@ try {
     await shot('02b-agent-switch');
   } else {
     record('switching agents rebinds the conversation to the selected agent', false, 'only one agent available in the chat sidebar');
+  }
+
+  // ── 2c. OWNER CAN TURN REPLIES ON WITHOUT SPENDING MONEY ────────────────
+  const enableOpen = await page.$('#chat-enable-open');
+  record(
+    'the owner is offered a way to switch replies on from the dashboard',
+    Boolean(enableOpen),
+    enableOpen ? ((await page.textContent('#chat-enable-open')) ?? '').trim() : 'no enable control rendered',
+  );
+  if (enableOpen) {
+    const enabledSlug = await page.$eval('#chat-agent-list .chatitem.active', (node) => node.dataset.slug ?? '');
+    await enableOpen.click();
+    await page.waitForSelector('form.enable-form', { timeout: 10000 });
+    const formText = ((await page.textContent('form.enable-form')) ?? '').replace(/\s+/g, ' ');
+    const keyType = await page.getAttribute('form.enable-form input[name="apiKey"]', 'type');
+    record(
+      'the enable form asks only for a free-tier key and hides it while typing',
+      keyType === 'password' && /free tier/i.test(formText) && /\$0|no wallet|cannot spend|zero-cost/i.test(formText),
+      `input type=${keyType}; ${formText.slice(0, 110)}`,
+    );
+
+    // Assembled at runtime: never a scannable credential marker in source.
+    const syntheticKey = `${['AI', 'zaSy'].join('')}-browser-check-not-a-real-key-000`;
+    await page.fill('form.enable-form input[name="apiKey"]', syntheticKey);
+    await page.click('form.enable-form button[type="submit"]');
+    await page.waitForTimeout(3500);
+    const afterEnable = ((await page.textContent('#chat-readiness')) ?? '').replace(/\s+/g, ' ');
+    record(
+      'switching replies on changes the stated capability for that agent (and never claims a reply the runtime cannot make)',
+      /READY|binding enabled|RUNTIME BLOCKED/i.test(afterEnable) && !afterEnable.includes(syntheticKey),
+      afterEnable.slice(0, 120),
+    );
+    const leaked = await page.evaluate((key) => document.body.innerText.includes(key), syntheticKey);
+    record('the submitted key is never shown back anywhere in the dashboard', leaked === false, leaked ? 'key visible in the page' : 'key not present in any rendered text');
+
+    const statusRes = await page.evaluate(async (slug) => {
+      const res = await fetch(`/api/agents/${slug}/chat-status`, {
+        credentials: 'same-origin',
+        headers: { 'x-mission-client': 'dashboard' },
+      });
+      return JSON.stringify(await res.json());
+    }, enabledSlug);
+    record(
+      'the stored binding is free tier with a zero cost cap and no wallet',
+      /"billing":"free_tier"/.test(statusRes) && /"maxCostCents":0/.test(statusRes) && /"walletBound":false/.test(statusRes) && !statusRes.includes(syntheticKey),
+      /"billing":"free_tier"/.test(statusRes) ? 'billing=free_tier maxCostCents=0 walletBound=false, key not returned' : statusRes.slice(0, 140),
+    );
+    await shot('02c-chat-enabled');
+
+    // put the rig back the way it was
+    page.once('dialog', (dialog) => dialog.accept());
+    const disable = await page.$('#chat-disable');
+    if (disable) {
+      await disable.click();
+      await page.waitForTimeout(3000);
+    }
+    const afterDisable = ((await page.textContent('#chat-readiness')) ?? '').replace(/\s+/g, ' ');
+    record(
+      'the owner can switch replies back off and revoke the key',
+      /NOT CONFIGURED|REPLIES OFF|binding off/i.test(afterDisable),
+      afterDisable.slice(0, 110),
+    );
   }
 
   // ── 3. WITHDRAW ─────────────────────────────────────────────────────────

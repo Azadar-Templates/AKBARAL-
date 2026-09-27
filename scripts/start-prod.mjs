@@ -3,6 +3,19 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { ensureSessionSecret, resolveSessionSecretFilePath } from './lib/session-secret.mjs';
 
+import { existsSync as __envFileExists } from 'node:fs';
+// Load `.env` exactly like the application does (src/config/env.ts) BEFORE any
+// startup decision is made. Without this the wrapper judged SESSION_SECRET,
+// DATABASE_URL and the mission variables as "not set" while the child
+// processes — which do load .env — saw them, producing contradictory startup
+// logs and a per-process session secret. dotenv never overrides a variable the
+// host already injected, so real deployments are unaffected.
+if (__envFileExists('.env')) {
+  const { config: __loadEnvFile } = await import('dotenv');
+  __loadEnvFile();
+}
+
+
 /**
  * Production start for the AKBARAL platform.
  *
@@ -80,11 +93,20 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 //   web            — only the Next.js tier (:3000); proxy /api,/uploads,/ws to
 //                    another container via NEXT_BACKEND_URL (next.config.mjs)
 //   api            — only the API/Express tier (:4000)
+//   mission        — ONLY the private ZA141251SA tier (dist/src/mission/serve.js,
+//                    its own port, its own database, its own auth). It shares
+//                    nothing with the public tiers: no public AKBARAL! route can
+//                    reach it, and it is never started by 'both'. Deploy it as a
+//                    SEPARATE service/container when the owner wants the private
+//                    dashboard reachable; without this role the mission tier has
+//                    no production entry point at all.
 const ROLES = (process.env.AKBARAL_ROLES ?? 'both').toLowerCase();
-if (!['both', 'web', 'api'].includes(ROLES)) {
-  console.error(`[akbaral] invalid AKBARAL_ROLES "${ROLES}" (expected both|web|api)`);
+if (!['both', 'web', 'api', 'mission'].includes(ROLES)) {
+  console.error(`[akbaral] invalid AKBARAL_ROLES "${ROLES}" (expected both|web|api|mission)`);
   process.exit(1);
 }
+
+const DIST_MISSION_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'mission', 'serve.js');
 
 /* ------------------------------------------------------------------ ports
  * The PUBLIC entry point is the Next.js tier: it serves the app and rewrites
@@ -178,6 +200,11 @@ const NEXT_BUILD_MARKER = path.resolve(process.cwd(), '.next', 'BUILD_ID');
 
 function missingBuildArtifacts() {
   const missing = [];
+  if (ROLES === 'mission') {
+    // The private tier is a single compiled entry: no Next.js build, no public
+    // API build, no AKBARAL! database.
+    return existsSync(DIST_MISSION_ENTRY) ? [] : [`${DIST_MISSION_ENTRY} (ZA141251SA mission build output)`];
+  }
   if (ROLES !== 'web' && !existsSync(DIST_API_ENTRY)) {
     missing.push(`${DIST_API_ENTRY} (API build output)`);
   }
@@ -278,7 +305,7 @@ function scheduleBackup() {
  * Migrations are idempotent (db/migrate.ts checksums applied migrations), so
  * running them again from entrypoint.sh first is harmless.
  */
-if (ROLES !== 'web') {
+if (ROLES !== 'web' && ROLES !== 'mission') {
   runStep('applying database migrations', 'node', [DIST_MIGRATE_ENTRY]);
 
   if (String(process.env.SEED_DATABASE ?? 'false').toLowerCase() === 'true') {
@@ -291,7 +318,7 @@ if (ROLES !== 'web') {
 // entrypoint. It is backgrounded (unref'd timer) and never blocks startup.
 scheduleBackup();
 
-if (ROLES !== 'api') {
+if (ROLES !== 'api' && ROLES !== 'mission') {
   const web = launch('web', 'node_modules/.bin/next', ['start', '-p', String(webPort), '-H', '0.0.0.0'], {
     NODE_ENV: 'production',
     NEXT_BACKEND_URL: `http://127.0.0.1:${apiPort}`,
@@ -302,7 +329,7 @@ if (ROLES !== 'api') {
     process.exit(code ?? 0);
   });
 }
-if (ROLES !== 'web') {
+if (ROLES !== 'web' && ROLES !== 'mission') {
   const api = launch('api', 'node', ['dist/src/index.js'], { PORT: String(apiPort), NODE_ENV: 'production' });
   api.on('exit', (code) => {
     console.log(`[akbaral] api exited with code ${code}`);
@@ -310,9 +337,22 @@ if (ROLES !== 'web') {
     process.exit(code ?? 0);
   });
 }
+if (ROLES === 'mission') {
+  // Its own bootstrap (src/mission/serve.ts) applies the mission migrations,
+  // enforces the single-identity lockdown and verifies the audit + ledger
+  // chains before it opens a socket. Nothing public is started in this process.
+  const mission = launch('mission', 'node', [DIST_MISSION_ENTRY], { NODE_ENV: 'production' });
+  mission.on('exit', (code) => {
+    console.log(`[akbaral] mission exited with code ${code}`);
+    shutdown();
+    process.exit(code ?? 0);
+  });
+}
 console.log(
   `[akbaral] AKBARAL_ROLES=${ROLES} — ` +
-    (ROLES === 'both'
+    (ROLES === 'mission'
+      ? `private ZA141251SA tier only on ZA141251SA_PORT (separate database, auth and secrets; no public AKBARAL! tier in this process)`
+      : ROLES === 'both'
       ? `web :${webPort} (public) + api :${apiPort} (internal)`
       : ROLES === 'web'
         ? `web :${webPort} only (public; backend via NEXT_BACKEND_URL)`

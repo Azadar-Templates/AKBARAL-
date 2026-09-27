@@ -51,13 +51,27 @@ function printPorts(env: Record<string, string>): { status: number; body: Record
 
 test('AKBARAL_ROLES is honored with a safe default', () => {
   assert.match(source, /AKBARAL_ROLES \?\? 'both'/, 'default must be both (single-container stack, backward compatible)');
-  assert.match(source, /\['both', 'web', 'api'\]\.includes\(ROLES\)/, 'invalid roles must fail fast');
+  assert.match(source, /\['both', 'web', 'api', 'mission'\]\.includes\(ROLES\)/, 'invalid roles must fail fast');
   assert.match(source, /invalid AKBARAL_ROLES/, 'invalid role must print an explicit error');
 });
 
 test('each tier is independently gated', () => {
-  assert.match(source, /ROLES !== 'api'[\s\S]{0,600}?launch\('web'/, "web tier launches unless ROLES==='api'");
-  assert.match(source, /ROLES !== 'web'[\s\S]{0,400}?launch\('api'/, "api tier launches unless ROLES==='web'");
+  assert.match(source, /ROLES !== 'api' && ROLES !== 'mission'[\s\S]{0,600}?launch\('web'/, "web tier launches unless ROLES==='api' or 'mission'");
+  assert.match(source, /ROLES !== 'web' && ROLES !== 'mission'[\s\S]{0,400}?launch\('api'/, "api tier launches unless ROLES==='web' or 'mission'");
+});
+
+test('the private ZA141251SA tier is its own role and never rides along with the public tiers', () => {
+  // The mission tier must have a production entry point (it had none before:
+  // the container carried its database path but never started the server)...
+  assert.match(source, /AKBARAL_ROLES=mission|ROLES === 'mission'/, 'a mission role must exist');
+  assert.match(source, /launch\('mission', 'node', \[DIST_MISSION_ENTRY\]/, 'the mission tier runs the compiled mission entry');
+  assert.match(source, /dist', 'src', 'mission', 'serve\.js'/, 'the compiled entry is dist/src/mission/serve.js');
+  // ...and it must NEVER be started by the public roles, so no public
+  // deployment can accidentally expose the private dashboard.
+  assert.equal(/ROLES === 'both'[\s\S]{0,200}?launch\('mission'/.test(source), false, "'both' must not start the mission tier");
+  assert.match(source, /ROLES === 'mission'[\s\S]{0,400}?launch\('mission'/, 'the mission tier only starts under its own role');
+  // The public AKBARAL! database migrations must not run in the mission role.
+  assert.match(source, /ROLES !== 'web' && ROLES !== 'mission'[\s\S]{0,200}?applying database migrations/, 'mission role skips the public database migrations');
 });
 
 test('the tiers stay wired to the resolved ports and production flags', () => {

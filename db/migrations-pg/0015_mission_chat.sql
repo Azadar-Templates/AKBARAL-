@@ -33,5 +33,5 @@ CREATE INDEX idx_mission_chat_thread
 -- Child-agent hierarchy limits (Section 2 gates): expansions may never
 -- recurse deeper than max_agent_depth levels nor give one parent more than
 -- max_children_per_agent children. Conservative defaults; owner-tunable.
-ALTER TABLE economy_policy ADD COLUMN max_agent_depth INTEGER NOT NULL DEFAULT 2;
-ALTER TABLE economy_policy ADD COLUMN max_children_per_agent INTEGER NOT NULL DEFAULT 4;
+ALTER TABLE economy_policy ADD COLUMN max_agent_depth BIGINT NOT NULL DEFAULT 2;
+ALTER TABLE economy_policy ADD COLUMN max_children_per_agent BIGINT NOT NULL DEFAULT 4;

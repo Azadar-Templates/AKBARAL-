@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
+import { modelLifecycle, recommendedFreeModel } from '../config/google-model-lifecycle';
 import path from 'node:path';
 
 /**
@@ -362,6 +363,56 @@ const databaseCheck: LaunchCheck = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Outbound network
+//
+// Every model, search, payment and email capability needs to open a connection.
+// A host that cannot do that is not "missing a key" — it cannot run those
+// features at all, and reporting the credential checks without this one makes a
+// sandbox look launch-ready. The probe is unauthenticated: no credential is
+// read or sent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const EGRESS_PROBE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+const outboundNetworkCheck: LaunchCheck = {
+  id: 'runtime.egress',
+  area: 'Runtime',
+  title: 'The host can open outbound HTTPS to provider APIs',
+  required: true,
+  async run(context) {
+    const base = {
+      id: this.id,
+      area: this.area,
+      title: this.title,
+      required: true,
+      envKeys: [] as string[],
+      ownerAction:
+        'Deploy to a host with outbound internet access (any free tier with egress works). Without it every model, search, email and payment call fails with a transport error, whatever the credentials say.',
+    };
+    if (context.offline) {
+      return configOnly({ ...base, evidence: 'offline mode: outbound access not probed' }, 'not_configured');
+    }
+    try {
+      // ANY HTTP answer proves the path, including 401/403: we send no key.
+      const response = await context.probe({ url: EGRESS_PROBE_URL });
+      return {
+        ...base,
+        status: 'ready' as CheckStatus,
+        evidence: `provider host answered HTTP ${response.status} without a credential — outbound HTTPS works from this host`,
+        ownerAction: undefined,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        ...base,
+        status: 'unreachable' as CheckStatus,
+        evidence: `no outbound HTTPS from this host (${reason.slice(0, 120)}) — model, search, email and payment calls cannot complete here regardless of credentials`,
+      };
+    }
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Model provider (Gemini)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -399,7 +450,10 @@ const geminiCheck: LaunchCheck = {
     if (ready.status !== 'ready') return ready;
 
     // Prove a real generation call too: listing models only proves the key.
-    const model = value(context.env, 'AKBARAL_VERIFY_GEMINI_MODEL') || 'gemini-3.5-flash';
+    // Never hardcode a model id here: a retired id answers 404 and looks like
+    // a broken key. recommendedFreeModel() reads the verified model table.
+    const model = value(context.env, 'AKBARAL_VERIFY_GEMINI_MODEL') || recommendedFreeModel();
+    const lifecycle = modelLifecycle(model);
     const generation = await authenticatedProbe(
       context,
       {
@@ -411,7 +465,8 @@ const geminiCheck: LaunchCheck = {
       { ...base, evidence: '' },
     );
     if (generation.status === 'ready') {
-      return { ...ready, evidence: `${ready.evidence}; live generateContent succeeded on ${model}` };
+      const note = lifecycle.status === 'ok' ? '' : ` — WARNING: ${lifecycle.message}`;
+      return { ...ready, evidence: `${ready.evidence}; live generateContent succeeded on ${model}${note}` };
     }
     return {
       ...ready,
@@ -965,6 +1020,7 @@ const backupCheck: LaunchCheck = {
 };
 
 export const LAUNCH_CHECKS: LaunchCheck[] = [
+  outboundNetworkCheck,
   sessionSecretCheck,
   publicUrlCheck,
   databaseCheck,

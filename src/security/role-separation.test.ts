@@ -61,6 +61,8 @@ const adminEmail = `sep-admin-${suffix}@akbaral.test`;
 const ownerEmail = `sep-owner-${suffix}@akbaral.test`;
 // The mission owner is a DIFFERENT person with a different identity plane.
 const missionOwnerEmail = `sep-mission-owner-${suffix}@za141251sa.test`;
+// Identity lockdown stays ON, bound to this run's throwaway mission owner.
+process.env.ZA141251SA_OWNER_EMAIL = missionOwnerEmail;
 const missionOwnerPassword = 'mission-owner-password-separation-1';
 
 let api: ReturnType<typeof createApiServer>;
@@ -303,7 +305,12 @@ describe('ZA141251SA mission plane is a separate identity space', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: ownerEmailRequested, password: missionOwnerPassword }),
     });
-    assert.equal(refused.status, 401, 'an unknown mission identity is refused');
+    // Fail-closed: with the single-identity lockdown configured the address is
+    // rejected as unauthorised (403) before any password work; without it the
+    // unknown account fails credential verification (401). Either way no
+    // session is issued and the mission plane stays closed.
+    assert.ok([401, 403].includes(refused.status), `an unknown mission identity is refused (got ${refused.status})`);
+    assert.equal(Object.prototype.hasOwnProperty.call(refused.body ?? {}, 'token'), false, 'no session token is ever returned to an unknown identity');
   });
 
   it('a platform account with the SAME email cannot sign into the mission without the mission password', async () => {

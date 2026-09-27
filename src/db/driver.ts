@@ -100,13 +100,56 @@ function transformScalarMaxMin(sql: string): string {
   return out.join('');
 }
 
+/**
+ * SQLite `INTEGER` is a 64-bit signed integer; PostgreSQL `INTEGER` is 32-bit
+ * (max 2,147,483,647). Every schema in this repository stores money as integer
+ * cents, so a column that is perfectly legal on SQLite overflows on PostgreSQL:
+ * the mission migration that writes a $1,000,000,000 daily target
+ * (100,000,000,000 cents) failed the whole mission schema with
+ * `integer out of range`, which meant the private tier could not run on managed
+ * PostgreSQL (Neon) at all.
+ *
+ * DDL column types are therefore widened to `BIGINT`, which is the faithful
+ * equivalent of SQLite's INTEGER. Only CREATE TABLE / ALTER TABLE statements are
+ * rewritten, so casts and expressions elsewhere keep their exact meaning.
+ */
+function widenIntegerColumnsForPg(sql: string): string {
+  if (!/\b(CREATE\s+TABLE|ALTER\s+TABLE)\b/i.test(sql)) return sql;
+  // Only rewrite INTEGER where it is a COLUMN TYPE (followed by a column
+  // constraint, a comma or the end of the column list), never the
+  // `INTEGER PRIMARY KEY AUTOINCREMENT` identity form — that is key semantics,
+  // not a width, and must keep failing loudly instead of changing meaning.
+  return sql.replace(
+    /\bINTEGER\b(?!\s+PRIMARY\s+KEY\s+AUTOINCREMENT)(?=\s*(?:,|\)|NOT\s+NULL|NULL|DEFAULT|PRIMARY\s+KEY|UNIQUE|REFERENCES|CHECK|GENERATED|COLLATE|$))/gi,
+    'BIGINT',
+  );
+}
+
 export function translateSqlForPg(sql: string): string {
-  let out = transformScalarMaxMin(sql);
+  let out = widenIntegerColumnsForPg(transformScalarMaxMin(sql));
 
   out = out.replace(
     /strftime\(\s*'%Y-%m-%dT%H:%M:%fZ'\s*,\s*'now'\s*\)/g,
     `to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
   );
+
+  // SQLite datetime() → PostgreSQL. Timestamps are stored as ISO-8601 TEXT
+  // everywhere in this codebase, so the result must stay TEXT in exactly the
+  // same format or `created_at >= datetime(…)` comparisons silently change
+  // meaning. Four real forms exist in this repository (literal offset,
+  // parameterised offset, bare now, and datetime(column)).
+  const PG_UTC_TEXT = `to_char(%s, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+  const utcText = (expression: string) => PG_UTC_TEXT.replace('%s', expression);
+  out = out.replace(
+    /datetime\(\s*'now'\s*,\s*'-'\s*\|\|\s*\?\s*\|\|\s*' days'\s*\)/gi,
+    utcText("(now() at time zone 'utc') - ((?)::text || ' days')::interval"),
+  );
+  out = out.replace(
+    /datetime\(\s*'now'\s*,\s*'([+-]\s*\d+\s+\w+)'\s*\)/gi,
+    (_m, offset: string) => utcText(`(now() at time zone 'utc') + interval '${String(offset).replace(/\s+/g, ' ').trim()}'`),
+  );
+  out = out.replace(/datetime\(\s*'now'\s*\)/gi, utcText("now() at time zone 'utc'"));
+  out = out.replace(/datetime\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\)/gi, (_m, column: string) => utcText(`(${column})::timestamp`));
 
   out = out.replace(
     /json_extract\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s*,\s*'\$\.[A-Za-z0-9_]+'\s*\)/g,
@@ -121,10 +164,17 @@ export function translateSqlForPg(sql: string): string {
     },
   );
 
-  if (/^\s*INSERT OR IGNORE INTO/i.test(out)) {
-    out = out.replace(/^\s*INSERT OR IGNORE INTO/i, 'INSERT INTO');
-    out = out.replace(/;\s*$/, '');
-    out = `${out} ON CONFLICT DO NOTHING`;
+  // A statement may legitimately start with comments (migration files document
+  // every insert). Skip them before deciding whether this is an upsert, or the
+  // rewrite silently does not happen and PostgreSQL reports
+  // `syntax error at or near "OR"`.
+  const leadingTrivia = /^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)*/.exec(out)?.[0] ?? '';
+  const statementBody = out.slice(leadingTrivia.length);
+  if (/^INSERT OR IGNORE INTO/i.test(statementBody)) {
+    const rewritten = statementBody
+      .replace(/^INSERT OR IGNORE INTO/i, 'INSERT INTO')
+      .replace(/;\s*$/, '');
+    out = `${leadingTrivia}${rewritten} ON CONFLICT DO NOTHING`;
   }
 
   out = out.replace(
@@ -137,6 +187,86 @@ export function translateSqlForPg(sql: string): string {
   }
 
   return out;
+}
+
+
+/**
+ * Split a SQL script into individual statements.
+ *
+ * `exec()` is handed whole migration files, but every dialect rule in
+ * `translateSqlForPg` is written for ONE statement (`INSERT OR IGNORE` →
+ * `ON CONFLICT DO NOTHING`, DDL integer widening, …). Passing a whole file
+ * through those rules silently skipped every statement except the first, which
+ * is why a mission migration containing `INSERT OR IGNORE` failed on
+ * PostgreSQL with `syntax error at or near "OR"`.
+ *
+ * Quoted strings (with '' escapes), quoted identifiers, line comments and
+ * block comments are respected, so a semicolon inside any of them never splits
+ * a statement.
+ */
+export function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let inString = false;
+  let inIdentifier = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+    if (inLineComment) {
+      current += ch;
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      current += ch;
+      if (ch === '*' && next === '/') {
+        current += next;
+        i += 1;
+        inBlockComment = false;
+      }
+      continue;
+    }
+    if (!inString && !inIdentifier && ch === '-' && next === '-') {
+      current += ch + next;
+      i += 1;
+      inLineComment = true;
+      continue;
+    }
+    if (!inString && !inIdentifier && ch === '/' && next === '*') {
+      current += ch + next;
+      i += 1;
+      inBlockComment = true;
+      continue;
+    }
+    if (!inIdentifier && ch === "'") {
+      inString = !inString;
+      current += ch;
+      continue;
+    }
+    if (!inString && ch === '"') {
+      inIdentifier = !inIdentifier;
+      current += ch;
+      continue;
+    }
+    if (ch === ';' && !inString && !inIdentifier) {
+      if (current.trim()) statements.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) statements.push(current.trim());
+  return statements;
+}
+
+/** Translate a whole SQL script statement by statement. */
+export function translateScriptForPg(sql: string): string {
+  return splitSqlStatements(sql)
+    .map((statement) => translateSqlForPg(statement))
+    .filter((statement) => statement.trim().length > 0)
+    .join(';\n') + ';';
 }
 
 /** Rewrite `?` placeholders as `$1..$n`, skipping single-quoted strings. */
@@ -332,8 +462,9 @@ export class Database {
   exec(sql: string): void {
     if (this.engine === 'postgres') {
       // No placeholder rewrite here (exec has no parameters) — but dialect
-      // translation still applies (e.g. the _migrations applied_at default).
-      this.pgBridge(translateSqlForPg(sql));
+      // translation still applies (e.g. the _migrations applied_at default),
+      // and it must apply to EVERY statement in the script, not just the first.
+      this.pgBridge(translateScriptForPg(sql));
       return;
     }
     this.connection!.exec(sql);

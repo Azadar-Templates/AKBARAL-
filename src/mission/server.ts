@@ -26,12 +26,15 @@ import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarning
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
 import { recordResourcePeriod, listResourcePeriods, type ResourcePeriodInput } from './resource-periods';
-import { agentChatConfig, configureAgentChat, listAgentChatJobs, type AgentChatConfig } from './chat-state';
+import { agentChatConfig, chatModelLifecycle, configureAgentChat, listAgentChatJobs, CHAT_MODEL, type AgentChatConfig } from './chat-state';
 import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
 import { agentBriefing, agentChatReadiness } from './agent-briefing';
+import { agentCatalogIdentity, agentCatalogSummary, matchCatalogSlugs } from './agent-identity';
+import { enableAgentChatFreeTier, disableAgentChat } from './chat-enablement';
+import { checkProviderReachability, reachabilityNote } from './provider-reachability';
 import {
   METHOD_TYPES,
   listWithdrawalMethods,
@@ -1366,6 +1369,20 @@ async function handleApi(
       return true;
     }
 
+    // ── Provider reachability (preflight, no credential involved) ───────────
+    case 'provider-reachability': {
+      if (method !== 'GET') break;
+      requireOwner(context, false);
+      // Answers "can this runtime reach Google at all?" before a key is ever
+      // entered. The probe is unauthenticated: no credential is read or sent.
+      const reachability = await checkProviderReachability({ force: url.searchParams.get('force') === '1' });
+      // The bound model travels with the verdict so the dashboard never has to
+      // hardcode a model name that the server could change underneath it.
+      const lifecycle = chatModelLifecycle();
+      json(res, 200, { reachability, note: reachabilityNote(reachability), model: CHAT_MODEL, modelLifecycle: lifecycle });
+      return true;
+    }
+
     // ── Policy ──────────────────────────────────────────────────────────────
     case 'policy': {
       requireRead(context);
@@ -1421,20 +1438,66 @@ async function handleApi(
         json(res, 201, created);
         return true;
       }
+      if (rest.length === 1 && rest[0] === 'categories' && method === 'GET') {
+        // Facets for fleet filtering: every category that actually exists in the
+        // registry, with its real agent count. No invented groupings.
+        const rows = missionDb.all<Row>(
+          "SELECT COALESCE(category, '') AS category, COUNT(*) AS count FROM mission_agents GROUP BY COALESCE(category, '') ORDER BY category",
+        );
+        json(res, 200, {
+          total: Number(missionDb.get<Row>('SELECT COUNT(*) AS count FROM mission_agents')?.count ?? 0),
+          categories: rows.map((row) => ({ category: String(row.category), count: Number(row.count) })),
+        });
+        return true;
+      }
       if (rest.length === 0) {
-        const query = (url.searchParams.get('q') ?? '').trim().toLowerCase();
+        const query = (url.searchParams.get('q') ?? '').trim().toLowerCase().slice(0, 120);
+        const category = (url.searchParams.get('category') ?? '').trim().slice(0, 120);
         const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 50)));
         const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0));
-        const where = query ? 'WHERE lower(slug) LIKE ? OR lower(name) LIKE ?' : '';
-        const params: Array<string | number> = query ? [`%${query}%`, `%${query}%`] : [];
+        const clauses: string[] = [];
+        const params: Array<string | number> = [];
+        if (category) {
+          clauses.push('category = ?');
+          params.push(category);
+        }
+        if (query) {
+          // Searchable by what an agent IS, not only what it is called: slug,
+          // name and category come from the mission row; role, archetype,
+          // purpose, capability and tool terms come from the registry catalog
+          // that defines this exact slug. Catalog matches are resolved to slugs
+          // so the database stays the single source of truth for which agents
+          // exist.
+          const catalogSlugs = matchCatalogSlugs(query, 4200);
+          const like = `%${query}%`;
+          const parts = ['lower(slug) LIKE ?', 'lower(name) LIKE ?', 'lower(COALESCE(category, \'\')) LIKE ?', 'lower(COALESCE(capabilities, \'\')) LIKE ?'];
+          params.push(like, like, like, like);
+          if (catalogSlugs.length) {
+            parts.push(`slug IN (${catalogSlugs.map(() => '?').join(',')})`);
+            params.push(...catalogSlugs);
+          }
+          clauses.push(`(${parts.join(' OR ')})`);
+        }
+        const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
         // Newest first: an agent the owner just created must be visible at the
         // top of the list, not buried behind thousands of synced registry rows.
         const rows = missionDb.all<Row>(
-          `SELECT id, slug, name, category, mission_role, status, depth, parent_id, generation FROM mission_agents ${where} ORDER BY created_at DESC, slug LIMIT ? OFFSET ?`,
+          `SELECT id, slug, name, category, mission_role, status, depth, parent_id, generation, capabilities FROM mission_agents ${where} ORDER BY created_at DESC, slug LIMIT ? OFFSET ?`,
           [...params, limit, offset],
         );
-        const total = missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_agents ${where}`, params);
-        json(res, 200, { total: Number(total?.count ?? 0), limit, offset, agents: rows });
+        const total = Number(missionDb.get<Row>(`SELECT COUNT(*) AS count FROM mission_agents ${where}`, params)?.count ?? 0);
+        const fleetTotal = Number(missionDb.get<Row>('SELECT COUNT(*) AS count FROM mission_agents')?.count ?? 0);
+        json(res, 200, {
+          total,
+          fleetTotal,
+          limit,
+          offset,
+          hasMore: offset + rows.length < total,
+          nextOffset: offset + rows.length < total ? offset + rows.length : null,
+          query: query || null,
+          category: category || null,
+          agents: rows.map((row) => ({ ...row, identity: agentCatalogSummary(String(row.slug)) })),
+        });
         return true;
       }
       const slug = rest[0];
@@ -1457,6 +1520,39 @@ async function handleApi(
         }
         throw new HttpProblem(405, 'unsupported chat operation', 'method_not_allowed');
       }
+      if (rest[1] === 'chat-enable' && method === 'POST') {
+        // One owner action performs the whole $0 chain: encrypted credential →
+        // zero-cost Google resource → provisioned at 0 → free-tier chat binding.
+        // The key is read from the body straight into the vault; it is never
+        // logged, audited, echoed or returned.
+        const session = requireOwner(context, true);
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        const reachability = await checkProviderReachability();
+        const result = enableAgentChatFreeTier({
+          agentId: String(agent.id),
+          apiKey: String(body.apiKey ?? ''),
+          dailyRequests: body.dailyRequests as number | undefined,
+          dailyTokens: body.dailyTokens as number | undefined,
+          maxInputBytes: body.maxInputBytes as number | undefined,
+          maxOutputTokens: body.maxOutputTokens as number | undefined,
+          allowSupportActivity: body.allowSupportActivity === undefined ? true : Boolean(body.allowSupportActivity),
+          actorId: session.owner.id,
+        });
+        json(res, 200, {
+          ...result,
+          reachability,
+          note: `The provider key is stored encrypted in the mission vault. Replies are produced only by the chat worker calling the provider; nothing in this dashboard writes a reply on an agent’s behalf. ${reachabilityNote(reachability)}`,
+        });
+        return true;
+      }
+      if (rest[1] === 'chat-disable' && method === 'POST') {
+        const session = requireOwner(context, true);
+        const agent = findAgentBySlug(slug) ?? findAgentById(slug);
+        if (!agent) throw new HttpProblem(404, 'agent not found', 'not_found');
+        json(res, 200, disableAgentChat({ agentId: String(agent.id), revokeKey: Boolean(body.revokeKey), actorId: session.owner.id }));
+        return true;
+      }
       if (rest[1] === 'chat-status' && method === 'GET') {
         // Truthful answer to "can this agent actually reply?" — no side effects.
         requireOwner(context, false);
@@ -1467,6 +1563,10 @@ async function handleApi(
           agentId: agent.id,
           slug: agent.slug,
           readiness: agentChatReadiness(agent.id),
+          // What this specific agent was designed to do: purpose, workflow,
+          // expected inputs/outputs, verification rules and the tools its
+          // domain needs. Static registry metadata, never invented per request.
+          identity: agentCatalogIdentity(String(agent.slug)),
           briefing,
           jobs: listAgentChatJobs(agent.id, Number.MAX_SAFE_INTEGER, 10).jobs,
           note: 'Replies are produced only by the mission chat pipeline (queued job → metered provider call → recorded reply). Nothing in this dashboard writes a reply on an agent’s behalf.',

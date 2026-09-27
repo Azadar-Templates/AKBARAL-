@@ -27,11 +27,40 @@ export const SESSION_SECRET_PLACEHOLDERS = new Set([
 ]);
 
 export function resolveSessionSecretFilePath() {
+  return resolveSessionSecretFileCandidates()[0];
+}
+
+/**
+ * Every location the secret may live in, most authoritative first.
+ *
+ * Production defaults to `/data/.session-secret` because that is the mounted
+ * volume in the Docker/compose deployment. Free container hosts (no attachable
+ * volume) have no writable `/data`, and the previous single-path behaviour
+ * silently degraded to "generated, not persisted" — meaning every container
+ * restart invalidated every issued session. Falling back to the configured
+ * DATA_DIR (and then to the application directory) keeps sessions alive across
+ * restarts on those hosts whenever ANY writable location exists, and the caller
+ * still logs exactly which one was used.
+ *
+ * @returns {string[]}
+ */
+export function resolveSessionSecretFileCandidates() {
+  const candidates = [];
+  const add = (dir) => {
+    if (!dir) return;
+    const resolved = path.resolve(dir, '.session-secret');
+    if (!candidates.includes(resolved)) candidates.push(resolved);
+  };
   if (process.env.AKBARAL_SESSION_SECRET_FILE) {
-    return path.resolve(process.env.AKBARAL_SESSION_SECRET_FILE);
+    const explicit = path.resolve(process.env.AKBARAL_SESSION_SECRET_FILE);
+    candidates.push(explicit);
+    return candidates;
   }
-  const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : 'data');
-  return path.resolve(dataDir, '.session-secret');
+  if (process.env.DATA_DIR) add(process.env.DATA_DIR);
+  else if (process.env.NODE_ENV === 'production') add('/data');
+  add(process.env.NODE_ENV === 'production' ? '/data' : 'data');
+  add('data');
+  return candidates;
 }
 
 /**
@@ -39,39 +68,47 @@ export function resolveSessionSecretFilePath() {
  * @returns {{ value: string, source: 'explicit'|'persisted'|'generated'|'generated-unpersisted', secretFile: string }}
  */
 export function ensureSessionSecret(log = () => {}) {
-  const secretFile = resolveSessionSecretFilePath();
+  const candidates = resolveSessionSecretFileCandidates();
+  const secretFile = candidates[0];
   const explicit = String(process.env.SESSION_SECRET ?? '').trim();
   if (explicit && !SESSION_SECRET_PLACEHOLDERS.has(explicit.toLowerCase())) {
     log('SESSION_SECRET is explicitly configured — using it as-is (authoritative).');
     return { value: explicit, source: 'explicit', secretFile };
   }
 
-  try {
-    if (existsSync(secretFile)) {
-      const persisted = readFileSync(secretFile, 'utf8').trim();
-      if (persisted.length >= 32) {
-        log(`SESSION_SECRET not set — reusing the previously generated secret persisted at ${secretFile}.`);
-        return { value: persisted, source: 'persisted', secretFile };
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) {
+        const persisted = readFileSync(candidate, 'utf8').trim();
+        if (persisted.length >= 32) {
+          log(`SESSION_SECRET not set — reusing the previously generated secret persisted at ${candidate}.`);
+          return { value: persisted, source: 'persisted', secretFile: candidate };
+        }
+        log(`persisted secret at ${candidate} is invalid (too short) — generating a new one.`);
       }
-      log(`persisted secret at ${secretFile} is invalid (too short) — generating a new one.`);
+    } catch (error) {
+      log(`could not read the persisted session secret at ${candidate} (${error instanceof Error ? error.message : String(error)}).`);
     }
-  } catch (error) {
-    log(`could not read the persisted session secret (${error instanceof Error ? error.message : String(error)}); generating a new one.`);
   }
 
   const generated = randomBytes(48).toString('base64url');
-  try {
-    mkdirSync(path.dirname(secretFile), { recursive: true });
-    writeFileSync(secretFile, `${generated}\n`, { mode: 0o600 });
-    chmodSync(secretFile, 0o600);
-    log(`SESSION_SECRET not set — generated a new random secret and persisted it to ${secretFile} (mode 0600). The value is never logged.`);
-    return { value: generated, source: 'generated', secretFile };
-  } catch (error) {
-    log(
-      `SESSION_SECRET not set — generated a random secret for this process, but could not persist it ` +
-        `(${error instanceof Error ? error.message : String(error)}). Sessions will not survive a restart ` +
-        'until SESSION_SECRET is configured explicitly or a writable volume is available. The value is never logged.',
-    );
-    return { value: generated, source: 'generated-unpersisted', secretFile };
+  const failures = [];
+  for (const candidate of candidates) {
+    try {
+      mkdirSync(path.dirname(candidate), { recursive: true });
+      writeFileSync(candidate, `${generated}\n`, { mode: 0o600 });
+      chmodSync(candidate, 0o600);
+      log(`SESSION_SECRET not set — generated a new random secret and persisted it to ${candidate} (mode 0600). The value is never logged.`);
+      return { value: generated, source: 'generated', secretFile: candidate };
+    } catch (error) {
+      failures.push(`${candidate} (${error instanceof Error ? error.message : String(error)})`);
+    }
   }
+
+  log(
+    `SESSION_SECRET not set — generated a random secret for this process, but no location was writable: ` +
+      `${failures.join('; ')}. Sessions will not survive a restart ` +
+      'until SESSION_SECRET is configured explicitly or a writable volume is available. The value is never logged.',
+  );
+  return { value: generated, source: 'generated-unpersisted', secretFile };
 }

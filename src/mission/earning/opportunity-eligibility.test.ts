@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import { TEST_OWNER_EMAIL } from '../testing/locked-owner';
 process.env.ZA141251SA_DATABASE_URL = `file:${path.join(os.tmpdir(), `mission-eligibility-${randomUUID()}.db`)}`;
 import { before, after, it, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ before(()=> {
   applyMissionMigrations();
   PlatformDiscovery.seedPlatforms();
   const { provisionOwner } = require('../auth') as typeof import('../auth');
-  try { const o = provisionOwner({email:`elig-${randomUUID()}@test.local`, password:'StrongPass!123', displayName:'Elig'}); ownerId = o.id ?? (o as { owner?: { id?: string } }).owner?.id; } catch { const { missionDb } = require('../database'); const r = missionDb.get('SELECT id FROM mission_owner LIMIT 1'); if (!r) throw new Error('no mission owner row - test cannot run'); ownerId = String(r.id); }
+  try { const o = provisionOwner({email: TEST_OWNER_EMAIL, password:'StrongPass!123', displayName:'Elig'}); ownerId = o.id ?? (o as { owner?: { id?: string } }).owner?.id; } catch { const { missionDb } = require('../database'); const r = missionDb.get('SELECT id FROM mission_owner LIMIT 1'); if (!r) throw new Error('no mission owner row - test cannot run'); ownerId = String(r.id); }
   updatePolicy({allowAgentCreation:true, maxAgents:5000}, ownerId);
 });
 after(()=> { const { missionDb } = require('../database') as typeof import('../database'); missionDb.close(); });

@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import path from 'node:path'; import os from 'node:os';
+import { TEST_OWNER_EMAIL } from '../testing/locked-owner';
 process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${path.join(os.tmpdir(),`earneng-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET='synthetic-earneng-tests-not-live';
 import {before, beforeEach, after, it} from 'node:test'; import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ let ownerId: string;
 let agentA: string; let agentB: string;
 before(()=>{
   applyMissionMigrations();
-  const o:any = provisionOwner({email:'earn-owner@example.test', password:'StrongPass!123', displayName:'Earn Owner'});
+  const o:any = provisionOwner({email: TEST_OWNER_EMAIL, password:'StrongPass!123', displayName:'Earn Owner'});
   ownerId = String(o.id ?? o.owner?.id ?? 'earn-owner');
   // ensure agents
   agentA = `agt-a-${randomUUID().slice(0,8)}`;

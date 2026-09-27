@@ -14,6 +14,7 @@ const { appendAgentMessage, listAgentMessages } = require('./messaging') as type
 const { configureAgentChat, listAgentChatJobs, CHAT_MODEL } = require('./chat-state') as typeof import('./chat-state');
 const { runNextAgentChat, recoverAgentChatJobs } = require('./chat-worker') as typeof import('./chat-worker');
 const { invokeGoogleChat } = require('./chat-provider') as typeof import('./chat-provider');
+const { thinkingConfigFor } = require('../config/google-model-lifecycle') as typeof import('../config/google-model-lifecycle');
 const { heldResourceBudget } = require('./resource-budget-state') as typeof import('./resource-budget-state');
 const { recordResourceCallCost } = require('./resource-budgets') as typeof import('./resource-budgets');
 const { settleResourceCall, cancelResourceCall } = require('./resource-calls') as typeof import('./resource-calls');
@@ -31,7 +32,7 @@ function fixture(enabled = true) {
   recordResourceUsage({ id: resourceId, usage: { requests: 0, tokens: 0 }, ...owner });
   const wallet = createWallet({ kind: 'agent', agentId, label: 'Synthetic chat wallet', budgetCents: 100 });
   credit({ walletId: wallet.id, amountCents: 100, category: 'transfer', memo: 'Synthetic fixture funds' });
-  const config: import('./chat-state').AgentChatConfig = { enabled, resourceId, walletId: wallet.id, model: CHAT_MODEL, maxInputBytes: 2000, maxOutputTokens: 128, maxCostCents: 40, costBasis: 'Synthetic owner-specified test cap; not a verified provider price.' };
+  const config: import('./chat-state').AgentChatConfig = { enabled, resourceId, walletId: wallet.id, model: CHAT_MODEL, maxInputBytes: 2000, maxOutputTokens: 128, maxCostCents: 40, costBasis: 'Synthetic owner-specified test cap; not a verified provider price.', billing: 'metered' };
   configureAgentChat(agentId, config, owner);
   const message = (body = 'Synthetic owner message', key: string = randomUUID()) => appendAgentMessage({ agentId, ...owner, body, idempotencyKey: key });
   return { agentId, resourceId, walletId: wallet.id, credentialId: credential.id, config, message };
@@ -149,11 +150,14 @@ it('crash recovery marks old dispatched calls uncertain, keeps exposure and forb
 it('fixed Google adapter uses the encrypted credential only in a header, with no tools or redirects', async () => {
   const f = fixture(); f.message();
   const job = await runChat(f, (permit, signal, request) => invokeGoogleChat(permit, signal, request, (async (url, init) => {
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${CHAT_MODEL}:generateContent`);
     assert.equal(init!.redirect, 'error'); assert.equal(init!.signal, signal);
     assert.equal((init!.headers as Record<string, string>)['x-goog-api-key'], 'synthetic-not-a-real-provider-key');
     const body = JSON.parse(String(init!.body));
-    assert.equal(body.tools, undefined); assert.equal(body.generationConfig.thinkingConfig.thinkingBudget, 0);
+    assert.equal(body.tools, undefined);
+    // Gemini 3.x rejects thinkingBudget with HTTP 400; 2.x rejects thinkingLevel.
+    // The body must carry exactly the shape the bound model accepts.
+    assert.deepEqual(body.generationConfig.thinkingConfig, thinkingConfigFor(CHAT_MODEL));
     assert.equal(body.generationConfig.maxOutputTokens, 128);
     assert.ok(!String(init!.body).includes('synthetic-not-a-real-provider-key'));
     return new Response(JSON.stringify({ responseId: `synthetic-${randomUUID()}`, usageMetadata: { totalTokenCount: 22 }, candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Synthetic transport reply; not a live model call.' }] } }] }));

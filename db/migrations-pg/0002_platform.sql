@@ -50,17 +50,17 @@ CREATE TABLE IF NOT EXISTS plans (
   key TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   description TEXT,
-  price_cents INTEGER NOT NULL DEFAULT 0,
+  price_cents BIGINT NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'PKR',
   billing_interval TEXT NOT NULL DEFAULT 'month',
-  monthly_credits INTEGER NOT NULL DEFAULT 0,
-  max_agents INTEGER NOT NULL DEFAULT 3,
-  max_workspaces INTEGER NOT NULL DEFAULT 1,
-  max_seats INTEGER NOT NULL DEFAULT 1,
-  max_usage_per_day INTEGER NOT NULL DEFAULT 0,
+  monthly_credits BIGINT NOT NULL DEFAULT 0,
+  max_agents BIGINT NOT NULL DEFAULT 3,
+  max_workspaces BIGINT NOT NULL DEFAULT 1,
+  max_seats BIGINT NOT NULL DEFAULT 1,
+  max_usage_per_day BIGINT NOT NULL DEFAULT 0,
   features TEXT,
   status TEXT NOT NULL DEFAULT 'active',
-  sort_order INTEGER NOT NULL DEFAULT 0,
+  sort_order BIGINT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
@@ -87,11 +87,11 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   trial_ends_at TEXT,
   current_period_start TEXT,
   current_period_end TEXT,
-  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  cancel_at_period_end BIGINT NOT NULL DEFAULT 0,
   billing_provider TEXT NOT NULL DEFAULT 'manual', -- manual | stripe | razorpay | custom
   provider_customer_id TEXT,
   provider_subscription_id TEXT,
-  seats INTEGER NOT NULL DEFAULT 1,
+  seats BIGINT NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS entitlements (
   plan_id TEXT REFERENCES plans(id) ON DELETE SET NULL,
   feature TEXT NOT NULL,
   value TEXT,
-  enabled INTEGER NOT NULL DEFAULT 1,
+  enabled BIGINT NOT NULL DEFAULT 1,
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
@@ -140,8 +140,8 @@ FOR EACH ROW EXECUTE FUNCTION trg_entitlements_updated_at_fn();
 CREATE TABLE IF NOT EXISTS credit_purchases (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  amount_cents INTEGER NOT NULL,
-  credits INTEGER NOT NULL,
+  amount_cents BIGINT NOT NULL,
+  credits BIGINT NOT NULL,
   currency TEXT NOT NULL DEFAULT 'PKR',
   provider TEXT NOT NULL DEFAULT 'manual',
   provider_order_id TEXT,
@@ -159,9 +159,9 @@ CREATE TABLE IF NOT EXISTS invoices (
   subscription_id TEXT REFERENCES subscriptions(id) ON DELETE SET NULL,
   number TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'draft', -- draft | due | paid | void | refunded
-  subtotal_cents INTEGER NOT NULL DEFAULT 0,
-  tax_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents INTEGER NOT NULL DEFAULT 0,
+  subtotal_cents BIGINT NOT NULL DEFAULT 0,
+  tax_cents BIGINT NOT NULL DEFAULT 0,
+  total_cents BIGINT NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'PKR',
   line_items TEXT,
   provider TEXT NOT NULL DEFAULT 'manual',
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS payments (
   provider TEXT NOT NULL DEFAULT 'manual',
   provider_payment_id TEXT,
   status TEXT NOT NULL DEFAULT 'pending', -- pending | succeeded | failed | refunded
-  amount_cents INTEGER NOT NULL,
+  amount_cents BIGINT NOT NULL,
   currency TEXT NOT NULL DEFAULT 'PKR',
   failure_code TEXT,
   failure_reason TEXT,
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS billing_events (
   event_type TEXT NOT NULL, -- invoice.paid | payment.failed | subscription.cancelled | refund
   provider TEXT NOT NULL DEFAULT 'manual',
   payload TEXT,
-  processed INTEGER NOT NULL DEFAULT 0,
+  processed BIGINT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
@@ -233,12 +233,12 @@ CREATE TABLE IF NOT EXISTS agent_marketplace (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL UNIQUE REFERENCES agents(id) ON DELETE CASCADE,
   publisher_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-  price_cents INTEGER NOT NULL DEFAULT 0,
+  price_cents BIGINT NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'PKR',
   status TEXT NOT NULL DEFAULT 'draft', -- draft | pending_review | published | removed
   rating DOUBLE PRECISION,
-  review_count INTEGER NOT NULL DEFAULT 0,
-  install_count INTEGER NOT NULL DEFAULT 0,
+  review_count BIGINT NOT NULL DEFAULT 0,
+  install_count BIGINT NOT NULL DEFAULT 0,
   tags TEXT,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
@@ -251,8 +251,8 @@ CREATE TABLE IF NOT EXISTS user_agents (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  saved INTEGER NOT NULL DEFAULT 0,
-  favorite INTEGER NOT NULL DEFAULT 0,
+  saved BIGINT NOT NULL DEFAULT 0,
+  favorite BIGINT NOT NULL DEFAULT 0,
   installed_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   UNIQUE(user_id, agent_id)
 );
@@ -298,18 +298,18 @@ CREATE TABLE IF NOT EXISTS models (
   provider_key TEXT NOT NULL,
   capability TEXT NOT NULL DEFAULT 'llm', -- llm | image | video | audio | speech | embedding
   modality TEXT NOT NULL DEFAULT 'text', -- text | image | video | audio | multimodal
-  context_tokens INTEGER,
-  max_output_tokens INTEGER,
-  cost_input_per_million_cents INTEGER NOT NULL DEFAULT 0,
-  cost_output_per_million_cents INTEGER NOT NULL DEFAULT 0,
-  cost_per_image_cents INTEGER NOT NULL DEFAULT 0,
-  latency_ms INTEGER NOT NULL DEFAULT 0,
+  context_tokens BIGINT,
+  max_output_tokens BIGINT,
+  cost_input_per_million_cents BIGINT NOT NULL DEFAULT 0,
+  cost_output_per_million_cents BIGINT NOT NULL DEFAULT 0,
+  cost_per_image_cents BIGINT NOT NULL DEFAULT 0,
+  latency_ms BIGINT NOT NULL DEFAULT 0,
   reliability DOUBLE PRECISION NOT NULL DEFAULT 0.95,
   strengths TEXT,
   weaknesses TEXT,
   status TEXT NOT NULL DEFAULT 'disabled', -- enabled | disabled | degraded | retired
-  is_default INTEGER NOT NULL DEFAULT 0,
-  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_default BIGINT NOT NULL DEFAULT 0,
+  sort_order BIGINT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
@@ -335,10 +335,10 @@ CREATE TABLE IF NOT EXISTS model_runs (
   agent_execution_id TEXT REFERENCES agent_executions(id) ON DELETE SET NULL,
   provider_key TEXT,
   status TEXT NOT NULL DEFAULT 'pending', -- pending | running | succeeded | failed
-  latency_ms INTEGER,
-  input_tokens INTEGER,
-  output_tokens INTEGER,
-  cost_cents INTEGER,
+  latency_ms BIGINT,
+  input_tokens BIGINT,
+  output_tokens BIGINT,
+  cost_cents BIGINT,
   error_message TEXT,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
@@ -361,9 +361,9 @@ CREATE TABLE IF NOT EXISTS tools (
   input_schema TEXT,
   output_schema TEXT,
   security_permissions TEXT,
-  requires_credential INTEGER NOT NULL DEFAULT 0,
+  requires_credential BIGINT NOT NULL DEFAULT 0,
   required_credential_env_key TEXT,
-  supports_streaming INTEGER NOT NULL DEFAULT 0,
+  supports_streaming BIGINT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
   metadata TEXT,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
@@ -409,7 +409,7 @@ CREATE TABLE IF NOT EXISTS files (
   original_name TEXT NOT NULL,
   storage_key TEXT NOT NULL UNIQUE,
   mime_type TEXT,
-  size_bytes INTEGER NOT NULL DEFAULT 0,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
   sha256 TEXT,
   kind TEXT NOT NULL DEFAULT 'document', -- document | image | audio | video | spreadsheet | archive
   status TEXT NOT NULL DEFAULT 'uploaded',
@@ -426,9 +426,9 @@ CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 CREATE TABLE IF NOT EXISTS file_versions (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  version INTEGER NOT NULL DEFAULT 1,
+  version BIGINT NOT NULL DEFAULT 1,
   storage_key TEXT NOT NULL,
-  size_bytes INTEGER NOT NULL DEFAULT 0,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   UNIQUE(file_id, version)
 );
@@ -496,7 +496,7 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
   model_key TEXT,
   tool_key TEXT,
-  step_order INTEGER NOT NULL DEFAULT 0,
+  step_order BIGINT NOT NULL DEFAULT 0,
   depends_on TEXT, -- comma list of step ids
   status TEXT NOT NULL DEFAULT 'pending', -- pending | running | completed | failed | skipped
   result_json TEXT,
@@ -519,7 +519,7 @@ CREATE TABLE IF NOT EXISTS agent_orders (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  amount_cents INTEGER NOT NULL DEFAULT 0,
+  amount_cents BIGINT NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'PKR',
   status TEXT NOT NULL DEFAULT 'completed',
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
@@ -533,7 +533,7 @@ CREATE TABLE IF NOT EXISTS referrals (
   referrer_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   referred_user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'signed_up', -- signed_up | activated | paid
-  reward_cents INTEGER NOT NULL DEFAULT 0,
+  reward_cents BIGINT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
@@ -572,7 +572,7 @@ CREATE TABLE IF NOT EXISTS feature_flags (
   key TEXT NOT NULL UNIQUE,
   value TEXT,
   description TEXT,
-  enabled INTEGER NOT NULL DEFAULT 1,
+  enabled BIGINT NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );

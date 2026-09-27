@@ -10,6 +10,9 @@ process.env.ZA141251SA_DATABASE_URL = `file:${require('node:path').join(require(
 process.env.ZA141251SA_SESSION_SECRET = 'test-session-secret-0123456789abcdefghijklmnop';
 process.env.ZA141251SA_CREDENTIAL_KEY = 'test-credential-key-0123456789abcdefghijklmn';
 process.env.ZA141251SA_CURRENCY = 'USD';
+// Keep the single-identity lockdown ENFORCED but point it at this throwaway
+// database's owner, so an inherited deployment .env cannot break the fixture.
+process.env.ZA141251SA_OWNER_EMAIL = 'owner@za.test';
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

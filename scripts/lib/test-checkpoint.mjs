@@ -110,8 +110,15 @@ async function validate(state, fingerprint, files) {
   const passed = state.attempts.filter(attempt => attempt.status === 'passed');
   if (passed.some((attempt, index) => attempt.file !== files[index])) throw new Error('Invalid checkpoint ordering');
   for (const attempt of passed) {
-    if (fileDigest(attempt.log) !== attempt.logHash || fileDigest(attempt.snapshot) !== attempt.snapshotHash) throw new Error('Checkpoint evidence was changed or corrupted; refusing to skip tests');
+    if (fileDigest(attempt.log) !== attempt.logHash) throw new Error('Checkpoint evidence was changed or corrupted; refusing to skip tests');
+    // A superseded snapshot may have been reclaimed for disk space. Its hash
+    // stays recorded as evidence and the file must not silently come back:
+    // anything present must still match what was verified.
+    if (attempt.snapshotPruned && !fs.existsSync(attempt.snapshot)) continue;
+    if (fileDigest(attempt.snapshot) !== attempt.snapshotHash) throw new Error('Checkpoint evidence was changed or corrupted; refusing to skip tests');
   }
+  const resumeFrom = passed.at(-1);
+  if (resumeFrom && resumeFrom.snapshotPruned && !fs.existsSync(resumeFrom.snapshot)) throw new Error('The resume snapshot was reclaimed; start a new run directory');
   if (state.bootstrap && fileDigest(state.bootstrap.snapshot) !== state.bootstrap.snapshotHash) throw new Error('Bootstrap snapshot is corrupted');
   if (alive(state.active?.child) && state.active.deadline && Date.now() >= state.active.deadline) {
     // Recover only the recorded, identity-matched test process group after its
@@ -184,6 +191,30 @@ export function pruneCompletedWorkingCopy(attempt) {
   fs.unlinkSync(working);
 }
 
+/** Optional disk-safe retention for long suites: a full run keeps one verified
+ * database snapshot per test file (tens of MB each), which exhausted the disk
+ * mid-run. Only the snapshot the next file resumes from is actually needed, so
+ * superseded ones are reclaimed after their recorded hash is re-verified. The
+ * hash, the TAP log and the checkpoint entry stay — the evidence is not lost,
+ * only the redundant copy of the database.
+ */
+export function pruneSupersededSnapshots(state, keep = 1) {
+  const passed = state.attempts.filter(attempt => attempt.status === 'passed');
+  const retained = new Set(passed.slice(-Math.max(1, keep)));
+  let reclaimed = 0;
+  for (const attempt of passed) {
+    if (retained.has(attempt) || attempt.snapshotPruned) continue;
+    const snapshot = path.resolve(attempt.snapshot ?? '');
+    if (!fs.existsSync(snapshot)) { attempt.snapshotPruned = true; continue; }
+    if (!fs.lstatSync(snapshot).isFile() || fs.lstatSync(snapshot).isSymbolicLink()) throw new Error('Not a disposable snapshot');
+    if (fileDigest(snapshot) !== attempt.snapshotHash || fileDigest(attempt.log) !== attempt.logHash) throw new Error('Completed evidence is corrupted; refusing cleanup');
+    reclaimed += fs.statSync(snapshot).size;
+    fs.unlinkSync(snapshot);
+    attempt.snapshotPruned = true;
+  }
+  return reclaimed;
+}
+
 /** Immutable successful DB snapshots keep failed/interrupted writes out of retries.
  * Only test-owned databases under directory are created; existing DBs are never reset.
  */
@@ -220,6 +251,7 @@ export async function runBatch(options) {
         if (file === '__bootstrap__') state.bootstrap = attempt;
         save();
         if (options.pruneWorkingCopies) pruneCompletedWorkingCopy(attempt);
+        if (options.pruneSupersededSnapshots) { pruneSupersededSnapshots(state, 1); save(); }
         options.onCheckpoint?.(summarize(state));
         return attempt;
       } catch (error) {

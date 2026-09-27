@@ -23,8 +23,8 @@ CREATE TABLE automations_new (
   condition_json TEXT,
   steps_json TEXT,
   status TEXT NOT NULL DEFAULT 'active',     -- active | paused
-  run_count INTEGER NOT NULL DEFAULT 0,
-  fail_count INTEGER NOT NULL DEFAULT 0,
+  run_count BIGINT NOT NULL DEFAULT 0,
+  fail_count BIGINT NOT NULL DEFAULT 0,
   last_run_at TEXT,
   next_run_at TEXT,                          -- NULL => not scheduled (fired one-shot / paused / legacy)
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
@@ -32,8 +32,8 @@ CREATE TABLE automations_new (
   trigger_type TEXT,                         -- 'schedule' for scheduler-managed rows
   schedule_json TEXT,                        -- {kind:'once'|'cron'|'interval', ...}
   description TEXT,
-  timeout_ms INTEGER NOT NULL DEFAULT 900000,
-  max_retries INTEGER NOT NULL DEFAULT 1
+  timeout_ms BIGINT NOT NULL DEFAULT 900000,
+  max_retries BIGINT NOT NULL DEFAULT 1
 );
 
 INSERT INTO automations_new
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS automation_runs (
   started_at TEXT,
   finished_at TEXT,
   error_message TEXT,
-  attempt INTEGER NOT NULL DEFAULT 1,
+  attempt BIGINT NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 

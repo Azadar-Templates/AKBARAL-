@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -15,7 +16,12 @@ import path from 'node:path';
  *     DSNs, redaction fixtures) are reported by count only, and every one of
  *     them must be listed by exact literal in scripts/scan-secrets-allowlist.json;
  *   - `--strict` ignores the allowlist, so the gate cannot hide anything — an
- *     auditor can always see the raw marker list.
+ *     auditor can always see the raw marker list;
+ *   - files that are BOTH untracked AND git-ignored (a developer's local .env,
+ *     a downloaded key file) are skipped: they cannot reach a commit, and a
+ *     local runtime secret must not be able to block the launch gate. Anything
+ *     git could actually commit — every tracked file, every untracked file that
+ *     is not ignored — is always scanned. `--all` disables the skip.
  *
  * A security gate that fails on its own fixtures gets ignored or bypassed; a
  * gate that silently allows markers is worse. This keeps both properties honest.
@@ -34,6 +40,27 @@ const EXCLUDE_DIRS = new Set([
 ]);
 
 const MAX_FILE_BYTES = 2_000_000;
+
+/**
+ * Absolute paths of files that are untracked AND ignored by git, i.e. files
+ * that no commit can contain. Returns an empty set when `root` is not inside a
+ * git work tree or git is unavailable — the scan then covers everything, so the
+ * gate always fails closed.
+ */
+function uncommittableFiles(root: string): Set<string> {
+  const skip = new Set<string>();
+  const result = spawnSync('git', ['-C', root, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z'], {
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') {
+    return skip;
+  }
+  for (const relative of result.stdout.split('\0')) {
+    if (relative.length > 0) skip.add(path.resolve(root, relative));
+  }
+  return skip;
+}
 
 const PATTERNS: Array<{ key: string; regex: RegExp }> = [
   { key: 'aws-access-key', regex: /AKIA[0-9A-Z]{16}/g },
@@ -122,13 +149,19 @@ function walk(root: string, onFile: (file: string) => void): void {
   }
 }
 
-export function scanSecretMarkers(options: { root?: string; strict?: boolean; baseDir?: string } = {}): SecretFinding[] {
+export function scanSecretMarkers(
+  options: { root?: string; strict?: boolean; baseDir?: string; includeUncommittable?: boolean } = {},
+): SecretFinding[] {
   const root = options.root ?? process.cwd();
   const baseDir = options.baseDir ?? process.cwd();
   const allowlist = options.strict ? [] : loadAllowlist(baseDir);
+  const skip = options.includeUncommittable ? new Set<string>() : uncommittableFiles(root);
   const findings: SecretFinding[] = [];
 
   walk(root, (file) => {
+    if (skip.has(path.resolve(file))) {
+      return;
+    }
     const ext = path.extname(file).toLowerCase();
     const base = path.basename(file).toLowerCase();
     if (['.png', '.jpg', '.jpeg', '.gif', '.bin', '.db', '.sqlite'].includes(ext) || base.endsWith('.hbc')) {
@@ -184,15 +217,17 @@ export function realFindings(findings: SecretFinding[]): SecretFinding[] {
 
 if (require.main === module) {
   const strict = process.argv.includes('--strict');
-  const findings = scanSecretMarkers({ strict });
+  const includeUncommittable = process.argv.includes('--all');
+  const findings = scanSecretMarkers({ strict, includeUncommittable });
   const real = realFindings(findings);
   const allowed = findings.length - real.length;
 
   if (real.length === 0) {
     console.log(
-      `[scan-secrets] PASS no real secret markers found in the working tree` +
+      `[scan-secrets] PASS no real secret markers found in the committable working tree` +
         (allowed > 0 ? ` (${allowed} allow-listed synthetic placeholder${allowed === 1 ? '' : 's'})` : '') +
-        (strict ? ' [strict: allowlist ignored]' : ''),
+        (strict ? ' [strict: allowlist ignored]' : '') +
+        (includeUncommittable ? ' [--all: git-ignored local files scanned too]' : ''),
     );
     process.exit(0);
   }

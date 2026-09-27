@@ -48,7 +48,7 @@ CREATE TABLE owner_alerts (
   severity TEXT NOT NULL DEFAULT 'warning', -- info | warning | critical
   title TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '',
-  occurrences INTEGER NOT NULL DEFAULT 1,
+  occurrences BIGINT NOT NULL DEFAULT 1,
   status TEXT NOT NULL DEFAULT 'open',  -- open | acknowledged | resolved
   delivery_status TEXT NOT NULL DEFAULT 'stored', -- stored | not_configured | sent | failed
   delivery_ref TEXT,

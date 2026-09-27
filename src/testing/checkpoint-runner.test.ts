@@ -152,6 +152,34 @@ it('pruning retains failed-run databases and refuses cleanup when immutable evid
   assert.throws(()=>pruneCompletedWorkingCopy({...a,database:a.snapshot}),/Not a disposable/);assert.equal(fs.existsSync(a.snapshot),true);
 });
 
+it('reclaiming superseded snapshots keeps every hash and log, and still resumes', async () => {
+  // A full run used to keep one database copy per test file and filled the
+  // disk (ENOSPC) part-way through the suite. Only the snapshot the next file
+  // resumes from is needed; the rest are reclaimed after re-verification.
+  const f = fixture();
+  await runBatch({ ...f.options, batchSize: 2, pruneWorkingCopies: true, pruneSupersededSnapshots: true });
+  const passed = f.state().attempts.filter((a: any) => a.status === 'passed');
+  assert.equal(passed.length, 2);
+  assert.equal(fs.existsSync(passed[0].snapshot), false, 'the superseded snapshot is reclaimed');
+  assert.equal(passed[0].snapshotPruned, true);
+  assert.ok(passed[0].snapshotHash, 'its verified hash is still recorded as evidence');
+  assert.equal(fs.existsSync(passed[0].log), true, 'the TAP log is never removed');
+  assert.equal(fs.existsSync(passed[1].snapshot), true, 'the resume snapshot is retained');
+
+  const result = await runBatch({ ...f.options, pruneWorkingCopies: true, pruneSupersededSnapshots: true });
+  assert.equal(result.complete, true);
+  assert.equal(result.pass, 3);
+  assert.equal(f.state().attempts.length, 3, 'completed files are not replayed');
+});
+
+it('a reclaimed snapshot that reappears with different content still fails the resume', async () => {
+  const f = fixture();
+  await runBatch({ ...f.options, batchSize: 2, pruneWorkingCopies: true, pruneSupersededSnapshots: true });
+  const pruned = f.state().attempts[0];
+  fs.writeFileSync(pruned.snapshot, 'substituted evidence');
+  await assert.rejects(runBatch({ ...f.options, pruneWorkingCopies: true, pruneSupersededSnapshots: true }), /corrupted/);
+});
+
 it('the full-suite runner must not force process exit and truncate completed test reporting', () => {
   const script=fs.readFileSync(path.resolve('scripts/test-resumable.mjs'),'utf8');
   assert.equal(script.includes('--test-force-exit'),false);

@@ -64,7 +64,7 @@ CREATE INDEX idx_platform_assignments_agent ON economy_platform_assignments(agen
 CREATE TABLE economy_delivery_payments (
   delivery_id TEXT PRIMARY KEY REFERENCES economy_deliveries(id) ON DELETE CASCADE,
   revenue_id TEXT NOT NULL,
-  amount_cents INTEGER NOT NULL,
+  amount_cents BIGINT NOT NULL,
   evidence TEXT NOT NULL,
   external_ref TEXT,
   recorded_by TEXT NOT NULL,
@@ -75,7 +75,7 @@ CREATE TABLE economy_delivery_payments (
 CREATE TABLE economy_reinvestments (
   id TEXT PRIMARY KEY,
   agent_slug TEXT NOT NULL,
-  amount_cents INTEGER NOT NULL,
+  amount_cents BIGINT NOT NULL,
   purpose TEXT NOT NULL,
   idempotency_key TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'proposed',   -- proposed | executed | rejected

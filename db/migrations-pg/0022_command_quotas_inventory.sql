@@ -51,13 +51,13 @@ CREATE INDEX idx_economy_commands_agent ON economy_commands(agent_slug, created_
 CREATE INDEX idx_economy_commands_status ON economy_commands(status);
 
 -- 2. Per-agent spend quotas -------------------------------------------------
-ALTER TABLE economy_agent_profiles ADD COLUMN daily_spend_quota_cents INTEGER NULL;
-ALTER TABLE economy_agent_profiles ADD COLUMN monthly_spend_quota_cents INTEGER NULL;
+ALTER TABLE economy_agent_profiles ADD COLUMN daily_spend_quota_cents BIGINT NULL;
+ALTER TABLE economy_agent_profiles ADD COLUMN monthly_spend_quota_cents BIGINT NULL;
 
 -- 3. Upgrade autonomy gates --------------------------------------------------
-ALTER TABLE economy_policy ADD COLUMN auto_upgrade_enabled INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE economy_policy ADD COLUMN max_auto_upgrade_cost_cents INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE economy_upgrades ADD COLUMN cost_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN auto_upgrade_enabled BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN max_auto_upgrade_cost_cents BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE economy_upgrades ADD COLUMN cost_cents BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE economy_upgrades ADD COLUMN requested_by_agent TEXT NULL;
 
 -- 4. Inventory scale ----------------------------------------------------------
@@ -71,11 +71,11 @@ CREATE INDEX idx_platforms_source ON economy_platforms(source);
 CREATE TABLE economy_inventory_batches (
   id TEXT PRIMARY KEY,
   source TEXT NOT NULL,
-  received INTEGER NOT NULL DEFAULT 0,
-  imported INTEGER NOT NULL DEFAULT 0,
-  duplicates INTEGER NOT NULL DEFAULT 0,
-  quarantined INTEGER NOT NULL DEFAULT 0,
-  rejected INTEGER NOT NULL DEFAULT 0,
+  received BIGINT NOT NULL DEFAULT 0,
+  imported BIGINT NOT NULL DEFAULT 0,
+  duplicates BIGINT NOT NULL DEFAULT 0,
+  quarantined BIGINT NOT NULL DEFAULT 0,
+  rejected BIGINT NOT NULL DEFAULT 0,
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );

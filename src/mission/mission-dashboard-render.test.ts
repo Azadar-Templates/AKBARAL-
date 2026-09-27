@@ -42,7 +42,7 @@ const briefing = (slug: string, name: string) => ({
 });
 
 const readiness = {
-  ready: false, configured: false, enabled: false, provider: 'google', model: 'gemini-2.5-flash',
+  ready: false, configured: false, enabled: false, provider: 'google', model: (require('../config/google-model-lifecycle') as typeof import('../config/google-model-lifecycle')).recommendedFreeModel(),
   blockers: ['No AI provider is configured for this agent.'],
   status: 'AI PROVIDER NOT CONFIGURED',
   message: 'AI provider not configured. This agent has no model credential, resource binding or chat budget, so no reply can be generated.',

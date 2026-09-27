@@ -27,17 +27,17 @@
 -- reachable only through /api/economy/* behind requireRole('owner',
 -- 'super_admin'), and never join user billing data.
 
-ALTER TABLE economy_policy ADD COLUMN spawn_rate_per_hour INTEGER NOT NULL DEFAULT 6;
-ALTER TABLE economy_policy ADD COLUMN spawn_cost_cents INTEGER NOT NULL DEFAULT 50;
-ALTER TABLE economy_policy ADD COLUMN freeze_spending INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE economy_policy ADD COLUMN freeze_withdrawals INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE economy_policy ADD COLUMN provider_access_revoked INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN spawn_rate_per_hour BIGINT NOT NULL DEFAULT 6;
+ALTER TABLE economy_policy ADD COLUMN spawn_cost_cents BIGINT NOT NULL DEFAULT 50;
+ALTER TABLE economy_policy ADD COLUMN freeze_spending BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN freeze_withdrawals BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE economy_policy ADD COLUMN provider_access_revoked BIGINT NOT NULL DEFAULT 0;
 
 -- Per-agent budget accounting. budget_cents is what the owner has authorised
 -- this agent to spend in total; spend_cents is what it has actually spent
 -- (debits already posted in economy_ledger). A spawn debits the parent.
-ALTER TABLE economy_agent_profiles ADD COLUMN budget_cents INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE economy_agent_profiles ADD COLUMN spend_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE economy_agent_profiles ADD COLUMN budget_cents BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE economy_agent_profiles ADD COLUMN spend_cents BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE economy_agent_profiles ADD COLUMN paused_at TEXT;
 ALTER TABLE economy_agent_profiles ADD COLUMN paused_reason TEXT;
 
@@ -49,9 +49,9 @@ CREATE TABLE economy_delegations (
   decision TEXT NOT NULL,                     -- authorized | rejected
   reason TEXT NOT NULL,
   checks_json TEXT NOT NULL,                  -- every gate and its verdict
-  depth INTEGER NOT NULL DEFAULT 0,
-  spawn_cost_cents INTEGER NOT NULL DEFAULT 0,
-  rate_used_in_window INTEGER NOT NULL DEFAULT 0,
+  depth BIGINT NOT NULL DEFAULT 0,
+  spawn_cost_cents BIGINT NOT NULL DEFAULT 0,
+  rate_used_in_window BIGINT NOT NULL DEFAULT 0,
   actor TEXT NOT NULL DEFAULT 'system',       -- system | owner | <agent_slug>
   decided_at TEXT NOT NULL
 );

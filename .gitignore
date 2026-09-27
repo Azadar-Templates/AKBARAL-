@@ -40,6 +40,7 @@ Thumbs.db
 # Local PostgreSQL test harness data (PGlite)
 .pglite-test/
 .pglite-mission-test/
+.pglite-*/
 
 # Python deploy-tooling cache
 **/__pycache__/

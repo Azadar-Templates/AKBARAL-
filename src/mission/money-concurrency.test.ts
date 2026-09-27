@@ -10,6 +10,9 @@ const m=require('./money') as typeof import('./money');
 const {updatePolicy,setKillSwitch}=require('./policy') as typeof import('./policy');
 import type {Row} from './database';
 const owner={kind:'owner' as const,id:`race-owner-${randomUUID()}`},agent=`race-agent-${randomUUID()}`;
+// Single-identity lockdown stays ENFORCED, bound to this fixture's own
+// throwaway owner (an inherited deployment .env would otherwise refuse it).
+process.env.ZA141251SA_OWNER_EMAIL=`${owner.id}@example.test`;
 before(()=>{
  applyMissionMigrations();
  db.run("INSERT INTO mission_owner (id,email,password_hash,role,status) VALUES (?,?,'test-only','owner','active')",[owner.id,`${owner.id}@example.test`]);

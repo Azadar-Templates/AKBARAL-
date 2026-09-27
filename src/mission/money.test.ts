@@ -16,6 +16,9 @@ const {confirmPayoutVerification,PAYOUT_VERIFICATION_CHECKS}=require('./payout-v
 import type { Row } from './database';
 import type { MoneyProvider, CashReceipt, PaymentResult } from './money';
 const owner={kind:'owner' as const,id:`test-owner-${randomUUID()}`},a=`test-agent-${randomUUID()}`,b=`test-agent-${randomUUID()}`;
+// Single-identity lockdown stays ENFORCED, bound to this fixture's own
+// throwaway owner (an inherited deployment .env would otherwise refuse it).
+process.env.ZA141251SA_OWNER_EMAIL=`${owner.id}@example.test`;
 let receipt:CashReceipt, sends=0;
 let response:PaymentResult;
 const provider:MoneyProvider={id:'fixture-only',supports:()=>true,verifyReceipt:async()=>receipt,pay:async()=>{sends++;return response;},lookup:async()=>response};

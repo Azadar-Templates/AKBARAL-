@@ -4,6 +4,12 @@ import os from 'node:os';
 process.env.ZA141251SA_DATABASE_URL = `file:${path.join(os.tmpdir(), `mission-adversarial-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET = 'adversarial-test-secret-not-live';
 process.env.ZA141251SA_CREDENTIAL_KEY = '0123456789abcdef0123456789abcdef0123456789ab';
+// The identity lock is a production guarantee, not a test nuisance: an ambient
+// ZA141251SA_OWNER_EMAIL (a real deployment .env) would refuse to provision this
+// suite's owner and the whole file would abort. The test therefore declares its
+// OWN locked identity and keeps the lock switched on.
+const ADVERSARIAL_OWNER_EMAIL = `adv-${randomUUID()}@test.local`;
+process.env.ZA141251SA_OWNER_EMAIL = ADVERSARIAL_OWNER_EMAIL;
 import { before, after, it, describe } from 'node:test';
 import assert from 'node:assert/strict';
 const { applyMissionMigrations, missionDb } = require('./database') as typeof import('./database');
@@ -37,7 +43,7 @@ before(()=>{
   applyMissionMigrations();
   const { provisionOwner } = require('./auth') as typeof import('./auth');
   const { updatePolicy } = require('./policy') as typeof import('./policy');
-  try { const o = provisionOwner({email:`adv-${randomUUID()}@test.local`, password:'StrongPass!123', displayName:'Adversarial Owner'}); ownerId = o.id ?? (o as { owner?: { id?: string } }).owner?.id; } catch { const r = missionDb.get<{ id: string }>('SELECT id FROM mission_owner LIMIT 1'); if (!r) throw new Error('no mission owner row - test cannot run'); ownerId = String(r.id); }
+  try { const o = provisionOwner({email: ADVERSARIAL_OWNER_EMAIL, password:'StrongPass!123', displayName:'Adversarial Owner'}); ownerId = o.id ?? (o as { owner?: { id?: string } }).owner?.id; } catch { const r = missionDb.get<{ id: string }>('SELECT id FROM mission_owner LIMIT 1'); if (!r) throw new Error('no mission owner row - test cannot run'); ownerId = String(r.id); }
   updatePolicy({allowAgentCreation:true, maxAgents:5000, requireApprovalAboveCents: 10000, maxDailySpendCents: 500000, maxExpenseCents: 100000, requireOwnerForPayout: false}, ownerId);
   const idA = `agt_adv_a_${randomUUID().slice(0,6)}`; const idB = `agt_adv_b_${randomUUID().slice(0,6)}`;
   missionDb.run("INSERT OR IGNORE INTO mission_agents (id,slug,name,role_key,depth,generation,status,mission_role,origin_platform,capabilities) VALUES (?,?,?,?,0,'custom','active','worker','mission','[]')", [idA, `adv-a-${idA.slice(-4)}`, 'Adv A','specialist']);

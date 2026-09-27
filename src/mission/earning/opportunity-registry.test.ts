@@ -2,6 +2,9 @@ import {randomUUID} from 'node:crypto';
 import path from 'node:path'; import os from 'node:os';
 process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${path.join(os.tmpdir(),`registry-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET='synthetic-registry-tests-not-live';
+// Single-identity lockdown stays ENFORCED, bound to this fixture's own
+// throwaway owner (an inherited deployment .env would otherwise refuse it).
+process.env.ZA141251SA_OWNER_EMAIL='fixture-registry@example.test';
 import {before, beforeEach, after, it} from 'node:test'; import assert from 'node:assert/strict';
 import {missionDb, applyMissionMigrations} from '../database';
 import * as money from '../money';

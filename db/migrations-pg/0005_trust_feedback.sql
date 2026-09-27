@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS task_ratings (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   execution_id TEXT REFERENCES agent_executions(id) ON DELETE SET NULL,
-  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  rating BIGINT NOT NULL CHECK (rating >= 1 AND rating <= 5),
   comment TEXT,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),

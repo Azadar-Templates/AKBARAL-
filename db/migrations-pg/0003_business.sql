@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS crm_deals (
   contact_id TEXT REFERENCES crm_contacts(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   stage TEXT NOT NULL DEFAULT 'new',
-  amount_cents INTEGER NOT NULL DEFAULT 0,
+  amount_cents BIGINT NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'PKR',
   probability DOUBLE PRECISION NOT NULL DEFAULT 0,
   expected_close_at TEXT,
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS automations (
   condition_json TEXT,
   steps_json TEXT,
   status TEXT NOT NULL DEFAULT 'active',
-  run_count INTEGER NOT NULL DEFAULT 0,
+  run_count BIGINT NOT NULL DEFAULT 0,
   last_run_at TEXT,
   created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   updated_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))

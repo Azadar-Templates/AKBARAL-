@@ -1,6 +1,19 @@
 import { spawn } from 'node:child_process';
 import { ensureSessionSecret } from './lib/session-secret.mjs';
 
+import { existsSync as __envFileExists } from 'node:fs';
+// Load `.env` exactly like the application does (src/config/env.ts) BEFORE any
+// startup decision is made. Without this the wrapper judged SESSION_SECRET,
+// DATABASE_URL and the mission variables as "not set" while the child
+// processes — which do load .env — saw them, producing contradictory startup
+// logs and a per-process session secret. dotenv never overrides a variable the
+// host already injected, so real deployments are unaffected.
+if (__envFileExists('.env')) {
+  const { config: __loadEnvFile } = await import('dotenv');
+  __loadEnvFile();
+}
+
+
 /**
  * Development start for the AKBARAL! platform.
  *

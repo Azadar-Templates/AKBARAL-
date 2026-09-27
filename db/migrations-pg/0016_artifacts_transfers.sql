@@ -24,7 +24,7 @@ CREATE TABLE project_artifacts (
   user_id TEXT NOT NULL,
   kind TEXT NOT NULL,                     -- website|document|data|image
   title TEXT NOT NULL,
-  version INTEGER NOT NULL,
+  version BIGINT NOT NULL,
   content TEXT NOT NULL,
   source_workflow_id TEXT,
   created_at TEXT NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE economy_transfers (
   id TEXT PRIMARY KEY,
   source_agent_slug TEXT NOT NULL,
   destination TEXT NOT NULL DEFAULT 'treasury',  -- main treasury (only destination today)
-  amount_cents INTEGER NOT NULL,
+  amount_cents BIGINT NOT NULL,
   currency TEXT NOT NULL DEFAULT 'USD',
   reason TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'proposed',       -- proposed|executed|rejected

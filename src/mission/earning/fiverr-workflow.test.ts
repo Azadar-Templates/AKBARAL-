@@ -2,6 +2,9 @@ import {randomUUID} from 'node:crypto';
 import path from 'node:path';import os from 'node:os';
 process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${path.join(os.tmpdir(),`fiverr-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET='synthetic-fiverr-tests-not-live-credentials';
+// Single-identity lockdown stays ENFORCED, bound to this fixture's own
+// throwaway owner (an inherited deployment .env would otherwise refuse it).
+process.env.ZA141251SA_OWNER_EMAIL='fixture-fiverr@example.test';
 import {before,beforeEach,after,it} from 'node:test';import assert from 'node:assert/strict';
 import type {FiverrAuthority,FiverrOrder,FiverrDelivery,FiverrRemittance,FiverrReceivingProof,FiverrReversal,FiverrProvider,FiverrUsdReceiver} from './fiverr-contracts';
 const {FiverrWorkflow,readFiverrProof,configuredFiverrWorkflow}=require('./fiverr-workflow') as typeof import('./fiverr-workflow');

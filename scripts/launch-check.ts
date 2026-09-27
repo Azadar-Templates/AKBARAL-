@@ -21,6 +21,11 @@
  * Secrets are never printed: results carry variable names and provider status
  * codes only.
  */
+// Load .env exactly like the application does (src/config/env.ts), so the
+// local check sees the same configuration the server would instead of
+// reporting variables as missing when they are only absent from this shell.
+// A real deployment injects its own environment; dotenv never overrides it.
+import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runLaunchChecks, readinessPercent, type CheckStatus, type LaunchReport } from '../src/launch/checks';

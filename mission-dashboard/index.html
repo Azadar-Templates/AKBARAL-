@@ -84,13 +84,16 @@
 
           <!-- 2a. browse -->
           <div data-sub-panel="browse">
+            <div id="fleet-banner" class="fleet-banner"></div>
             <form id="agent-quick-search" class="searchbar">
-              <input name="q" placeholder="Search agents" autocomplete="off" />
+              <input name="q" placeholder="Search by name, slug, category, role or capability" autocomplete="off" />
+              <select name="category" id="agent-category" aria-label="Filter by category"></select>
               <button type="submit">Search</button>
             </form>
             <div id="agent-summary" class="chips"></div>
             <div id="agent-detail" class="drawer" hidden></div>
             <div id="agent-cards" class="list"></div>
+            <div id="agent-more" class="loadmore"></div>
           </div>
 
           <!-- 2b. chat workspace -->

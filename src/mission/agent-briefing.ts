@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { missionDb, type Row } from './database';
+import { agentCatalogIdentity } from './agent-identity';
 import { agentChatConfig, assertAgentChatReady, CHAT_MODEL } from './chat-state';
 import { currentPolicy, checkActivity } from './policy';
 import { MissionSelfServiceError } from './self-management';
@@ -34,8 +35,16 @@ export interface AgentChatReadiness {
   /** Exact, owner-readable reasons a reply cannot be produced. */
   blockers: string[];
   /** Short status label for the dashboard. */
-  status: 'READY' | 'AI PROVIDER NOT CONFIGURED' | 'BLOCKED';
+  status: 'READY' | 'AI PROVIDER NOT CONFIGURED' | 'REPLIES OFF' | 'BLOCKED';
   message: string;
+  /**
+   * How a reply would be paid for. `free_tier` is the only binding that cannot
+   * cost money: zero cost cap, no wallet, quota-metered by the provider itself.
+   * Never carries a credential, only the arrangement.
+   */
+  billing: 'free_tier' | 'metered' | null;
+  maxCostCents: number;
+  walletBound: boolean;
 }
 
 export function agentChatReadiness(agentId: string): AgentChatReadiness {
@@ -64,7 +73,16 @@ export function agentChatReadiness(agentId: string): AgentChatReadiness {
   }
   const configured = Boolean(config);
   const ready = blockers.length === 0;
-  const status: AgentChatReadiness['status'] = ready ? 'READY' : configured ? 'BLOCKED' : 'AI PROVIDER NOT CONFIGURED';
+  // An owner who switched replies off is not looking at a fault: say so, and
+  // keep 'BLOCKED' for the case where something really is wrong.
+  const switchedOff = configured && !config!.enabled;
+  const status: AgentChatReadiness['status'] = ready
+    ? 'READY'
+    : switchedOff
+      ? 'REPLIES OFF'
+      : configured
+        ? 'BLOCKED'
+        : 'AI PROVIDER NOT CONFIGURED';
   return {
     ready,
     configured,
@@ -73,9 +91,14 @@ export function agentChatReadiness(agentId: string): AgentChatReadiness {
     model: CHAT_MODEL,
     blockers,
     status,
+    billing: config ? (config.billing as 'free_tier' | 'metered') : null,
+    maxCostCents: Number(config?.maxCostCents ?? 0),
+    walletBound: Boolean(config?.walletId),
     message: ready
       ? 'Messages are executed by the mission chat pipeline: the message is queued, a metered model call is made against this agent’s own resource budget, and the reply is written back into this conversation.'
-      : configured
+      : switchedOff
+        ? 'Replies are switched off for this agent by owner action. Messages are still recorded and delivered, and nothing replies until the binding is switched back on.'
+        : configured
         ? 'This agent cannot reply right now. The blockers below are read from the live mission state; no reply is generated while any of them stands.'
         : 'AI provider not configured. This agent has no model credential, resource binding or chat budget, so no reply can be generated. Messages are still recorded and delivered.',
   };
@@ -96,6 +119,8 @@ export interface AgentBriefing {
   verifiedRevenueCents: number;
   expectedRevenueCents: number;
   tools: string[];
+  /** Designed identity from the registry catalog (purpose, workflow, rules). */
+  identity: ReturnType<typeof agentCatalogIdentity>;
   resources: Array<{ provider: string; kind: string; status: string }>;
   lastActivity: Array<{ at: string; action: string }>;
   /** The factual context block sent to the model. Contains no secrets. */
@@ -139,9 +164,21 @@ export function agentBriefing(agentId: string): AgentBriefing | null {
   const currency = String(wallet?.currency ?? policy.currency ?? 'USD');
   const map = (row: Row) => ({ id: String(row.id), title: String(row.title), status: String(row.status), updatedAt: String(row.updated_at) });
 
+  const identity = agentCatalogIdentity(String(agent.slug));
+
   const lines = [
     'MISSION AGENT CONTEXT (read from the ZA141251SA database at reply time; treat as the only source of truth about yourself).',
     `Identity: ${String(agent.name)} (slug ${String(agent.slug)}, id ${agentId}).`,
+    ...(identity
+      ? [
+          `You are the ${identity.name}: ${identity.specialization}. Purpose: ${identity.purpose}.`,
+          `Designed workflow: ${identity.workflow.join(' → ')}.`,
+          `Expected inputs: ${identity.inputs.join(', ')}. Expected outputs: ${identity.outputs.join(', ')}.`,
+          `Verification rules you are held to: ${identity.verificationRules.join('; ')}.`,
+          `Security constraints: ${identity.securityPermissions.join('; ')}.`,
+          `Tools your domain is designed around (each still requires owner approval before use): ${identity.toolPermissions.join(', ') || 'none'}.`,
+        ]
+      : ['No registry catalog identity is recorded for this slug; answer only from the operational state below.']),
     `Mission role: ${String(agent.mission_role ?? 'worker')}. Category: ${agent.category ? String(agent.category) : 'none recorded'}. Status: ${String(agent.status)}.`,
     `Capabilities on record: ${capabilities.length ? capabilities.join(', ') : 'none recorded'}.`,
     `Approved tools: ${tools.length ? tools.join(', ') : 'none approved'}.`,
@@ -168,6 +205,7 @@ export function agentBriefing(agentId: string): AgentBriefing | null {
     verifiedRevenueCents: num(revenue?.verified),
     expectedRevenueCents: num(revenue?.expected),
     tools,
+    identity,
     resources,
     lastActivity,
     text: lines.join('\n'),

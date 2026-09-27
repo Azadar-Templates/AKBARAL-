@@ -3,6 +3,9 @@ import path from 'node:path';
 import os from 'node:os';
 process.env.ZA141251SA_DATABASE_URL=process.env.PG_TEST_DATABASE_URL||`file:${path.join(os.tmpdir(),`freelancer-${randomUUID()}.db`)}`;
 process.env.ZA141251SA_SESSION_SECRET='fixture-only-freelancer-session-not-live';
+// Single-identity lockdown stays ENFORCED, bound to this fixture's own
+// throwaway owner (an inherited deployment .env would otherwise refuse it).
+process.env.ZA141251SA_OWNER_EMAIL='fixture-freelancer@example.test';
 import { before,beforeEach,after,it } from 'node:test';
 import assert from 'node:assert/strict';
 // The synchronous PG bridge unrefs its worker. Keep the test process alive until

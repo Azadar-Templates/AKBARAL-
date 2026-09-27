@@ -111,6 +111,11 @@ describe('mission social publishing connections', () => {
     process.env.ZA141251SA_CREDENTIAL_KEY = VAULT_KEY;
     process.env.ZA141251SA_SESSION_SECRET = 'mission-social-test-session-secret-32-chars';
     process.env.ZA141251SA_SITE_URL = 'https://mission.example.test';
+    // The single-identity lockdown stays ENFORCED, bound to this throwaway
+    // database's owner. It must be set here, after the sweep above: importing
+    // the mission modules loads dotenv, which would otherwise restore a real
+    // deployment's owner address from .env and refuse this fixture.
+    process.env.ZA141251SA_OWNER_EMAIL = 'owner@mission.test';
 
     fixture = await startPlatformFixture();
     process.env.TIKTOK_CLIENT_KEY = 'fixture-client-key';

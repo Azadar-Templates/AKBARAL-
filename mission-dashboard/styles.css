@@ -385,3 +385,43 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .chathead .chip { flex: none; }
   .table-wrap { overflow-x: auto; }
 }
+
+/* ── Fleet browser, agent profile and chat enablement ───────────────────────── */
+.fleet-banner {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  background: linear-gradient(160deg, #13324a, #121821); border: 1px solid #21506f;
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
+}
+.fleet-banner strong { font-size: 18px; letter-spacing: -0.01em; color: #7cc4ff; }
+
+.searchbar select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 9px; padding: 8px 10px; font: inherit; max-width: 240px;
+}
+.loadmore { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.loadmore p { margin: 0; }
+
+.row .sub.purpose { color: #9db4c8; }
+.purpose { margin: 4px 0 0; font-size: 13px; color: #9db4c8; }
+.drawer-head .purpose { max-width: 60ch; }
+
+.steps { margin: 4px 0 0 18px; padding: 0; font-size: 12.5px; color: #b6c4d3; }
+.steps li { margin: 3px 0; }
+
+.chatitem .role { display: block; font-size: 11px; color: #7f8fa2; margin-top: 2px; }
+
+.enable-form {
+  display: grid; gap: 8px; margin-top: 10px; padding: 12px;
+  border: 1px solid #23324a; border-radius: 10px; background: #0c1421;
+}
+.enable-form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.enable-form input {
+  background: #0e141c; color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; font: inherit; width: 100%;
+}
+.side.wrap { flex-wrap: wrap; }
+
+/* Provider reachability: the runtime's own verdict, shown before a key is typed. */
+.reachability { display: block; margin-top: 8px; line-height: 1.5; }
+.reachability.blocked, p.small.blocked { color: #b3402f; }
+.reachability .chip { margin-right: 6px; }

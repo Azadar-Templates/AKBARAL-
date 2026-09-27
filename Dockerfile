@@ -51,9 +51,14 @@ RUN chmod +x scripts/entrypoint.sh && chown -R 1000:1000 /app && chmod -R 755 /a
 # prove which code it is running instead of trusting a mutable :latest tag.
 ARG GIT_SHA=unknown
 RUN echo "${GIT_SHA}" > /app/.image-version && chown 1000:1000 /app/.image-version
-EXPOSE 3000 4000 8080
+# 3000 web · 4000 api · 8080 alternate platform port · 4200 the PRIVATE
+# ZA141251SA tier, which only ever listens when this container is started with
+# AKBARAL_ROLES=mission (a separate service; never started by the public roles).
+EXPOSE 3000 4000 8080 4200
 # Port-aware: mirrors scripts/start-prod.mjs (web honors PORT, api moves on collision)
 # so the image reports healthy on hosts that inject their own public port (Blitz).
+# AKBARAL_ROLES=mission serves the private tier instead, so the probe follows it
+# to ZA141251SA_PORT and never reports the public tier healthy in that mode.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD node -e "let api=Number(process.env.AKBARAL_API_PORT||4000);let pub=Number(process.env.AKBARAL_WEB_PORT||process.env.PORT||3000);if(pub===api)api=api===4000?4001:api+1;fetch('http://127.0.0.1:'+pub+'/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "if((process.env.AKBARAL_ROLES||'').toLowerCase()==='mission'){const p=Number(process.env.ZA141251SA_PORT||4200);fetch('http://127.0.0.1:'+p+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))}else{let api=Number(process.env.AKBARAL_API_PORT||4000);let pub=Number(process.env.AKBARAL_WEB_PORT||process.env.PORT||3000);if(pub===api)api=api===4000?4001:api+1;fetch('http://127.0.0.1:'+pub+'/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))}"
 CMD ["sh", "scripts/entrypoint.sh"]
