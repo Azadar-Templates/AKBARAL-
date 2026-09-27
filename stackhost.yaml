@@ -64,8 +64,29 @@
 # on the Free tier. Use the already-published GHCR image (built by
 # .github/workflows/docker-publish.yml, contains dist/.next + entrypoint) so
 # StackHost only creates the runtime container (no build RAM).
+#
+# Registry (corrected 2026-09-27): the canonical image is GHCR. The publish
+# workflow lowercases $GITHUB_REPOSITORY and strips trailing non-alphanumerics,
+# so "Azadar-Templates/AKBARAL-" becomes "azadar-templates/akbaral" — and that
+# is the image src/app/stackhost-deploy.test.ts pins as the deployment contract.
+# This file had drifted to a Docker Hub mirror tag, which (a) broke that
+# contract test and, because that test aborts the suite, (b) silently skipped
+# every PostgreSQL / mission-PG / browser / webpack verification job in CI.
+# GHCR needs no extra secrets: docker-publish.yml pushes with the built-in
+# GITHUB_TOKEN. The Docker Hub mirror remains available as a fallback for hosts
+# that cannot pull from GHCR, but it is no longer the source of truth.
+#
+# NOTE FOR THE OWNER (one-time, free): the GHCR package must be set to Public
+# for a third-party host to pull it anonymously —
+# github.com/orgs/Azadar-Templates/packages → akbaral → Package settings →
+# Change visibility → Public. Otherwise StackHost gets an unauthorized pull.
+#
+# `:latest` is the rolling tag maintained by docker-publish.yml on every push to
+# main. To pin an immutable build for rollback, replace it with the 40-char
+# commit SHA tag, which the same workflow publishes alongside latest:
+#   image: ghcr.io/azadar-templates/akbaral:<commit-sha>
 runtime:
-  image: mrzain555/akbaral:c8bcf07d9360d1d5ffa9b56c9fafa2b0dfa1e637
+  image: ghcr.io/azadar-templates/akbaral:latest
 
 commands:
   package: ""

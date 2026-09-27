@@ -197,6 +197,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  process.stderr.write(`\n  mission PostgreSQL check FAILED: ${error instanceof Error ? error.message : String(error)}\n\n`);
+  process.stderr.write(`\n  mission PostgreSQL check FAILED: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n\n`);
   process.exit(1);
 });

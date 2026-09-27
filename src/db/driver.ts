@@ -41,6 +41,100 @@ const PG_QUERY_TIMEOUT_MS = 120_000;
  *   4. INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
  *   5. knowledge_fts MATCH ? → GIN tsvector websearch match
  */
+/**
+ * `INSERT OR IGNORE INTO …` → `INSERT INTO … ON CONFLICT DO NOTHING`.
+ *
+ * STATEMENT-AWARE ON PURPOSE. This used to be a single `^\s*INSERT OR IGNORE`
+ * regex anchored to the start of the whole string, which worked for the
+ * one-statement-per-call `run()` path but silently did nothing for `exec()`,
+ * whose argument is an ENTIRE migration file. Any `INSERT OR IGNORE` that was
+ * not the first statement in the file reached PostgreSQL verbatim and failed
+ * with `syntax error at or near "OR"` — which is exactly what blocked mission
+ * migrations 0030 and 0031 on PostgreSQL (mission:pg-check).
+ *
+ * The scan tracks single-quoted strings and dollar-quoted bodies ($$ … $$,
+ * used by the platform's trigger functions) so that a semicolon inside a
+ * literal or a function body is never mistaken for a statement boundary.
+ * Statements that do not match are re-emitted byte-for-byte unchanged.
+ */
+export function transformInsertOrIgnore(sql: string): string {
+  if (!/INSERT\s+OR\s+IGNORE\s+INTO/i.test(sql)) {
+    return sql;
+  }
+
+  const out: string[] = [];
+  let statementStart = 0;
+  let i = 0;
+
+  const flush = (endExclusive: number, terminator: string): void => {
+    const raw = sql.slice(statementStart, endExclusive);
+    // A statement slice carries any leading whitespace and `--` comment lines
+    // from after the previous semicolon, so the prefix must be allowed for.
+    const LEAD = /^((?:\s|--[^\n]*\n)*)INSERT\s+OR\s+IGNORE\s+INTO/i;
+    if (LEAD.test(raw)) {
+      const rewritten = raw.replace(LEAD, '$1INSERT INTO');
+      // Append the conflict clause to the statement body, keeping any trailing
+      // whitespace/comment layout after it intact.
+      const trailing = /\s*$/.exec(rewritten)?.[0] ?? '';
+      out.push(`${rewritten.slice(0, rewritten.length - trailing.length)} ON CONFLICT DO NOTHING${trailing}`);
+    } else {
+      out.push(raw);
+    }
+    out.push(terminator);
+    statementStart = endExclusive + terminator.length;
+  };
+
+  while (i < sql.length) {
+    const ch = sql[i];
+
+    if (ch === "'") {
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'") {
+          // '' is an escaped quote inside a string literal.
+          if (sql[i + 1] === "'") {
+            i += 2;
+            continue;
+          }
+          break;
+        }
+        i += 1;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '-' && sql[i + 1] === '-') {
+      while (i < sql.length && sql[i] !== '\n') i += 1;
+      continue;
+    }
+
+    if (ch === '$') {
+      const tag = /^\$[A-Za-z_0-9]*\$/.exec(sql.slice(i));
+      if (tag) {
+        const close = sql.indexOf(tag[0], i + tag[0].length);
+        i = close === -1 ? sql.length : close + tag[0].length;
+        continue;
+      }
+    }
+
+    if (ch === ';') {
+      flush(i, ';');
+      i += 1;
+      continue;
+    }
+
+    i += 1;
+  }
+
+  // Trailing statement with no terminating semicolon.
+  if (statementStart < sql.length) {
+    flush(sql.length, '');
+  }
+
+  return out.join('');
+}
+
 /** SQLite's scalar two-argument max(a, b)/min(a, b) becomes GREATEST/LEAST. */
 function transformScalarMaxMin(sql: string): string {
   const out: string[] = [];
@@ -108,6 +202,16 @@ export function translateSqlForPg(sql: string): string {
     `to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
   );
 
+  // SQLite's datetime('now') → the SAME textual shape on PostgreSQL.
+  // Deliberately NOT the ISO-8601 helper above: SQLite's datetime() renders
+  // 'YYYY-MM-DD HH:MM:SS' (space separator, no milliseconds, no trailing Z),
+  // so translating it to the ISO form would silently change stored values.
+  // Used by mission migrations 0030/0031 seed rows.
+  out = out.replace(
+    /datetime\(\s*'now'\s*\)/gi,
+    `to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS')`,
+  );
+
   out = out.replace(
     /json_extract\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s*,\s*'\$\.[A-Za-z0-9_]+'\s*\)/g,
     (_m, column) => {
@@ -121,11 +225,7 @@ export function translateSqlForPg(sql: string): string {
     },
   );
 
-  if (/^\s*INSERT OR IGNORE INTO/i.test(out)) {
-    out = out.replace(/^\s*INSERT OR IGNORE INTO/i, 'INSERT INTO');
-    out = out.replace(/;\s*$/, '');
-    out = `${out} ON CONFLICT DO NOTHING`;
-  }
+  out = transformInsertOrIgnore(out);
 
   out = out.replace(
     /knowledge_fts MATCH \?/g,
