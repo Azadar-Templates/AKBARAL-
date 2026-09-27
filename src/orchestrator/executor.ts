@@ -491,6 +491,7 @@ export async function runGenericAgentExecution(
       goal: goalInput,
       content: result.text,
       sourceContextUsed: toolStage.sourceContextUsed,
+      sourceUrls: toolStage.sourceUrls,
       complete: useLlmVerification
         ? (messages, requirements) =>
             modelRouter.complete(
@@ -617,16 +618,21 @@ async function runBoundedToolStage(input: {
   taskId: string | null;
   executionId: string;
   stream: ExecutionStream | undefined;
-}): Promise<{ contextBlock: string | null; sourceContextUsed: boolean; summary: Record<string, unknown> }> {
+}): Promise<{ contextBlock: string | null; sourceContextUsed: boolean; sourceUrls: string[]; summary: Record<string, unknown> }> {
   const PRE_STAGE_TOOLS = ['web_search', 'knowledge_search'] as const;
   const permitted = PRE_STAGE_TOOLS.filter((tool) => input.agent.toolPermissions.includes(tool)).slice(0, 2);
   if (permitted.length === 0 || !input.goal.trim()) {
-    return { contextBlock: null, sourceContextUsed: false, summary: { ran: [], note: 'no pre-stage tools permitted for this agent' } };
+    return { contextBlock: null, sourceContextUsed: false, sourceUrls: [], summary: { ran: [], note: 'no pre-stage tools permitted for this agent' } };
   }
 
   const summaries: Array<Record<string, unknown>> = [];
   const contextParts: string[] = [];
   let sourceContextUsed = false;
+  // Every URL a real tool actually returned in this run. The verifier uses it
+  // to tell a genuine citation from an invented one: a model can produce a
+  // plausible URL that resolves, so "a search ran" is not evidence that THIS
+  // citation came from it.
+  const sourceUrls: string[] = [];
 
   for (const tool of permitted) {
     let result: ToolResult;
@@ -683,6 +689,9 @@ async function runBoundedToolStage(input: {
       if (tool === 'web_search') {
         sourceContextUsed = true;
       }
+      for (const match of content.matchAll(/https?:\/\/[^\s"'<>)\]]+/g)) {
+        sourceUrls.push(match[0]);
+      }
       summaries.push({ tool, ok: true, durationMs: result.durationMs, characters: content.length, ...(resultCount === null ? {} : { results: resultCount }) });
       appendLog(input.executionId, input.stream, `Tool ${tool} returned real context (${content.length} chars, ${resultCount ?? 'unknown'} result(s))`, 'info', 'tool', { tool });
     } else {
@@ -711,6 +720,7 @@ async function runBoundedToolStage(input: {
         ? `--- VERIFIED TOOL CONTEXT (real data retrieved by the platform; cite only these sources) ---\n${contextParts.join('\n\n')}`
         : null,
     sourceContextUsed,
+    sourceUrls,
     summary: { ran: summaries },
   };
 }

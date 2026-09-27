@@ -135,10 +135,19 @@ function checkNoRefusal(content: string): VerificationCheck {
   };
 }
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 function checkNoFabricatedSources(
   agent: AgentView,
   content: string,
   sourceContextUsed: boolean,
+  sourceUrls: string[] = [],
 ): VerificationCheck {
   if (!declaresSourceVerification(agent)) {
     return {
@@ -149,11 +158,39 @@ function checkNoFabricatedSources(
     };
   }
   if (sourceContextUsed) {
+    // A search having run is NOT evidence that the citations came from it: a
+    // model can invent a URL that happens to resolve. Every cited URL must be
+    // traceable to a host a real tool actually returned in this run.
+    const citedUrls = [...content.matchAll(/https?:\/\/[^\s"'<>)\]]+/g)].map((match) => match[0]);
+    if (citedUrls.length === 0) {
+      return {
+        name: 'no_fabricated_sources',
+        severity: 'hard',
+        passed: true,
+        detail: 'Real source tool context was available and the output cites no URLs.',
+      };
+    }
+    const retrievedHosts = new Set(sourceUrls.map(hostOf).filter(Boolean));
+    if (retrievedHosts.size === 0) {
+      return {
+        name: 'no_fabricated_sources',
+        severity: 'hard',
+        passed: false,
+        detail: `Output cites ${citedUrls.length} URL(s) but the source tools returned no URLs to cite — treated as fabricated.`,
+      };
+    }
+    const unsupported = citedUrls.filter((url) => {
+      const host = hostOf(url);
+      return host.length > 0 && !retrievedHosts.has(host);
+    });
+    const passed = unsupported.length === 0;
     return {
       name: 'no_fabricated_sources',
       severity: 'hard',
-      passed: true,
-      detail: 'Agent produced citations while real source tool context was available.',
+      passed,
+      detail: passed
+        ? `All ${citedUrls.length} cited URL(s) come from hosts the source tools actually returned (${[...retrievedHosts].slice(0, 5).join(', ')}).`
+        : `Output cites ${unsupported.length} URL(s) that no source tool returned (${unsupported.slice(0, 3).join(', ')}) — treated as fabricated.`,
     };
   }
   const hasCitations = URL_PATTERN.test(content) || CITATION_PATTERN.test(content);
@@ -216,18 +253,21 @@ export async function verifyAgentOutput(input: {
   content: string;
   /** True when a real source tool (web search / page fetch) produced context for this run. */
   sourceContextUsed?: boolean;
+  /** URLs the pre-stage tools actually returned in this run. */
+  sourceUrls?: string[];
   /** Optional LLM rubric completion. Null/undefined = contract checks only. */
   complete?: CompletionFn | null;
 }): Promise<VerificationResult> {
   const { agent, goal, content } = input;
   const sourceContextUsed = input.sourceContextUsed ?? false;
+  const sourceUrls = input.sourceUrls ?? [];
   const complete = input.complete ?? null;
 
   const checks: VerificationCheck[] = [
     checkNonEmpty(content),
     checkSubstance(agent, content),
     checkNoRefusal(content),
-    checkNoFabricatedSources(agent, content, sourceContextUsed),
+    checkNoFabricatedSources(agent, content, sourceContextUsed, sourceUrls),
     checkGoalAddressed(goal, content),
     checkDeclaredOutputs(agent, content),
   ];

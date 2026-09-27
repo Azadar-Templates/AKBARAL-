@@ -93,15 +93,36 @@ describe('verifier contract checks', () => {
     assert.ok(result.issues.some((issue) => issue.startsWith('no_fabricated_sources')));
   });
 
-  it('allows citations when real source context was used', async () => {
+  it('allows citations that the source tools actually returned', async () => {
     const content = `${substantive}\n\n[Source: https://example.com/real]`;
     const result = await verifyAgentOutput({
       agent: agentFixture(),
       goal: 'research the market',
       content,
       sourceContextUsed: true,
+      sourceUrls: ['https://example.com/real'],
     });
     assert.equal(result.passed, true);
+  });
+
+  it('rejects a citation no source tool returned, even when a search really ran', async () => {
+    // A model can invent a URL that resolves. "A search ran" is not evidence
+    // that THIS citation came from it — the host must appear in the real tool
+    // results. (Found by running the suite on a networked CI runner, where the
+    // fabricated citation stopped failing because the search tool started
+    // working.)
+    const content = `${substantive}\n\n[Source: https://invented-source.example.org/report]`;
+    const result = await verifyAgentOutput({
+      agent: agentFixture(),
+      goal: 'research the market',
+      content,
+      sourceContextUsed: true,
+      sourceUrls: ['https://en.wikipedia.org/wiki/Market'],
+    });
+    assert.equal(result.passed, false);
+    const check = result.checks.find((entry) => entry.name === 'no_fabricated_sources');
+    assert.equal(check?.passed, false);
+    assert.match(check?.detail ?? '', /no source tool returned/i);
   });
 
   it('skips the fabrication check for agents that do not declare source verification', async () => {
