@@ -20,9 +20,21 @@ on:
   workflow_dispatch:
     inputs:
       report_issue:
-        description: 'Issue number to post the evidence report to (blank = no comment)'
+        description: 'Issue number to post the evidence report to (blank = issue 11)'
         required: false
-        default: ''
+        default: '11'
+  push:
+    # A workflow_dispatch trigger is only listed once the file reaches the
+    # default branch, so the working branch drives this by push instead.
+    branches:
+      - 'arena/**'
+    paths:
+      - '.github/workflows/live-runtime.yml'
+      - 'scripts/live-verification.ts'
+      - 'scripts/start-prod.mjs'
+      - 'src/launch/**'
+      - 'src/mission/operating-funds.ts'
+      - 'src/agents/search-providers.ts'
   schedule:
     # Weekly drift check: free, and it catches a provider/API change early.
     - cron: '17 6 * * 1'
@@ -30,6 +42,9 @@ on:
 permissions:
   contents: read
   issues: write
+
+env:
+  REPORT_ISSUE: ${{ github.event.inputs.report_issue || '11' }}
 
 concurrency:
   group: live-runtime-${{ github.ref }}
@@ -110,7 +125,7 @@ jobs:
         run: npm run launch:check -- --deep | tee /tmp/launch-check.txt || true
 
       - name: Publish the evidence report through the GitHub API
-        if: always() && github.event.inputs.report_issue != ''
+        if: always() && env.REPORT_ISSUE != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -126,7 +141,7 @@ jobs:
             tail -60 /tmp/launch-check.txt || true
             echo '```'
           } > /tmp/comment.md
-          gh issue comment "${{ github.event.inputs.report_issue }}" --repo "${{ github.repository }}" --body-file /tmp/comment.md
+          gh issue comment "$REPORT_ISSUE" --repo "${{ github.repository }}" --body-file /tmp/comment.md
 
       - name: Preserve logs
         if: always()
@@ -161,7 +176,7 @@ jobs:
         continue-on-error: true
         run: npm test 2>&1 | tee /tmp/suite.txt
       - name: Extract and publish the failures
-        if: always() && github.event.inputs.report_issue != ''
+        if: always() && env.REPORT_ISSUE != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -179,7 +194,7 @@ jobs:
             grep -aE "error: |failureType|AssertionError" /tmp/suite.txt | tail -40 || true
             echo '```'
           } > /tmp/suite-comment.md
-          gh issue comment "${{ github.event.inputs.report_issue }}" --repo "${{ github.repository }}" --body-file /tmp/suite-comment.md
+          gh issue comment "$REPORT_ISSUE" --repo "${{ github.repository }}" --body-file /tmp/suite-comment.md
       - uses: actions/upload-artifact@v4
         if: always()
         with:
