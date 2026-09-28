@@ -380,14 +380,14 @@ jobs:
       # A verdict that matters: a provider credential that EXISTS but is
       # rejected must fail this job (that is a real breakage). An unconfigured
       # provider is an honest, named gap — it fails nothing.
-      - name: Fail only when a configured provider rejected its credential
+      - name: Fail when a configured provider failed its live verification
         if: always()
         run: |
           rejected=$(jq -r '[.checks[] | select(.status=="failed")] | length' provider-verification.json 2>/dev/null || echo 0)
           unreachable=$(jq -r '[.checks[] | select(.status=="unreachable")] | length' provider-verification.json 2>/dev/null || echo 0)
           echo "rejected=$rejected unreachable=$unreachable"
           if [ "${rejected:-0}" != "0" ]; then
-            echo "::error::a configured provider rejected its credential — see the report"
+            echo "::error::a configured provider FAILED its live verification — see the report (this counts provider-side errors such as HTTP 5xx, not only credential rejection)"
             exit 1
           fi
       - name: Publish the per-provider verdicts as annotations (readable where logs are not)
@@ -433,6 +433,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+      # The script imports the real provider stack (src/models/client.ts ->
+      # src/config/env.ts -> `import 'dotenv/config'`), so the project's
+      # dependencies must be installed exactly like every other job that runs
+      # repository code. Without this the job died with
+      # "Cannot find module 'dotenv/config'" BEFORE reaching Google, which
+      # looks like a provider failure but is a missing-install failure.
+      - run: npm ci
       - name: Verify the REAL Gemini provider path (direct, no mocks)
         run: npx tsx scripts/verify-gemini-direct.ts
         env:
