@@ -20,6 +20,7 @@
  */
 import { GoogleProvider, ProviderCallError, ProviderNotConfiguredError, type ChatMessage } from '../src/models/client';
 import { MODEL_SPECS } from '../src/models/catalog';
+import { geminiModelsSupportingGeneration, selectGeminiCandidates } from '../src/launch/checks';
 import type { ModelSpec } from '../src/models/catalog';
 
 const FAILURES: string[] = [];
@@ -37,28 +38,71 @@ async function main(): Promise<void> {
   }
 
   const googleModels = MODEL_SPECS.filter((spec) => spec.providerKey === 'google' && spec.capability === 'llm');
-  const model: ModelSpec | undefined = googleModels.find((spec) => spec.key === 'gemini-3.8-flash') ?? googleModels[0];
-  if (!model) {
+  if (googleModels.length === 0) {
     console.error('no google model specs found in the catalog');
     process.exit(2);
   }
+
+  // ── 0. Discover what Google is CURRENTLY serving (ListModels) ───────────
+  // A model that is temporarily unavailable (HTTP 503) must not fail this
+  // verification when another CURRENT, catalog-supported Gemini model works.
+  // Candidates always come from Google's own ListModels response intersected
+  // with this build's catalog — no invented model IDs, ever.
+  const baseUrl = (process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
+  let offered: string[] = [];
+  try {
+    const listed = await fetch(`${baseUrl}/models`, { headers: { 'x-goog-api-key': key } });
+    if (listed.ok) {
+      offered = geminiModelsSupportingGeneration((await listed.json()) as Record<string, unknown>);
+    }
+    ok(listed.ok, `ListModels reachable and accepted the credential (HTTP ${listed.status})`);
+  } catch (error) {
+    ok(false, `ListModels failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const candidateKeys = selectGeminiCandidates(
+    process.env.AKBARAL_VERIFY_GEMINI_MODEL ?? '',
+    offered,
+    googleModels.map((spec) => spec.key),
+  );
+  console.log(`candidates (current & supported): ${candidateKeys.join(', ') || '(none)'}`);
+
   const provider = new GoogleProvider();
   const messages: ChatMessage[] = [{ role: 'user', content: 'Reply with exactly: AKBARAL-DIRECT-VERIFY-OK' }];
 
   // ── 1. Real request → real response ─────────────────────────────────────
-  try {
-    const started = Date.now();
-    const result = await provider.chat(model, messages);
-    const elapsed = Date.now() - started;
-    ok(result.provider === 'google' && result.model === model.key, `real response from ${result.model} (${elapsed}ms)`);
-    ok(typeof result.text === 'string' && result.text.length > 0, `real non-empty text (${result.text.length} chars)`);
-    ok(
-      typeof result.inputTokens === 'number' && typeof result.outputTokens === 'number',
-      `usage accounting present (in ${result.inputTokens} / out ${result.outputTokens} tokens)`,
-    );
-    ok(elapsed >= 200, `realistic network latency (${elapsed}ms ≥ 200ms)`);
-  } catch (error) {
-    ok(false, `real request failed: ${error instanceof Error ? error.message : String(error)}`);
+  // Each candidate already retries transient 429/5xx internally with bounded
+  // exponential backoff; only after a candidate is exhausted do we move to
+  // the next one. If every candidate fails, the script fails honestly.
+  let model: ModelSpec | undefined;
+  const attemptErrors: string[] = [];
+  for (const candidateKey of candidateKeys) {
+    const candidate = googleModels.find((spec) => spec.key === candidateKey) ?? {
+      ...googleModels[0],
+      key: candidateKey,
+      name: candidateKey,
+    };
+    try {
+      const started = Date.now();
+      const result = await provider.chat(candidate, messages);
+      const elapsed = Date.now() - started;
+      model = candidate;
+      ok(result.provider === 'google' && result.model === candidate.key, `real response from ${result.model} (${elapsed}ms)`);
+      ok(typeof result.text === 'string' && result.text.length > 0, `real non-empty text (${result.text.length} chars)`);
+      ok(
+        typeof result.inputTokens === 'number' && typeof result.outputTokens === 'number',
+        `usage accounting present (in ${result.inputTokens} / out ${result.outputTokens} tokens)`,
+      );
+      ok(elapsed >= 200, `realistic network latency (${elapsed}ms ≥ 200ms)`);
+      break;
+    } catch (error) {
+      attemptErrors.push(`${candidate.key}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (!model) {
+    ok(false, `real request failed on every current candidate — ${attemptErrors.join('; ')}`);
+    console.log('');
+    console.error(`REAL GEMINI DIRECT: FAILED (${FAILURES.length} check(s))`);
+    process.exit(1);
   }
 
   // ── 2. Real streaming (SSE) ─────────────────────────────────────────────
