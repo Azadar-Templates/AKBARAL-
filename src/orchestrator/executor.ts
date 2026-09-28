@@ -34,6 +34,8 @@ import { verifyAgentOutput } from './verifier';
 import { reconcileTaskFailed } from './task-reconciler';
 import { notifyTaskFinished } from '../push/notify';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { toPublicFailure } from '../server/safe-errors';
+import { logErrorSafe } from '../config/secrets';
 
 /**
  * Task/agent orchestrator.
@@ -736,12 +738,26 @@ async function failExecution(
   updateAgentExecutionStatus({
     id: executionId,
     status: 'failed',
+    // The RAW message is persisted on the execution row: that column is a
+    // server-side diagnostic surface, read by operators and the audit trail,
+    // and it is sanitized at the HTTP boundary before any UI sees it.
     errorMessage: message,
     durationMs: Date.now() - start,
     completedAt: new Date().toISOString(),
   });
-  stream?.pushStatus({ executionId, status: 'failed', message, errorMessage: message });
-  appendLog(executionId, stream, `Execution failed: ${message}`, 'error', 'verification', { code });
+  // Everything below travels to a screen (live status + the execution console
+  // log, which the workspace renders verbatim), so it carries the public
+  // failure copy only — never provider/runtime/configuration detail. The raw
+  // text is kept in the execution row above and in the server log line.
+  const publicFailure = toPublicFailure({ code, message });
+  logErrorSafe('execution.failed', { executionId, taskId: taskId ?? null, code, message });
+  stream?.pushStatus({
+    executionId,
+    status: 'failed',
+    message: publicFailure.message,
+    errorMessage: publicFailure.message,
+  });
+  appendLog(executionId, stream, `Execution failed: ${publicFailure.message}`, 'error', 'verification', { code: publicFailure.code });
 
   if (options?.deferTaskFailure) {
     // Queue-driven execution: task reconciliation (fail + refund) is decided

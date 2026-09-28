@@ -12,6 +12,7 @@ import { getConfigStatus } from '../config/credentials';
 import { PROVIDER_SPECS } from '../models/catalog';
 import { externalHttpRequest } from '../integrations/http';
 import { asyncRoute } from '../server/http';
+import { adminSafeErrorSummary } from '../server/safe-errors';
 
 /**
  * Lightweight registry integrity summary for admin monitoring: DB count vs
@@ -221,7 +222,13 @@ export function createAdminRouter(): Router {
           failed: stats?.failed ?? 0,
           avgLatencyMs: stats?.avgLatencyMs !== null && stats?.avgLatencyMs !== undefined ? Math.round(Number(stats.avgLatencyMs)) : null,
           lastUsedAt: stats?.lastUsedAt ?? null,
-          lastError: lastError ? { message: lastError.error_message, at: lastError.created_at } : null,
+          // The owner console shows THAT a provider run failed and when, never
+          // the raw provider/runtime text (it names keys, endpoints and
+          // environment variables). The raw text stays in model_runs and the
+          // server logs — server-side diagnostics only.
+          lastError: lastError
+            ? { ...(adminSafeErrorSummary(lastError.error_message) ?? { message: null, hasTechnicalDetail: false }), at: lastError.created_at }
+            : null,
         },
         live: null as null | { ok: boolean; latencyMs: number; detail?: string },
       };

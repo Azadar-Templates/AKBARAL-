@@ -7,6 +7,7 @@ import { getWorkflow, listWorkflowSteps, db } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { withPublicErrorMessage } from '../server/safe-errors';
 
 export function createWorkflowsRouter(_stream: ExecutionStream): Router {
   const router = Router();
@@ -17,7 +18,7 @@ export function createWorkflowsRouter(_stream: ExecutionStream): Router {
       `SELECT * FROM workflows WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
       [req.auth!.userId],
     );
-    res.status(200).json({ workflows: rows });
+    res.status(200).json({ workflows: rows.map(withPublicErrorMessage) });
   });
 
   router.post(
@@ -121,8 +122,9 @@ export function createWorkflowsRouter(_stream: ExecutionStream): Router {
       throw new HttpError(404, 'workflow not found', 'not_found');
     }
     res.status(200).json({
-      workflow,
-      steps: listWorkflowSteps(req.params.id),
+      // Raw error text is an operator diagnostic; the API emits public copy.
+      workflow: withPublicErrorMessage(workflow),
+      steps: listWorkflowSteps(req.params.id).map(withPublicErrorMessage),
     });
   });
 

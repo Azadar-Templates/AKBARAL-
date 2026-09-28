@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { listExecutionLogsAfter, listExecutionLogs, getAgentExecution, getExecutionOwnerId } from '../db';
+import { listExecutionLogsAfterCursor, getAgentExecution, getExecutionOwnerId, type ExecutionLogCursor, type ExecutionLogRow } from '../db';
+import { publicLogLine } from '../server/safe-errors';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError } from '../server/http';
 
@@ -49,39 +50,47 @@ export function createRealtimeRouter(): Router {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    let cursor = '';
-    const send = (rows: Array<Record<string, unknown>>) => {
+    // Keyset cursor: (created_at, id). created_at alone is millisecond
+    // resolution, so a `created_at > cursor` tail permanently drops every log
+    // line an agent writes inside the same millisecond as the cursor row.
+    let cursor: ExecutionLogCursor | null = null;
+    const send = (rows: ExecutionLogRow[]) => {
       for (const row of rows) {
+        // Production error boundary: the console is a UI surface.
+        const safe = publicLogLine({ message: row.message, data: row.data ? JSON.parse(String(row.data)) : null, level: row.level });
         const payload = {
           type: 'log',
           id: String(row.id),
           executionId: String(row.execution_id),
           logType: String(row.type),
           level: String(row.level),
-          message: String(row.message),
-          data: row.data ? JSON.parse(String(row.data)) : null,
+          message: safe.message,
+          data: safe.data,
           createdAt: String(row.created_at),
         };
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        cursor = String(row.created_at);
+        cursor = { createdAt: String(row.created_at), id: String(row.id) };
       }
     };
 
-    const initial = listExecutionLogs(req.params.id, 500);
-    send(initial);
-
-    const interval = setInterval(() => {
-      // Always tail. listExecutionLogsAfter with an empty cursor returns from
-      // the beginning — critical for the early connector: a client that
-      // subscribes BEFORE the first log exists must still receive every log
-      // as it is persisted. (Regression, 2026-09-14: the previous
-      // `cursor ? … : []` never initialized the cursor when the initial
-      // replay was empty, so early connectors received nothing at all.)
-      const rows = listExecutionLogsAfter(req.params.id, cursor, 100);
-      if (rows.length > 0) {
-        send(rows as unknown as Array<Record<string, unknown>>);
+    // Drain everything already persisted, then keep draining. A client that
+    // subscribes BEFORE the first log (the normal browser flow: the stream is
+    // opened the moment a task is dispatched) starts with a null cursor, which
+    // reads from the beginning, so no log can be missed between the initial
+    // read and the first poll.
+    const drain = () => {
+      // Keep draining while a poll fills the page limit, otherwise a burst
+      // larger than the limit would be delivered one page per second.
+      for (;;) {
+        const rows = listExecutionLogsAfterCursor(req.params.id, cursor, 100);
+        if (rows.length === 0) return;
+        send(rows);
+        if (rows.length < 100) return;
       }
-    }, 1000);
+    };
+
+    drain();
+    const interval = setInterval(drain, 1000);
 
     const heartbeat = setInterval(() => {
       res.write(': ping\n\n');

@@ -221,16 +221,25 @@ describe('task-result state separation (incident regression)', () => {
     }
   });
 
-  it('failures render honest, actionable copy — never fake completion, never knowledge states', () => {
+  it('failures render honest copy — never fake completion, never a technical diagnostic', () => {
+    // PRODUCTION ERROR BOUNDARY: provider/runtime failure classes collapse to
+    // one neutral line. Naming the provider, its credentials or its HTTP
+    // status is a configuration diagnostic and belongs in the server-side
+    // logs only (see src/server/safe-errors.ts).
     const cases: Array<{ code?: string; message: string; expect: string }> = [
-      { code: 'provider_not_configured', message: 'no provider available', expect: 'No AI provider configured' },
-      { message: 'openai rejected the request credentials (HTTP 401)', expect: 'rejected the credentials' },
-      { code: 'verification_failed', message: 'verification_failed: substance', expect: 'rejected by verification' },
+      // The apostrophe is HTML-escaped in the rendered card.
+      { code: 'task_failed', message: 'no provider available', expect: 'complete this task right now' },
+      { message: 'openai rejected the request credentials (HTTP 401)', expect: 'complete this task right now' },
+      { code: 'verification_failed', message: 'verification_failed: substance', expect: 'quality check' },
+      { code: 'timed_out', message: 'execution timed out', expect: 'too long' },
     ];
     for (const item of cases) {
       const html = render({ status: 'failed', code: item.code, message: item.message });
-      assert.ok(html.includes(item.expect), `honest title for ${item.code ?? item.message}: ${html.slice(0, 120)}`);
+      assert.ok(html.includes(item.expect), `honest copy for ${item.code ?? item.message}: ${html.slice(0, 160)}`);
       assert.ok(!html.includes('Completed'), 'failure must not claim completion');
+      // The raw internal message is never painted on screen.
+      assert.ok(!html.includes('HTTP 401'), 'no provider status code in the UI');
+      assert.ok(!/provider/i.test(html), 'no provider diagnostic in the UI');
       assertNoKnowledgeState(html, 'failure rendering');
     }
   });
