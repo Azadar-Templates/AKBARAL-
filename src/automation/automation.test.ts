@@ -133,7 +133,12 @@ describe('Automation & scheduled workflows', () => {
       body: JSON.stringify({
         name: 'Daily research',
         schedule: { kind: 'interval', seconds: 3600 },
-        steps: [{ agent_slug: AGENT, goal: 'Summarize today AI news' }],
+        steps: [{ agent_slug: AGENT, goal: 'Summarize AI industry news' }],
+        // NOTE: deliberately not a "today/current" goal. This suite exercises
+        // scheduling, idempotency and recovery with a canned model fixture that
+        // has no dates or source URLs; a current-data research goal is now
+        // (correctly) failed by the evidence-freshness gate, which is covered
+        // by src/orchestrator/research-freshness.test.ts instead.
         ...overrides,
       }),
     });
