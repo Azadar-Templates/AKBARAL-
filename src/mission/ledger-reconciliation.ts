@@ -11,8 +11,10 @@
  *   · chain integrity — seq order, prev_hash linkage and the row hash itself;
  *   · account balances — available/held columns equal the entry sums;
  *   · hold coverage — every held cent is backed by an outstanding operation
- *     (reserved/dispatching/pending/unknown) and every such operation still
- *     holds its full reservation;
+ *     (reserved/dispatching/pending/unknown), and each operation reference —
+ *     not merely each account total — still holds its exact reservation;
+ *   · operation integrity — immutable request fields still match the stored
+ *     operation fingerprint, so provider/destination/cost edits fail closed;
  *   · reference closure — every entry points at a real operation, receipt,
  *     owner allocation transfer or provider liability;
  *   · liability sanity — no provider debt is negative.
@@ -32,6 +34,8 @@ export type LedgerMismatchCode =
   | 'account_balance_mismatch'
   | 'held_without_operation'
   | 'operation_without_hold'
+  | 'operation_hold_mismatch'
+  | 'operation_fingerprint_mismatch'
   | 'orphan_ledger_reference'
   | 'negative_liability';
 
@@ -55,8 +59,47 @@ export interface LedgerReconciliationReport {
 }
 
 /** Operations whose reservation must still be held in cash. */
-const LIVE_OPERATION_STATES = ['reserved', 'dispatching', 'pending', 'unknown'];
+const LIVE_OPERATION_STATES = new Set(['reserved', 'dispatching', 'pending', 'unknown']);
 const BUCKETS = ['available', 'held'] as const;
+
+export interface MoneyOperationFingerprintInput {
+  kind: string;
+  agentId: string | null;
+  provider: string;
+  destination: string;
+  category: string;
+  amountCents: number;
+  maxCostCents: number;
+}
+
+/**
+ * Canonical fingerprint for immutable payment-request fields. Keeping creation
+ * and reconciliation on this one serializer prevents either side from silently
+ * changing the integrity contract.
+ */
+export function moneyOperationFingerprint(input: MoneyOperationFingerprintInput): string {
+  return sha256(JSON.stringify([
+    input.kind,
+    input.agentId,
+    input.provider,
+    input.destination,
+    input.category,
+    input.amountCents,
+    input.maxCostCents,
+  ]));
+}
+
+function fingerprintForStoredOperation(operation: Row): string {
+  return moneyOperationFingerprint({
+    kind: String(operation.kind),
+    agentId: operation.agent_id == null ? null : String(operation.agent_id),
+    provider: String(operation.provider),
+    destination: String(operation.destination),
+    category: String(operation.category),
+    amountCents: Number(operation.amount_cents),
+    maxCostCents: Number(operation.max_cost_cents),
+  });
+}
 
 export function reconcileLedger(maxMismatches = 25): LedgerReconciliationReport {
   const mismatches: LedgerMismatch[] = [];
@@ -98,12 +141,46 @@ export function reconcileLedger(maxMismatches = 25): LedgerReconciliationReport 
     if (!accountIds.has(accountId)) fail({ code: 'account_balance_mismatch', accountId, expectedCents: expected, actualCents: 0 });
   }
 
-  // 3) Hold coverage, both directions: held cash with nothing reserving it is
-  //    unexplained, and an outstanding operation without its hold is a
-  //    reservation that silently vanished.
-  const liveOperations = db.all<Row>(`SELECT * FROM mission_money_operations WHERE state IN ('${LIVE_OPERATION_STATES.join("','")}')`);
+  // 3) Operation fingerprints and hold coverage. Account-level totals remain a
+  //    useful cross-check, but they are not sufficient: two altered operations
+  //    can trade reservation sizes while leaving the account total unchanged.
+  //    The append-only cash entries are authoritative, so net held movement is
+  //    recomputed independently for every operation reference and account.
+  const operations = db.all<Row>('SELECT * FROM mission_money_operations');
+  const operationIds = new Set(operations.map(operation => String(operation.id)));
+  const liveOperations = operations.filter(operation => LIVE_OPERATION_STATES.has(String(operation.state)));
   const reservedByAccount = new Map<string, number>();
-  for (const op of liveOperations) reservedByAccount.set(String(op.account_id), (reservedByAccount.get(String(op.account_id)) ?? 0) + Number(op.max_cost_cents));
+  const heldByOperation = new Map<string, Map<string, number>>();
+  for (const entry of entries) {
+    if (String(entry.bucket) !== 'held' || !operationIds.has(String(entry.reference))) continue;
+    const reference = String(entry.reference), accountId = String(entry.account_id);
+    const byAccount = heldByOperation.get(reference) ?? new Map<string, number>();
+    byAccount.set(accountId, (byAccount.get(accountId) ?? 0) + Number(entry.delta_cents));
+    heldByOperation.set(reference, byAccount);
+  }
+  for (const operation of operations) {
+    const reference = String(operation.id), accountId = String(operation.account_id);
+    if (fingerprintForStoredOperation(operation) !== String(operation.fingerprint)) {
+      fail({ code: 'operation_fingerprint_mismatch', accountId, reference });
+    }
+    const expectedHold = LIVE_OPERATION_STATES.has(String(operation.state)) ? Number(operation.max_cost_cents) : 0;
+    const byAccount = heldByOperation.get(reference) ?? new Map<string, number>();
+    const actualHold = byAccount.get(accountId) ?? 0;
+    if (!Number.isSafeInteger(expectedHold) || actualHold !== expectedHold) {
+      fail({ code: 'operation_hold_mismatch', accountId, reference, expectedCents: expectedHold, actualCents: actualHold });
+    }
+    // A changed account_id must not hide a hold under the operation's original
+    // account. Net-zero historical movements are valid and intentionally kept.
+    for (const [entryAccountId, held] of byAccount) {
+      if (entryAccountId !== accountId && held !== 0) {
+        fail({ code: 'operation_hold_mismatch', accountId: entryAccountId, reference, expectedCents: 0, actualCents: held });
+      }
+    }
+  }
+  for (const op of liveOperations) {
+    const accountId = String(op.account_id);
+    reservedByAccount.set(accountId, (reservedByAccount.get(accountId) ?? 0) + Number(op.max_cost_cents));
+  }
   let accountsHeld = 0, operationsHeld = 0;
   for (const account of accounts) {
     const held = Number(account.held_cents);
@@ -120,7 +197,6 @@ export function reconcileLedger(maxMismatches = 25): LedgerReconciliationReport 
   // 4) Reference closure. Every entry must be explained by an operation, a
   //    provider receipt, an owner allocation transfer or a liability payment —
   //    a chain-valid entry with no explanation is exactly what this catches.
-  const operationIds = new Set(db.all<Row>('SELECT id FROM mission_money_operations').map(r => String(r.id)));
   const receiptIds = new Set(db.all<Row>('SELECT external_id FROM mission_money_receipts').map(r => String(r.external_id)));
   const transferKeys = new Set(db.all<Row>('SELECT idempotency_key FROM mission_money_transfers').map(r => String(r.idempotency_key)));
   const liabilityIds = new Set(db.all<Row>('SELECT external_id FROM mission_cash_liabilities').map(r => String(r.external_id)));

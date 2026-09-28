@@ -1,6 +1,6 @@
 /** Verified mission cash only. Never imports platform DB or trusts legacy balances. */
 import { missionDb as db, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
-import { reconcileLedger } from './ledger-reconciliation';
+import { moneyOperationFingerprint, reconcileLedger } from './ledger-reconciliation';
 import { currentPolicy, checkActivity, setKillSwitch } from './policy';
 import { destinationFingerprint, payoutSlotVerificationStatus } from './payout-verification';
 import { isIdentityPermitted } from './identity-lock';
@@ -319,7 +319,7 @@ export function requestMoney(actor:MoneyActor,input:{kind:'expense'|'withdrawal'
   else if(input.kind==='expense'&&input.agentId&&categories.includes(input.category))authorize(actor,input.agentId);
   else deny('invalid_operation');
   return db.transaction(()=> {
-    const fp=sha256(JSON.stringify([input.kind,input.agentId??null,input.provider,input.destination,input.category,input.amountCents,input.maxCostCents]));
+    const fp=moneyOperationFingerprint({kind:input.kind,agentId:input.agentId??null,provider:input.provider,destination:input.destination,category:input.category,amountCents:input.amountCents,maxCostCents:input.maxCostCents});
     const old=db.get<Row>('SELECT * FROM mission_money_operations WHERE idempotency_key=?',[input.idempotencyKey]);
     if(old){if(old.fingerprint!==fp)deny('idempotency_conflict');return old;}
     const account=ensureCashAccount(input.kind==='expense'?input.agentId:undefined);

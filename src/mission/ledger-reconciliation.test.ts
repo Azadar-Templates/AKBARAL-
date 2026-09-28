@@ -21,7 +21,7 @@ const provider:MoneyProvider={id:'fixture-only',supports:()=>true,verifyReceipt:
 function addAgent(id:string,parent:string|null=null){db.run("INSERT INTO mission_agents (id,slug,name,role_key,parent_id,depth,generation,status,mission_role,origin_platform) VALUES (?,?,'Synthetic test identity','specialist',?,0,'custom','active','worker','test')",[id,id,parent]);}
 function grant(id=a,patch:Partial<Parameters<typeof m.setMoneyGrant>[2]>={}){return m.setMoneyGrant(owner,id,{spendLimitCents:10000,delegationCents:0,canCreate:false,expiresAt:new Date(Date.now()+86400000).toISOString(),status:'active',opportunityId:String(db.get<Row>('SELECT id FROM mission_money_opportunities LIMIT 1')!.id),...patch});}
 async function earn(amount=1000,id:string=randomUUID()) {receipt={externalId:id,amountCents:amount,currency:'USD',kind:'earning',agentId:a};return m.verifyMoneyReceipt(owner,provider,id);}
-function request(amount=100,key=randomUUID()){return m.requestMoney({kind:'agent',id:a},{kind:'expense',agentId:a,provider:provider.id,destination:'approved-fixture-vendor',category:'hosting',amountCents:amount,maxCostCents:amount,idempotencyKey:key});}
+function request(amount=100,key:string=randomUUID()){return m.requestMoney({kind:'agent',id:a},{kind:'expense',agentId:a,provider:provider.id,destination:'approved-fixture-vendor',category:'hosting',amountCents:amount,maxCostCents:amount,idempotencyKey:key});}
 /** A chain-valid entry with a fresh hash, appended out of band and pointing at
  *  nothing: the row itself is internally consistent, so only reference closure
  *  (or the balance column update that accompanies it) can expose it. */
@@ -69,6 +69,52 @@ it('a live reservation is fully covered by held cash and still reconciles',async
   assert.equal(report.counts.liveOperations,1);
   assert.equal(report.heldCents.accounts,100);assert.equal(report.heldCents.operations,100);
   assert.equal(m.cashAccount(a).held_cents,100);
+});
+it('detects compensating reservation edits even when account totals and recomputed fingerprints agree',async()=>{
+  await earn();m.allocateCash(owner,a,500,'fund');
+  const reserve=(maxCostCents:number,key:string)=>m.requestMoney({kind:'agent',id:a},{kind:'expense',agentId:a,provider:provider.id,destination:'approved-fixture-vendor',category:'hosting',amountCents:50,maxCostCents,idempotencyKey:key});
+  const first=reserve(100,'swap-first'),second=reserve(200,'swap-second');
+  assert.equal(r.reconcileLedger().ok,true);
+  const changedFingerprint=(op:Row,maxCostCents:number)=>r.moneyOperationFingerprint({kind:String(op.kind),agentId:String(op.agent_id),provider:String(op.provider),destination:String(op.destination),category:String(op.category),amountCents:Number(op.amount_cents),maxCostCents});
+  // Simulate a compensating out-of-band edit sophisticated enough to refresh
+  // both mutable operation fingerprints. The ledger references remain 100/200.
+  db.run('UPDATE mission_money_operations SET max_cost_cents=?,fingerprint=? WHERE id=?',[200,changedFingerprint(first,200),String(first.id)]);
+  db.run('UPDATE mission_money_operations SET max_cost_cents=?,fingerprint=? WHERE id=?',[100,changedFingerprint(second,100),String(second.id)]);
+  assert.equal(m.verifyCashLedger().ok,true,'the cash chain and account-level total still agree');
+  const report=r.reconcileLedger();
+  assert.equal(report.ok,false);
+  assert.equal(report.heldCents.accounts,300);assert.equal(report.heldCents.operations,300,'the compensating account aggregate is unchanged');
+  assert.equal(report.mismatches.some(x=>x.code==='operation_fingerprint_mismatch'),false,'the refreshed fingerprints deliberately agree');
+  assert.ok(report.mismatches.some(x=>x.code==='operation_hold_mismatch'&&x.reference===first.id&&x.expectedCents===200&&x.actualCents===100));
+  assert.ok(report.mismatches.some(x=>x.code==='operation_hold_mismatch'&&x.reference===second.id&&x.expectedCents===100&&x.actualCents===200));
+  await assert.rejects(m.dispatchMoney(owner,provider,String(first.id)),/cash_integrity_failed/);
+  assert.equal(sends,0,'a compensating edit must fail closed before provider send');
+});
+it('recomputes operation fingerprints and fail-closes provider, destination and cost tampering',async()=>{
+  await earn();m.allocateCash(owner,a,400,'fund');const op=request(100,'fingerprint-operation');
+  const original=m.moneyOperation(String(op.id));
+  const mutations:Array<[string,string|number,unknown]>=[
+    ['destination','redirected-fixture-vendor',original.destination],
+    ['provider','substituted-provider',original.provider],
+    ['amount_cents',99,original.amount_cents],
+    ['max_cost_cents',150,original.max_cost_cents],
+  ];
+  for(const [column,value,restore] of mutations){
+    db.run(`UPDATE mission_money_operations SET ${column}=? WHERE id=?`,[value,String(op.id)]);
+    const report=r.reconcileLedger();
+    assert.equal(report.ok,false,`${column} tampering must not reconcile`);
+    assert.ok(report.mismatches.some(x=>x.code==='operation_fingerprint_mismatch'&&x.reference===op.id),`${column} must be covered by the operation fingerprint`);
+    if(column==='destination'){
+      await assert.rejects(m.dispatchMoney(owner,provider,String(op.id)),/cash_integrity_failed/);
+      assert.equal(sends,0,'destination tampering must fail before provider send');
+    }
+    db.run(`UPDATE mission_money_operations SET ${column}=? WHERE id=?`,[restore as any,String(op.id)]);
+    assert.equal(r.reconcileLedger().ok,true,`${column} restoration must recover without mutating the ledger`);
+  }
+  db.run("UPDATE mission_money_operations SET fingerprint='out-of-band-fingerprint' WHERE id=?",[String(op.id)]);
+  const fingerprintTamper=r.reconcileLedger();
+  assert.equal(fingerprintTamper.ok,false);
+  assert.ok(fingerprintTamper.mismatches.some(x=>x.code==='operation_fingerprint_mismatch'&&x.reference===op.id));
 });
 it('a reversal that claws back nothing records a liability without entries and still reconciles',async()=>{
   await earn(100,'income');m.allocateCash(owner,a,100,'fund');
