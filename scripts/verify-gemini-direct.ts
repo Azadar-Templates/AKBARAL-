@@ -112,13 +112,22 @@ async function main(): Promise<void> {
   }
 
   // ── 2. Real streaming (SSE) ─────────────────────────────────────────────
+  const tokens: string[] = [];
+  // Timing is recorded so a streaming failure is DIAGNOSABLE: the last two CI
+  // runs failed with a bare "stream timed out" and job logs are not
+  // retrievable, so the report itself must carry time-to-first-token and the
+  // token count. This measures only — it never retries or softens a check.
+  const streamStarted = Date.now();
+  let firstTokenMs: number | null = null;
   try {
-    const tokens: string[] = [];
-    const streamed = await provider.streamChat(model, messages, (token) => tokens.push(token));
-    ok(tokens.length >= 1, `streaming delivered ${tokens.length} token event(s)`);
+    const streamed = await provider.streamChat(model, messages, (token) => {
+      if (firstTokenMs === null) firstTokenMs = Date.now() - streamStarted;
+      tokens.push(token);
+    });
+    ok(tokens.length >= 1, `streaming delivered ${tokens.length} token event(s) on ${model.key} (first token after ${firstTokenMs ?? 'n/a'}ms, total ${Date.now() - streamStarted}ms)`);
     ok(typeof streamed.text === 'string' && streamed.text.length > 0, 'streamed final text assembled');
   } catch (error) {
-    ok(false, `streaming failed: ${error instanceof Error ? error.message : String(error)}`);
+    ok(false, `streaming failed on ${model.key} after ${Date.now() - streamStarted}ms with ${tokens.length} token(s) received: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // ── 3. Credential-failure classification (invalid key → classified HTTP error) ──
