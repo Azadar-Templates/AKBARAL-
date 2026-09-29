@@ -26,7 +26,13 @@ import type { ModelSpec } from '../src/models/catalog';
 const FAILURES: string[] = [];
 function ok(condition: boolean, label: string): void {
   console.log(`${condition ? 'PASS' : 'FAIL'}  ${label}`);
-  if (!condition) FAILURES.push(label);
+  if (!condition) {
+    FAILURES.push(label);
+    // Emit a GitHub annotation too: CI job logs are not always retrievable,
+    // and a bare "exit code 1" hides WHICH provider check failed. Annotations
+    // survive where logs do not. Labels never contain credential material.
+    console.log(`::error title=gemini-direct::${label.replace(/\r?\n/g, ' ')}`);
+  }
 }
 
 async function main(): Promise<void> {

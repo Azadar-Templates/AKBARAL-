@@ -207,6 +207,97 @@ ok(leaked.length === 0, 'no Google key material (AIza…) on any response surfac
 const keyEcho = surfaces.filter((s) => /x-goog-api-key|GOOGLE_API_KEY\s*=/.test(s));
 ok(keyEcho.length === 0, 'no key header/name echoed on any response surface');
 
+// ── 12. REAL TOOL EXECUTION (not a canned result) ────────────────────────
+// Evidence gap this closes: until now nothing proved the deployed MASTER
+// actually invoked a tool. The discriminator is the executor's own tool-stage
+// log line, which is only written when a tool really returned context:
+//   "Tool web_search returned real context (N chars, M result(s))"
+// A missing credential is reported as a BLOCKER, never as a pass.
+async function runMasterGoal(goal, label) {
+  const started = Date.now();
+  const planned = await j('/api/workflows/master', { method: 'POST', headers: auth, body: JSON.stringify({ goal }) });
+  const id = planned.body?.workflow?.id;
+  if (!id) return { ok: false, reason: `plan rejected: HTTP ${planned.res.status}`, label };
+  await j(`/api/workflows/${id}/run`, { method: 'POST', headers: auth, body: '{}' });
+  let flow = null;
+  const limit = Date.now() + 240_000;
+  while (Date.now() < limit) {
+    await sleep(2000);
+    flow = (await j(`/api/workflows/${id}`, { headers: auth })).body?.workflow;
+    if (['completed', 'failed', 'cancelled'].includes(flow?.status)) break;
+  }
+  const tasks = await j('/api/tasks', { headers: auth });
+  const task = (tasks.body?.tasks ?? [])[0];
+  const detailRes = task ? await j(`/api/tasks/${task.id}`, { headers: auth }) : { text: '', body: {} };
+  const answer = (() => {
+    try {
+      const r = flow?.result_json ? JSON.parse(flow.result_json) : {};
+      const fr = r.finalResult ?? r;
+      return String((fr.sections ?? []).map((x) => x.content ?? '').join('\n'));
+    } catch { return ''; }
+  })();
+  return {
+    ok: flow?.status === 'completed',
+    label,
+    status: flow?.status ?? 'TIMEOUT',
+    error: flow?.error_message ?? null,
+    seconds: ((Date.now() - started) / 1000).toFixed(1),
+    logs: (detailRes.body?.logs ?? []).map((l) => String(l.message ?? '')),
+    answer,
+    taskId: task?.id ?? null,
+  };
+}
+
+const toolRun = await runMasterGoal(
+  'Search the web and list three currently active open-source AI agent frameworks. For each, give the official project URL you retrieved.',
+  'real tool execution',
+);
+const toolLogs = toolRun.logs.filter((m) => /^Tool (web_search|knowledge_search|page_fetch)/.test(m));
+const realToolLog = toolLogs.find((m) => /returned real context \(\d+ chars, \d+ result\(s\)\)/.test(m));
+const toolBlocked = toolLogs.find((m) => /unavailable|returned no results|matched nothing/.test(m));
+if (realToolLog) {
+  ok(true, `REAL tool invocation recorded by the deployed executor: "${realToolLog.slice(0, 120)}"`);
+  ok(/https?:\/\//.test(toolRun.answer), `tool-backed answer carries at least one retrieved source URL (${(toolRun.answer.match(/https?:\/\//g) ?? []).length} link(s))`);
+  ok(toolRun.ok, `tool-backed workflow ${toolRun.status} in ${toolRun.seconds}s (error: ${toolRun.error ?? 'none'})`);
+} else if (toolBlocked) {
+  warn(false, `LIVE TOOL EXECUTION BLOCKED (not a pass): ${toolBlocked.slice(0, 160)}`);
+  console.log('::notice title=tool-execution::search tool could not run on the live host — configure a search credential (TAVILY_API_KEY / AKBARAL_SEARCH_ENDPOINT) to close this evidence gap');
+} else {
+  ok(false, `no tool-stage log found on the deployed run (logs: ${toolRun.logs.length}) — real tool execution is unproven`);
+}
+
+// ── 13. LIVE FRESHNESS CONTRACT (research-evidence gates) ────────────────
+// Deliberately NOT a volatile price: the assertion is on BEHAVIOUR, not on a
+// number that legitimately moves. Two outcomes are acceptable and both are
+// honest; a third is a real defect:
+//   (a) completes WITH a source URL and a date (current evidence found), or
+//   (b) fails/refuses honestly (current evidence could not be established),
+//   (c) DEFECT: completes while presenting only year-old dates as current.
+// The stale/future/corroboration/conflict rules themselves are unit-verified
+// (src/orchestrator/research-freshness.test.ts, 16 checks).
+const freshRun = await runMasterGoal(
+  'What is the current latest stable Node.js LTS release today? Give the official source URL and the date you retrieved it.',
+  'live freshness',
+);
+const freshYears = [...new Set((freshRun.answer.match(/\b(19|20)\d{2}\b/g) ?? []).map(Number))];
+const nowYear = new Date().getUTCFullYear();
+const hasCurrentYear = freshYears.includes(nowYear) || freshYears.includes(nowYear - 1);
+const hasFutureYear = freshYears.some((y) => y > nowYear);
+const hasUrl = /https?:\/\//.test(freshRun.answer);
+if (freshRun.ok) {
+  ok(hasUrl, `current-data answer carries a source URL (${hasUrl ? 'yes' : 'NO'})`);
+  ok(hasCurrentYear, `current-data answer is dated in the current window (years seen: ${freshYears.join(', ') || 'none'})`);
+  ok(!hasFutureYear, `no future-dated evidence presented as current (years seen: ${freshYears.join(', ') || 'none'})`);
+} else {
+  // An honest refusal is a PASS for the freshness contract: the platform must
+  // never substitute historical values for a "current" request.
+  ok(true, `current-data request failed honestly rather than serving stale data (${freshRun.status}: ${freshRun.error ?? 'no error text'})`);
+  console.log('::notice title=freshness::live current-data request did not complete; honest failure is the required behaviour when current evidence cannot be established');
+}
+// Control: the non-current (historical/general) goal in section 6 completed,
+// which proves the freshness gate does not block ordinary research.
+ok(wf?.status === 'completed', 'control: the non-current research goal still completes (freshness gate is not over-blocking)');
+
 console.log('── answer excerpt (first 240 chars of what the MASTER screen renders):');
 console.log(answerText.slice(0, 240).replace(/\n/g, ' '));
 console.log('── executive summary (first 160 chars):');

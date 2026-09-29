@@ -247,6 +247,19 @@ jobs:
           check "/nonexistent (404 kept)" "http://127.0.0.1:3000/nonexistent-xyz" 404
           check "/mission (private, 404)" "http://127.0.0.1:3000/mission" 404
           check "anonymous /api/tasks refused" "http://127.0.0.1:4000/api/tasks" 401
+          # Build identity: the container must report the commit it was built
+          # from, so "which code is running?" is answerable on ANY host. The
+          # value comes from /app/.image-version, already verified to equal
+          # this commit in docker-publish.
+          live_commit=$(curl -sS -m 15 "http://127.0.0.1:3000/api/health" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(String(JSON.parse(d).build?.commit??''))}catch{process.stdout.write('')}})")
+          if [ "${live_commit}" = "${{ github.sha }}" ]; then
+            echo "PASS /api/health reports its build commit (${live_commit})"
+            echo "::notice title=image-identity::container reports build commit ${live_commit}"
+          else
+            echo "FAIL /api/health build commit: got '${live_commit:-MISSING}', want ${{ github.sha }}"
+            echo "::error title=image-e2e::/api/health build commit → got '${live_commit:-MISSING}', want ${{ github.sha }}"
+            fail=1
+          fi
           # The registry is account-scoped, so the check authenticates like a
           # real user does (registration is a public API in the image).
           email="image-e2e-$(date +%s)@akbaral.test"
