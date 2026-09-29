@@ -574,3 +574,40 @@ Full detail in `artifacts/P0_INTEGRATION_REPORT.md`. Summary:
   **SUPERSEDED** — none merged, none closed, per instruction.
 - The `/api/boss/*` fail-open-auth finding (§14.5 / `MASTER_BLOCKERS.md` §B-1) is untouched by this merge and
   remains the top open blocker.
+
+## 16. P0-0 SECURITY FIX — `/api/boss/*` now fails closed (this session)
+
+Full detail in `artifacts/P0_BOSS_AUTH_FIX.md`. Summary:
+
+- **Root cause traced exactly**: `requireMissionAuth` in `src/routes/boss-dashboard.ts` called `next()`
+  unconditionally whenever the mission dashboard token env vars were unset. Its inline comment claiming
+  "local-only access (bind is 127.0.0.1 by default)" was factually wrong for this router — that description
+  applies to the genuinely separate, loopback-bound `src/mission/server.ts` standalone server, not to this
+  router, which is mounted on the public, `0.0.0.0`-bound AKBARAL! app (`src/app.ts` line 207).
+- **Fix**: missing configuration now returns `503 mission_dashboard_not_configured` (matches the existing
+  `STRIPE_WEBHOOK_SECRET`-absent convention in `src/billing/stripe.ts`); every other auth failure returns
+  `401`; token comparison is constant-time (`crypto.timingSafeEqual`); errors flow through the shared
+  `errorHandler` like every other router. Deliberately did **not** wire in customer `requireAuth`/
+  `requireRole('owner')` — the mission dashboard token remains its own separate credential space, so a
+  customer session can never become mission-owner authorization.
+- **Other mission-facing routes checked** for the same pattern: `economy.ts` (safe — router-wide
+  `requireAuth`+`requireRole`), `admin.ts`/`owner*.ts` (safe, same idiom), `src/mission/server.ts` (a
+  genuinely separate standalone server with its own proper session auth). A repo-wide search for the exact
+  anti-pattern found exactly one occurrence — the one fixed. No other fail-open path was found or
+  manufactured.
+- **Tests**: new `src/routes/boss-dashboard.test.ts` (10 HTTP-level tests against a disposable temp-file
+  mission DB) proves: unauthenticated/misconfigured requests never create or touch `mission.db`; a real
+  AKBARAL! customer JWT is rejected; the correct token still reaches the handler and returns real (empty,
+  freshly migrated) data. Existing `three-plane-isolation.test.ts`, `role-separation.test.ts`,
+  `mission-cash-boundary.test.ts` re-run unmodified and unweakened (38/38 pass).
+- **Full verification after the fix**: `npm run typecheck` → 0 errors. Full suite → **2168/2168 pass, 0 fail,
+  164 suites** (up from 2158/161 — delta is exactly the +10 tests / +3 suites / +1 file from
+  `boss-dashboard.test.ts`, zero regressions). `npm run scan:secrets` → PASS. Production build (backend `tsc`
+  + `next build --webpack`, since the default Turbopack build still OOMs in this 3.8GB sandbox — an
+  environmental constraint noted previously, not a code defect) → succeeded cleanly.
+- **Image**: after all tests passed, committed and pushed to `arena/01a0ed59-akbaral`, triggering CI's
+  `docker-publish`. New commit/digest recorded once CI completes (see the addendum immediately below, or
+  `artifacts/P0_BOSS_AUTH_FIX.md` if this section was written before that run finished).
+- **Not deployed.** Railway continues running the pre-fix image until the owner deploys the new one.
+  ZA141251SA remains not initialized, not deployed; no owner credentials, KYC, payout, or mission revenue
+  were created at any point in this fix.

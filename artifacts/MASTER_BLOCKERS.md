@@ -13,9 +13,17 @@ Exact state at time of writing:
 
 ---
 
-## B-1. [P0 — PRODUCTION BLOCKER] `/api/boss/*` fails open with no auth, mounted on the public AKBARAL! app
+## B-1. [FIXED IN CODE, NOT YET DEPLOYED] `/api/boss/*` fails open with no auth, mounted on the public AKBARAL! app
 
-**Classification: PRODUCTION BLOCKER** (today: configuration/info-disclosure risk with limited blast radius
+**STATUS UPDATE**: fixed in code this session. `requireMissionAuth` now fails **closed**: missing dashboard-
+token configuration returns `503 mission_dashboard_not_configured` (never `next()`), and any other auth
+failure returns `401`. 10 new HTTP-level regression tests prove an unauthenticated/misconfigured request can
+never create or touch `mission.db`, and that a real AKBARAL! customer session token is rejected. Full detail:
+`artifacts/P0_BOSS_AUTH_FIX.md`. **This fix is not yet deployed to Railway** — Railway is still running the
+pre-fix image until the owner deploys the new one (digest recorded below once published). Original finding
+preserved below for the record.
+
+**Classification (pre-fix, historical): PRODUCTION BLOCKER** (today: configuration/info-disclosure risk with limited blast radius
 because mission has no data yet; **escalates to a full unauthenticated financial-data breach the instant
 mission migrations/data exist in the same container** — must be fixed before that can ever be allowed to
 happen).
@@ -111,14 +119,15 @@ happen).
 
 | ID | Item | Classification | Confirmed by |
 |----|------|----------------|--------------|
-| B-1 | `/api/boss/*` fails open, publicly mounted | **PRODUCTION BLOCKER** | Code read + local disposable HTTP reproduction |
+| B-1 | `/api/boss/*` fails open, publicly mounted | **FIXED IN CODE, NOT YET DEPLOYED** | Code fix + 10 new HTTP regression tests, all passing (`P0_BOSS_AUTH_FIX.md`) |
 | B-2 | Deployed commit identity | **UNKNOWN** | No build-identity endpoint exists |
 | B-3 | GHCR image visibility/digest | **UNKNOWN** | `gh api` 404s, inconclusive |
 | B-4 | Railway production env values | **UNKNOWN** | No dashboard/API access from sandbox |
 | B-5 | `economy.ts` mission-chat auth | **RESOLVED — safe** | Code read, router-wide RBAC confirmed |
 | B-6 | 11/18 tools unused by 4,001 catalog | **INFORMATIONAL** | Direct registry vs. catalog cross-reference |
 
-**Recommended next phase order**: fix B-1 first (small, isolated, testable change) and add an HTTP-level auth
-test for `boss-dashboard.ts` before anything else touches the mission system; resolve B-2/B-3/B-4 by asking
-the human owner to check the Railway dashboard and GHCR package settings directly (outside this sandbox's
-reach); then proceed with the rest of the P0/P1/P2/P3 roadmap in `artifacts/MASTER_MERGE_PLAN.md`.
+**Recommended next phase order**: B-1 is fixed and tested in code; the owner must deploy the new image (see
+`artifacts/P0_BOSS_AUTH_FIX.md` / `artifacts/MASTER_PROJECT_STATE.md` §16 for the digest) before it takes
+effect in production. Resolve B-2/B-3/B-4 by asking the human owner to check the Railway dashboard and GHCR
+package settings directly (outside this sandbox's reach); then proceed with the rest of the P0/P1/P2/P3
+roadmap in `artifacts/MASTER_MERGE_PLAN.md`.
