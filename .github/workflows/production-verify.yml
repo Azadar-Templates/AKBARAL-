@@ -441,8 +441,15 @@ jobs:
 
   # ── PHASE 2: the real Gemini provider path, direct (no mocks) ─────────────
   real-gemini-direct:
-    needs: provider-inventory
-    if: needs.provider-inventory.outputs.has_google_key == 'true'
+    # Serialised AFTER real-providers on purpose. Root cause (run 36561175155,
+    # annotated): "streaming failed on gemini-3.8-flash after 1647ms with 0
+    # token(s): google rate limited the request (HTTP 429)". Both jobs call the
+    # same free-tier Gemini key at the same time, so the per-minute quota is
+    # exhausted and the streaming check dies after its bounded retries. Running
+    # them in sequence removes the self-inflicted concurrency; it does not
+    # weaken, skip or retry any check.
+    needs: [provider-inventory, real-providers]
+    if: always() && needs.provider-inventory.outputs.has_google_key == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
