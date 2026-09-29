@@ -94,6 +94,67 @@ describe('launch checks — honesty and classification', () => {
     assert.equal(unreachableReport.checks[0].status, 'unreachable', 'a network failure is not the same fact as a bad key');
   });
 
+  // Google returns HTTP 503 UNAVAILABLE when a model is temporarily
+  // overloaded. That is a provider-side outage, not a credential problem, and
+  // the documented handling is bounded exponential backoff followed by another
+  // CURRENT model — never a fabricated pass.
+  const LIST_MODELS_PAYLOAD = {
+    models: [
+      { name: 'models/gemini-3.5-flash', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.1-flash-lite', supportedGenerationMethods: ['generateContent'] },
+    ],
+  };
+
+  function geminiProbe(generateStatus: (model: string, hit: number) => number): { probe: Probe; calls: ProbeRequest[] } {
+    const calls: ProbeRequest[] = [];
+    const hits = new Map<string, number>();
+    const probe: Probe = async (request) => {
+      calls.push(request);
+      if (request.url.endsWith('/models')) {
+        return { status: 200, json: LIST_MODELS_PAYLOAD, text: '' };
+      }
+      const model = request.url.split('/models/')[1]?.split(':')[0] ?? '';
+      const hit = (hits.get(model) ?? 0) + 1;
+      hits.set(model, hit);
+      return { status: generateStatus(model, hit), json: {}, text: '' };
+    };
+    return { probe, calls };
+  }
+
+  const FAST_RETRY = { AKBARAL_PROVIDER_RETRY_BASE_MS: '1', AKBARAL_PROVIDER_RETRY_MAX_DELAY_MS: '2' };
+
+  it('retries a transient Gemini 503 and then tries the next model Google is currently offering', async () => {
+    const { probe, calls } = geminiProbe((model) => (model === 'gemini-3.5-flash' ? 503 : 200));
+    const report = await runLaunchChecks({
+      env: { ...BASE_ENV, ...FAST_RETRY, GOOGLE_API_KEY: FAKE_KEY },
+      probe,
+      only: ['provider.gemini'],
+    });
+    const check = report.checks[0];
+    assert.equal(check.status, 'ready');
+    assert.match(check.evidence, /generateContent succeeded on gemini-3\.1-flash-lite/);
+    const overloaded = calls.filter((call) => call.url.includes('gemini-3.5-flash:generateContent'));
+    assert.equal(overloaded.length, 3, 'the 503 model was retried with bounded backoff before moving on');
+    assert.ok(
+      calls.every((call) => !call.url.includes('gemini-2.0-flash')),
+      'candidates come from the live ListModels response, never an invented or retired ID',
+    );
+  });
+
+  it('fails honestly — and still blocks — when every current Gemini candidate is unavailable', async () => {
+    const { probe } = geminiProbe(() => 503);
+    const report = await runLaunchChecks({
+      env: { ...BASE_ENV, ...FAST_RETRY, GOOGLE_API_KEY: FAKE_KEY },
+      probe,
+      only: ['provider.gemini'],
+    });
+    const check = report.checks[0];
+    assert.equal(check.status, 'failed', 'an exhausted retry budget must never be reported as ready');
+    assert.match(check.evidence, /every current candidate/);
+    assert.match(check.evidence, /HTTP 503/);
+    assert.equal(report.blockers.length, 1, 'the production gate stays closed');
+  });
+
   it('never prints a secret: only names, lengths and status codes appear in a report', async () => {
     const { probe } = probeThat(() => ({ status: 200 }));
     const report = await runLaunchChecks({

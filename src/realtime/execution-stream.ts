@@ -1,8 +1,9 @@
 import type { Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { activeSessionExists, appendAgentExecutionLog, getExecutionOwnerId, listExecutionLogs, listExecutionLogsAfter, type ExecutionLogRow } from '../db';
+import { activeSessionExists, appendAgentExecutionLog, getExecutionOwnerId, listExecutionLogsAfterCursor, type ExecutionLogCursor, type ExecutionLogRow } from '../db';
 import { verifyAccessToken } from '../security';
+import { publicLogLine } from '../server/safe-errors';
 
 /**
  * Real-time execution log transport.
@@ -46,7 +47,10 @@ export type ExecutionStreamMessage =
 
 interface ClientEntry {
   socket: WebSocket;
-  lastLogAt: string | null;
+  // Keyset cursor (created_at, id). created_at alone is millisecond
+  // resolution: a cursor without the id tie-break permanently skips every log
+  // written in the same millisecond as the last delivered row.
+  cursor: ExecutionLogCursor | null;
 }
 
 export class ExecutionStream {
@@ -83,9 +87,12 @@ export class ExecutionStream {
       }
 
       const after = url.searchParams.get('after') ?? '';
+      const afterId = url.searchParams.get('afterId') ?? '';
       const entry: ClientEntry = {
         socket,
-        lastLogAt: after.length > 0 ? after : null,
+        // An `after` without `afterId` resumes from the lowest id in that
+        // millisecond, which replays (never drops) same-millisecond rows.
+        cursor: after.length > 0 ? { createdAt: after, id: afterId } : null,
       };
       const list = this.clients.get(executionId) ?? [];
       list.push(entry);
@@ -95,23 +102,22 @@ export class ExecutionStream {
       // that point; a first-time subscriber also receives any logs that were
       // appended between task creation and the socket being registered so the
       // WebSocket channel stays consistent with the SSE fallback.
-      const rowsToReplay: ExecutionLogRow[] = entry.lastLogAt
-        ? listExecutionLogsAfter(executionId, entry.lastLogAt, 500)
-        : (listExecutionLogs(executionId, 500) as unknown as ExecutionLogRow[]);
+      const rowsToReplay: ExecutionLogRow[] = listExecutionLogsAfterCursor(executionId, entry.cursor, 500);
       for (const row of rowsToReplay) {
         if (socket.readyState === WebSocket.OPEN) {
+          const safe = publicLogLine({ message: row.message, data: row.data ? JSON.parse(row.data) : null, level: row.level });
           const message: ExecutionStreamMessage = {
             type: 'log',
             id: row.id,
             executionId: row.execution_id,
             logType: row.type,
             level: row.level,
-            message: row.message,
-            data: row.data ? JSON.parse(row.data) : null,
+            message: safe.message,
+            data: safe.data,
             createdAt: row.created_at,
           };
           socket.send(JSON.stringify(message));
-          entry.lastLogAt = String(row.created_at);
+          entry.cursor = { createdAt: String(row.created_at), id: String(row.id) };
         }
       }
 
@@ -176,18 +182,24 @@ export class ExecutionStream {
     data?: Record<string, unknown> | null;
   }): { id: string } {
     const inserted = appendAgentExecutionLog(input);
-    const createdAt = new Date().toISOString();
+    // The row above keeps the raw operator text; what goes on the wire is the
+    // display-safe line (production error boundary).
+    const safe = publicLogLine({ message: input.message, data: input.data ?? null, level: input.level });
+    // Broadcast the PERSISTED timestamp, never a freshly generated one: the
+    // client turns createdAt into its reconnect cursor, and a value that
+    // differs from the stored row makes the replay skip or duplicate logs.
+    const createdAt = inserted.createdAt;
     const message: ExecutionStreamMessage = {
       type: 'log',
       id: inserted.id,
       executionId: input.executionId,
       logType: input.type ?? 'log',
       level: input.level ?? 'info',
-      message: input.message,
-      data: input.data ?? null,
+      message: safe.message,
+      data: safe.data,
       createdAt,
     };
-    this.broadcast(input.executionId, message, createdAt);
+    this.broadcast(input.executionId, message, { createdAt, id: inserted.id });
     return inserted;
   }
 
@@ -211,15 +223,15 @@ export class ExecutionStream {
   private broadcast(
     executionId: string,
     message: ExecutionStreamMessage,
-    createdAt: string | null,
+    cursor: ExecutionLogCursor | null,
   ): void {
     const list = this.clients.get(executionId) ?? [];
     const payload = JSON.stringify(message);
     for (const entry of list) {
       if (entry.socket.readyState === WebSocket.OPEN) {
         entry.socket.send(payload);
-        if (createdAt) {
-          entry.lastLogAt = createdAt;
+        if (cursor) {
+          entry.cursor = cursor;
         }
       }
     }

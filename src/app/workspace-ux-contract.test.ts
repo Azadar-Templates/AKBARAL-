@@ -411,11 +411,11 @@ describe('Arena-style workspace — client behaviour (real app.js functions)', (
     const dom = buildDom();
     const api = loadWorkspace(dom);
     const turn = api.outcomeChatTurn(false, { code: 'provider_not_configured', message: 'no provider available' });
-    assert.match(turn.html, /No AI provider configured/, 'the friendly honest title is used');
+    assert.match(turn.html, /complete this task right now/, 'the safe, honest failure line is used (no provider diagnostic)');
     assert.ok(!/Completed/.test(turn.html), 'a failure never claims completion');
     assert.equal(turn.kind, 'master err', 'the turn is styled as a failure');
     api.renderMasterResult(false, { code: 'verification_failed', message: 'verification_failed: substance' });
-    assert.match(dom.nodes['master-result'].innerHTML, /rejected by verification/, 'the canvas states the honest reason');
+    assert.match(dom.nodes['master-result'].innerHTML, /quality check/, 'the canvas states the honest reason');
     assert.equal(dom.nodes['master-canvas-state'].textContent, 'failed', 'the canvas state chip reports the failure');
   });
 

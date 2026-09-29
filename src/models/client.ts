@@ -1,8 +1,13 @@
-import { PROVIDER_SPECS, type ModelSpec } from './catalog';
-import { externalHttpRequest, externalStreamingRequest, ExternalHttpError } from '../integrations/http';
+import { PROVIDER_SPECS, type ModelSpec } from "./catalog";
+import {
+  externalHttpRequest,
+  externalStreamingRequest,
+  ExternalHttpError,
+} from "../integrations/http";
+import { withRetries } from "./retry";
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
 }
 
@@ -22,19 +27,21 @@ export interface ChatResult {
 }
 
 export class ProviderNotConfiguredError extends Error {
-  readonly code = 'provider_not_configured';
+  readonly code = "provider_not_configured";
   readonly requiredEnvKey: string;
   readonly providerKey: string;
 
   constructor(providerKey: string, requiredEnvKey: string) {
-    super(`${providerKey} requires credential environment variable ${requiredEnvKey}`);
+    super(
+      `${providerKey} requires credential environment variable ${requiredEnvKey}`,
+    );
     this.providerKey = providerKey;
     this.requiredEnvKey = requiredEnvKey;
   }
 }
 
 export class ProviderCallError extends Error {
-  readonly code = 'provider_call_failed';
+  readonly code = "provider_call_failed";
   readonly providerKey: string;
   readonly status?: number;
   /**
@@ -44,12 +51,21 @@ export class ProviderCallError extends Error {
    */
   readonly retryable: boolean;
 
-  constructor(providerKey: string, message: string, status?: number, options?: { retryable?: boolean }) {
+  constructor(
+    providerKey: string,
+    message: string,
+    status?: number,
+    options?: { retryable?: boolean },
+  ) {
     super(message);
     this.providerKey = providerKey;
     this.status = status;
     this.retryable =
-      options?.retryable ?? (status === undefined || status === 408 || status === 429 || status >= 500);
+      options?.retryable ??
+      (status === undefined ||
+        status === 408 ||
+        status === 429 ||
+        status >= 500);
   }
 }
 
@@ -66,7 +82,11 @@ export interface ModelProvider {
    * this; the default falls back to a single-shot chat and emits the complete
    * text as one token so callers always observe the same interface.
    */
-  streamChat?(model: ModelSpec, messages: ChatMessage[], onToken: (token: string) => void): Promise<ChatResult>;
+  streamChat?(
+    model: ModelSpec,
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+  ): Promise<ChatResult>;
 }
 
 /** Default streaming implementation: one chat call, one token event. */
@@ -102,7 +122,10 @@ function resolveProviderSpec(key: string) {
  * misconfiguration cannot disable the timeout entirely).
  */
 function providerTimeoutMs(): number {
-  const parsed = Number.parseInt(process.env.AKBARAL_PROVIDER_TIMEOUT_MS ?? '', 10);
+  const parsed = Number.parseInt(
+    process.env.AKBARAL_PROVIDER_TIMEOUT_MS ?? "",
+    10,
+  );
   return Number.isFinite(parsed) && parsed >= 1000 ? parsed : 60_000;
 }
 
@@ -112,34 +135,71 @@ function resolveBaseUrl(spec: { key: string; baseUrl?: string }): string {
   if (!base) {
     throw new Error(`provider ${spec.key} has no base URL configured`);
   }
-  return base.replace(/\/+$/, '');
+  return base.replace(/\/+$/, "");
 }
 
+/**
+ * Failures worth an IMMEDIATE in-place retry: the transient HTTP statuses
+ * Google (and every other provider here) documents as "try again" —
+ * 408 request timeout, 429 rate limited, and any 5xx server error.
+ *
+ * Deliberately narrower than `ProviderCallError.retryable`: a statusless
+ * failure (client-side timeout / connection fault) is left to the router's
+ * provider fallback instead, because retrying a HUNG provider in place would
+ * multiply the caller's worst-case latency by the attempt count. That path is
+ * unchanged by this retry layer.
+ */
+export function isRetryableProviderError(error: unknown): boolean {
+  if (!(error instanceof ProviderCallError) || !error.retryable || error.status === undefined) {
+    return false;
+  }
+  return error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
+/**
+ * One POST to a provider, with bounded exponential backoff on transient
+ * failures (Google's documented handling for 429/500/502/503/504; the same
+ * shape applies to every provider here).
+ *
+ * The retry budget is small and capped, and the ORIGINAL error is rethrown
+ * when it is exhausted — so a genuine outage still fails honestly and still
+ * falls through to the router's next model/provider. Permanent errors
+ * (400/401/403/404) are not retried at all.
+ */
 async function runJsonRequest(
   key: string,
   url: string,
   headers: Record<string, string>,
   body: unknown,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
-  try {
-    const result = await externalHttpRequest(key, url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      timeoutMs: providerTimeoutMs(),
-    });
-    return { status: result.status, json: result.json };
-  } catch (error) {
-    if (error instanceof ExternalHttpError) {
-      throw new ProviderCallError(key, error.message, error.status);
-    }
-    throw new ProviderCallError(key, error instanceof Error ? error.message : 'network error');
-  }
+  const payload = JSON.stringify(body);
+  return withRetries(
+    async () => {
+      try {
+        const result = await externalHttpRequest(key, url, {
+          method: "POST",
+          headers,
+          body: payload,
+          timeoutMs: providerTimeoutMs(),
+        });
+        return { status: result.status, json: result.json };
+      } catch (error) {
+        if (error instanceof ExternalHttpError) {
+          throw new ProviderCallError(key, error.message, error.status);
+        }
+        throw new ProviderCallError(
+          key,
+          error instanceof Error ? error.message : "network error",
+        );
+      }
+    },
+    { isRetryable: isRetryableProviderError },
+  );
 }
 
 /** OpenAI-compatible chat completions adapter (OpenAI, Azure-style, local servers). */
 export class OpenAICompatibleProvider implements ModelProvider {
-  readonly key = 'openai';
+  readonly key = "openai";
 
   async chat(model: ModelSpec, messages: ChatMessage[]): Promise<ChatResult> {
     const spec = resolveProviderSpec(this.key);
@@ -153,16 +213,18 @@ export class OpenAICompatibleProvider implements ModelProvider {
       `${resolveBaseUrl(spec)}/chat/completions`,
       {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       {
         model: model.key,
         messages,
       },
     );
-    const choices = json.choices as Array<{ message?: { content?: string } }> | undefined;
-    const text = choices?.[0]?.message?.content ?? '';
-    const usage = json.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined;
+    const choices = json.choices as
+      Array<{ message?: { content?: string } }> | undefined;
+    const text = choices?.[0]?.message?.content ?? "";
+    const usage = json.usage as
+      { prompt_tokens?: number; completion_tokens?: number } | undefined;
     return {
       text,
       model: model.key,
@@ -173,14 +235,18 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
   }
 
-  async streamChat(model: ModelSpec, messages: ChatMessage[], onToken: (token: string) => void): Promise<ChatResult> {
+  async streamChat(
+    model: ModelSpec,
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+  ): Promise<ChatResult> {
     const spec = resolveProviderSpec(this.key);
     const apiKey = process.env[spec.envKey];
     if (!apiKey) {
       throw new ProviderNotConfiguredError(this.key, spec.envKey);
     }
     const started = Date.now();
-    let text = '';
+    let text = "";
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     try {
@@ -188,15 +254,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
         this.key,
         `${resolveBaseUrl(spec)}/chat/completions`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
           },
           body: JSON.stringify({ model: model.key, messages, stream: true }),
           onData: (data) => {
-            if (!data || data === '[DONE]') {
+            if (!data || data === "[DONE]") {
               return;
             }
             try {
@@ -204,7 +270,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
                 choices?: Array<{ delta?: { content?: string } }>;
                 usage?: { prompt_tokens?: number; completion_tokens?: number };
               };
-              const token = chunk.choices?.[0]?.delta?.content ?? '';
+              const token = chunk.choices?.[0]?.delta?.content ?? "";
               if (token) {
                 text += token;
                 onToken(token);
@@ -239,7 +305,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
 /** Anthropic Messages API adapter. */
 export class AnthropicProvider implements ModelProvider {
-  readonly key = 'anthropic';
+  readonly key = "anthropic";
 
   async chat(model: ModelSpec, messages: ChatMessage[]): Promise<ChatResult> {
     const spec = resolveProviderSpec(this.key);
@@ -248,21 +314,24 @@ export class AnthropicProvider implements ModelProvider {
       throw new ProviderNotConfiguredError(this.key, spec.envKey);
     }
     const system = messages
-      .filter((message) => message.role === 'system')
+      .filter((message) => message.role === "system")
       .map((message) => message.content)
-      .join('\n');
+      .join("\n");
     const rest = messages
-      .filter((message) => message.role !== 'system')
-      .map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }));
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      }));
 
     const started = Date.now();
     const { json } = await runJsonRequest(
       this.key,
       `${resolveBaseUrl(spec)}/messages`,
       {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
       },
       {
         model: model.key,
@@ -271,9 +340,14 @@ export class AnthropicProvider implements ModelProvider {
         messages: rest,
       },
     );
-    const content = json.content as Array<{ type: string; text?: string }> | undefined;
-    const text = content?.map((item) => (item.type === 'text' ? item.text ?? '' : '')).join('\n') ?? '';
-    const usage = json.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+    const content = json.content as
+      Array<{ type: string; text?: string }> | undefined;
+    const text =
+      content
+        ?.map((item) => (item.type === "text" ? (item.text ?? "") : ""))
+        .join("\n") ?? "";
+    const usage = json.usage as
+      { input_tokens?: number; output_tokens?: number } | undefined;
     return {
       text,
       model: model.key,
@@ -284,21 +358,28 @@ export class AnthropicProvider implements ModelProvider {
     };
   }
 
-  async streamChat(model: ModelSpec, messages: ChatMessage[], onToken: (token: string) => void): Promise<ChatResult> {
+  async streamChat(
+    model: ModelSpec,
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+  ): Promise<ChatResult> {
     const spec = resolveProviderSpec(this.key);
     const apiKey = process.env[spec.envKey];
     if (!apiKey) {
       throw new ProviderNotConfiguredError(this.key, spec.envKey);
     }
     const system = messages
-      .filter((message) => message.role === 'system')
+      .filter((message) => message.role === "system")
       .map((message) => message.content)
-      .join('\n');
+      .join("\n");
     const rest = messages
-      .filter((message) => message.role !== 'system')
-      .map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }));
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      }));
     const started = Date.now();
-    let text = '';
+    let text = "";
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     try {
@@ -306,12 +387,12 @@ export class AnthropicProvider implements ModelProvider {
         this.key,
         `${resolveBaseUrl(spec)}/messages`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
           },
           body: JSON.stringify({
             model: model.key,
@@ -328,17 +409,23 @@ export class AnthropicProvider implements ModelProvider {
               const event = JSON.parse(data) as {
                 type?: string;
                 delta?: { type?: string; text?: string };
-                message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+                message?: {
+                  usage?: { input_tokens?: number; output_tokens?: number };
+                };
                 usage?: { input_tokens?: number; output_tokens?: number };
               };
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta' && event.delta.text) {
+              if (
+                event.type === "content_block_delta" &&
+                event.delta?.type === "text_delta" &&
+                event.delta.text
+              ) {
                 text += event.delta.text;
                 onToken(event.delta.text);
               }
-              if (event.type === 'message_start' && event.message?.usage) {
+              if (event.type === "message_start" && event.message?.usage) {
                 inputTokens = event.message.usage.input_tokens;
               }
-              if (event.type === 'message_delta' && event.usage) {
+              if (event.type === "message_delta" && event.usage) {
                 outputTokens = event.usage.output_tokens;
               }
             } catch {
@@ -375,9 +462,9 @@ export class AnthropicProvider implements ModelProvider {
 function googleNotFound(model: ModelSpec, baseUrl: string): ProviderCallError {
   // Extract the API version segment (v1, v1beta, …) from the endpoint path;
   // never echo the full URL (defensive: it must stay out of messages).
-  const apiVersion = /\/(v\d+[a-z]*)\/?/.exec(baseUrl)?.[1] ?? 'unknown';
+  const apiVersion = /\/(v\d+[a-z]*)\/?/.exec(baseUrl)?.[1] ?? "unknown";
   return new ProviderCallError(
-    'google',
+    "google",
     `google returned HTTP 404: model "${model.key}" was not found for API version ${apiVersion} — the model is retired or does not exist at this endpoint; update the model catalog (this is a configuration problem, not a credentials problem)`,
     404,
     { retryable: false },
@@ -385,7 +472,7 @@ function googleNotFound(model: ModelSpec, baseUrl: string): ProviderCallError {
 }
 
 export class GoogleProvider implements ModelProvider {
-  readonly key = 'google';
+  readonly key = "google";
 
   async chat(model: ModelSpec, messages: ChatMessage[]): Promise<ChatResult> {
     const spec = resolveProviderSpec(this.key);
@@ -394,12 +481,15 @@ export class GoogleProvider implements ModelProvider {
       throw new ProviderNotConfiguredError(this.key, spec.envKey);
     }
     const contents = messages
-      .filter((message) => message.role !== 'system')
-      .map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }));
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        role: message.role === "assistant" ? "model" : "user",
+        parts: [{ text: message.content }],
+      }));
     const system = messages
-      .filter((message) => message.role === 'system')
+      .filter((message) => message.role === "system")
       .map((message) => message.content)
-      .join('\n');
+      .join("\n");
 
     const started = Date.now();
     const baseUrl = resolveBaseUrl(spec);
@@ -410,8 +500,11 @@ export class GoogleProvider implements ModelProvider {
       ({ json } = await runJsonRequest(
         this.key,
         `${baseUrl}/models/${model.key}:generateContent`,
-        { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined },
+        { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        {
+          contents,
+          systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+        },
       ));
     } catch (error) {
       if (error instanceof ProviderCallError && error.status === 404) {
@@ -419,8 +512,15 @@ export class GoogleProvider implements ModelProvider {
       }
       throw error;
     }
-    const candidates = json.candidates as Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> | undefined;
-    const blockReason = (json.promptFeedback as { blockReason?: string } | undefined)?.blockReason;
+    const candidates = json.candidates as
+      | Array<{
+          content?: { parts?: Array<{ text?: string }> };
+          finishReason?: string;
+        }>
+      | undefined;
+    const blockReason = (
+      json.promptFeedback as { blockReason?: string } | undefined
+    )?.blockReason;
     if (blockReason) {
       // Honest, explicit failure: a safety-blocked request must never surface
       // as a silently-empty output that later fails verification confusingly.
@@ -432,10 +532,14 @@ export class GoogleProvider implements ModelProvider {
         { retryable: false },
       );
     }
-    const text = candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+    const text =
+      candidates?.[0]?.content?.parts
+        ?.map((part) => part.text ?? "")
+        .join("") ?? "";
     const finishReason = candidates?.[0]?.finishReason;
-    if (!text && candidates && finishReason && finishReason !== 'STOP') {
-      const retryable = finishReason === 'MAX_TOKENS' || finishReason === 'RECITATION';
+    if (!text && candidates && finishReason && finishReason !== "STOP") {
+      const retryable =
+        finishReason === "MAX_TOKENS" || finishReason === "RECITATION";
       throw new ProviderCallError(
         this.key,
         `google returned no content (finishReason: ${finishReason})`,
@@ -443,7 +547,8 @@ export class GoogleProvider implements ModelProvider {
         { retryable },
       );
     }
-    const usage = json.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
+    const usage = json.usageMetadata as
+      { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
     return {
       text,
       model: model.key,
@@ -454,57 +559,91 @@ export class GoogleProvider implements ModelProvider {
     };
   }
 
-  async streamChat(model: ModelSpec, messages: ChatMessage[], onToken: (token: string) => void): Promise<ChatResult> {
+  async streamChat(
+    model: ModelSpec,
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+  ): Promise<ChatResult> {
     const spec = resolveProviderSpec(this.key);
     const apiKey = process.env[spec.envKey];
     if (!apiKey) {
       throw new ProviderNotConfiguredError(this.key, spec.envKey);
     }
     const contents = messages
-      .filter((message) => message.role !== 'system')
-      .map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }));
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        role: message.role === "assistant" ? "model" : "user",
+        parts: [{ text: message.content }],
+      }));
     const system = messages
-      .filter((message) => message.role === 'system')
+      .filter((message) => message.role === "system")
       .map((message) => message.content)
-      .join('\n');
+      .join("\n");
     const started = Date.now();
     const baseUrl = resolveBaseUrl(spec);
-    let text = '';
+    let text = "";
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     try {
-      await externalStreamingRequest(
-        this.key,
-        `${baseUrl}/models/${model.key}:streamGenerateContent?alt=sse`,
+      // Transient-failure retry for streaming, with one extra safety rule:
+      // a stream that already delivered tokens is NEVER retried, because
+      // re-running it would duplicate text the caller has already received.
+      await withRetries(
+        async () =>
+          externalStreamingRequest(
+            this.key,
+            `${baseUrl}/models/${model.key}:streamGenerateContent?alt=sse`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "text/event-stream",
+                "x-goog-api-key": apiKey,
+              },
+              body: JSON.stringify({
+                contents,
+                systemInstruction: system
+                  ? { parts: [{ text: system }] }
+                  : undefined,
+              }),
+              onData: (data) => {
+                if (!data) {
+                  return;
+                }
+                try {
+                  const chunk = JSON.parse(data) as {
+                    candidates?: Array<{
+                      content?: { parts?: Array<{ text?: string }> };
+                    }>;
+                    usageMetadata?: {
+                      promptTokenCount?: number;
+                      candidatesTokenCount?: number;
+                    };
+                  };
+                  const token =
+                    chunk.candidates?.[0]?.content?.parts
+                      ?.map((part) => part.text ?? "")
+                      .join("") ?? "";
+                  if (token) {
+                    text += token;
+                    onToken(token);
+                  }
+                  if (chunk.usageMetadata) {
+                    inputTokens = chunk.usageMetadata.promptTokenCount;
+                    outputTokens = chunk.usageMetadata.candidatesTokenCount;
+                  }
+                } catch {
+                  // Ignore malformed keep-alive chunks.
+                }
+              },
+            },
+          ),
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', 'x-goog-api-key': apiKey },
-          body: JSON.stringify({
-            contents,
-            systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-          }),
-          onData: (data) => {
-            if (!data) {
-              return;
-            }
-            try {
-              const chunk = JSON.parse(data) as {
-                candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-                usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-              };
-              const token = chunk.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
-              if (token) {
-                text += token;
-                onToken(token);
-              }
-              if (chunk.usageMetadata) {
-                inputTokens = chunk.usageMetadata.promptTokenCount;
-                outputTokens = chunk.usageMetadata.candidatesTokenCount;
-              }
-            } catch {
-              // Ignore malformed keep-alive chunks.
-            }
-          },
+          isRetryable: (error) =>
+            text.length === 0 &&
+            error instanceof ExternalHttpError &&
+            error.status !== undefined &&
+            (error.status === 408 || error.status === 429 || error.status >= 500),
         },
       );
     } catch (error) {
@@ -529,16 +668,17 @@ export class GoogleProvider implements ModelProvider {
 
 export function createProvider(key: string): ModelProvider {
   switch (key) {
-    case 'omniroute': {
+    case "omniroute": {
       // Lazy import to avoid circular deps — omniroute module imports catalog
-      const { OmniRouteProvider } = require('./omniroute') as typeof import('./omniroute');
+      const { OmniRouteProvider } =
+        require("./omniroute") as typeof import("./omniroute");
       return new OmniRouteProvider();
     }
-    case 'openai':
+    case "openai":
       return new OpenAICompatibleProvider();
-    case 'anthropic':
+    case "anthropic":
       return new AnthropicProvider();
-    case 'google':
+    case "google":
       return new GoogleProvider();
     default:
       throw new Error(`model provider "${key}" is not implemented`);

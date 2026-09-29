@@ -1,5 +1,11 @@
 import type { AgentView } from '../agents/registry';
 import type { CompletionFn } from './goal-analyzer';
+import {
+  assessFreshness,
+  assessSourceEvidence,
+  detectConflicts,
+  detectCurrencyIntent,
+} from './research-evidence';
 
 /**
  * MASTER AI verification stage.
@@ -19,6 +25,17 @@ import type { CompletionFn } from './goal-analyzer';
  *         - no_fabricated_sources : agent declares source/citation verification
  *                              and produced URLs/citations without any real
  *                              source tool having run
+ *         - evidence_freshness : the request asks for CURRENT data (today /
+ *                              latest / now) but the output cannot show a
+ *                              source date that is actually current — stale
+ *                              or undated data must never be presented as
+ *                              current
+ *         - source_evidence  : an externally sourced factual claim without a
+ *                              verifiable source URL, or citations that
+ *                              appear nowhere in the context real tools
+ *                              retrieved
+ *         - source_conflict  : materially conflicting dates/values presented
+ *                              without reconciling or reporting the conflict
  *       soft (recorded, do not gate):
  *         - goal_addressed   : goal terms appear in the output
  *         - declared_outputs : output resembles the agent's declared outputs
@@ -167,6 +184,157 @@ function checkNoFabricatedSources(
   };
 }
 
+/**
+ * Freshness gate for "current / today / latest / now" requests.
+ *
+ * The output must carry a date of its own that is genuinely current; stale or
+ * undated data fails. This never rewrites or "fixes" an answer — a stale
+ * answer fails verification so the task fails honestly (and the free credit is
+ * refunded) instead of presenting 2024 figures as today's.
+ */
+function checkEvidenceFreshness(
+  agent: AgentView,
+  goal: string,
+  content: string,
+  sourceContextUsed: boolean,
+  now: Date,
+): VerificationCheck {
+  const assessment = assessFreshness(goal, content, now);
+  // Only externally sourced work is gated on freshness: an agent that
+  // declares source/citation verification, or any run where a real source
+  // tool produced context. "Write a function that returns the current time"
+  // is not a research claim and must not be gated.
+  if (assessment.intent === null || !(declaresSourceVerification(agent) || sourceContextUsed)) {
+    return {
+      name: 'evidence_freshness',
+      severity: 'hard',
+      passed: true,
+      detail:
+        assessment.intent === null
+          ? 'Request does not ask for current data; freshness check not applicable.'
+          : 'Run makes no externally sourced claim; freshness check not applicable.',
+    };
+  }
+  const base = `Request asks for ${assessment.intent === 'today' ? 'same-day' : 'current'} data (max evidence age ${assessment.maxAgeDays} day(s)).`;
+  switch (assessment.verdict) {
+    case 'no_date':
+      return {
+        name: 'evidence_freshness',
+        severity: 'hard',
+        passed: false,
+        detail: `${base} Output states no source date or timestamp, so its data cannot be shown to be current.`,
+      };
+    case 'stale':
+      return {
+        name: 'evidence_freshness',
+        severity: 'hard',
+        passed: false,
+        detail: `${base} The most recent date in the output ("${assessment.newest?.raw}") is ${assessment.ageDays} day(s) old — historical data must not be presented as current.`,
+      };
+    case 'future':
+      return {
+        name: 'evidence_freshness',
+        severity: 'hard',
+        passed: false,
+        detail: `${base} The output's newest date ("${assessment.newest?.raw}") is in the future, so it cannot come from a real source.`,
+      };
+    default:
+      return {
+        name: 'evidence_freshness',
+        severity: 'hard',
+        passed: true,
+        detail: `${base} Newest source date "${assessment.newest?.raw}" is ${assessment.ageDays} day(s) old.`,
+      };
+  }
+}
+
+/**
+ * Every externally sourced factual claim must keep its source URL, and cited
+ * URLs must match the context the platform actually retrieved.
+ */
+function checkSourceEvidence(
+  agent: AgentView,
+  goal: string,
+  content: string,
+  sourceContextUsed: boolean,
+  sourceContext: string | null,
+): VerificationCheck {
+  const currencyIntent = detectCurrencyIntent(goal);
+  const externallySourced = declaresSourceVerification(agent) || sourceContextUsed;
+  const evidence = assessSourceEvidence(content, sourceContext);
+  // A URL is REQUIRED only where the answer must rest on live external data:
+  // a current-data request handled by a source-verifying/tool-backed run.
+  // An answer that makes no external claim (and cites nothing) is not gated —
+  // requiring a link from every answer that happened to run a search would
+  // fail honest, self-contained work.
+  const mustCite = externallySourced && currencyIntent !== null;
+  if (!mustCite && evidence.urls.length === 0) {
+    return {
+      name: 'source_evidence',
+      severity: 'hard',
+      passed: true,
+      detail: 'No externally sourced claim to attribute; source-evidence check not applicable.',
+    };
+  }
+  if (evidence.urls.length === 0) {
+    return {
+      name: 'source_evidence',
+      severity: 'hard',
+      passed: false,
+      detail: evidence.namedWithoutUrl
+        ? 'Output names sources but gives no verifiable URL for any of them.'
+        : 'Output makes externally sourced claims without a single verifiable source URL.',
+    };
+  }
+  if (sourceContext && evidence.corroborated.length === 0) {
+    // Gating on corroboration only where the answer MUST rest on live data.
+    // Elsewhere an uncorroborated citation is recorded (soft) rather than
+    // failing work that is otherwise sound.
+    return {
+      name: 'source_evidence',
+      severity: mustCite ? 'hard' : 'soft',
+      passed: false,
+      detail: `None of the ${evidence.urls.length} cited URL(s) appear in the context the platform actually retrieved, so they cannot be verified.`,
+    };
+  }
+  return {
+    name: 'source_evidence',
+    severity: 'hard',
+    passed: true,
+    detail: `Output cites ${evidence.urls.length} source URL(s)${sourceContext ? `, ${evidence.corroborated.length} matching the retrieved context` : ''}.`,
+  };
+}
+
+/**
+ * Materially conflicting dates/values must be reconciled or reported. A
+ * conflict the output itself flags is acceptable; silently presenting both is
+ * not.
+ */
+function checkSourceConflict(
+  agent: AgentView,
+  goal: string,
+  content: string,
+  sourceContextUsed: boolean,
+): VerificationCheck {
+  const conflicts = detectConflicts(content);
+  const gated = detectCurrencyIntent(goal) !== null && (declaresSourceVerification(agent) || sourceContextUsed);
+  const severity: VerificationCheck['severity'] = gated ? 'hard' : 'soft';
+  if (conflicts.length === 0) {
+    return {
+      name: 'source_conflict',
+      severity,
+      passed: true,
+      detail: 'No materially conflicting dates or values detected.',
+    };
+  }
+  return {
+    name: 'source_conflict',
+    severity,
+    passed: false,
+    detail: `Output presents conflicting source data without reconciling or reporting it: ${conflicts.map((conflict) => conflict.detail).join('; ')}.`,
+  };
+}
+
 function checkGoalAddressed(goal: string, content: string): VerificationCheck {
   const goalTerms = significantTerms(goal);
   if (goalTerms.length === 0) {
@@ -216,11 +384,17 @@ export async function verifyAgentOutput(input: {
   content: string;
   /** True when a real source tool (web search / page fetch) produced context for this run. */
   sourceContextUsed?: boolean;
+  /** Verbatim tool context retrieved for this run, used to corroborate citations. */
+  sourceContext?: string | null;
+  /** Clock, injectable so freshness rules are testable and deterministic. */
+  now?: Date;
   /** Optional LLM rubric completion. Null/undefined = contract checks only. */
   complete?: CompletionFn | null;
 }): Promise<VerificationResult> {
   const { agent, goal, content } = input;
   const sourceContextUsed = input.sourceContextUsed ?? false;
+  const sourceContext = input.sourceContext ?? null;
+  const now = input.now ?? new Date();
   const complete = input.complete ?? null;
 
   const checks: VerificationCheck[] = [
@@ -228,6 +402,9 @@ export async function verifyAgentOutput(input: {
     checkSubstance(agent, content),
     checkNoRefusal(content),
     checkNoFabricatedSources(agent, content, sourceContextUsed),
+    checkEvidenceFreshness(agent, goal, content, sourceContextUsed, now),
+    checkSourceEvidence(agent, goal, content, sourceContextUsed, sourceContext),
+    checkSourceConflict(agent, goal, content, sourceContextUsed),
     checkGoalAddressed(goal, content),
     checkDeclaredOutputs(agent, content),
   ];

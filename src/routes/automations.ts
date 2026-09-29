@@ -19,6 +19,7 @@ import {
 import { executionQueue } from '../orchestrator/queue';
 import { automationScheduler } from '../automation/scheduler';
 import { AUTOMATION_LIMITS, firstOccurrence, parseAutomationInput } from '../automation/validate';
+import { publicErrorMessage } from '../server/safe-errors';
 
 /**
  * Automation & scheduled workflows API.
@@ -75,7 +76,9 @@ function serializeRun(row: Record<string, unknown>): Record<string, unknown> {
     scheduledFor: scheduled_for,
     startedAt: started_at,
     finishedAt: finished_at,
-    errorMessage: error_message,
+    // Public copy only — the raw run error stays in automation_runs and the
+    // server logs (server-side diagnostics).
+    errorMessage: publicErrorMessage(error_message),
     attempt,
     createdAt: created_at,
   };

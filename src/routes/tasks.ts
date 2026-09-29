@@ -17,6 +17,17 @@ import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { HttpError, businessErrorToHttp } from '../server/http';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { withPublicErrorMessage, publicLogLine } from '../server/safe-errors';
+
+/**
+ * Execution logs are rendered verbatim in the workspace console, so they pass
+ * through the production error boundary exactly like error_message does. The
+ * stored rows keep the raw operator text.
+ */
+function publicLogRow(row: Record<string, unknown>): Record<string, unknown> {
+  const safe = publicLogLine({ message: row.message, data: row.data, level: row.level });
+  return { ...row, message: safe.message, data: safe.data === null ? null : JSON.stringify(safe.data) };
+}
 
 /**
  * Task API. The WebSocket execution stream is passed in from the app bootstrap
@@ -134,7 +145,7 @@ export function createTasksRouter(_stream: ExecutionStream): Router {
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
     const offset = Math.max(Number(req.query.offset ?? 0), 0);
     const rows = listTasksByUser(userId, { limit, offset });
-    res.status(200).json({ tasks: rows });
+    res.status(200).json({ tasks: rows.map((row) => withPublicErrorMessage(row as unknown as Record<string, unknown>)) });
   });
 
   router.get('/execution/:id', (req: AuthenticatedRequest, res) => {
@@ -146,8 +157,8 @@ export function createTasksRouter(_stream: ExecutionStream): Router {
     if (!ownerId || ownerId !== req.auth!.userId) {
       throw new HttpError(403, 'you do not have access to this execution', 'forbidden');
     }
-    const logs = listExecutionLogs(execution.id);
-    res.status(200).json({ execution, logs });
+    const logs = listExecutionLogs(execution.id).map(publicLogRow);
+    res.status(200).json({ execution: withPublicErrorMessage(execution as unknown as Record<string, unknown>), logs });
   });
 
   router.get('/:id', (req: AuthenticatedRequest, res) => {
@@ -156,12 +167,15 @@ export function createTasksRouter(_stream: ExecutionStream): Router {
       throw new HttpError(404, 'task not found', 'not_found');
     }
     const executions = listTaskExecutions(task.id);
-    const events = listTaskEvents(task.id);
-    const logs = executions.flatMap((execution) => listExecutionLogs(execution.id));
+    const events = listTaskEvents(task.id).map((event) => {
+      const safe = publicLogLine({ message: (event as Record<string, unknown>).message, level: (event as Record<string, unknown>).level });
+      return { ...(event as Record<string, unknown>), message: safe.message };
+    });
+    const logs = executions.flatMap((execution) => listExecutionLogs(execution.id)).map(publicLogRow);
     res.status(200).json({
-      task,
+      task: withPublicErrorMessage(task as unknown as Record<string, unknown>),
       events,
-      executions,
+      executions: executions.map((execution) => withPublicErrorMessage(execution as unknown as Record<string, unknown>)),
       logs,
     });
   });

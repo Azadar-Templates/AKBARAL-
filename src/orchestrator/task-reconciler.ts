@@ -7,6 +7,7 @@ import {
 } from '../db';
 import { notifyTaskFinished } from '../push/notify';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { toPublicFailure } from '../server/safe-errors';
 
 /**
  * Task reconciliation (Milestone 3).
@@ -54,18 +55,23 @@ export function reconcileTaskFailed(input: {
       taskId: task.id,
       reason: `automatic refund for failed task ${task.id} (${input.code})`,
     });
+    // Notifications and task events are USER-VISIBLE surfaces: they carry the
+    // public failure copy, not the internal code (`provider_not_configured`
+    // and friends describe how the deployment is wired). The internal code
+    // stays on the audit log and the task row below.
+    const publicFailure = toPublicFailure({ code: input.code, message: input.message });
     notifyTaskFinished({
       userId: String(task.user_id),
       taskId: String(task.id),
       status: 'failed',
-      detail: refund ? `Task failed (${input.code}) — free task credit refunded` : `Task failed (${input.code})`,
+      detail: refund ? `${publicFailure.message} Your task credit was refunded.` : publicFailure.message,
     });
     appendTaskEvent({
       taskId: task.id,
       executionId: input.executionId ?? null,
       message: refund
-        ? `Task failed (${input.code}) — free task credit automatically refunded`
-        : `Task failed (${input.code})`,
+        ? `${publicFailure.message} Your task credit was automatically refunded.`
+        : publicFailure.message,
       level: 'error',
       type: 'status',
     });
@@ -78,11 +84,12 @@ export function reconcileTaskFailed(input: {
       metadata: { executionId: input.executionId ?? null, code: input.code },
     });
   }
+  const streamFailure = toPublicFailure({ code: input.code, message: input.message });
   input.stream?.pushStatus({
     executionId: input.executionId ?? input.taskId,
     status: 'failed',
-    message: input.message,
-    errorMessage: input.message,
+    message: streamFailure.message,
+    errorMessage: streamFailure.message,
   });
   return { applied: true };
 }

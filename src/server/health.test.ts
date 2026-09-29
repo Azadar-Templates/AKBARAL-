@@ -6,7 +6,7 @@ import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { createApiServer, type ApiServer } from '../app';
 import { db } from '../db';
-import { checkMigrationsCurrent } from './health';
+import { buildInfo, checkMigrationsCurrent, resetBuildInfoCache } from './health';
 import { executionQueue } from '../orchestrator/queue';
 
 /**
@@ -81,6 +81,31 @@ describe('Milestone 10: health, readiness and metrics', () => {
     assert.ok(database, 'database check present');
     assert.equal(database.ok, true, 'database check actually ran');
     assert.ok(body.uptimeSeconds >= 0);
+  });
+
+  it('liveness reports the build identity of the RUNNING process', async () => {
+    // Deployment identity must be answerable over HTTP: before this, nothing
+    // told an operator which commit a live host was serving.
+    const response = await fetch(`${baseUrl}/api/health`);
+    const body = (await response.json()) as { build?: { commit: string; version: string; builtAt: string | null; source: string } };
+    assert.ok(body.build, '/api/health exposes a build object');
+    assert.equal(typeof body.build.commit, 'string');
+    assert.equal(typeof body.build.version, 'string');
+    assert.ok(['image-stamp', 'env', 'unknown'].includes(body.build.source), `source is explainable (${body.build.source})`);
+    assert.deepEqual(
+      Object.keys(body.build).sort(),
+      ['builtAt', 'commit', 'source', 'version'],
+      'build payload carries exactly the four non-sensitive fields',
+    );
+    const serialised = JSON.stringify(body.build);
+    assert.ok(!/SECRET|KEY|TOKEN|PASSWORD|postgres:|\/home\/|\/app\//i.test(serialised), 'no secret or filesystem detail leaks through the build payload');
+  });
+
+  it('readiness reports the same build identity', async () => {
+    const response = await fetch(`${baseUrl}/api/ready`);
+    const body = (await response.json()) as { build?: { commit: string } };
+    assert.ok(body.build, '/api/ready exposes the build object too');
+    assert.equal(body.build.commit, buildInfo().commit, 'both probes report one identity');
   });
 
   it('readiness probe verifies database, migrations, uploads and queue worker', async () => {
@@ -191,5 +216,55 @@ describe('Milestone 10: health, readiness and metrics', () => {
     assert.match(text, /akbaral_queue_jobs\{status="\w+"\} \d+/);
     assert.match(text, /akbaral_db_size_bytes \d+/);
     assert.ok(Number(/akbaral_db_size_bytes (\d+)/.exec(text)?.[1]) > 0, 'database size is a real measurement');
+  });
+});
+
+describe('build identity resolution (deployment provenance)', () => {
+  after(() => resetBuildInfoCache());
+
+  it('prefers an explicit image version from the environment', () => {
+    const info = buildInfo({ env: { ...process.env, AKBARAL_IMAGE_VERSION: '810f900d1bc291662ff6180e31cf009f5312dd19' }, cwd: process.cwd() });
+    assert.equal(info.commit, '810f900d1bc291662ff6180e31cf009f5312dd19');
+    assert.equal(info.source, 'env');
+  });
+
+  it('reads the image stamp the Dockerfile writes (/app/.image-version equivalent)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'akbaral-stamp-'));
+    fs.writeFileSync(path.join(dir, '.image-version'), 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n');
+    try {
+      const info = buildInfo({ env: { ...process.env, AKBARAL_IMAGE_VERSION: '' }, cwd: dir });
+      assert.equal(info.commit, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
+      assert.equal(info.source, 'image-stamp');
+      assert.ok(info.builtAt && !Number.isNaN(Date.parse(info.builtAt)), 'build timestamp comes from the real stamp file');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says "unknown" honestly instead of guessing when no stamp exists', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'akbaral-nostamp-'));
+    try {
+      const info = buildInfo({ env: { ...process.env, AKBARAL_IMAGE_VERSION: '' }, cwd: dir });
+      // /app/.image-version may exist in a container; both outcomes are honest,
+      // never fabricated.
+      assert.ok(['unknown', 'image-stamp'].includes(info.source));
+      if (info.source === 'unknown') {
+        assert.equal(info.commit, 'unknown');
+        assert.equal(info.builtAt, null);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never reports a placeholder stamp as a real commit', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'akbaral-unknown-'));
+    fs.writeFileSync(path.join(dir, '.image-version'), 'unknown\n');
+    try {
+      const info = buildInfo({ env: { ...process.env, AKBARAL_IMAGE_VERSION: '' }, cwd: dir });
+      assert.notEqual(info.source, 'image-stamp', 'the Dockerfile default ARG value is not a commit');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

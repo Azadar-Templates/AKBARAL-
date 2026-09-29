@@ -1,5 +1,5 @@
 import { db } from './database';
-import { createId } from './id';
+import { createId, createSortableId } from './id';
 import { DEFAULT_FREE_CREDITS } from './constants';
 import {
   ensureBootstrapPlans,
@@ -817,14 +817,21 @@ export function appendAgentExecutionLog(input: {
   level?: string;
   type?: string;
   data?: Record<string, unknown> | null;
-}): { id: string } {
-  const id = createId('log');
+}): { id: string; createdAt: string } {
+  // Sortable id: readers tail this table with a `(created_at, id)` keyset
+  // cursor, and `created_at` ties inside one millisecond must break in
+  // insertion order. See createSortableId.
+  const id = createSortableId('log');
+  const createdAt = NOW();
   db.run(
     `INSERT INTO agent_execution_logs (id, execution_id, level, type, message, data, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, input.executionId, input.level ?? 'info', input.type ?? 'log', input.message, input.data ? JSON.stringify(input.data) : null, NOW()],
+    [id, input.executionId, input.level ?? 'info', input.type ?? 'log', input.message, input.data ? JSON.stringify(input.data) : null, createdAt],
   );
-  return { id };
+  // The persisted timestamp is returned so live broadcasters publish the exact
+  // value that is stored; a client cursor built from a separately generated
+  // "now" would drift from the table and skip or duplicate rows on reconnect.
+  return { id, createdAt };
 }
 
 export function listExecutionLogs(executionId: string, limit = 500): Array<Record<string, unknown>> {
@@ -868,6 +875,40 @@ export function listExecutionLogsAfter(
      ORDER BY created_at ASC, id ASC
      LIMIT ?`,
     [executionId, afterCreatedAt, limit],
+  );
+}
+
+export interface ExecutionLogCursor {
+  createdAt: string;
+  id: string;
+}
+
+/**
+ * Return logs strictly after a `(created_at, id)` keyset cursor.
+ *
+ * `listExecutionLogsAfter` compares `created_at` alone. `created_at` has
+ * millisecond resolution, so every row written in the same millisecond as the
+ * cursor row is `created_at > cursor` == false and is skipped FOREVER — a live
+ * tail (SSE/WebSocket) silently drops log lines whenever an agent emits more
+ * than one line per millisecond, which is the normal case during tool
+ * execution. Ordering the tie-break on the sortable log id makes the cursor
+ * total: every row is delivered exactly once, in insertion order.
+ */
+export function listExecutionLogsAfterCursor(
+  executionId: string,
+  cursor: ExecutionLogCursor | null,
+  limit = 500,
+): ExecutionLogRow[] {
+  if (!cursor) {
+    return listExecutionLogsAfter(executionId, null, limit);
+  }
+  return db.all<ExecutionLogRow>(
+    `SELECT * FROM agent_execution_logs
+     WHERE execution_id = ?
+       AND (created_at > ? OR (created_at = ? AND id > ?))
+     ORDER BY created_at ASC, id ASC
+     LIMIT ?`,
+    [executionId, cursor.createdAt, cursor.createdAt, cursor.id, limit],
   );
 }
 

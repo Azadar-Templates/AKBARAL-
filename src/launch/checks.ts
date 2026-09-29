@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { backoffDelayMs, resolveRetryPolicy } from '../models/retry';
 
 /**
  * Production launch verification.
@@ -162,6 +163,7 @@ async function authenticatedProbe(
   context: LaunchCheckContext,
   request: ProbeRequest,
   base: CheckBase,
+  onResponse?: (response: ProbeResponse) => void,
 ): Promise<LaunchCheckResult> {
   if (context.offline) {
     return {
@@ -172,6 +174,7 @@ async function authenticatedProbe(
   }
   try {
     const response = await context.probe(request);
+    onResponse?.(response);
     if (response.status >= 200 && response.status < 300) {
       return { ...base, status: 'ready', evidence: `live provider call succeeded (HTTP ${response.status})` };
     }
@@ -365,6 +368,91 @@ const databaseCheck: LaunchCheck = {
 // Model provider (Gemini)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Transient failures (HTTP 429/408/5xx) are retried with bounded exponential
+ * backoff, exactly as Google documents for 503 UNAVAILABLE. A permanent
+ * verdict (2xx, 401/403, 404) returns on the first attempt, and an exhausted
+ * budget returns the real last failure — the gate is never softened.
+ */
+async function probeWithBackoff(
+  context: LaunchCheckContext,
+  request: ProbeRequest,
+  base: CheckBase,
+): Promise<{ result: LaunchCheckResult; httpStatus?: number }> {
+  const policy = resolveRetryPolicy(context.env as NodeJS.ProcessEnv);
+  let last: { result: LaunchCheckResult; httpStatus?: number } | undefined;
+  for (let attempt = 1; attempt <= Math.max(1, policy.maxAttempts); attempt += 1) {
+    let httpStatus: number | undefined;
+    const result = await authenticatedProbe(context, request, base, (response) => {
+      httpStatus = response.status;
+    });
+    last = { result, httpStatus };
+    const transient = httpStatus === 408 || httpStatus === 429 || (httpStatus ?? 0) >= 500;
+    if (result.status === 'ready' || !transient || attempt >= policy.maxAttempts) {
+      return last;
+    }
+    const delayMs = backoffDelayMs(attempt, policy);
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return last!;
+}
+
+/**
+ * Gemini model IDs this build knows about, most-preferred first. These are the
+ * model keys in the production catalog — never invented, and always filtered
+ * against what Google's ListModels response actually offers right now.
+ */
+const GEMINI_PREFERRED_MODELS = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+
+/** Model IDs from a real ListModels payload that support generateContent. */
+export function geminiModelsSupportingGeneration(payload: Record<string, unknown> | undefined): string[] {
+  const models = payload?.models;
+  if (!Array.isArray(models)) {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const entry of models) {
+    const record = entry as { name?: unknown; supportedGenerationMethods?: unknown };
+    const name = typeof record.name === 'string' ? record.name.replace(/^models\//, '') : '';
+    const methods = Array.isArray(record.supportedGenerationMethods) ? record.supportedGenerationMethods : [];
+    if (name && methods.includes('generateContent')) {
+      ids.push(name);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Ordered generateContent candidates: the operator override first, then this
+ * build's catalog models, restricted to what Google is offering right now. If
+ * none of them is currently offered, fall back to stable Gemini text models
+ * Google ITSELF just advertised (discovered, never hardcoded/invented).
+ */
+export function selectGeminiCandidates(
+  configured: string,
+  offered: string[],
+  catalogModels: string[] = GEMINI_PREFERRED_MODELS,
+): string[] {
+  const preferred = [configured, ...catalogModels].filter((id) => id.length > 0);
+  const unique = [...new Set(preferred)];
+  if (offered.length === 0) {
+    return unique;
+  }
+  const available = new Set(offered);
+  const supported = unique.filter((id) => available.has(id));
+  if (supported.length > 0) {
+    return supported;
+  }
+  const discovered = offered
+    .filter((id) => /^gemini-/.test(id) && !/(embedding|aqa|image|audio|tts|vision|live)/.test(id))
+    .filter((id) => !/(preview|exp|latest)/.test(id))
+    .sort((a, b) => Number(b.includes('flash')) - Number(a.includes('flash')) || a.localeCompare(b))
+    .slice(0, 3);
+  return discovered.length > 0 ? discovered : unique;
+}
+
 const geminiCheck: LaunchCheck = {
   id: 'provider.gemini',
   area: 'Model provider',
@@ -386,10 +474,14 @@ const geminiCheck: LaunchCheck = {
       return configOnly({ ...base, evidence: 'neither GOOGLE_API_KEY nor GEMINI_API_KEY is set — MASTER AI and every model-backed agent return provider_not_configured' }, 'not_configured');
     }
     const endpoint = `${value(context.env, 'GOOGLE_BASE_URL') || 'https://generativelanguage.googleapis.com/v1beta'}/models`;
+    let offered: string[] = [];
     const result = await authenticatedProbe(
       context,
       { url: endpoint, headers: { 'x-goog-api-key': key.value } },
       { ...base, evidence: '' },
+      (response) => {
+        offered = geminiModelsSupportingGeneration(response.json);
+      },
     );
     const ready: LaunchCheckResult = {
       ...result,
@@ -399,25 +491,46 @@ const geminiCheck: LaunchCheck = {
     if (ready.status !== 'ready') return ready;
 
     // Prove a real generation call too: listing models only proves the key.
-    const model = value(context.env, 'AKBARAL_VERIFY_GEMINI_MODEL') || 'gemini-3.5-flash';
-    const generation = await authenticatedProbe(
-      context,
-      {
-        url: `${endpoint.replace(/\/models$/, '')}/models/${model}:generateContent`,
-        method: 'POST',
-        headers: { 'x-goog-api-key': key.value, 'content-type': 'application/json' },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }], generationConfig: { maxOutputTokens: 16 } }),
-      },
-      { ...base, evidence: '' },
-    );
-    if (generation.status === 'ready') {
-      return { ...ready, evidence: `${ready.evidence}; live generateContent succeeded on ${model}` };
+    // A single model can be temporarily unavailable (HTTP 503) while the key
+    // and the account are perfectly healthy, so try the CURRENT candidates
+    // Google is offering, each with bounded backoff, and stop at the first
+    // real success. No success is ever synthesised: if every candidate stays
+    // unavailable the check fails with the real evidence.
+    const configured = value(context.env, 'AKBARAL_VERIFY_GEMINI_MODEL');
+    const candidates = selectGeminiCandidates(configured, offered);
+    const attempts: string[] = [];
+    let sawFailure = false;
+    for (const model of candidates) {
+      const { result: generation } = await probeWithBackoff(
+        context,
+        {
+          url: `${endpoint.replace(/\/models$/, '')}/models/${model}:generateContent`,
+          method: 'POST',
+          headers: { 'x-goog-api-key': key.value, 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ready' }] }], generationConfig: { maxOutputTokens: 16 } }),
+        },
+        { ...base, evidence: '' },
+      );
+      if (generation.status === 'ready') {
+        const note = model === candidates[0] ? '' : ` (after ${attempts.join('; ')})`;
+        return { ...ready, evidence: `${ready.evidence}; live generateContent succeeded on ${model}${note}` };
+      }
+      attempts.push(`${model}: ${generation.evidence}`);
+      if (generation.status === 'failed') {
+        sawFailure = true;
+      }
+    }
+    if (!sawFailure) {
+      return {
+        ...ready,
+        evidence: `${ready.evidence}; generateContent not attempted (network)`,
+      };
     }
     return {
       ...ready,
-      status: generation.status === 'unreachable' ? 'ready' : 'failed',
-      evidence: `${ready.evidence}; generateContent ${generation.status === 'unreachable' ? 'not attempted (network)' : `failed: ${generation.evidence}`}`,
-      ownerAction: generation.status === 'failed' ? `Verify ${model} is enabled for this key (or set AKBARAL_VERIFY_GEMINI_MODEL to a model your key can use).` : base.ownerAction,
+      status: 'failed',
+      evidence: `${ready.evidence}; generateContent failed on every current candidate — ${attempts.join('; ')}`,
+      ownerAction: `Every Gemini model this build can use is currently failing (${candidates.join(', ')}). HTTP 5xx is a Google-side outage: retry once Google recovers. Anything else: confirm these models are enabled for this key, or set AKBARAL_VERIFY_GEMINI_MODEL to one that is.`,
     };
   },
 };

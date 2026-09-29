@@ -31,6 +31,10 @@ on:
         description: 'Production base URL to verify'
         required: false
         default: ''
+      expected_commit:
+        description: 'Commit SHA the live deployment MUST report (leave empty to only report it)'
+        required: false
+        default: ''
   push:
     branches: ['arena/**']
     paths:
@@ -243,6 +247,19 @@ jobs:
           check "/nonexistent (404 kept)" "http://127.0.0.1:3000/nonexistent-xyz" 404
           check "/mission (private, 404)" "http://127.0.0.1:3000/mission" 404
           check "anonymous /api/tasks refused" "http://127.0.0.1:4000/api/tasks" 401
+          # Build identity: the container must report the commit it was built
+          # from, so "which code is running?" is answerable on ANY host. The
+          # value comes from /app/.image-version, already verified to equal
+          # this commit in docker-publish.
+          live_commit=$(curl -sS -m 15 "http://127.0.0.1:3000/api/health" 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(String(JSON.parse(d).build?.commit??''))}catch{process.stdout.write('')}})")
+          if [ "${live_commit}" = "${{ github.sha }}" ]; then
+            echo "PASS /api/health reports its build commit (${live_commit})"
+            echo "::notice title=image-identity::container reports build commit ${live_commit}"
+          else
+            echo "FAIL /api/health build commit: got '${live_commit:-MISSING}', want ${{ github.sha }}"
+            echo "::error title=image-e2e::/api/health build commit → got '${live_commit:-MISSING}', want ${{ github.sha }}"
+            fail=1
+          fi
           # The registry is account-scoped, so the check authenticates like a
           # real user does (registration is a public API in the image).
           email="image-e2e-$(date +%s)@akbaral.test"
@@ -380,14 +397,14 @@ jobs:
       # A verdict that matters: a provider credential that EXISTS but is
       # rejected must fail this job (that is a real breakage). An unconfigured
       # provider is an honest, named gap — it fails nothing.
-      - name: Fail only when a configured provider rejected its credential
+      - name: Fail when a configured provider failed its live verification
         if: always()
         run: |
           rejected=$(jq -r '[.checks[] | select(.status=="failed")] | length' provider-verification.json 2>/dev/null || echo 0)
           unreachable=$(jq -r '[.checks[] | select(.status=="unreachable")] | length' provider-verification.json 2>/dev/null || echo 0)
           echo "rejected=$rejected unreachable=$unreachable"
           if [ "${rejected:-0}" != "0" ]; then
-            echo "::error::a configured provider rejected its credential — see the report"
+            echo "::error::a configured provider FAILED its live verification — see the report (this counts provider-side errors such as HTTP 5xx, not only credential rejection)"
             exit 1
           fi
       - name: Publish the per-provider verdicts as annotations (readable where logs are not)
@@ -424,8 +441,15 @@ jobs:
 
   # ── PHASE 2: the real Gemini provider path, direct (no mocks) ─────────────
   real-gemini-direct:
-    needs: provider-inventory
-    if: needs.provider-inventory.outputs.has_google_key == 'true'
+    # Serialised AFTER real-providers on purpose. Root cause (run 36561175155,
+    # annotated): "streaming failed on gemini-3.8-flash after 1647ms with 0
+    # token(s): google rate limited the request (HTTP 429)". Both jobs call the
+    # same free-tier Gemini key at the same time, so the per-minute quota is
+    # exhausted and the streaming check dies after its bounded retries. Running
+    # them in sequence removes the self-inflicted concurrency; it does not
+    # weaken, skip or retry any check.
+    needs: [provider-inventory, real-providers]
+    if: always() && needs.provider-inventory.outputs.has_google_key == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -433,6 +457,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+      # The script imports the real provider stack (src/models/client.ts ->
+      # src/config/env.ts -> `import 'dotenv/config'`), so the project's
+      # dependencies must be installed exactly like every other job that runs
+      # repository code. Without this the job died with
+      # "Cannot find module 'dotenv/config'" BEFORE reaching Google, which
+      # looks like a provider failure but is a missing-install failure.
+      - run: npm ci
       - name: Verify the REAL Gemini provider path (direct, no mocks)
         run: npx tsx scripts/verify-gemini-direct.ts
         env:
@@ -455,6 +487,9 @@ jobs:
         run: node scripts/verify-production-e2e.mjs
         env:
           AKBARAL_BASE_URL: ${{ needs.deployment-reachability.outputs.live_url }}
+          # Empty by default: the live build commit is always REPORTED. Supply
+          # expected_commit on dispatch to make the identity a hard gate.
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
       # Owner identity + unlimited entitlement (blockers #6/#7) against the
       # deployed stack. This needs the owner's own credentials and a readable
       # copy of the deployment database; when either is absent the script

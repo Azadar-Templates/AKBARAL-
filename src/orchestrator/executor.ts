@@ -31,9 +31,12 @@ import { hasUnlimitedTaskCredits } from '../auth/entitlements';
 import { modelRouter } from '../models';
 import { runTool, type ToolResult } from '../tools';
 import { verifyAgentOutput } from './verifier';
+import { detectCurrencyIntent } from './research-evidence';
 import { reconcileTaskFailed } from './task-reconciler';
 import { notifyTaskFinished } from '../push/notify';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { toPublicFailure } from '../server/safe-errors';
+import { logErrorSafe } from '../config/secrets';
 
 /**
  * Task/agent orchestrator.
@@ -466,6 +469,24 @@ export async function runGenericAgentExecution(
     if (toolStage.contextBlock) {
       systemMessages.push({ role: 'system', content: toolStage.contextBlock });
     }
+    // The request asks for CURRENT data. State the run's real date, require a
+    // dated source URL for every external figure, and make "I could not get
+    // current data" the required answer when the retrieved context has none —
+    // substituting older data is what produced 2024 gold prices for a "today"
+    // question.
+    if (detectCurrencyIntent(goalInput) !== null) {
+      systemMessages.push({
+        role: 'system',
+        content:
+          '--- FRESHNESS REQUIREMENT (the user asked for CURRENT data) ---\n' +
+          `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC).\n` +
+          '1. Only state a figure as current if the retrieved context shows it with a date/time that is current as of today.\n' +
+          '2. For every externally sourced figure, give the source URL exactly as it appears in the retrieved context, plus that source\'s own date/time.\n' +
+          '3. Never present older data as current, and never re-date a figure.\n' +
+          '4. If sources disagree materially, say so explicitly and show both values with their dates and URLs.\n' +
+          '5. If the retrieved context contains no current data, say plainly that current data could not be retrieved, and do not substitute historical values.',
+      });
+    }
     const attachmentContext = buildAttachmentContext(task?.id);
     if (attachmentContext) {
       systemMessages.push({ role: 'system', content: attachmentContext });
@@ -491,6 +512,7 @@ export async function runGenericAgentExecution(
       goal: goalInput,
       content: result.text,
       sourceContextUsed: toolStage.sourceContextUsed,
+      sourceContext: toolStage.contextBlock,
       complete: useLlmVerification
         ? (messages, requirements) =>
             modelRouter.complete(
@@ -736,12 +758,26 @@ async function failExecution(
   updateAgentExecutionStatus({
     id: executionId,
     status: 'failed',
+    // The RAW message is persisted on the execution row: that column is a
+    // server-side diagnostic surface, read by operators and the audit trail,
+    // and it is sanitized at the HTTP boundary before any UI sees it.
     errorMessage: message,
     durationMs: Date.now() - start,
     completedAt: new Date().toISOString(),
   });
-  stream?.pushStatus({ executionId, status: 'failed', message, errorMessage: message });
-  appendLog(executionId, stream, `Execution failed: ${message}`, 'error', 'verification', { code });
+  // Everything below travels to a screen (live status + the execution console
+  // log, which the workspace renders verbatim), so it carries the public
+  // failure copy only — never provider/runtime/configuration detail. The raw
+  // text is kept in the execution row above and in the server log line.
+  const publicFailure = toPublicFailure({ code, message });
+  logErrorSafe('execution.failed', { executionId, taskId: taskId ?? null, code, message });
+  stream?.pushStatus({
+    executionId,
+    status: 'failed',
+    message: publicFailure.message,
+    errorMessage: publicFailure.message,
+  });
+  appendLog(executionId, stream, `Execution failed: ${publicFailure.message}`, 'error', 'verification', { code: publicFailure.code });
 
   if (options?.deferTaskFailure) {
     // Queue-driven execution: task reconciliation (fail + refund) is decided
