@@ -84,6 +84,27 @@ if (/modal-http:\s*workspace\s+\S+\s+is disabled/i.test(health.text)) {
   process.exit(3);
 }
 ok(health.res.status === 200 && health.body?.status === 'ok', `GET /api/health -> ${health.res.status} (status: ${health.body?.status}, db: ${health.body?.checks?.database ?? health.body?.database ?? 'n/a'})`);
+
+// ── 1b. DEPLOYMENT IDENTITY ───────────────────────────────────────────────
+// Which commit is actually serving? The image stamps its build commit into
+// /app/.image-version and /api/health now reports it, so "is the fix live?"
+// is answered by the deployment itself instead of inferred from tag timing.
+const liveBuild = health.body?.build ?? {};
+const liveCommit = typeof liveBuild.commit === 'string' ? liveBuild.commit : '';
+ok(
+  /^[0-9a-f]{7,40}$/.test(liveCommit),
+  `deployment reports its build commit: ${liveCommit || 'MISSING'} (source: ${liveBuild.source ?? 'n/a'}, version: ${liveBuild.version ?? 'n/a'}, builtAt: ${liveBuild.builtAt ?? 'n/a'})`,
+);
+console.log(`::notice title=deployment-identity::live commit=${liveCommit || 'unknown'} version=${liveBuild.version ?? 'unknown'} source=${liveBuild.source ?? 'unknown'} builtAt=${liveBuild.builtAt ?? 'unknown'}`);
+const expectedCommit = (process.env.EXPECTED_COMMIT ?? '').trim();
+if (expectedCommit) {
+  ok(
+    liveCommit.startsWith(expectedCommit) || expectedCommit.startsWith(liveCommit),
+    `live deployment runs the EXPECTED commit (expected ${expectedCommit}, live ${liveCommit || 'unknown'})`,
+  );
+} else {
+  console.log('expected commit not supplied (EXPECTED_COMMIT unset) — identity reported above, not enforced');
+}
 const ready = await j('/api/ready');
 ok(ready.res.status === 200 && ready.body?.status === 'ready', `GET /api/ready -> ${ready.res.status} (status: ${ready.body?.status})`);
 

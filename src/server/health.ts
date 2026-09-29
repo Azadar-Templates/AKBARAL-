@@ -84,23 +84,110 @@ function checkQueueWorker(): HealthCheck {
   }
 }
 
-export function livenessPayload(): { status: string; checks: HealthCheck[]; uptimeSeconds: number } {
+/**
+ * Build identity of the RUNNING process.
+ *
+ * Why this exists: until now nothing in the HTTP surface said which commit a
+ * deployment was serving, so "is the fix live?" could only be guessed from
+ * image-tag timing. The image already carries the answer — the Dockerfile
+ * writes the build's commit to /app/.image-version (CI verifies that stamp
+ * matches github.sha) — it simply was not readable from outside.
+ *
+ * Non-sensitive by construction: commit SHA, package version and the stamp's
+ * mtime only. No env values, paths, credentials or config are exposed.
+ */
+export interface BuildInfo {
+  /** Git commit SHA the image was built from, or 'unknown'. */
+  commit: string;
+  /** package.json version of the running build. */
+  version: string;
+  /** ISO timestamp the build stamp was written, when available. */
+  builtAt: string | null;
+  /** Where the commit came from, so an 'unknown' is explainable. */
+  source: 'image-stamp' | 'env' | 'unknown';
+}
+
+const STAMP_FILENAME = '.image-version';
+let cachedBuild: BuildInfo | null = null;
+
+function readPackageVersion(cwd: string): string {
+  for (const candidate of [path.join(cwd, 'package.json'), path.resolve(__dirname, '../../package.json')]) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8')) as { version?: unknown };
+      if (typeof parsed.version === 'string' && parsed.version.length > 0) {
+        return parsed.version;
+      }
+    } catch {
+      // try the next candidate; an unreadable package.json is not fatal
+    }
+  }
+  return 'unknown';
+}
+
+/** Read the build stamp. `options` bypasses the cache (tests, multi-tenant hosts). */
+export function buildInfo(options?: { env?: NodeJS.ProcessEnv; cwd?: string }): BuildInfo {
+  if (!options && cachedBuild) {
+    return cachedBuild;
+  }
+  const environment = options?.env ?? process.env;
+  const cwd = options?.cwd ?? process.cwd();
+  const version = readPackageVersion(cwd);
+
+  const fromEnv = (environment.AKBARAL_IMAGE_VERSION ?? '').trim();
+  if (fromEnv) {
+    const info: BuildInfo = { commit: fromEnv, version, builtAt: null, source: 'env' };
+    if (!options) cachedBuild = info;
+    return info;
+  }
+
+  for (const candidate of [path.join(cwd, STAMP_FILENAME), path.resolve('/app', STAMP_FILENAME)]) {
+    try {
+      const commit = fs.readFileSync(candidate, 'utf8').trim();
+      if (commit && commit !== 'unknown') {
+        let builtAt: string | null = null;
+        try {
+          builtAt = fs.statSync(candidate).mtime.toISOString();
+        } catch {
+          builtAt = null;
+        }
+        const info: BuildInfo = { commit, version, builtAt, source: 'image-stamp' };
+        if (!options) cachedBuild = info;
+        return info;
+      }
+    } catch {
+      // no stamp at this path — fall through to the next candidate
+    }
+  }
+
+  const info: BuildInfo = { commit: 'unknown', version, builtAt: null, source: 'unknown' };
+  if (!options) cachedBuild = info;
+  return info;
+}
+
+/** Test seam: drop the memoised stamp. */
+export function resetBuildInfoCache(): void {
+  cachedBuild = null;
+}
+
+export function livenessPayload(): { status: string; checks: HealthCheck[]; uptimeSeconds: number; build: BuildInfo } {
   const checks = [checkDatabase()];
   const ok = checks.every((check) => check.ok);
   return {
     status: ok ? 'ok' : 'degraded',
     checks,
     uptimeSeconds: Math.floor(process.uptime()),
+    build: buildInfo(),
   };
 }
 
-export function readinessPayload(): { status: string; checks: HealthCheck[]; uptimeSeconds: number } {
+export function readinessPayload(): { status: string; checks: HealthCheck[]; uptimeSeconds: number; build: BuildInfo } {
   const checks = [checkDatabase(), checkMigrationsCurrent(), checkUploadsWritable(), checkQueueWorker()];
   const ok = checks.every((check) => check.ok);
   return {
     status: ok ? 'ready' : 'not_ready',
     checks,
     uptimeSeconds: Math.floor(process.uptime()),
+    build: buildInfo(),
   };
 }
 

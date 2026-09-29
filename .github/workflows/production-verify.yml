@@ -31,6 +31,10 @@ on:
         description: 'Production base URL to verify'
         required: false
         default: ''
+      expected_commit:
+        description: 'Commit SHA the live deployment MUST report (leave empty to only report it)'
+        required: false
+        default: ''
   push:
     branches: ['arena/**']
     paths:
@@ -463,6 +467,9 @@ jobs:
         run: node scripts/verify-production-e2e.mjs
         env:
           AKBARAL_BASE_URL: ${{ needs.deployment-reachability.outputs.live_url }}
+          # Empty by default: the live build commit is always REPORTED. Supply
+          # expected_commit on dispatch to make the identity a hard gate.
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
       # Owner identity + unlimited entitlement (blockers #6/#7) against the
       # deployed stack. This needs the owner's own credentials and a readable
       # copy of the deployment database; when either is absent the script
