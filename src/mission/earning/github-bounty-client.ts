@@ -187,6 +187,23 @@ export class GithubBountyClient {
     return nonEmpty(me.login, 80);
   }
 
+  /** Read-only public repo metadata (stars/age/open issues) used only for fraud/bait-repo
+   * risk scoring before any work is prepared — never for gating on the repo owner's identity. */
+  async fetchRepoMetadata(repo: string): Promise<RepoMetadataRaw> {
+    const name = repoFullName(repo);
+    const result = await this.#request('GET', `/repos/${name}`, undefined, value => value as Record<string, unknown>);
+    const created = typeof result.created_at === 'string' ? result.created_at : null;
+    return {
+      repoFullName: name,
+      stargazersCount: Number.isSafeInteger(result.stargazers_count) ? Number(result.stargazers_count) : 0,
+      forksCount: Number.isSafeInteger(result.forks_count) ? Number(result.forks_count) : 0,
+      openIssuesCount: Number.isSafeInteger(result.open_issues_count) ? Number(result.open_issues_count) : 0,
+      createdAt: created,
+      archived: result.archived === true,
+      fork: result.fork === true,
+    };
+  }
+
   /** Idempotent: GitHub returns 202/200 for an already-existing fork. */
   async ensureFork(repo: string, authorizeMutation: () => void): Promise<void> {
     const name = repoFullName(repo);
@@ -246,6 +263,8 @@ export class GithubBountyClient {
 
 export interface BountyLeadRaw { repoFullName: string; issueNumber: number; issueUrl: string; title: string; labels: string[]; hintedAmountCents: number | null }
 export interface PullRequestProofRaw { repoFullName: string; number: number; url: string; headSha: string; state: 'open' | 'merged' | 'closed_unmerged'; mergedAt: string | null }
+export interface RepoMetadataRaw { repoFullName: string; stargazersCount: number; forksCount: number; openIssuesCount: number; createdAt: string | null; archived: boolean; fork: boolean }
+export interface LeadRiskRaw { accepted: boolean; reason: string | null }
 
 function hintAmountCents(title: string, labels: readonly string[]): number | null {
   const haystack = `${title} ${labels.join(' ')}`;
@@ -278,6 +297,63 @@ export function classifyRepoPolicy(repoFullNameValue: string, files: { path: str
   return { repoFullName: repoFullNameValue, aiContributionsAllowed: !banned, disclosureRequired: true, policySource: source, policyExcerpt: excerpt, checkedAt: nowIso };
 }
 export interface RepoPolicyProofRaw { repoFullName: string; aiContributionsAllowed: boolean; disclosureRequired: boolean; policySource: string | null; policyExcerpt: string; checkedAt: string }
+
+/** Known bait/farm-repo naming patterns observed in the wild (repos created
+ * specifically to bait autonomous agents into free labor, not real bounty
+ * sponsors) — conservative and explicit, expanded only from confirmed cases,
+ * never a guess at a legitimate maintainer's naming choice. */
+const FARM_REPO_NAME_PATTERNS = [
+  /bounty-?plaza/i,
+  /agent-?bounties/i,
+  /for-?ai-?agents?/i,
+  /ai-?agents?-?only/i,
+];
+/** Prompt-injection / social-engineering phrases sometimes hidden in issue
+ * titles or bodies aimed at automated agents — these are read-only inputs to
+ * classification and are never obeyed. */
+const INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?(previous|prior|above)\s+instructions?/i,
+  /disregard\s+(all\s+)?(previous|prior|above)/i,
+  /do\s+not\s+(tell|inform|notify)\s+(the\s+)?(human|owner|maintainer)/i,
+  /humans?\s+(are\s+)?not\s+allowed/i,
+];
+const MIN_REPO_AGE_DAYS_FOR_ZERO_STAR = 30;
+
+/** Fraud/bait-repo risk screen run on every discovered lead BEFORE any work
+ * is ever prepared. Conservative and explicit: only known bad patterns and a
+ * factual young+zero-engagement signal reject a lead; everything else is
+ * accepted for further (still owner-approved) review. Never rejects based on
+ * legitimate maintainer identity, country, or any protected characteristic. */
+export function classifyLeadRisk(lead: BountyLeadRaw, metadata: RepoMetadataRaw | null, duplicateTitleAcrossRepos: boolean): LeadRiskRaw {
+  if (FARM_REPO_NAME_PATTERNS.some(p => p.test(lead.repoFullName))) return { accepted: false, reason: 'known_bait_or_farm_repo_name_pattern' };
+  if (INJECTION_PATTERNS.some(p => p.test(lead.title))) return { accepted: false, reason: 'prompt_injection_phrasing_in_title' };
+  if (duplicateTitleAcrossRepos) return { accepted: false, reason: 'duplicate_templated_title_across_unrelated_repos' };
+  if (metadata) {
+    if (metadata.archived) return { accepted: false, reason: 'repo_archived' };
+    if (metadata.fork) return { accepted: false, reason: 'repo_is_a_fork_not_the_canonical_upstream' };
+    if (metadata.stargazersCount === 0 && metadata.createdAt) {
+      const ageDays = (Date.now() - Date.parse(metadata.createdAt)) / 86400000;
+      if (Number.isFinite(ageDays) && ageDays < MIN_REPO_AGE_DAYS_FOR_ZERO_STAR) return { accepted: false, reason: 'new_zero_star_repo_high_risk' };
+    }
+  }
+  return { accepted: true, reason: null };
+}
+/** Real anti-farm signal observed live: several bait repos post the exact
+ * same templated issue title across many unrelated accounts/repos. */
+export function detectDuplicateTitles(leads: readonly BountyLeadRaw[]): Set<string> {
+  const byTitle = new Map<string, Set<string>>();
+  for (const lead of leads) {
+    const key = lead.title.trim().toLowerCase();
+    if (!byTitle.has(key)) byTitle.set(key, new Set());
+    byTitle.get(key)!.add(lead.repoFullName);
+  }
+  const duplicated = new Set<string>();
+  for (const lead of leads) {
+    const key = lead.title.trim().toLowerCase();
+    if ((byTitle.get(key)?.size ?? 0) > 1) duplicated.add(`${lead.repoFullName}#${lead.issueNumber}`);
+  }
+  return duplicated;
+}
 
 export interface BountyLead { readonly kind: 'github_bounty_lead'; readonly repoFullName: string; readonly issueNumber: number; readonly issueUrl: string; readonly title: string; readonly labels: readonly string[]; readonly hintedAmountCents: number | null; readonly observedAt: string; readonly executable: false }
 

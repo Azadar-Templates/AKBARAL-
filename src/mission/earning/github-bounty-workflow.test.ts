@@ -31,6 +31,7 @@ function client() {
       return json({ content: Buffer.from(text).toString('base64'), encoding: 'base64' });
     }
     if (p.startsWith(`/repos/${REPO}/contents/`)) return json({}, 404);
+    if (p === `/repos/${REPO}`) return json({ stargazers_count: 42, forks_count: 3, open_issues_count: 5, created_at: '2018-01-01T00:00:00Z', archived: false, fork: false });
     if (p === `/repos/${REPO}/forks` && method === 'POST') return json({}, 202);
     if (p === '/user') return json({ login: LOGIN });
     if (p === `/repos/${REPO}/git/ref/heads/main`) return json({ object: { sha: 'a'.repeat(40) } });
@@ -44,7 +45,7 @@ function client() {
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
 }
 
-const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_earning_jobs', 'mission_money_receipts', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_accounts'];
+const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_earning_jobs', 'mission_money_receipts', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_accounts', 'mission_opportunity_roi'];
 let w: InstanceType<typeof GithubBountyWorkflow>;
 before(() => {
   applyMissionMigrations();
@@ -149,4 +150,104 @@ it('policy is blocked and no work proceeds while the kill switch is engaged', as
   await w.checkPolicy(owner, String(opps[0].id));
   setKillSwitch(true, owner.id);
   assert.throws(() => w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) }), /policy_blocked/);
+});
+
+it('automatically rejects a known bait/farm-repo lead at discovery and refuses assignment even after a passing policy check', async () => {
+  const baitRepo = 'someone/agent-bounties-farm';
+  const transport: typeof fetch = async (input, init) => {
+    const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
+    if (p === '/search/issues') {
+      const q = url.searchParams.get('q') ?? '';
+      if (q.startsWith('label:bounty')) return json({ items: [{ number: 1, html_url: `https://github.com/${baitRepo}/issues/1`, title: 'Fix this for $500', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${baitRepo}` }] });
+      return json({ items: [] });
+    }
+    if (p === `/repos/${baitRepo}`) return json({ stargazers_count: 0, forks_count: 0, open_issues_count: 40, created_at: new Date().toISOString(), archived: false, fork: false });
+    if (p.startsWith(`/repos/${baitRepo}/contents/`)) return json({}, 404);
+    assert.fail(`unsupported fixture endpoint: ${method} ${p}`);
+  };
+  const w2 = new GithubBountyWorkflow(new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport }));
+  const opps = await w2.discover(owner);
+  assert.equal(opps[0].repo_full_name, baitRepo);
+  assert.equal(opps[0].risk_state, 'rejected');
+  assert.equal(opps[0].risk_reason, 'known_bait_or_farm_repo_name_pattern');
+  await w2.checkPolicy(owner, String(opps[0].id));
+  assert.throws(() => w2.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) }), /lead_risk_rejected/);
+});
+
+it('automatically rejects a brand-new zero-star repo lead as high risk', async () => {
+  const newRepo = 'someone/totally-legit-project';
+  const transport: typeof fetch = async (input, init) => {
+    const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
+    if (p === '/search/issues') {
+      const q = url.searchParams.get('q') ?? '';
+      if (q.startsWith('label:bounty')) return json({ items: [{ number: 1, html_url: `https://github.com/${newRepo}/issues/1`, title: 'Please fix this bug', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${newRepo}` }] });
+      return json({ items: [] });
+    }
+    if (p === `/repos/${newRepo}`) return json({ stargazers_count: 0, forks_count: 0, open_issues_count: 1, created_at: new Date().toISOString(), archived: false, fork: false });
+    if (p.startsWith(`/repos/${newRepo}/contents/`)) return json({}, 404);
+    assert.fail(`unsupported fixture endpoint: ${method} ${p}`);
+  };
+  const w2 = new GithubBountyWorkflow(new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport }));
+  const opps = await w2.discover(owner);
+  assert.equal(opps[0].risk_state, 'rejected');
+  assert.equal(opps[0].risk_reason, 'new_zero_star_repo_high_risk');
+});
+
+it('automatically rejects duplicate templated titles posted across unrelated repos', async () => {
+  const templated = 'Please help us fix critical issue for bounty reward';
+  const transport: typeof fetch = async (input, init) => {
+    const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
+    if (p === '/search/issues') {
+      const q = url.searchParams.get('q') ?? '';
+      if (q.startsWith('label:bounty')) return json({ items: [
+        { number: 1, html_url: 'https://github.com/repo-one/x/issues/1', title: templated, state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/repo-one/x' },
+        { number: 1, html_url: 'https://github.com/repo-two/y/issues/1', title: templated, state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/repo-two/y' },
+      ] });
+      return json({ items: [] });
+    }
+    if (p === '/repos/repo-one/x' || p === '/repos/repo-two/y') return json({ stargazers_count: 10, forks_count: 1, open_issues_count: 1, created_at: '2018-01-01T00:00:00Z', archived: false, fork: false });
+    if (p.includes('/contents/')) return json({}, 404);
+    assert.fail(`unsupported fixture endpoint: ${method} ${p}`);
+  };
+  const w2 = new GithubBountyWorkflow(new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport }));
+  const opps = await w2.discover(owner);
+  assert.equal(opps.length, 2);
+  for (const opp of opps) {
+    assert.equal(opp.risk_state, 'rejected');
+    assert.equal(opp.risk_reason, 'duplicate_templated_title_across_unrelated_repos');
+  }
+});
+
+it('feeds the mission-wide continuous-learning ROI table with real, non-fabricated outcomes only', async () => {
+  const roi = () => db.get<any>("SELECT * FROM mission_opportunity_roi WHERE registry_key='github_issue_bounties'");
+  assert.equal(roi(), undefined, 'no ROI row before any real attempt');
+  const c = await draftCandidate();
+  const afterDraft = roi();
+  assert.equal(afterDraft.attempts, 1, 'a prepared candidate counts as one real attempt');
+  assert.equal(afterDraft.successes, 0);
+  assert.equal(afterDraft.failures, 0);
+
+  w.approveCandidate(owner, String(c.id), String(c.content_hash));
+  const submitted = await w.submit(owner, String(c.id));
+  mergedState = 'merged';
+  await w.trackPullRequest(owner, String(submitted.id));
+  const afterMerge = roi();
+  assert.equal(afterMerge.successes, 1, 'a GitHub-verified merge is a real, externally-verified success');
+  assert.equal(afterMerge.total_net_cents, 10000, 'net cents reflects only the real hinted amount, never a fabricated figure');
+
+  // Re-polling an already-merged PR must never double-count the same outcome.
+  await w.trackPullRequest(owner, String(submitted.id));
+  assert.equal(roi().successes, 1);
+});
+
+it('records a real ROI failure when a PR is closed without being merged', async () => {
+  const c = await draftCandidate();
+  w.approveCandidate(owner, String(c.id), String(c.content_hash));
+  const submitted = await w.submit(owner, String(c.id));
+  mergedState = 'closed_unmerged';
+  const tracked = await w.trackPullRequest(owner, String(submitted.id));
+  assert.equal(tracked!.state, 'closed_unmerged');
+  const roi = db.get<any>("SELECT * FROM mission_opportunity_roi WHERE registry_key='github_issue_bounties'");
+  assert.equal(roi.failures, 1);
+  assert.equal(roi.successes, 0);
 });

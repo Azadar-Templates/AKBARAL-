@@ -25,10 +25,28 @@
 import { missionDb as db, missionId, sha256, nowIso, appendMissionAudit, type Row } from '../database';
 import { assertMoneyOwner, grant, cashAccount, approveOpportunity, MoneyError, type MoneyActor } from '../money';
 import { currentPolicy, checkActivity } from '../policy';
-import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, configuredGithubBountyClient, type BountyLeadRaw } from './github-bounty-client';
+import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient, type BountyLeadRaw } from './github-bounty-client';
 
 const LEDGER_PROVIDER = 'github-bounty-settlement';
+const ROI_REGISTRY_KEY = 'github_issue_bounties';
 function deny(code: string): never { throw new MoneyError(`bounty_${code}`); }
+/** Feeds the mission-wide, already-existing continuous-learning ROI table
+ * (`mission_opportunity_roi`, used generically by the workload allocator for
+ * every earning class) with this integration's REAL outcomes only — never a
+ * discovery event, never a simulated result. Net cents is 0 unless a real
+ * hinted/confirmed amount exists; this never invents a value. */
+function recordRoiAttempt() {
+  const now = nowIso();
+  db.run(`INSERT INTO mission_opportunity_roi (registry_key,attempts,last_updated) VALUES (?,1,?)
+    ON CONFLICT(registry_key) DO UPDATE SET attempts=attempts+1, last_updated=excluded.last_updated`, [ROI_REGISTRY_KEY, now]);
+}
+function recordRoiOutcome(kind: 'success' | 'failure', netCents = 0) {
+  const now = nowIso();
+  db.run(`INSERT INTO mission_opportunity_roi (registry_key,attempts,successes,failures,total_net_cents,last_updated) VALUES (?,0,?,?,?,?)
+    ON CONFLICT(registry_key) DO UPDATE SET successes=successes+excluded.successes, failures=failures+excluded.failures,
+      total_net_cents=total_net_cents+excluded.total_net_cents, last_updated=excluded.last_updated`,
+    [ROI_REGISTRY_KEY, kind === 'success' ? 1 : 0, kind === 'failure' ? 1 : 0, kind === 'success' ? Math.max(0, netCents) : 0, now]);
+}
 function required(value: string, max = 400): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) deny('invalid_input');
   return value;
@@ -80,14 +98,28 @@ export class GithubBountyWorkflow {
   async discover(actor: MoneyActor): Promise<Row[]> {
     this.live(actor);
     const leads: BountyLeadRaw[] = await this.github.searchBountyIssues(30);
+    const duplicateTitles = detectDuplicateTitles(leads);
+    // Fraud/bait-repo risk screen runs BEFORE any candidate is ever prepared, on every
+    // genuinely new lead — never on already-recorded opportunities (no re-litigating history).
+    const risk = new Map<string, { state: 'accepted' | 'rejected'; reason: string | null; stars: number | null; createdAt: string | null }>();
+    for (const lead of leads) {
+      const id = `bty_${sha256(`${lead.repoFullName}#${lead.issueNumber}`).slice(0, 24)}`;
+      if (db.get('SELECT id FROM mission_bounty_opportunities WHERE id=?', [id])) continue;
+      let metadata = null as Awaited<ReturnType<GithubBountyClient['fetchRepoMetadata']>> | null;
+      try { metadata = await this.github.fetchRepoMetadata(lead.repoFullName); }
+      catch { metadata = null; } // metadata is advisory only; a failed lookup never silently grants trust
+      const decision = classifyLeadRisk(lead, metadata, duplicateTitles.has(`${lead.repoFullName}#${lead.issueNumber}`));
+      risk.set(id, { state: decision.accepted ? 'accepted' : 'rejected', reason: decision.reason, stars: metadata?.stargazersCount ?? null, createdAt: metadata?.createdAt ?? null });
+    }
     return db.transaction(() => {
       this.live(actor);
       for (const lead of leads) {
         const id = `bty_${sha256(`${lead.repoFullName}#${lead.issueNumber}`).slice(0, 24)}`;
         if (!db.get('SELECT id FROM mission_bounty_opportunities WHERE id=?', [id])) {
-          db.run('INSERT INTO mission_bounty_opportunities (id,repo_full_name,issue_number,issue_url,title,labels_json,hinted_amount_cents,state,observed_at) VALUES (?,?,?,?,?,?,?,?,?)',
-            [id, lead.repoFullName, lead.issueNumber, lead.issueUrl, lead.title, JSON.stringify(lead.labels), lead.hintedAmountCents, 'discovered', nowIso()]);
-          event(id, 'discovered', lead.issueUrl);
+          const r = risk.get(id) ?? { state: 'accepted' as const, reason: null, stars: null, createdAt: null };
+          db.run('INSERT INTO mission_bounty_opportunities (id,repo_full_name,issue_number,issue_url,title,labels_json,hinted_amount_cents,state,observed_at,risk_state,risk_reason,repo_stars,repo_created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            [id, lead.repoFullName, lead.issueNumber, lead.issueUrl, lead.title, JSON.stringify(lead.labels), lead.hintedAmountCents, 'discovered', nowIso(), r.state, r.reason, r.stars, r.createdAt]);
+          event(id, r.state === 'rejected' ? 'risk_rejected' : 'discovered', r.reason ?? lead.issueUrl);
         }
       }
       return db.all<Row>('SELECT * FROM mission_bounty_opportunities ORDER BY observed_at DESC LIMIT 200');
@@ -122,6 +154,7 @@ export class GithubBountyWorkflow {
   assign(actor: MoneyActor, input: { agentId: string; opportunityId: string }) {
     this.live(actor); grant(input.agentId);
     const op = get('mission_bounty_opportunities', input.opportunityId);
+    if (String(op.risk_state) === 'rejected') deny('lead_risk_rejected');
     const policyRow = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(op.repo_full_name)]);
     if (!policyRow) deny('policy_not_checked');
     if (!Number(policyRow.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
@@ -162,7 +195,9 @@ export class GithubBountyWorkflow {
         (id,assignment_id,idempotency_key,input_hash,repo_full_name,base_branch,branch_name,file_path,file_content,commit_message,pr_title,pr_body,content_hash,state,updated_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'eligible',?)`,
         [id, assignmentId, input.key, fingerprint, String(opp.repo_full_name), input.baseBranch, input.branchName, input.filePath, input.fileContent, input.commitMessage, input.prTitle, body, fingerprint, nowIso()]);
-      event(id, 'eligible', fingerprint); return this.candidate(id);
+      event(id, 'eligible', fingerprint);
+      recordRoiAttempt(); // a real prepared attempt, feeding the mission-wide continuous-learning ROI table
+      return this.candidate(id);
     });
   }
 
@@ -207,6 +242,7 @@ export class GithubBountyWorkflow {
         const state = error instanceof GithubBountyError && !error.effectMayHaveOccurred ? 'blocked' : 'unknown_submit';
         db.run('UPDATE mission_bounty_candidates SET state=?,updated_at=? WHERE id=? AND state=\'submitting\'', [state, nowIso(), candidateId]);
         event(candidateId, state, 'read_only_reconciliation_required');
+        recordRoiOutcome('failure'); // real failed submission attempt, not a discovery/simulation event
       });
       throw new MoneyError('bounty_submission_blocked_or_uncertain');
     } finally { open = false; }
@@ -224,8 +260,21 @@ export class GithubBountyWorkflow {
       if (status.headSha !== String(c.external_head_sha) && status.state === 'open') {
         // Upstream force-pushed/rebased our branch reference elsewhere; keep tracking but do not silently trust a different head.
       }
+      const previousState = String(c.state);
       db.run("UPDATE mission_bounty_candidates SET state=?,updated_at=? WHERE id=?", [status.state, nowIso(), candidateId]);
       event(candidateId, status.state, status.url);
+      // Only the first real observed transition counts — re-polling an already-merged/closed
+      // PR must never double-count the same GitHub-verified outcome.
+      if (previousState !== status.state && (status.state === 'merged' || status.state === 'closed_unmerged')) {
+        if (status.state === 'merged') {
+          const a = this.assignment(String(c.assignment_id));
+          const opp = this.opportunity(a);
+          const hinted = opp.hinted_amount_cents == null ? 0 : Number(opp.hinted_amount_cents);
+          recordRoiOutcome('success', Number.isFinite(hinted) ? hinted : 0); // merged is real, externally-verified completed work; net cents is a hint only, never fabricated cash
+        } else {
+          recordRoiOutcome('failure');
+        }
+      }
       return this.candidate(candidateId);
     });
   }
