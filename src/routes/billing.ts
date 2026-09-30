@@ -9,6 +9,7 @@ import { HttpError, asyncRoute } from '../server/http';
 import { getBody, optionalNumber, optionalString } from '../server/middleware/validation';
 import { renderInvoicePdf } from '../billing/invoice-pdf';
 import { getPaymentCapabilities } from '../billing/capability-detection';
+import { hasUnlimitedTaskCredits } from '../auth/entitlements';
 
 export function createBillingRouter(): Router {
   const router = Router();
@@ -36,6 +37,10 @@ export function createBillingRouter(): Router {
       trial: getTrialStatus(userId),
       invoices: billingService.invoices(userId),
       payments: billingService.payments(userId),
+      // Display-only entitlement flag, read from the same server-side
+      // helper the orchestrator uses for real credit consumption
+      // (src/auth/entitlements.ts) — never a second implementation.
+      unlimited: hasUnlimitedTaskCredits(userId),
     });
   });
 

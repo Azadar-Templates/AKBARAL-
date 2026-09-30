@@ -65,6 +65,7 @@
     user: null,
     trial: null,
     subscription: null,
+    unlimited: false,
     projects: [],
     agents: [],
     categories: [],
@@ -2079,19 +2080,39 @@ async function loadConnectedAccounts() {
     state.user = body.user;
     state.trial = body.trial;
     state.subscription = body.subscription;
+    // Server-computed entitlement (src/auth/entitlements.ts via /api/me) —
+    // true only for owner/super_admin, the exact same role check the
+    // orchestrator uses to skip credit consumption. The client never
+    // derives this itself from `role`; it only reports what the server
+    // already decided, so the pill can never disagree with reality.
+    state.unlimited = Boolean(body.unlimited);
     updateCreditPill();
   }
 
   function updateCreditPill() {
+    const pill = $('#credit-pill');
+    const shellPill = $('#ak-credit-pill');
+    // Owner/super_admin: real server-side entitlement is unlimited execution
+    // that never consumes a task credit (src/orchestrator/executor.ts). The
+    // trial/credit numbers below are leftover account bookkeeping from
+    // before/around role promotion and are never consulted for this role's
+    // task creation — showing "Trial · N free" here would misrepresent an
+    // account that cannot actually run out. Show the real state instead.
+    if (state.unlimited) {
+      if (pill) pill.textContent = 'Unlimited execution';
+      if (shellPill) {
+        shellPill.textContent = 'Unlimited execution';
+        shellPill.title = 'Owner entitlement: unlimited task execution, no credits consumed';
+      }
+      return;
+    }
     const credits = state.user?.freeCredits ?? 0;
     // /api/me returns trial.active (boolean) — `isActive` never existed, so
     // the trial label silently never showed.
     const onTrial = Boolean(state.trial?.active ?? state.trial?.isActive);
     const label = onTrial ? `Trial · ${credits} free tasks` : `Credits · ${credits}`;
-    const pill = $('#credit-pill');
     if (pill) pill.textContent = label;
     // The app shell carries the same real number in its own top bar.
-    const shellPill = $('#ak-credit-pill');
     if (shellPill) {
       shellPill.textContent = onTrial ? `Trial · ${credits} free` : `Credits · ${credits}`;
       shellPill.title = onTrial ? `${credits} free task credits on trial` : `${credits} task credits`;

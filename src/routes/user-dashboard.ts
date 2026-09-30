@@ -20,6 +20,7 @@ import {
   getAvailableCredits,
   db,
 } from '../db';
+import { hasUnlimitedTaskCredits } from '../auth/entitlements';
 
 export const userDashboardRouter = Router();
 
@@ -165,6 +166,10 @@ userDashboardRouter.get(
           paidCredits: Number(creditAccount.paid_credits ?? 0),
           bonusCredits: Number(creditAccount.bonus_credits ?? 0),
         } : null,
+        // Display-only entitlement flag, read from the same server-side
+        // helper the orchestrator uses for real credit consumption
+        // (src/auth/entitlements.ts) — never a second implementation.
+        unlimited: hasUnlimitedTaskCredits(userId),
       },
       plan: plan ? {
         key: String((plan as any).key),
@@ -259,6 +264,10 @@ userDashboardRouter.get(
         paidCredits: Number(account.paid_credits ?? 0),
         bonusCredits: Number(account.bonus_credits ?? 0),
       } : null,
+      // Display-only entitlement flag, read from the same server-side
+      // helper the orchestrator uses for real credit consumption
+      // (src/auth/entitlements.ts) — never a second implementation.
+      unlimited: hasUnlimitedTaskCredits(userId),
     });
   }),
 );
