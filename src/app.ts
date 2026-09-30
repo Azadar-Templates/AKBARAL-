@@ -24,7 +24,6 @@ import { createFactoryRouter } from './routes/factory';
 import { createEconomyRouter } from './routes/economy';
 import { createWorkforceRouter } from './routes/workforce';
 import { createOwnerRouter } from './routes/owner';
-import { syncConfiguredOwnerIdentity } from './auth/owner-identity';
 import { economyScheduler } from './economy/operations';
 import { workforceScheduler } from './workforce/scheduler';
 import { createMarketplaceRouter } from './routes/marketplace';
@@ -116,10 +115,12 @@ export function createApiServer(): ApiServer {
   // reconciling open runs against the authoritative job state).
   automationScheduler.start();
 
-  // Configured owner identity (AKBARAL_OWNER_EMAIL): promote the matching
-  // active account to the owner role server-side (audited, one-way). Also
-  // runs on every login so a first Google-identity login lands as owner.
-  syncConfiguredOwnerIdentity();
+  // Fixed platform owner identity (src/auth/owner-identity.ts): the ONLY
+  // way an account is ever granted role='owner' is the operator-invoked
+  // `npm run owner:bootstrap` CLI (scripts/owner-init.ts), run with direct
+  // server/database access. Registration and login NEVER grant it — not
+  // even to an account using the exact literal owner email string — so a
+  // stranger who registers that address first gains nothing.
 
   // ZA141251SA economy scheduler: durable, idempotent ticks; idle unless the
   // owner enables autonomous operation (kill switch checked every tick).

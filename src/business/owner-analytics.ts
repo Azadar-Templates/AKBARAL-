@@ -550,7 +550,7 @@ export function buildOwnerDashboard(): OwnerDashboard {
     promotion,
     owner: {
       unlimitedExecution: Boolean(ownerRow),
-      note: 'The configured owner identity (AKBARAL_OWNER_EMAIL) is promoted to role owner at boot and on every login, and then executes without consuming task credits.',
+      note: 'The one fixed platform owner identity (src/auth/owner-identity.ts) is established only via the operator-run `npm run owner:bootstrap` CLI — never through public registration or login — and then executes without consuming task credits.',
     },
     honesty: {
       realDataOnly: true,

@@ -11,6 +11,13 @@
  *     the honest `requires_pro` payment error — the entitlement itself, not a
  *     UI label.
  *
+ * PREREQUISITE: the owner account must already have been bootstrapped once on
+ * this deployment via `npm run owner:bootstrap` (src/auth/owner-identity.ts —
+ * registration/login can never grant the owner role, by design). If it has
+ * not been, the owner-role checks below fail honestly instead of silently
+ * passing, because this script's own register-then-login helper only reuses
+ * an existing account; it cannot create one with 'owner' role.
+ *
  * Usage:
  *   API_BASE=http://127.0.0.1:4000 AKBARAL_OWNER_EMAIL=... \
  *   AKBARAL_OWNER_PASSWORD=... node scripts/verify-owner-identity.mjs

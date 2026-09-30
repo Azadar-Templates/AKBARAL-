@@ -6,17 +6,18 @@ import { applyMigrations } from '../db/migrate';
 import { syncAgentRegistry, getAgentBySlug } from '../agents/registry';
 import { listEconomyEvents, listMissionMessages } from '../db/economy-repositories';
 import { missionChatWithAgent, missionChatWithGroup, missionChatHistory, MissionChatError } from './mission-chat';
-import { configuredOwnerEmail, syncConfiguredOwnerIdentity } from '../auth/owner-identity';
 import { createApiServer, type ApiServer } from '../app';
 
 /**
- * ZA141251SA mission-chat + configured-owner-identity battery (production
- * build sections 4 and 5).
+ * ZA141251SA mission-chat battery (production build section 5).
+ *
+ * Owner-identity resolution/bootstrap itself (src/auth/owner-identity.ts) has
+ * its own dedicated regression suite: src/auth/owner-identity.test.ts. Here,
+ * "owner" for mission chat is simply whatever role the HTTP surface's own
+ * fixture accounts carry (assigned directly, like every other test in this
+ * file) — this suite does not exercise the owner-identity bootstrap seam.
  *
  * Verified here:
- *   - the owner is identified ONLY by the configured email
- *     (AKBARAL_OWNER_EMAIL) — promotion is one-way, audited, and lands in the
- *     issued session; unset config promotes nobody
  *   - mission chat is owner-only at the HTTP layer (401 anonymous, 403 user
  *     and staff admin, 200 owner)
  *   - the agent must exist in the real registry (404 otherwise)
@@ -29,7 +30,7 @@ import { createApiServer, type ApiServer } from '../app';
  */
 
 const SAVED_ENV: Record<string, string | undefined> = {};
-const ENV_KEYS = ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'AKBARAL_OWNER_EMAIL'];
+const ENV_KEYS = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
 
 function saveEnv(): void {
   for (const key of ENV_KEYS) SAVED_ENV[key] = process.env[key];
@@ -74,49 +75,6 @@ describe('ZA141251SA mission chat + configured owner identity', () => {
   after(async () => {
     await modelFixture?.close();
     restoreEnv();
-  });
-
-  // ── Section 4: configured owner identity ─────────────────────────────────
-
-  it('promotes ONLY the configured email, one-way and audited; unset config promotes nobody', () => {
-    const ownerEmail = `mission-owner-${Date.now()}@akbaral.test`;
-    const otherEmail = `mission-other-${Date.now()}@akbaral.test`;
-    db.run("INSERT INTO users (id, email, password_hash, name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)", [
-      `usr_mo_${Date.now()}`, ownerEmail, null, 'Mission Owner', new Date().toISOString(), new Date().toISOString(),
-    ]);
-    db.run("INSERT INTO users (id, email, password_hash, name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)", [
-      `usr_mt_${Date.now()}`, otherEmail, null, 'Mission Other', new Date().toISOString(), new Date().toISOString(),
-    ]);
-
-    // Unset config: nobody is promoted.
-    delete process.env.AKBARAL_OWNER_EMAIL;
-    assert.equal(syncConfiguredOwnerIdentity(), null);
-    assert.equal(findUserByEmail(ownerEmail)!.role, 'user');
-
-    // Configured: only the matching active account is promoted (audited).
-    process.env.AKBARAL_OWNER_EMAIL = ownerEmail;
-    const result = syncConfiguredOwnerIdentity();
-    assert.deepEqual(result, { promoted: true, email: ownerEmail });
-    assert.equal(findUserByEmail(ownerEmail)!.role, 'owner');
-    assert.equal(findUserByEmail(otherEmail)!.role, 'user');
-    const audit = db.all("SELECT action FROM audit_logs WHERE action = 'owner_identity_promoted' ORDER BY created_at DESC LIMIT 1");
-    assert.equal(audit.length, 1, 'promotion is audited');
-
-    // One-way: a second sync promotes nothing (already owner).
-    assert.equal(syncConfiguredOwnerIdentity()!.promoted, false);
-
-    // Suspended accounts are never promoted.
-    const suspendedEmail = `mission-susp-${Date.now()}@akbaral.test`;
-    db.run("INSERT INTO users (id, email, password_hash, name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'user', 'suspended', ?, ?)", [
-      `usr_ms_${Date.now()}`, suspendedEmail, null, 'Suspended', new Date().toISOString(), new Date().toISOString(),
-    ]);
-    process.env.AKBARAL_OWNER_EMAIL = suspendedEmail;
-    syncConfiguredOwnerIdentity();
-    assert.equal(findUserByEmail(suspendedEmail)!.role, 'user');
-
-    assert.equal(configuredOwnerEmail(), suspendedEmail);
-    delete process.env.AKBARAL_OWNER_EMAIL;
-    assert.equal(configuredOwnerEmail(), null);
   });
 
   // ── Section 5: mission chat, service level ───────────────────────────────

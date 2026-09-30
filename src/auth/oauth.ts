@@ -8,7 +8,6 @@ import {
   type OAuthProviderKey,
 } from '../db/oauth-repositories';
 import { createUser, findUserByEmail, findUserById, updateUserLastLogin, createSession, appendSecurityLog, appendAuditLog } from '../db';
-import { syncConfiguredOwnerIdentity } from './owner-identity';
 import { hashToken, newBearerToken, signAccessToken } from '../security';
 import { HttpError } from '../server/http';
 
@@ -648,9 +647,11 @@ export async function completeOAuthLink(input: {
 }
 
 function issueSession(userId: string, ip: string | null, userAgent: string | null): { refreshToken: string; sessionId: string; accessToken: string } {
-  // Configured owner identity: promote before signing so a Google-identity
-  // login matching AKBARAL_OWNER_EMAIL carries the owner role immediately.
-  syncConfiguredOwnerIdentity(userId);
+  // Fixed platform owner identity (src/auth/owner-identity.ts): role is never
+  // touched here. An OAuth login (even one matching the fixed owner email)
+  // never grants owner — that can only ever come from the operator-invoked
+  // `npm run owner:bootstrap` CLI. `signAccessTokenForUser` below simply
+  // reads whatever role is already on the account.
   const refreshToken = newBearerToken();
   const session = createSession({
     userId,
