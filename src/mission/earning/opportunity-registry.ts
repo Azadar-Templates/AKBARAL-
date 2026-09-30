@@ -147,6 +147,31 @@ export const OPPORTUNITY_REGISTRY: OpportunityClass[] = [
     ]
   }),
   score({
+    key: 'github_issue_bounties',
+    label: 'GitHub Issue Bounties (public repos, bounty-labeled issues, PR-for-payment)',
+    earningMechanism: 'Repo maintainer or sponsor (directly, or via a bounty layer such as Algora/Boss.dev) pays when a submitted pull request that fixes a bounty-labeled issue is reviewed and merged.',
+    agentWork: 'Agent searches GitHub\u2019s own public Search API for open, bounty-labeled issues; reads the repository\u2019s own published AI-contribution policy (CONTRIBUTING.md/AI.md/README.md) before touching it; drafts a single-file fix, commit message, and disclosed PR body; forks, branches, and opens the pull request only via GitHub\u2019s own REST API after owner content-hash approval; polls GitHub\u2019s own merged/state fields to verify real completion.',
+    customerSource: 'Public GitHub issue search (label:bounty, label:paid-issue, etc.) \u2014 never a bounty marketplace\u2019s own website/API (some, e.g. Algora, ban bot access to their own site in their own ToS; this class only ever calls github.com/api.github.com).',
+    usdPaymentMechanism: 'Direct maintainer payment or a bounty-marketplace payout (Algora/Boss.dev) triggered off the merged PR; not wired to mission cash yet \u2014 see paymentVerifiable note.',
+    payoutMethodAndSettlementEvidence: 'A merged PR (GitHub\u2019s own `merged: true`) is real, independently verifiable completed work by itself; converting a downstream bounty payment into verified mission cash additionally requires a settlement adapter for whichever payout rail the maintainer/marketplace uses (typically Stripe Connect Express) \u2014 not yet installed, so no bounty can credit treasury today.',
+    autonomousPermitted: true,
+    autonomousNote: 'Discovery and repo-policy checks run fully autonomously with no account at all (GitHub\u2019s Search/Contents APIs are public and unauthenticated-capable, at a lower rate limit). Opening a real PR additionally needs one GitHub personal access token \u2014 a free, instant, no-KYC developer credential, not an earning-platform account \u2014 and a one-time owner content-hash approval of the exact diff/PR text before it is ever made public, matching this mission\u2019s existing editorial-review pattern for every other publish-style workflow.',
+    humanControlled: 'Owner supplies the (optional, reusable) GitHub token, reviews/approves the exact prepared diff and PR body before submission, and would separately choose and install any downstream payout adapter before a bounty payment could ever enter mission cash.',
+    countryRestrictions: 'None for discovery, policy-checking, or PR submission \u2014 GitHub has no country gate for public repo contributions. Only a downstream bounty-marketplace payout (if pursued) would inherit that marketplace\u2019s own payout-country and KYC restrictions.',
+    apiAutomationAvailability: 'Full: GitHub REST Search API, Contents API, Git Data API (refs/forks), and Pulls API all explicitly permit automated use (the same APIs Dependabot/Renovate/CI bots already use); no marketplace API is called.',
+    accountRequirements: 'None for discovery/policy-checking. One GitHub personal access token (owner\u2019s own free account, or in principle any agent-owned free GitHub account) for the fork/branch/PR step \u2014 never an earning-platform account, never KYC.',
+    expectedCosts: 'Zero upfront cost: GitHub API calls are free; only inference cost to read the issue and draft a fix (~$0.01-0.50/candidate).',
+    fraudRisks: 'Low-effort/spam AI PRs (many maintainers explicitly ban these) \u2014 blocked by the conservative repo-policy deny-list classifier, the mandatory server-side AI-disclosure line on every PR body, and the mandatory owner content-hash approval gate before anything is opened publicly; prompt-injection attempts embedded in issue/repo text are read-only inputs to policy classification and are never executed.',
+    exclusivelyAssignable: true,
+    paymentVerifiable: false,
+    status: 'restricted',
+    integrations: ['GitHub'],
+    ranking: {genuinePaidWork:3, automationPermission:5, usdVerifiability:1, accessibility:5, scalability:3, setupRequirements:5, operatingCost:5},
+    representativePlatforms: [
+      {name:'GitHub Issues (label:bounty)', officialUrl:'https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies', evidence:'Official: GitHub\u2019s own ToS distinguishes permitted API automation from prohibited scraping of the web UI (docs.github.com)'},
+    ]
+  }),
+  score({
     key: 'qa_testing',
     label: 'QA / Testing (manual + automated test packs)',
     earningMechanism: 'Client pays for test execution, bug reproduction, or test-suite delivery (uTest, Test.io, Tester Work, freelance QA gigs).',
