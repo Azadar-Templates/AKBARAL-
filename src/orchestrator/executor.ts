@@ -314,6 +314,33 @@ export interface DispatchOptions {
   isCancelled?: () => boolean;
 }
 
+/**
+ * Model-routing cost gate keyed on the agent's own pre-existing complexity
+ * classification (costUsage.priority, derived from each domain's
+ * domainCostBase in src/agents/catalog.ts).
+ *
+ * This is the ONLY place a premium/flagship model like GPT-6 Astra
+ * (costOutputPerMillionCents: 5000, see src/models/catalog.ts) can become
+ * reachable for an agent execution — and only for the ~20% of agent
+ * definitions already classified 'high' priority by domain complexity, i.e.
+ * genuinely high-complexity work. 'medium' and 'low' priority agents (the
+ * high-volume/simple majority) are capped below any flagship-tier price so
+ * the router falls through to cheaper capable models (gpt-4o-mini,
+ * gemini-3.8-flash, gemini-3.1-flash-lite, kimi-k2). No agent definition
+ * hardcodes a specific model key; this only bounds the price tier the
+ * existing capability/quality scoring in ModelRouter.score() is allowed to
+ * pick from.
+ */
+function maxCostCentsForPriority(priority: string): number | undefined {
+  if (priority === 'high') {
+    return undefined; // unconstrained — flagship models are eligible, not forced
+  }
+  if (priority === 'medium') {
+    return 1000; // admits gpt-4o / gemini-3.5-flash tier; excludes Astra (5000) and claude-sonnet-4-6 (1500)
+  }
+  return 400; // 'low' — admits only fast/cheap tier (gpt-4o-mini, gemini-3.8-flash, gemini-3.1-flash-lite, kimi-k2)
+}
+
 function resolveDispatchOptions(
   streamOrOptions?: ExecutionStream | DispatchOptions,
 ): DispatchOptions {
@@ -495,6 +522,7 @@ export async function runGenericAgentExecution(
       {
         capability: agent.modelRequirements,
         answerQuality: agent.costUsage.priority === 'high' ? 'high' : 'balanced',
+        maxCostCents: maxCostCentsForPriority(agent.costUsage.priority),
         taskId: task?.id ?? null,
         agentExecutionId: executionId,
       },
