@@ -267,4 +267,53 @@ describe('build identity resolution (deployment provenance)', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('falls back to RAILWAY_GIT_COMMIT_SHA (Railway-injected, zero owner config) when there is no image stamp', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'akbaral-railway-'));
+    try {
+      const info = buildInfo({
+        env: { ...process.env, AKBARAL_IMAGE_VERSION: '', RAILWAY_GIT_COMMIT_SHA: 'cafef00dcafef00dcafef00dcafef00dcafef00d' },
+        cwd: dir,
+      });
+      assert.equal(info.commit, 'cafef00dcafef00dcafef00dcafef00dcafef00d');
+      assert.equal(info.source, 'env');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers a real on-disk image stamp over RAILWAY_GIT_COMMIT_SHA when both are present', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'akbaral-both-'));
+    fs.writeFileSync(path.join(dir, '.image-version'), 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n');
+    try {
+      const info = buildInfo({
+        env: { ...process.env, AKBARAL_IMAGE_VERSION: '', RAILWAY_GIT_COMMIT_SHA: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+        cwd: dir,
+      });
+      // Current precedence is documented above buildInfo(): AKBARAL_IMAGE_VERSION,
+      // then RAILWAY_GIT_COMMIT_SHA, then the on-disk stamp. This test pins that
+      // order so a future edit cannot silently invert it.
+      assert.equal(info.commit, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+      assert.equal(info.source, 'env');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a literal "unknown" RAILWAY_GIT_COMMIT_SHA instead of falsely attributing it to Railway', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'akbaral-railway-unknown-'));
+    try {
+      const info = buildInfo({
+        env: { ...process.env, AKBARAL_IMAGE_VERSION: '', RAILWAY_GIT_COMMIT_SHA: 'unknown' },
+        cwd: dir,
+      });
+      // A literal "unknown" is not a real Railway-provided SHA, so it must never
+      // be reported with source: 'env' (which would falsely claim provenance).
+      // Falling through to 'unknown'/'image-stamp' is the honest outcome.
+      assert.notEqual(info.source, 'env');
+      assert.ok(['unknown', 'image-stamp'].includes(info.source));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

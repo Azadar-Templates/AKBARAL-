@@ -140,6 +140,21 @@ export function buildInfo(options?: { env?: NodeJS.ProcessEnv; cwd?: string }): 
     return info;
   }
 
+  // Railway injects RAILWAY_GIT_COMMIT_SHA into the RUNNING container
+  // automatically for any GitHub-triggered deploy, regardless of which
+  // builder produced the image (Dockerfile, Nixpacks/Railpack) and without
+  // any owner configuration. This is checked before the on-disk image
+  // stamp because it is the platform's own authoritative record of what it
+  // deployed, whereas the file stamp can only exist when this exact
+  // Dockerfile ran with an explicit --build-arg GIT_SHA=<sha> (true for the
+  // CI-published GHCR image, not guaranteed for a Railway-native build).
+  const fromRailway = (environment.RAILWAY_GIT_COMMIT_SHA ?? '').trim();
+  if (fromRailway && fromRailway.toLowerCase() !== 'unknown') {
+    const info: BuildInfo = { commit: fromRailway, version, builtAt: null, source: 'env' };
+    if (!options) cachedBuild = info;
+    return info;
+  }
+
   for (const candidate of [path.join(cwd, STAMP_FILENAME), path.resolve('/app', STAMP_FILENAME)]) {
     try {
       const commit = fs.readFileSync(candidate, 'utf8').trim();

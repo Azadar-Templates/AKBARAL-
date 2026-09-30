@@ -131,12 +131,55 @@ describe('owner console: authorization', () => {
   });
 
   it('exposes the focused sub-surfaces to the owner only', async () => {
-    for (const path of ['/api/owner/growth?days=7', '/api/owner/revenue?days=7', '/api/owner/costs', '/api/owner/health', '/api/owner/audit?limit=5']) {
+    for (const path of ['/api/owner/growth?days=7', '/api/owner/revenue?days=7', '/api/owner/costs', '/api/owner/health', '/api/owner/audit?limit=5', '/api/owner/launch-checks', '/api/owner/activation-stage']) {
       const owner = await call(path, { headers: jsonHeaders(ownerToken) });
       assert.equal(owner.status, 200, `owner may read ${path}`);
       const user = await call(path, { headers: jsonHeaders(userToken) });
       assert.equal(user.status, 403, `ordinary user refused on ${path}`);
     }
+  });
+
+  it('launch-checks reports THIS process\'s live configuration without leaking secret values', async () => {
+    // Default (offline) call: no live provider network calls, config facts only.
+    const owner = await call('/api/owner/launch-checks', { headers: jsonHeaders(ownerToken) });
+    assert.equal(owner.status, 200);
+    const ownerBody = owner.body as Record<string, unknown>;
+    const allChecks = ownerBody.checks as unknown[];
+    assert.ok(Array.isArray(allChecks) && allChecks.length > 0, 'returns the real check list');
+    assert.equal((ownerBody.mode as { offline: boolean }).offline, true, 'defaults to offline (no live probes) so polling this endpoint is always cheap and safe');
+    assert.ok(Array.isArray(ownerBody.blockers));
+    assert.ok(Array.isArray(ownerBody.ownerActions));
+    assert.equal(typeof ownerBody.readinessPercent, 'number');
+
+    // Never echoes a secret value, no matter what is configured on this process.
+    const serialized = JSON.stringify(ownerBody);
+    for (const [key, secret] of Object.entries(process.env)) {
+      if (!secret || secret.length < 8) continue;
+      if (!/SECRET|_KEY$|PASSWORD|TOKEN/i.test(key)) continue;
+      assert.ok(!serialized.includes(secret), `${key}'s value must never appear in the launch-checks payload`);
+    }
+
+    // ?only= filters to a subset, mirroring the CLI's --only flag.
+    const filtered = await call('/api/owner/launch-checks?only=payments', { headers: jsonHeaders(ownerToken) });
+    assert.equal(filtered.status, 200);
+    const filteredChecks = (filtered.body as Record<string, unknown>).checks as Array<{ id: string; area: string }>;
+    assert.ok(filteredChecks.length > 0 && filteredChecks.length < allChecks.length, 'only= narrows the check list');
+    for (const check of filteredChecks) {
+      assert.ok(check.id.includes('payments') || check.area.toLowerCase().includes('payments'), `${check.id} matches the only= filter`);
+    }
+  });
+
+  it('activation-stage reports the real, staged 4,001-agent activation model to the owner', async () => {
+    const owner = await call('/api/owner/activation-stage', { headers: jsonHeaders(ownerToken) });
+    assert.equal(owner.status, 200);
+    const body = owner.body as Record<string, unknown>;
+    const counts = body.counts as Record<string, number>;
+    assert.equal(typeof counts.stage0Registered, 'number');
+    assert.ok(counts.stage0Registered >= counts.stage1PolicyEligible, 'registered is always >= policy-eligible');
+    assert.ok(counts.stage1PolicyEligible >= 0 && counts.stage2Assigned >= 0 && counts.stage3VerifiedWork >= 0 && counts.stage4Settled >= 0);
+    assert.equal(typeof body.stage5ExpansionReady, 'boolean');
+    assert.ok(Array.isArray(body.assignedAgents));
+    assert.ok(Array.isArray(body.settledAgents));
   });
 });
 
