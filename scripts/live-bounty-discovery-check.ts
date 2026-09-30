@@ -43,21 +43,39 @@ async function main() {
   console.log('\nAccepted leads (repo#issue, stars, hinted amount):');
   for (const o of accepted) console.log(`  ${o.repo_full_name}#${o.issue_number}  stars=${o.repo_stars}  hinted=${o.hinted_amount_cents == null ? 'none' : `$${(Number(o.hinted_amount_cents) / 100).toFixed(2)}`}`);
 
-  console.log('\nRunning repo AI-contribution-policy check on accepted leads...');
+  console.log('\nRunning repo AI-contribution-policy check on accepted leads (paced to respect the built-in 10-req/min unauthenticated self-throttle)...');
   let policyAllowed = 0, policyBanned = 0, policyErrored = 0;
+  const executable: any[] = [];
   for (const o of accepted) {
-    try {
-      const policy = await workflow.checkPolicy(owner, String(o.id));
-      if (policy && Number(policy.ai_contributions_allowed)) policyAllowed++; else policyBanned++;
-    } catch (error) {
-      policyErrored++;
-      console.log(`  policy check error for ${o.repo_full_name}: ${(error as Error).message}`);
+    let attempt = 0;
+    for (;;) {
+      attempt++;
+      try {
+        const policy = await workflow.checkPolicy(owner, String(o.id));
+        if (policy && Number(policy.ai_contributions_allowed)) { policyAllowed++; executable.push(o); } else policyBanned++;
+        break;
+      } catch (error) {
+        const code = (error as any)?.code ?? '';
+        if (code === 'github_rate_limited' && attempt < 5) {
+          const waitMs = Math.min(15000, Number((error as any)?.retryAfterMs) || 8000);
+          await new Promise(r => setTimeout(r, waitMs));
+          continue;
+        }
+        policyErrored++;
+        console.log(`  policy check error for ${o.repo_full_name}: ${(error as Error).message}`);
+        break;
+      }
     }
   }
   console.log(`Policy-allowed (genuinely executable pending owner PR-content approval): ${policyAllowed}`);
   console.log(`Policy-banned (repo's own CONTRIBUTING/AI policy prohibits AI PRs): ${policyBanned}`);
-  console.log(`Policy-check errors (network/rate-limit, left unresolved): ${policyErrored}`);
+  console.log(`Policy-check errors (network/rate-limit, left unresolved after retries): ${policyErrored}`);
+  if (executable.length) {
+    console.log('\nGenuinely executable leads (risk-accepted AND policy-allowed):');
+    for (const o of executable) console.log(`  ${o.repo_full_name}#${o.issue_number}  stars=${o.repo_stars}  hinted=${o.hinted_amount_cents == null ? 'none' : `$${(Number(o.hinted_amount_cents) / 100).toFixed(2)}`}`);
+  }
 
   db.close();
 }
 main().catch(error => { console.error(error); process.exit(1); });
+

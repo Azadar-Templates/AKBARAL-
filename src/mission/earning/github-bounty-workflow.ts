@@ -106,8 +106,18 @@ export class GithubBountyWorkflow {
       const id = `bty_${sha256(`${lead.repoFullName}#${lead.issueNumber}`).slice(0, 24)}`;
       if (db.get('SELECT id FROM mission_bounty_opportunities WHERE id=?', [id])) continue;
       let metadata = null as Awaited<ReturnType<GithubBountyClient['fetchRepoMetadata']>> | null;
-      try { metadata = await this.github.fetchRepoMetadata(lead.repoFullName); }
-      catch { metadata = null; } // metadata is advisory only; a failed lookup never silently grants trust
+      // Bounded retry on the client's own self-imposed rate window (never on real GitHub outages/404s)
+      // — metadata is advisory only; a lookup that still fails after retrying never silently grants trust.
+      for (let attempt = 0; attempt < 3 && metadata === null; attempt++) {
+        try { metadata = await this.github.fetchRepoMetadata(lead.repoFullName); }
+        catch (error) {
+          if (attempt < 2 && error instanceof GithubBountyError && error.code === 'github_rate_limited') {
+            await new Promise(r => setTimeout(r, Math.min(5000, error.retryAfterMs ?? 5000)));
+            continue;
+          }
+          metadata = null; break;
+        }
+      }
       const decision = classifyLeadRisk(lead, metadata, duplicateTitles.has(`${lead.repoFullName}#${lead.issueNumber}`));
       risk.set(id, { state: decision.accepted ? 'accepted' : 'rejected', reason: decision.reason, stars: metadata?.stargazersCount ?? null, createdAt: metadata?.createdAt ?? null });
     }

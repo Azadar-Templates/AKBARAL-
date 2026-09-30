@@ -639,7 +639,7 @@ async function handleApi(
     }
     if(method==='POST' && rest[0]==='tick'){
       const actor: MoneyActor = {kind:'owner', id: requireOwner(context,true).owner.id};
-      json(res,200,{result: Scheduler.tickScheduler(actor)});
+      json(res,200,{result: await Scheduler.tickScheduler(actor)});
       return true;
     }
     if(method==='POST' && rest[0]==='enable'){
