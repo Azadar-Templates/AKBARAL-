@@ -84,7 +84,15 @@ function freshQueue(options: Partial<ConstructorParameters<typeof ExecutionQueue
     pollIntervalMs: 15,
     concurrency: 2,
     retryBaseDelayMs: 20,
-    stepTimeoutMs: 5000,
+    // 5000ms was observed to be too tight under a loaded CI/sandbox runner:
+    // the in-process fixture server normally answers in milliseconds, but a
+    // starved event loop can occasionally push that past 5s, turning an
+    // expected 'failed'/'retrying' outcome into a false 'timed_out' (a test
+    // timing flake, not a queue logic defect — see git history for the
+    // specific runs where this was observed). 8000ms already matches what
+    // several other tests in this file explicitly request below and is well
+    // under every waitFor() deadline used against it.
+    stepTimeoutMs: 8000,
     workflowTimeoutMs: 15000,
     workerId: `test-worker-${randomBytes(3).toString('hex')}`,
     ...options,
