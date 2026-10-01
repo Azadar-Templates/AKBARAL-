@@ -18,7 +18,11 @@ it('accepts only a bounded explicit one-file proposal and never shell syntax', (
   assert.throws(() => validateBountyProposal(multiple), /proposal_requires_exactly_one_file/);
 });
 
-it('fails closed when an immutable sandbox image digest is not configured', async () => {
+it('pins the trusted GHCR runner repository to an immutable digest and fails closed when absent', async () => {
+  const digest = `sha256:${'a'.repeat(64)}`;
+  const pinned = new OciBountySandboxRunner({ image: digest, runtime: 'not-a-runtime' });
+  assert.equal(pinned.image, `ghcr.io/azadar-templates/akbaral-bounty-sandbox@${digest}`);
+  assert.equal(await pinned.available(), false);
   const runner = new OciBountySandboxRunner({ image: 'latest', runtime: 'not-a-runtime' });
   assert.equal(await runner.available(), false);
   await assert.rejects(() => runner.inspect(new Uint8Array([1])), /sandbox_unavailable/);

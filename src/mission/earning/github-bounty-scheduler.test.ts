@@ -76,6 +76,8 @@ it('assigns to a real available agent once a money grant exists, with zero owner
   const assignment = db.get<any>('SELECT * FROM mission_bounty_assignments LIMIT 1');
   assert.equal(assignment.agent_id, agent);
   assert.equal(assignment.state, 'eligible');
+  assert.equal(result.executionAttempted, 0, 'the host lacks a provisioned OCI runtime in this synthetic fixture');
+  assert.equal(result.executionReason, 'sandbox_unavailable');
 });
 
 it('self-paces: does not re-run a full sweep within the minimum interval, even if called again immediately', async () => {

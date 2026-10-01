@@ -29,6 +29,9 @@ const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_REPORT_BYTES = 96 * 1024;
 const DOCKER_TIMEOUT_MS = 6 * 60 * 1000;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
+/** Trusted registry path is fixed in code. Deployment supplies only an immutable
+ * digest, never an arbitrary image name selected by a repository/model. */
+const TRUSTED_SANDBOX_IMAGE = 'ghcr.io/azadar-templates/akbaral-bounty-sandbox';
 const SAFE_PATH = /^(?!\.git(?:\/|$))(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._@+\-/]{1,400}$/;
 const SAFE_EXECUTABLE = /^[A-Za-z0-9._+-]{1,80}$/;
 const TEST_EXECUTABLES = new Set(['npm', 'npx', 'pnpm', 'yarn', 'bun', 'deno', 'node', 'python', 'python3', 'pytest', 'go', 'cargo', 'make', 'gradle', 'mvn', 'composer', 'php', 'ruby', 'rspec', 'dotnet', 'swift', 'java']);
@@ -85,7 +88,9 @@ export class OciBountySandboxRunner implements BountySandboxRunner {
   constructor(options: { image?: string; runtime?: string } = {}) {
     const digest = options.image ?? process.env.ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST ?? '';
     // A digest by itself is intentionally not enough to fetch a remote image.
-    this.image = DIGEST.test(digest) ? `akbaral-bounty-sandbox@${digest}` : '';
+    // The deployment pre-pulls this exact GHCR manifest; #run still uses
+    // --pull=never so the mission worker cannot fetch an unreviewed tag.
+    this.image = DIGEST.test(digest) ? `${TRUSTED_SANDBOX_IMAGE}@${digest}` : '';
     this.runtime = options.runtime ?? process.env.ZA141251SA_BOUNTY_SANDBOX_RUNTIME ?? 'docker';
   }
   async available(): Promise<boolean> {

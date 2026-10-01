@@ -1,0 +1,79 @@
+name: mission-bounty-worker
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17,47 * * * *"
+
+# GitHub-hosted Ubuntu runners provide the lowest-cost legitimate Docker OCI
+# runtime for this worker. The job starts only after the owner has explicitly
+# configured the listed repository variables/secrets; it does not synthesize
+# a model account, GitHub identity, or payment credential.
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: mission-bounty-worker
+  cancel-in-progress: false
+
+jobs:
+  execute-one-bounded-cycle:
+    if: ${{ vars.ZA141251SA_BOUNTY_WORKER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ZA141251SA_BOUNTY_WORKER_ENABLED: "true"
+      ZA141251SA_DATABASE_URL: ${{ secrets.ZA141251SA_DATABASE_URL }}
+      ZA141251SA_SESSION_SECRET: ${{ secrets.ZA141251SA_SESSION_SECRET }}
+      ZA141251SA_CREDENTIAL_KEY: ${{ secrets.ZA141251SA_CREDENTIAL_KEY }}
+      ZA141251SA_OWNER_EMAIL: ${{ vars.ZA141251SA_OWNER_EMAIL }}
+      ZA141251SA_GITHUB_TOKEN: ${{ secrets.ZA141251SA_GITHUB_TOKEN }}
+      ZA141251SA_CHAT_FREE_TIER: ${{ vars.ZA141251SA_CHAT_FREE_TIER }}
+      ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST: ${{ vars.ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST }}
+      ZA141251SA_BOUNTY_SANDBOX_RUNTIME: docker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify required trusted runtime configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(ZA141251SA_DATABASE_URL ZA141251SA_SESSION_SECRET ZA141251SA_CREDENTIAL_KEY ZA141251SA_OWNER_EMAIL ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST)
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required repository secret/variable names: ${missing[*]}"
+            exit 1
+          fi
+          if ! [[ "$ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST must be an immutable sha256 digest"
+            exit 1
+          fi
+          docker version --format '{{.Server.Version}}'
+      - name: Authenticate GHCR package pull
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Pull exact scanned sandbox image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/azadar-templates/akbaral-bounty-sandbox@${ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST}"
+          docker pull "$IMAGE"
+          docker image inspect "$IMAGE" >/dev/null
+          echo "sandbox image is locally available by immutable digest"
+      - name: Install application dependencies
+        run: npm ci
+      - name: Execute one existing autonomous bounty cycle
+        # The worker may discover/assign/inspect/generate/test/draft only.
+        # It cannot submit a PR: existing candidate hash approval remains a
+        # separate, owner-authorized API operation.
+        run: npm run mission:bounty-worker

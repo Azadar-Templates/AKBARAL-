@@ -1,0 +1,71 @@
+name: bounty-sandbox-publish
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "sandbox/github-bounty/**"
+      - ".github/workflows/bounty-sandbox-publish.yml"
+  workflow_dispatch:
+
+# The trusted runner is a separate OCI artifact: a repository archive or model
+# can never choose this image name/tag. The execution worker accepts only its
+# immutable GHCR digest and uses docker --pull=never at execution time.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  scan-build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set immutable package name
+        shell: bash
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "SANDBOX_IMAGE=ghcr.io/${OWNER}/akbaral-bounty-sandbox" >> "$GITHUB_ENV"
+          echo "SANDBOX_SCAN_TAG=scan-${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Build one local candidate for scan and publish
+        run: docker build --pull --tag "$SANDBOX_IMAGE:$SANDBOX_SCAN_TAG" sandbox/github-bounty
+      - name: Scan runner image for critical unfixed vulnerabilities
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.SANDBOX_IMAGE }}:${{ env.SANDBOX_SCAN_TAG }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the exact scanned local image and report its digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Do not rebuild after scanning: both tags point to the one local
+          # image Trivy inspected above.
+          docker tag "$SANDBOX_IMAGE:$SANDBOX_SCAN_TAG" "$SANDBOX_IMAGE:$GITHUB_SHA"
+          docker tag "$SANDBOX_IMAGE:$SANDBOX_SCAN_TAG" "$SANDBOX_IMAGE:latest"
+          docker push "$SANDBOX_IMAGE:$GITHUB_SHA"
+          docker push "$SANDBOX_IMAGE:latest"
+          docker pull "$SANDBOX_IMAGE:$GITHUB_SHA"
+          REF=$(docker image inspect --format '{{index .RepoDigests 0}}' "$SANDBOX_IMAGE:$GITHUB_SHA")
+          DIGEST="${REF#*@}"
+          if ! [[ "$REF" == "$SANDBOX_IMAGE@sha256:"* ]] || ! [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::GHCR did not return an immutable image digest"
+            exit 1
+          fi
+          docker pull "$SANDBOX_IMAGE@$DIGEST"
+          docker image inspect "$SANDBOX_IMAGE@$DIGEST" >/dev/null
+          echo "::notice title=bounty-sandbox-digest::$SANDBOX_IMAGE@$DIGEST"
+          {
+            echo '## Bounty sandbox image'
+            echo 'Set this exact deployment variable:'
+            echo '```'
+            echo "ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST=$DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

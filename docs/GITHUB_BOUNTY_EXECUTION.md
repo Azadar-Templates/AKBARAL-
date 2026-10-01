@@ -39,6 +39,64 @@ The archive and proposal mounts are world-readable **inside the scratch mount on
 
 The runner pre-lists archive paths, rejects traversal-shaped paths, unpacks only into its tmpfs, rejects symlink parents/targets for the proposed write, and executes tests only within that container. The mission Node process does not call an archive extractor, `npm`, test script, package manager, or repository executable.
 
+## Lowest-cost executable runtime: GitHub Actions
+
+The local Arena host deliberately is **not** a production sandbox host: it has
+no Docker/Podman. Railway/Modal-style managed web containers also do not expose
+a safe OCI daemon for nested untrusted-repository test containers. The smallest
+legitimate runtime already available to this public repository is the
+GitHub-hosted Ubuntu runner in `.github/workflows/mission-bounty-worker.yml`:
+it runs the existing application worker directly on the runner and Docker runs
+the untrusted repository only in the nested no-network OCI container. It is a
+bounded one-cycle job at minutes 17 and 47, with GitHub Actions concurrency
+preventing overlap. It never submits a PR. Its JSON result includes the safe
+`executionReason` readiness/state-machine reason (for example
+`sandbox_unavailable`, `model_resource_not_ready`, or `no_eligible_assignment`)
+rather than reporting a fabricated attempt.
+
+The runner is enabled only after the owner configures these **repository
+variables** (no values belong in Git):
+
+| Variable | Required value / purpose |
+| --- | --- |
+| `ZA141251SA_BOUNTY_WORKER_ENABLED` | exact string `true`; otherwise the job is skipped |
+| `ZA141251SA_OWNER_EMAIL` | the already-provisioned, identity-locked mission owner email |
+| `ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST` | exact immutable `sha256:<64 lowercase hex>` emitted by the sandbox publish workflow |
+| `ZA141251SA_CHAT_FREE_TIER` | exact `true` only after the owner has explicitly opted into the existing permitted free-tier model configuration; otherwise leave unset and the model gate blocks |
+
+These are the required **repository secrets**:
+
+| Secret | Purpose |
+| --- | --- |
+| `ZA141251SA_DATABASE_URL` | the existing production mission PostgreSQL connection, not a disposable Actions SQLite file |
+| `ZA141251SA_SESSION_SECRET` | the existing deployment session secret |
+| `ZA141251SA_CREDENTIAL_KEY` | the existing credential-vault encryption key; it must match the key that encrypted the configured model credential |
+| `ZA141251SA_GITHUB_TOKEN` | optional for public GitHub reads; supply only a legitimate owner-controlled token when authenticated reads/rate limit are needed. It is never printed. |
+
+Before enabling the job, configure the model through the existing mission
+owner flow—not by putting `GOOGLE_API_KEY` in this workflow. The assigned agent
+must already have an active Google resource/credential with `model.call`
+scope, an approved `gemini_api` tool authorization, an enabled bounded chat
+configuration, quota, and its existing wallet/resource-call budget. The
+worker checks all of these live and spends only through `mission_resource_calls`.
+
+`.github/workflows/bounty-sandbox-publish.yml` builds the trusted image from
+`sandbox/github-bounty`, scans it for critical unfixed vulnerabilities before
+publishing, pushes it to
+`ghcr.io/azadar-templates/akbaral-bounty-sandbox`, then pulls and reports the
+manifest digest. Copy that digest to the repository variable above. The worker
+pulls only `ghcr.io/azadar-templates/akbaral-bounty-sandbox@<digest>` before
+execution; the application runner itself still uses `--pull=never`.
+
+Public GitHub issue/repository reads can lawfully run without a token. The
+Actions `github.token` is used only to pull the package and is **not** treated
+as an owner GitHub user identity. If an approved candidate is later to be
+submitted, the exact additional legitimate requirement is an owner-controlled
+GitHub **user** token that can fork the upstream repository, write `Contents`
+to that user's fork, and create a pull request against the upstream project.
+The existing owner content-hash approval is required first. No GitHub App or
+Actions token is used as a workaround for that requirement.
+
 ## States and honest boundaries
 
 `mission_bounty_execution_jobs` records `queued → inspecting → generating → verifying → verified → drafted`, or terminal `blocked`/`failed` evidence. It stores bounded issue/inspection/proposal/test evidence and an archive hash, **not archive bytes**. Uncertain provider/sandbox/GitHub steps block rather than replay automatically.
