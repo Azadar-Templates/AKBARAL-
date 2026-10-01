@@ -52,6 +52,7 @@ function runStartProd(args: string[], env: Record<string, string>): RunResult {
       AKBARAL_API_PORT: '',
       SESSION_SECRET: '',
       AKBARAL_SESSION_SECRET_FILE: path.join(defaultSecretDir, '.session-secret'),
+      ZA141251SA_MISSION_SERVER_ENABLED: '',
       ...env,
     },
   });
@@ -268,6 +269,80 @@ test('AKBARAL_AUTO_BUILD is wired to self-heal a missing build via "npm run buil
     /runStep\('production build \(npm run build\)', 'npm', \['run', 'build'\]\)/,
     'AKBARAL_AUTO_BUILD=true must invoke the real "npm run build"',
   );
+});
+
+test('the private mission server is disabled by default and requires the exact true opt-in', () => {
+  const disabled = runStartProd(['--print-ports'], {});
+  assert.equal(disabled.status, 0, disabled.stderr);
+  assert.equal(lastJsonLine(disabled.stdout).missionServerEnabled, false);
+
+  for (const value of ['1', 'yes', 'TRUE', ' true ']) {
+    const notExact = runStartProd(['--print-ports'], { ZA141251SA_MISSION_SERVER_ENABLED: value });
+    assert.equal(notExact.status, 0, notExact.stderr);
+    assert.equal(
+      lastJsonLine(notExact.stdout).missionServerEnabled,
+      false,
+      `ZA141251SA_MISSION_SERVER_ENABLED=${JSON.stringify(value)} must not enable the private server`,
+    );
+  }
+
+  const enabled = runStartProd(['--print-ports'], { ZA141251SA_MISSION_SERVER_ENABLED: 'true' });
+  assert.equal(enabled.status, 0, enabled.stderr);
+  assert.equal(lastJsonLine(enabled.stdout).missionServerEnabled, true);
+});
+
+test('private mission startup uses only its compiled server entry and never enables mission workers', () => {
+  assert.match(
+    startProdSource,
+    /const MISSION_SERVER_ENABLED = process\.env\.ZA141251SA_MISSION_SERVER_ENABLED === 'true';/,
+    'private mission startup must retain an exact, explicit operator gate',
+  );
+  assert.match(
+    startProdSource,
+    /const DIST_MISSION_ENTRY = path\.resolve\(process\.cwd\(\), 'dist', 'scripts', 'mission-serve\.js'\);/,
+    'production must use the compiled mission server entry, not the development tsx command',
+  );
+  assert.match(
+    startProdSource,
+    /MISSION_SERVER_ENABLED && !existsSync\(DIST_MISSION_ENTRY\)/,
+    'an enabled private server must participate in the build-artifact preflight',
+  );
+  assert.match(
+    startProdSource,
+    /const mission = launch\('mission', 'node', \[DIST_MISSION_ENTRY\], \{ NODE_ENV: 'production' \}\);/,
+  );
+  assert.doesNotMatch(
+    startProdSource,
+    /mission-(?:money|chat|bounty)-worker/,
+    'starting the private mission server must not enable any mission worker',
+  );
+
+  const missionLaunchIndex = startProdSource.indexOf("launch('mission'");
+  const missionGateIndex = startProdSource.lastIndexOf('if (MISSION_SERVER_ENABLED)', missionLaunchIndex);
+  assert.ok(missionLaunchIndex > -1 && missionGateIndex > -1 && missionGateIndex < missionLaunchIndex);
+});
+
+test('an enabled private mission server is covered by the missing-build preflight', () => {
+  const tmpCwd = mkdtempSync(path.join(os.tmpdir(), 'akbaral-mission-preflight-'));
+  try {
+    const run = spawnSync(process.execPath, [START_PROD], {
+      cwd: tmpCwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PORT: '',
+        AKBARAL_WEB_PORT: '',
+        AKBARAL_API_PORT: '',
+        SESSION_SECRET: 'x'.repeat(40),
+        AKBARAL_AUTO_BUILD: 'false',
+        ZA141251SA_MISSION_SERVER_ENABLED: 'true',
+      },
+    });
+    assert.equal(run.status, 1, 'a missing compiled mission entry must fail startup before any child is launched');
+    assert.match(`${run.stdout ?? ''}\n${run.stderr ?? ''}`, /dist[/\\]scripts[/\\]mission-serve\.js/);
+  } finally {
+    rmSync(tmpCwd, { recursive: true, force: true });
+  }
 });
 
 test('startup preflight checks run before any tier is launched', () => {

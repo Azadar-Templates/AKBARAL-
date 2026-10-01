@@ -86,6 +86,13 @@ if (!['both', 'web', 'api'].includes(ROLES)) {
   process.exit(1);
 }
 
+// The private mission server is an independent process with its own database,
+// authentication and secrets. Production startup must remain fail-closed: it
+// is never launched implicitly, by a truthy value, or by an AKBARAL_ROLES
+// selection. Only this exact operator opt-in starts it. The mission workers
+// remain separate and retain their own independent enablement gates.
+const MISSION_SERVER_ENABLED = process.env.ZA141251SA_MISSION_SERVER_ENABLED === 'true';
+
 /* ------------------------------------------------------------------ ports
  * The PUBLIC entry point is the Next.js tier: it serves the app and rewrites
  * /api, /uploads and /ws to the API tier (next.config.mjs). So the public port
@@ -130,7 +137,13 @@ for (const [name, value] of [['AKBARAL_WEB_PORT', process.env.AKBARAL_WEB_PORT],
 // bind, so hosts and operators can verify the contract instead of guessing.
 // Exits non-zero for an invalid port, like the real start does.
 if (process.argv.includes('--print-ports')) {
-  console.log(JSON.stringify({ roles: ROLES, publicPort: webPort, webPort, apiPort }));
+  console.log(JSON.stringify({
+    roles: ROLES,
+    publicPort: webPort,
+    webPort,
+    apiPort,
+    missionServerEnabled: MISSION_SERVER_ENABLED,
+  }));
   process.exit(0);
 }
 
@@ -225,6 +238,7 @@ if (process.argv.includes('--print-session-secret-status')) {
 const DIST_API_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'index.js');
 const DIST_MIGRATE_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'db', 'migrate.js');
 const DIST_SEED_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'db', 'seed.js');
+const DIST_MISSION_ENTRY = path.resolve(process.cwd(), 'dist', 'scripts', 'mission-serve.js');
 const NEXT_BUILD_MARKER = path.resolve(process.cwd(), '.next', 'BUILD_ID');
 
 function missingBuildArtifacts() {
@@ -234,6 +248,9 @@ function missingBuildArtifacts() {
   }
   if (ROLES !== 'api' && !existsSync(NEXT_BUILD_MARKER)) {
     missing.push(`${NEXT_BUILD_MARKER} (Next.js build output)`);
+  }
+  if (MISSION_SERVER_ENABLED && !existsSync(DIST_MISSION_ENTRY)) {
+    missing.push(`${DIST_MISSION_ENTRY} (private mission server build output)`);
   }
   return missing;
 }
@@ -360,6 +377,19 @@ if (ROLES !== 'web') {
     shutdown();
     process.exit(code ?? 0);
   });
+}
+if (MISSION_SERVER_ENABLED) {
+  // scripts/mission-serve.ts owns the private bootstrap: mission migrations,
+  // identity lockdown, and audit/ledger verification all happen before its
+  // listener accepts requests. No public route or proxy is added here.
+  const mission = launch('mission', 'node', [DIST_MISSION_ENTRY], { NODE_ENV: 'production' });
+  mission.on('exit', (code) => {
+    console.log(`[akbaral] private mission server exited with code ${code}`);
+    shutdown();
+    process.exit(code ?? 0);
+  });
+} else {
+  log('private mission server disabled (requires exact ZA141251SA_MISSION_SERVER_ENABLED=true opt-in).');
 }
 console.log(
   `[akbaral] AKBARAL_ROLES=${ROLES} — ` +

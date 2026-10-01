@@ -24,6 +24,40 @@ explicitly marked POST-LAUNCH.
   “Scaling honestly” below). The repository layer is deliberately thin and
   typed so that migration is a backend project, not a rewrite.
 
+## Optional private mission server (disabled by default)
+
+`scripts/start-prod.mjs` can supervise the compiled private mission server as
+an additional child process, but **does not start it by default**. The only
+startup opt-in is the exact value
+`ZA141251SA_MISSION_SERVER_ENABLED=true`; values such as `1`, `yes`, `TRUE`,
+or an unset variable remain disabled. Merely starting the AKBARAL! `both`,
+`web`, or `api` role never implies this opt-in.
+
+When explicitly enabled, startup requires
+`dist/scripts/mission-serve.js` to exist and launches it with Node. The mission
+bootstrap continues to own its migrations, identity lockdown, and audit and
+ledger verification before opening its listener. It remains a separate
+process with its own `ZA141251SA_DATABASE_URL`, session secret, credential
+key, owner authentication, bind host, and port. No public AKBARAL! route or
+Next.js rewrite is added for it.
+
+Operational boundaries:
+
+- `ZA141251SA_BIND_HOST` remains loopback-only by default. A wider bind is an
+  explicit private-network decision, and the mission bootstrap refuses it
+  unless an owner authentication path exists.
+- Enabling the server does **not** enable the money, chat, or bounty workers.
+  Those remain separate processes with independent, explicit worker gates.
+- If the explicitly requested mission child exits, the production wrapper
+  shuts down its sibling children rather than silently leaving a partial
+  deployment running.
+- Configure mission variables through the deployment's secret manager; never
+  commit their values. This repository does not set the server opt-in for any
+  deployment target.
+
+This is startup plumbing only. It is not evidence that a private mission
+service has been configured, exposed, deployed, or made production-ready.
+
 ## First deployment
 
 ```bash
