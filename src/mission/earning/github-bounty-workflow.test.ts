@@ -16,6 +16,8 @@ const { updatePolicy, setKillSwitch } = require('../policy') as typeof import('.
 const owner = { kind: 'owner' as const, id: 'fixture-owner' }, agent = 'fixture-agent', other = 'fixture-other';
 const REPO = 'acme/widget', LOGIN = 'fixture-bot', FORK = `${LOGIN}/widget`;
 let banned = false, mergedState: 'open' | 'merged' | 'closed_unmerged' = 'open';
+let reviewState: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' = 'APPROVED';
+let checkConclusion: 'success' | 'failure' = 'success';
 const json = (body: unknown, status = 200) => new Response(body === null ? '' : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 function client() {
@@ -40,6 +42,8 @@ function client() {
     if (p.startsWith(`/repos/${FORK}/contents/`) && method === 'PUT') return json({ content: {} }, 201);
     if (p === `/repos/${REPO}/pulls` && method === 'POST') return json({ number: 9, html_url: `https://github.com/${REPO}/pull/9`, head: { sha: 'b'.repeat(40) } }, 201);
     if (p === `/repos/${REPO}/pulls/9` && method === 'GET') return json({ number: 9, html_url: `https://github.com/${REPO}/pull/9`, state: mergedState === 'open' ? 'open' : 'closed', merged: mergedState === 'merged', merged_at: mergedState === 'merged' ? '2026-01-01T00:00:00Z' : null, head: { sha: 'b'.repeat(40) } });
+    if (p === `/repos/${REPO}/pulls/9/reviews` && method === 'GET') return json([{ state: reviewState }]);
+    if (p === `/repos/${REPO}/commits/${'b'.repeat(40)}/check-runs` && method === 'GET') return json({ check_runs: [{ status: 'completed', conclusion: checkConclusion }] });
     assert.fail(`unsupported fixture endpoint: ${method} ${p}`);
   };
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
@@ -57,7 +61,7 @@ beforeEach(() => {
   for (const table of tables) db.run(`DELETE FROM ${table}`);
   updatePolicy({ killSwitch: false, autonomousEnabled: true, currency: 'USD', maxDailySpendCents: 100000, maxExpenseCents: 10000, requireApprovalAboveCents: 500 }, owner.id);
   for (const id of [agent, other]) m.setMoneyGrant(owner, id, { spendLimitCents: 10000, delegationCents: 0, canCreate: false, expiresAt: new Date(Date.now() + 86400000).toISOString(), status: 'active' });
-  banned = false; mergedState = 'open';
+  banned = false; mergedState = 'open'; reviewState = 'APPROVED'; checkConclusion = 'success';
   w = new GithubBountyWorkflow(client());
 });
 after(() => { try { db.close(); } finally { clearInterval(testLiveness); } });
@@ -250,4 +254,41 @@ it('records a real ROI failure when a PR is closed without being merged', async 
   const roi = db.get<any>("SELECT * FROM mission_opportunity_roi WHERE registry_key='github_issue_bounties'");
   assert.equal(roi.failures, 1);
   assert.equal(roi.successes, 0);
+});
+
+
+it('passively records GitHub review/check evidence and follows a merge without owner polling', async () => {
+  const c = await draftCandidate();
+  w.approveCandidate(owner, String(c.id), String(c.content_hash));
+  const submitted = await w.submit(owner, String(c.id));
+
+  reviewState = 'CHANGES_REQUESTED'; checkConclusion = 'failure';
+  const first = await w.refreshSubmittedPullRequests(owner);
+  assert.deepEqual(first, {
+    attempted: 1, observed: 1, merged: 0, closedUnmerged: 0,
+    reviewsApproved: 0, changesRequested: 1, checksPassing: 0, checksFailing: 1, failed: 0,
+  });
+  const pending = db.get<any>('SELECT state,review_state,checks_state,review_summary_json,last_reviewed_at FROM mission_bounty_candidates WHERE id=?', [submitted.id]);
+  assert.equal(pending.state, 'submitted');
+  assert.equal(pending.review_state, 'changes_requested');
+  assert.equal(pending.checks_state, 'failing');
+  assert.ok(pending.last_reviewed_at);
+  assert.match(String(pending.review_summary_json), /github_rest/);
+
+  // GitHub itself is the only merge source. A merge is completed work, never
+  // cash: ROI is updated once, and no mission receipt/wallet is created.
+  mergedState = 'merged';
+  const second = await w.refreshSubmittedPullRequests(owner);
+  assert.equal(second.merged, 1);
+  const merged = db.get<any>('SELECT state,review_state,checks_state FROM mission_bounty_candidates WHERE id=?', [submitted.id]);
+  assert.equal(merged.state, 'merged');
+  assert.equal(merged.review_state, 'not_applicable');
+  assert.equal(merged.checks_state, 'not_applicable');
+  const roi = db.get<any>("SELECT * FROM mission_opportunity_roi WHERE registry_key='github_issue_bounties'");
+  assert.equal(roi.successes, 1);
+  assert.equal(db.get<any>('SELECT COUNT(*) AS n FROM mission_money_receipts')?.n, 0);
+
+  const third = await w.refreshSubmittedPullRequests(owner);
+  assert.equal(third.attempted, 0, 'terminal pull requests are not re-polled or double-counted');
+  assert.equal(db.get<any>("SELECT successes FROM mission_opportunity_roi WHERE registry_key='github_issue_bounties'")?.successes, 1);
 });

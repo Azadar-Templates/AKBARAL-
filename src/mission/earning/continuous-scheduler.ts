@@ -42,6 +42,12 @@ export interface TickResult {
   bountyRejected: number;
   bountyPolicyAllowed: number;
   bountyAssigned: number;
+  /** Read-only GitHub evidence for PRs already submitted by the workflow. */
+  bountyPrReviewed: number;
+  bountyPrMerged: number;
+  bountyPrClosedUnmerged: number;
+  bountyChecksPassing: number;
+  bountyChecksFailing: number;
   detail: string;
 }
 
@@ -96,6 +102,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
 
   let discovered = 0, qualified = 0, matched = 0, locked = 0, executing = 0, verified = 0, settled = 0, failed = 0, retried = 0, expired = 0, rateLimited = 0, reinvested = 0, scaled = 0;
   let bountyDiscovered = 0, bountyRejected = 0, bountyPolicyAllowed = 0, bountyAssigned = 0;
+  let bountyPrReviewed = 0, bountyPrMerged = 0, bountyPrClosedUnmerged = 0, bountyChecksPassing = 0, bountyChecksFailing = 0;
   let detail = '';
   try {
     // ── 1. DISCOVER: global beyond-57 sweep + qualify
@@ -123,6 +130,11 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
       bountyRejected = bounty.rejected;
       bountyPolicyAllowed = bounty.policyAllowed;
       bountyAssigned = bounty.assigned;
+      bountyPrReviewed = bounty.prReviewed;
+      bountyPrMerged = bounty.prMerged;
+      bountyPrClosedUnmerged = bounty.prClosedUnmerged;
+      bountyChecksPassing = bounty.prChecksPassing;
+      bountyChecksFailing = bounty.prChecksFailing;
     } catch (e) {
       const msg = String((e as any)?.code ?? (e as any)?.message ?? '');
       if (/rate_limited/i.test(msg)) rateLimited++;
@@ -266,7 +278,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
     // Nothing was recorded then and nothing is recorded now; the counters in
     // `detail` below remain the honest per-cycle record.
 
-    detail = `cycle ${cycle}: disc ${discovered} qual ${qualified} match ${matched} lock ${locked} exec ${executing} verify ${verified} settle ${settled} fail ${failed} retry ${retried} expire ${expired} bounty(disc ${bountyDiscovered} rej ${bountyRejected} allow ${bountyPolicyAllowed} assign ${bountyAssigned})`;
+    detail = `cycle ${cycle}: disc ${discovered} qual ${qualified} match ${matched} lock ${locked} exec ${executing} verify ${verified} settle ${settled} fail ${failed} retry ${retried} expire ${expired} bounty(disc ${bountyDiscovered} rej ${bountyRejected} allow ${bountyPolicyAllowed} assign ${bountyAssigned} pr-review ${bountyPrReviewed} merge ${bountyPrMerged} closed ${bountyPrClosedUnmerged} checks-pass ${bountyChecksPassing} checks-fail ${bountyChecksFailing})`;
     db.run('UPDATE mission_scheduler_ticks SET completed_at=?, discovered=?, qualified=?, matched=?, locked=?, executing=?, verified=?, settled=?, failed=?, retried=?, expired=?, rate_limited=?, detail=?, status=\'completed\' WHERE id=?',
       [nowIso(), discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, detail, tickId]);
     db.run('UPDATE mission_scheduler_state SET last_tick_at=?, last_cycle=?, consecutive_failures=0, last_error=NULL, updated_at=? WHERE id=\'global\'', [nowIso(), cycle, nowIso()]);
@@ -278,7 +290,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
           [missionId('intel'), cycle, String(roi.registry_key), Number(roi.attempts), Number(roi.successes), Number(roi.successes), Number(roi.total_gross_cents), Number(roi.total_fees_cents), Number(roi.total_net_cents), Number(roi.avg_score ?? 0), nowIso()]);
       }
     } catch {}
-    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, detail };
+    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, detail };
   } catch (e) {
     const msg = (e as any)?.message ?? String(e);
     failed++;
@@ -286,7 +298,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
       [nowIso(), discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, `failed: ${msg.slice(0,500)}`, tickId]);
     db.run('UPDATE mission_scheduler_state SET consecutive_failures=consecutive_failures+1, last_error=?, updated_at=? WHERE id=\'global\'', [msg.slice(0,500), nowIso()]);
     detail = `failed: ${msg.slice(0,500)}`;
-    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, detail };
+    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, detail };
   } finally {
     tickRunning = false;
   }

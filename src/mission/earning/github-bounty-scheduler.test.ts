@@ -37,7 +37,7 @@ function client() {
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
 }
 
-const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_scheduler_state', 'mission_opportunity_roi', 'mission_money_grants'];
+const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_scheduler_state', 'mission_bounty_review_scheduler_state', 'mission_opportunity_roi', 'mission_money_grants'];
 let w: InstanceType<typeof GithubBountyWorkflow>;
 before(() => {
   applyMissionMigrations();
@@ -48,6 +48,7 @@ beforeEach(() => {
   setKillSwitch(false, owner.id);
   for (const table of tables) db.run(`DELETE FROM ${table}`);
   db.run("INSERT INTO mission_bounty_scheduler_state (id, last_attempted_at, last_result) VALUES ('global', NULL, NULL)");
+  db.run("INSERT INTO mission_bounty_review_scheduler_state (id, last_attempted_at, last_result) VALUES ('global', NULL, NULL)");
   updatePolicy({ killSwitch: false, autonomousEnabled: true, currency: 'USD', maxDailySpendCents: 100000, maxExpenseCents: 10000, requireApprovalAboveCents: 500 }, owner.id);
   w = new GithubBountyWorkflow(client());
 });
@@ -62,6 +63,8 @@ it('runs the full discover -> policy-check -> assign sweep on the first call wit
   assert.equal(result.policyAllowed, 1);
   // No agent has a money grant configured yet, so assignment is an honest skip, not a fabricated success.
   assert.equal(result.assigned, 0);
+  assert.equal(result.prReviewAttempted, 0, 'the first passive monitor has no submitted PR to poll');
+  assert.equal(result.prReviewed, 0);
   const opp = db.get<any>('SELECT * FROM mission_bounty_opportunities LIMIT 1');
   assert.equal(opp.risk_state, 'accepted');
 });

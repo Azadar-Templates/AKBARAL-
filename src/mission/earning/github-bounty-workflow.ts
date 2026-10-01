@@ -25,7 +25,7 @@
 import { missionDb as db, missionId, sha256, nowIso, appendMissionAudit, type Row } from '../database';
 import { assertMoneyOwner, grant, cashAccount, approveOpportunity, MoneyError, type MoneyActor } from '../money';
 import { currentPolicy, checkActivity } from '../policy';
-import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient, type BountyLeadRaw } from './github-bounty-client';
+import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient, type BountyLeadRaw, type PullRequestReviewSnapshotRaw } from './github-bounty-client';
 
 const LEDGER_PROVIDER = 'github-bounty-settlement';
 const ROI_REGISTRY_KEY = 'github_issue_bounties';
@@ -90,7 +90,7 @@ export class GithubBountyWorkflow {
       opportunities: db.all<Row>('SELECT * FROM mission_bounty_opportunities ORDER BY observed_at DESC LIMIT 200'),
       policies: db.all<Row>('SELECT * FROM mission_bounty_policy ORDER BY checked_at DESC LIMIT 200'),
       assignments: db.all<Row>('SELECT * FROM mission_bounty_assignments ORDER BY created_at DESC LIMIT 200'),
-      candidates: db.all<Row>('SELECT id,assignment_id,repo_full_name,state,external_pr_number,external_pr_url,updated_at FROM mission_bounty_candidates ORDER BY updated_at DESC LIMIT 200'),
+      candidates: db.all<Row>('SELECT id,assignment_id,repo_full_name,state,external_pr_number,external_pr_url,review_state,checks_state,review_summary_json,last_reviewed_at,updated_at FROM mission_bounty_candidates ORDER BY updated_at DESC LIMIT 200'),
     };
   }
 
@@ -287,6 +287,78 @@ export class GithubBountyWorkflow {
       }
       return this.candidate(candidateId);
     });
+  }
+
+  /** Persists an externally observed, read-only review/check snapshot. This is
+   * intentionally NOT an approval primitive: GitHub review/check evidence can
+   * inform a later correction, but never authorizes a new write or payment. */
+  private recordPullRequestReviewSnapshot(actor: MoneyActor, candidateId: string, snapshot: PullRequestReviewSnapshotRaw): Row | null {
+    return db.transaction(() => {
+      assertMoneyOwner(actor);
+      const current = this.candidate(candidateId);
+      // A concurrent/manual tracker may have already terminally recorded this
+      // PR. Keep the first terminal evidence immutable and do not double-count
+      // ROI or overwrite a newer terminal result.
+      if (current.state !== 'submitted') return null;
+      if (snapshot.repoFullName !== String(current.repo_full_name) || Number(current.external_pr_number) !== snapshot.number) deny('pull_request_mismatch');
+      const summary = JSON.stringify({
+        source: 'github_rest', state: snapshot.state, reviewState: snapshot.reviewState,
+        checksState: snapshot.checksState, reviewCount: snapshot.reviewCount,
+        checkRunCount: snapshot.checkRunCount, observedAt: snapshot.observedAt,
+      });
+      const nextState = snapshot.state === 'open' ? 'submitted' : snapshot.state;
+      db.run(`UPDATE mission_bounty_candidates
+        SET state=?, review_state=?, checks_state=?, review_summary_json=?, last_reviewed_at=?, updated_at=?
+        WHERE id=? AND state='submitted'`,
+        [nextState, snapshot.reviewState, snapshot.checksState, summary, snapshot.observedAt, nowIso(), candidateId]);
+      event(candidateId, nextState === 'submitted' ? 'review_snapshot' : nextState, snapshot.url);
+      if (nextState === 'merged') {
+        const a = this.assignment(String(current.assignment_id));
+        const opp = this.opportunity(a);
+        const hinted = opp.hinted_amount_cents == null ? 0 : Number(opp.hinted_amount_cents);
+        // A GitHub-verified merge is completed work. The amount remains only a
+        // non-cash hint; no receipt, wallet credit, or revenue is created here.
+        recordRoiOutcome('success', Number.isFinite(hinted) ? hinted : 0);
+      } else if (nextState === 'closed_unmerged') {
+        recordRoiOutcome('failure');
+      }
+      return this.candidate(candidateId);
+    });
+  }
+
+  /** One bounded passive monitoring pass for submitted PRs. It requires no
+   * owner request after the original PR exists and performs no mutation on
+   * GitHub. Errors are separately audited and leave candidate state unchanged
+   * so the scheduler can retry later without assuming a review/merge happened. */
+  async refreshSubmittedPullRequests(actor: MoneyActor, limit = 1): Promise<{ attempted: number; observed: number; merged: number; closedUnmerged: number; reviewsApproved: number; changesRequested: number; checksPassing: number; checksFailing: number; failed: number }> {
+    assertMoneyOwner(actor);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 3) deny('invalid_monitor_limit');
+    const candidates = db.all<Row>(`SELECT id,repo_full_name,external_pr_number FROM mission_bounty_candidates
+      WHERE state='submitted' AND external_pr_number IS NOT NULL
+      ORDER BY CASE WHEN last_reviewed_at IS NULL THEN 0 ELSE 1 END, last_reviewed_at ASC, updated_at ASC LIMIT ?`, [limit]);
+    let attempted = 0, observed = 0, merged = 0, closedUnmerged = 0, reviewsApproved = 0, changesRequested = 0, checksPassing = 0, checksFailing = 0, failed = 0;
+    for (const candidate of candidates) {
+      attempted++;
+      try {
+        const snapshot = await this.github.getPullRequestReviewSnapshot(String(candidate.repo_full_name), Number(candidate.external_pr_number));
+        const persisted = this.recordPullRequestReviewSnapshot(actor, String(candidate.id), snapshot);
+        if (!persisted) continue;
+        observed++;
+        if (snapshot.state === 'merged') merged++;
+        if (snapshot.state === 'closed_unmerged') closedUnmerged++;
+        if (snapshot.reviewState === 'approved') reviewsApproved++;
+        if (snapshot.reviewState === 'changes_requested') changesRequested++;
+        if (snapshot.checksState === 'passing') checksPassing++;
+        if (snapshot.checksState === 'failing') checksFailing++;
+      } catch (error) {
+        failed++;
+        const code = error instanceof GithubBountyError ? error.code : 'github_monitor_failed';
+        // No raw upstream body/error is retained: it may include untrusted PR
+        // text. The durable retry signal is the still-submitted candidate.
+        try { event(String(candidate.id), 'review_refresh_failed', code.slice(0, 120)); } catch { /* audit failure must not disguise the original monitor failure */ }
+      }
+    }
+    return { attempted, observed, merged, closedUnmerged, reviewsApproved, changesRequested, checksPassing, checksFailing, failed };
   }
 }
 

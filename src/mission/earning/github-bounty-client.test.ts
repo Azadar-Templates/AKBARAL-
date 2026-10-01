@@ -139,3 +139,21 @@ it('never leaks the token into thrown errors or serialized state, and surfaces r
     return true;
   });
 });
+
+it('reads review and check evidence without treating an approval or passing run as a merge or payment', async () => {
+  const sha = 'c'.repeat(40);
+  const { client, calls } = fixture([
+    json({ number: 7, html_url: 'https://github.com/acme/widget/pull/7', state: 'open', merged: false, merged_at: null, head: { sha } }),
+    json([{ state: 'APPROVED' }, { state: 'CHANGES_REQUESTED' }]),
+    json({ check_runs: [{ status: 'completed', conclusion: 'success' }, { status: 'completed', conclusion: 'failure' }] }),
+  ]);
+  const snapshot = await client.getPullRequestReviewSnapshot('acme/widget', 7);
+  assert.equal(snapshot.state, 'open');
+  assert.equal(snapshot.reviewState, 'changes_requested', 'a change request conservatively wins over a contemporaneous approval');
+  assert.equal(snapshot.checksState, 'failing');
+  assert.equal(snapshot.checkRunCount, 2);
+  assert.equal(calls[0].url.pathname, '/repos/acme/widget/pulls/7');
+  assert.equal(calls[1].url.pathname, '/repos/acme/widget/pulls/7/reviews');
+  assert.equal(calls[2].url.pathname, `/repos/acme/widget/commits/${sha}/check-runs`);
+  assert.ok(calls.every(c => c.init.method === undefined || c.init.method === 'GET'));
+});

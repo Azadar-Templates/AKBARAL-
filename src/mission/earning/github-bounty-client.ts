@@ -259,10 +259,70 @@ export class GithubBountyClient {
     const state = merged ? 'merged' as const : result.state === 'closed' ? 'closed_unmerged' as const : 'open' as const;
     return { repoFullName: name, number: n, url: nonEmpty(result.html_url, 400), headSha: nonEmpty(head?.sha, 64), state, mergedAt: typeof result.merged_at === 'string' ? result.merged_at : null };
   }
+
+  /** Read-only review/check snapshot for an already-opened PR. It reports only
+   * what GitHub returned at this instant: `passing` means every *observed* run
+   * passed, not that a repository's unknown branch-protection requirements are
+   * satisfied. No review is submitted, dismissed, or interpreted as a payout. */
+  async getPullRequestReviewSnapshot(repo: string, number: number): Promise<PullRequestReviewSnapshotRaw> {
+    const pull = await this.getPullRequest(repo, number);
+    const observedAt = new Date().toISOString();
+    if (pull.state !== 'open') {
+      return { ...pull, reviewState: 'not_applicable', checksState: 'not_applicable', reviewCount: 0, checkRunCount: 0, observedAt };
+    }
+
+    const reviews = await this.#request('GET', `/repos/${pull.repoFullName}/pulls/${pull.number}/reviews`, { per_page: '100' }, value => {
+      if (!Array.isArray(value)) fail('github_invalid_response');
+      return value as Record<string, unknown>[];
+    });
+    let approved = false, changesRequested = false, reviewCount = 0;
+    for (const review of reviews.slice(0, 100)) {
+      const state = typeof review.state === 'string' ? review.state.toUpperCase() : '';
+      // A submitted review is evidence; bot/user identity and prose never need
+      // to be stored locally to monitor the workflow safely.
+      if (state === 'APPROVED') { approved = true; reviewCount++; }
+      else if (state === 'CHANGES_REQUESTED') { changesRequested = true; reviewCount++; }
+      else if (state === 'COMMENTED' || state === 'PENDING' || state === 'DISMISSED') reviewCount++;
+    }
+    // Conservative aggregation: an observed change request wins over an
+    // observed approval because this endpoint does not prove the repository's
+    // own approval/branch-protection rules or reviewer supersession semantics.
+    const reviewState: PullRequestReviewState = changesRequested ? 'changes_requested' : approved ? 'approved' : 'review_pending';
+
+    const checks = await this.#request('GET', `/repos/${pull.repoFullName}/commits/${pull.headSha}/check-runs`, { per_page: '100' }, value => {
+      if (!value || typeof value !== 'object' || !Array.isArray((value as Record<string, unknown>).check_runs)) fail('github_invalid_response');
+      return (value as Record<string, unknown>).check_runs as Record<string, unknown>[];
+    });
+    const checkRunCount = checks.length;
+    let pending = false, failing = false, allPassing = checkRunCount > 0;
+    for (const check of checks.slice(0, 100)) {
+      const status = typeof check.status === 'string' ? check.status.toLowerCase() : '';
+      const conclusion = typeof check.conclusion === 'string' ? check.conclusion.toLowerCase() : '';
+      if (status !== 'completed') { pending = true; allPassing = false; continue; }
+      if (!['success', 'neutral', 'skipped'].includes(conclusion)) {
+        // A completed check with an unknown/empty conclusion is deliberately
+        // treated as pending rather than passed; explicit failure is retained.
+        if (['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale'].includes(conclusion)) failing = true;
+        else pending = true;
+        allPassing = false;
+      }
+    }
+    const checksState: PullRequestChecksState = failing ? 'failing' : pending ? 'pending' : allPassing ? 'passing' : 'not_reported';
+    return { ...pull, reviewState, checksState, reviewCount, checkRunCount, observedAt };
+  }
 }
 
 export interface BountyLeadRaw { repoFullName: string; issueNumber: number; issueUrl: string; title: string; labels: string[]; hintedAmountCents: number | null }
 export interface PullRequestProofRaw { repoFullName: string; number: number; url: string; headSha: string; state: 'open' | 'merged' | 'closed_unmerged'; mergedAt: string | null }
+export type PullRequestReviewState = 'approved' | 'changes_requested' | 'review_pending' | 'not_applicable';
+export type PullRequestChecksState = 'passing' | 'failing' | 'pending' | 'not_reported' | 'not_applicable';
+export interface PullRequestReviewSnapshotRaw extends PullRequestProofRaw {
+  reviewState: PullRequestReviewState;
+  checksState: PullRequestChecksState;
+  reviewCount: number;
+  checkRunCount: number;
+  observedAt: string;
+}
 export interface RepoMetadataRaw { repoFullName: string; stargazersCount: number; forksCount: number; openIssuesCount: number; createdAt: string | null; archived: boolean; fork: boolean }
 export interface LeadRiskRaw { accepted: boolean; reason: string | null }
 
