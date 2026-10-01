@@ -1119,6 +1119,11 @@ async function handleApi(
       case 'check-policy': result = await workflow.checkPolicy(actor, param('opportunityId','')!); break;
       case 'assign': result = workflow.assign(actor, { agentId: param('agentId','')!, opportunityId: param('opportunityId','')! }); break;
       case 'revoke': result = workflow.revoke(actor, param('assignmentId','')!); break;
+      // These endpoints only create/run the durable isolated execution job.
+      // A run refuses before archive/model work without both the pinned sandbox
+      // and the existing authorized metered model resource; it never submits.
+      case 'queue-execution': result = workflow.queueExecution(actor, param('assignmentId','')!); break;
+      case 'run-execution': result = await workflow.runExecutionCycle(actor); break;
       case 'draft': result = workflow.draft(actor, param('assignmentId','')!, { key: param('idempotencyKey','')!, baseBranch: param('baseBranch','')!, branchName: param('branchName','')!, filePath: param('filePath','')!, fileContent: param('fileContent','')!, commitMessage: param('commitMessage','')!, prTitle: param('prTitle','')!, prBody: param('prBody','')! }); break;
       case 'approve-candidate': result = workflow.approveCandidate(actor, param('candidateId','')!, param('contentHash','')!); break;
       case 'submit': result = await workflow.submit(actor, param('candidateId','')!); break;

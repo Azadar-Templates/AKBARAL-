@@ -193,6 +193,7 @@ export class GithubBountyClient {
     const name = repoFullName(repo);
     const result = await this.#request('GET', `/repos/${name}`, undefined, value => value as Record<string, unknown>);
     const created = typeof result.created_at === 'string' ? result.created_at : null;
+    const defaultBranch = typeof result.default_branch === 'string' && /^[A-Za-z0-9._/-]{1,200}$/.test(result.default_branch) ? result.default_branch : null;
     return {
       repoFullName: name,
       stargazersCount: Number.isSafeInteger(result.stargazers_count) ? Number(result.stargazers_count) : 0,
@@ -201,7 +202,74 @@ export class GithubBountyClient {
       createdAt: created,
       archived: result.archived === true,
       fork: result.fork === true,
+      defaultBranch,
     };
+  }
+
+  /** Read-only issue detail. Its body is untrusted data; callers must not
+   * execute, follow instructions from, or interpolate it as a system prompt. */
+  async fetchIssueDetail(repo: string, number: number): Promise<BountyIssueDetailRaw> {
+    const name = repoFullName(repo), n = issueNumber(number);
+    const result = await this.#request('GET', `/repos/${name}/issues/${n}`, undefined, value => value as Record<string, unknown>);
+    if (result.state !== 'open' || (result.pull_request && typeof result.pull_request === 'object')) fail('github_issue_not_open');
+    const title = nonEmpty(result.title, 400);
+    const body = typeof result.body === 'string' ? result.body : '';
+    if (body.length > 30000 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(body)) fail('github_invalid_issue_body');
+
+    const url = nonEmpty(result.html_url, 400);
+    const labels = Array.isArray(result.labels) ? result.labels.map(label => typeof label === 'object' && label ? String((label as Record<string, unknown>).name ?? '') : String(label)).filter(value => value.length > 0 && value.length <= 160) : [];
+    return { repoFullName: name, issueNumber: n, issueUrl: url, title, body, labels };
+  }
+
+  /** Bounded, read-only source archive download. The archive is intentionally
+   * opaque to the mission process and is unpacked only by the isolated runner. */
+  async downloadRepositoryArchive(repo: string, ref: string): Promise<Uint8Array> {
+    const name = repoFullName(repo), branch = branchName(ref);
+    const signal = AbortSignal.timeout(30000);
+    this.#reserveRequest();
+    this.#beforeRequest?.();
+    let response: Response | undefined;
+    try {
+      response = await this.#fetch(new URL(`/repos/${name}/tarball/${branch}`, 'https://api.github.com'), {
+        method: 'GET', redirect: 'error', signal,
+        headers: {
+          Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'akbaral-mission-bounty-workflow',
+          ...(this.#token ? { Authorization: `Bearer ${this.#token}` } : {}),
+        },
+      });
+      if (response.status === 403 || response.status === 429) {
+        const remaining = response.headers.get('x-ratelimit-remaining');
+        const reset = response.headers.get('x-ratelimit-reset');
+        const delay = remaining === '0' && reset && /^\d+$/.test(reset) ? Math.max(WINDOW_MS, Number(reset) * 1000 - this.#now()) : WINDOW_MS;
+        this.#onRateLimit?.(delay);
+        throw new GithubBountyError('github_rate_limited', false, delay);
+      }
+      if (response.status === 401) throw new GithubBountyError('github_access_denied');
+      if (response.status === 404) throw new GithubBountyError('github_not_found');
+      if (response.status < 200 || response.status >= 300) throw new GithubBountyError('github_http_failure');
+      const size = Number(response.headers.get('content-length') ?? '0');
+      const maximum = 64 * 1024 * 1024;
+      if (!Number.isFinite(size) || size < 0 || size > maximum || !response.body) fail('github_response_too_large');
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = []; let received = 0;
+      try {
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          received += chunk.value.byteLength;
+          if (received > maximum) { await reader.cancel(); fail('github_response_too_large'); }
+          chunks.push(chunk.value);
+        }
+      } finally { reader.releaseLock(); }
+      if (!received) fail('github_response_too_large');
+      const bytes = new Uint8Array(received); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return bytes;
+    } catch (error) {
+      if (error instanceof GithubBountyError) throw error;
+      throw new GithubBountyError('github_transport_or_parse_failure');
+    }
   }
 
   /** Idempotent: GitHub returns 202/200 for an already-existing fork. */
@@ -323,7 +391,8 @@ export interface PullRequestReviewSnapshotRaw extends PullRequestProofRaw {
   checkRunCount: number;
   observedAt: string;
 }
-export interface RepoMetadataRaw { repoFullName: string; stargazersCount: number; forksCount: number; openIssuesCount: number; createdAt: string | null; archived: boolean; fork: boolean }
+export interface RepoMetadataRaw { repoFullName: string; stargazersCount: number; forksCount: number; openIssuesCount: number; createdAt: string | null; archived: boolean; fork: boolean; defaultBranch?: string | null }
+export interface BountyIssueDetailRaw { repoFullName: string; issueNumber: number; issueUrl: string; title: string; body: string; labels: string[] }
 export interface LeadRiskRaw { accepted: boolean; reason: string | null }
 
 function hintAmountCents(title: string, labels: readonly string[]): number | null {

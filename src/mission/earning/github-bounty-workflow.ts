@@ -22,10 +22,13 @@
  * deliberately unwired boundary: no pretend settlement adapter is installed.
  * See BountySettlementProvider below and configuredGithubBountyWorkflow().
  */
+import { createHash } from 'node:crypto';
 import { missionDb as db, missionId, sha256, nowIso, appendMissionAudit, type Row } from '../database';
 import { assertMoneyOwner, grant, cashAccount, approveOpportunity, MoneyError, type MoneyActor } from '../money';
 import { currentPolicy, checkActivity } from '../policy';
 import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient, type BountyLeadRaw, type PullRequestReviewSnapshotRaw } from './github-bounty-client';
+import { OciBountySandboxRunner, type BountySandboxRunner } from './github-bounty-sandbox';
+import { GoogleBountySolutionProvider, type BountySolutionProvider } from './github-bounty-solution-provider';
 
 const LEDGER_PROVIDER = 'github-bounty-settlement';
 const ROI_REGISTRY_KEY = 'github_issue_bounties';
@@ -51,6 +54,13 @@ function required(value: string, max = 400): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) deny('invalid_input');
   return value;
 }
+function executionFailureCode(error: unknown): string {
+  // Only our finite internal reasons become durable evidence. Never store raw
+  // provider, GitHub, Docker, repository, or model error text.
+  const message = error instanceof Error ? error.message : '';
+  const known = new Set(['sandbox_unavailable', 'sandbox_timeout', 'sandbox_runner_failed', 'sandbox_inspection_failed', 'sandbox_tests_failed', 'repository_not_execution_eligible', 'model_resource_not_ready', 'model_resource_not_configured', 'model_prompt_exceeds_configured_bound', 'model_proposal_not_strict_json', 'proposal_out_of_bounds', 'verification_out_of_bounds', 'issue_snapshot_out_of_bounds']);
+  return known.has(message) ? message : 'execution_step_failed';
+}
 function get(table: string, id: string): Row {
   const row = db.get<Row>(`SELECT * FROM ${table} WHERE id=?`, [id]);
   if (!row) deny('record_missing'); return row;
@@ -63,7 +73,11 @@ function event(subject: string, state: string, ref: string) {
 const MANDATORY_DISCLOSURE = '\n\n---\n_Disclosure: this change was researched and drafted with AI assistance and reviewed/approved by the repository-authorized submitter before being opened._';
 
 export class GithubBountyWorkflow {
-  constructor(private readonly github: GithubBountyClient) {}
+  constructor(
+    private readonly github: GithubBountyClient,
+    private readonly sandbox: BountySandboxRunner = new OciBountySandboxRunner(),
+    private readonly solutions: BountySolutionProvider = new GoogleBountySolutionProvider(),
+  ) {}
   private live(actor: MoneyActor, assignment?: Row) {
     assertMoneyOwner(actor);
     const policy = currentPolicy();
@@ -85,12 +99,13 @@ export class GithubBountyWorkflow {
     return {
       accounting: 'no_settlement_adapter_configured',
       configured: { github: this.github.authenticated },
-      blocked: ['settlement_not_configured', ...(this.github.authenticated ? [] : ['submission_requires_owner_github_token'])],
-      note: 'Discovery and repo-policy checks work with or without a token. Submitting a PR (forking, pushing a branch, opening the pull request) requires ZA141251SA_GITHUB_TOKEN — a free, instant, no-KYC GitHub personal access token, NOT an earning-platform account. Cash settlement for a merged bounty is not wired: no pretend adapter exists for any bounty marketplace.',
+      blocked: ['settlement_not_configured', ...(this.github.authenticated ? [] : ['submission_requires_owner_github_token_with_repository_contents_write_and_pull_request_permission'])],
+      note: 'Discovery and repo-policy checks work with or without a token. The isolated execution worker can produce a tested PR-ready candidate but never opens it by itself: existing owner content-hash approval remains required. Submitting then requires ZA141251SA_GITHUB_TOKEN for the legitimate GitHub user with permission to fork the upstream repository, write Contents to the user fork, and open a pull request against the upstream repository. Cash settlement for a merged bounty is not wired: no pretend adapter exists for any bounty marketplace.',
       opportunities: db.all<Row>('SELECT * FROM mission_bounty_opportunities ORDER BY observed_at DESC LIMIT 200'),
       policies: db.all<Row>('SELECT * FROM mission_bounty_policy ORDER BY checked_at DESC LIMIT 200'),
       assignments: db.all<Row>('SELECT * FROM mission_bounty_assignments ORDER BY created_at DESC LIMIT 200'),
-      candidates: db.all<Row>('SELECT id,assignment_id,repo_full_name,state,external_pr_number,external_pr_url,review_state,checks_state,review_summary_json,last_reviewed_at,updated_at FROM mission_bounty_candidates ORDER BY updated_at DESC LIMIT 200'),
+      candidates: db.all<Row>('SELECT id,assignment_id,execution_job_id,repo_full_name,state,external_pr_number,external_pr_url,review_state,checks_state,review_summary_json,last_reviewed_at,updated_at FROM mission_bounty_candidates ORDER BY updated_at DESC LIMIT 200'),
+      executionJobs: db.all<Row>('SELECT id,assignment_id,state,repository_ref,archive_sha256,candidate_id,blocked_reason,created_at,updated_at FROM mission_bounty_execution_jobs ORDER BY updated_at DESC LIMIT 200'),
     };
   }
 
@@ -183,6 +198,164 @@ export class GithubBountyWorkflow {
   revoke(actor: MoneyActor, assignmentId: string) {
     assertMoneyOwner(actor);
     db.transaction(() => { this.assignment(assignmentId); db.run("UPDATE mission_bounty_assignments SET state='revoked' WHERE id=?", [assignmentId]); event(assignmentId, 'revoked', actor.id); });
+  }
+
+  /** Creates one durable execution job. This is intentionally separate from
+   * draft()/submit(): it creates no branch, commit, PR, payment, or platform
+   * claim. The existing assignment, policy, MoneyActor and approval gates stay
+   * authoritative. */
+  queueExecution(actor: MoneyActor, assignmentId: string) {
+    return db.transaction(() => {
+      const assignment = this.assignment(assignmentId); this.live(actor, assignment);
+      const opportunity = this.opportunity(assignment);
+      if (String(opportunity.risk_state) !== 'accepted') deny('lead_risk_rejected');
+      const policy = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(opportunity.repo_full_name)]);
+      if (!policy || !Number(policy.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
+      const prior = db.get<Row>('SELECT * FROM mission_bounty_execution_jobs WHERE assignment_id=?', [assignmentId]);
+      if (prior) return prior;
+      const id = missionId('bex');
+      const inputHash = sha256(JSON.stringify([assignmentId, opportunity.repo_full_name, opportunity.issue_number, String(policy.checked_at)]));
+      db.run(`INSERT INTO mission_bounty_execution_jobs (id,assignment_id,input_hash,state,created_at,updated_at)
+        VALUES (?,?,?,'queued',?,?)`, [id, assignmentId, inputHash, nowIso(), nowIso()]);
+      event(id, 'execution_queued', String(opportunity.issue_url));
+      return get('mission_bounty_execution_jobs', id);
+    });
+  }
+
+  /** A single attempt is deliberately bounded and terminal on an uncertainty.
+   * It never runs archive content in this process: the only archive consumers
+   * are BountySandboxRunner.inspect()/verify(). A verified result merely calls
+   * the existing draft gate; PR submission still needs explicit owner hash
+   * approval and GitHub's actual permissions. */
+  async executeQueued(actor: MoneyActor, limit = 1) {
+    assertMoneyOwner(actor);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1) deny('invalid_execution_limit');
+    const job = db.get<Row>(`SELECT * FROM mission_bounty_execution_jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1`);
+    if (!job) return null;
+    return this.executeJob(actor, String(job.id));
+  }
+
+  async executeJob(actor: MoneyActor, jobId: string) {
+    assertMoneyOwner(actor);
+    const job = get('mission_bounty_execution_jobs', jobId);
+    if (job.state !== 'queued') return job;
+    const assignment = this.assignment(String(job.assignment_id));
+    const opportunity = this.opportunity(assignment);
+    try {
+      this.live(actor, assignment);
+      const policy = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(opportunity.repo_full_name)]);
+      if (!policy || !Number(policy.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
+      db.transaction(() => {
+        this.live(actor, this.assignment(String(job.assignment_id)));
+        db.run("UPDATE mission_bounty_execution_jobs SET state='inspecting',updated_at=? WHERE id=? AND state='queued'", [nowIso(), jobId]);
+        event(jobId, 'execution_inspecting', String(opportunity.issue_url));
+      });
+
+      // GitHub text/archive are untrusted inputs. Neither is executed or
+      // extracted on the mission process; archive bytes are opaque here.
+      const [issue, metadata] = await Promise.all([
+        this.github.fetchIssueDetail(String(opportunity.repo_full_name), Number(opportunity.issue_number)),
+        this.github.fetchRepoMetadata(String(opportunity.repo_full_name)),
+      ]);
+      const baseBranch = metadata.defaultBranch;
+      if (!baseBranch || metadata.archived || metadata.fork) throw new Error('repository_not_execution_eligible');
+      const archive = await this.github.downloadRepositoryArchive(String(opportunity.repo_full_name), baseBranch);
+      const archiveHash = createHash('sha256').update(archive).digest('hex');
+      const inspection = await this.sandbox.inspect(archive);
+      if (!inspection.ok) throw new Error('sandbox_inspection_failed');
+      const issueSnapshot = JSON.stringify({ title: issue.title, body: issue.body, labels: issue.labels, issueUrl: issue.issueUrl });
+      if (Buffer.byteLength(issueSnapshot, 'utf8') > 32_000) throw new Error('issue_snapshot_out_of_bounds');
+      db.transaction(() => {
+        this.live(actor, this.assignment(String(job.assignment_id)));
+        db.run(`UPDATE mission_bounty_execution_jobs SET state='generating',issue_snapshot_json=?,repository_ref=?,archive_sha256=?,inspection_json=?,updated_at=?
+          WHERE id=? AND state='inspecting'`, [issueSnapshot, baseBranch, archiveHash, JSON.stringify({ summary: inspection.summary.slice(0, 16000), files: inspection.files.slice(0, 200) }), nowIso(), jobId]);
+        event(jobId, 'execution_inspected', archiveHash);
+      });
+
+      // Generation spends only through the existing resource call/wallet gate.
+      // No model output is accepted until it passes the proposal validator.
+      this.live(actor, this.assignment(String(job.assignment_id)));
+      if (!this.solutions.available(String(assignment.agent_id))) throw new Error('model_resource_not_ready');
+      const proposal = await this.solutions.generate({ jobId, agentId: String(assignment.agent_id), repoFullName: String(opportunity.repo_full_name), issueNumber: Number(opportunity.issue_number), issueTitle: issue.title, issueBody: issue.body, labels: issue.labels, inspection });
+      const proposalJson = JSON.stringify(proposal);
+      if (Buffer.byteLength(proposalJson, 'utf8') > 600_000) throw new Error('proposal_out_of_bounds');
+      db.transaction(() => {
+        this.live(actor, this.assignment(String(job.assignment_id)));
+        db.run("UPDATE mission_bounty_execution_jobs SET state='verifying',proposal_json=?,updated_at=? WHERE id=? AND state='generating'", [proposalJson, nowIso(), jobId]);
+        event(jobId, 'execution_verifying', sha256(proposalJson));
+      });
+
+      // Explicit argv tests run only in the OCI sandbox. The runner is
+      // networkless, non-root, no-capability and resource/time bounded.
+      this.live(actor, this.assignment(String(job.assignment_id)));
+      const verification = await this.sandbox.verify(archive, proposal);
+      const verificationJson = JSON.stringify({ ok: verification.ok, summary: verification.summary.slice(0, 16000), reason: verification.reason ?? null, tests: verification.tests.map(test => ({ argv: test.argv, exitCode: test.exitCode, output: test.output.slice(0, 16000) })) });
+      if (Buffer.byteLength(verificationJson, 'utf8') > 80_000) throw new Error('verification_out_of_bounds');
+      if (!verification.ok) {
+        return this.blockExecution(actor, jobId, 'sandbox_tests_failed', verificationJson);
+      }
+      db.transaction(() => {
+        this.live(actor, this.assignment(String(job.assignment_id)));
+        db.run("UPDATE mission_bounty_execution_jobs SET state='verified',verification_json=?,updated_at=? WHERE id=? AND state='verifying'", [verificationJson, nowIso(), jobId]);
+        event(jobId, 'execution_verified', sha256(verificationJson));
+      });
+
+      const fingerprint = sha256(JSON.stringify([jobId, proposal.files[0].path, proposal.files[0].content]));
+      const candidate = this.draft(actor, String(assignment.id), {
+        key: `execution:${jobId}:${fingerprint.slice(0, 24)}`,
+        baseBranch,
+        branchName: `akbaral/bounty-${Number(opportunity.issue_number)}-${fingerprint.slice(0, 10)}`,
+        filePath: proposal.files[0].path, fileContent: proposal.files[0].content,
+        commitMessage: proposal.commitMessage, prTitle: proposal.prTitle, prBody: proposal.prBody,
+      });
+      return db.transaction(() => {
+        this.live(actor, this.assignment(String(job.assignment_id)));
+        db.run('UPDATE mission_bounty_candidates SET execution_job_id=? WHERE id=? AND (execution_job_id IS NULL OR execution_job_id=?)', [jobId, candidate.id, jobId]);
+        db.run("UPDATE mission_bounty_execution_jobs SET state='drafted',candidate_id=?,updated_at=? WHERE id=? AND state='verified'", [candidate.id, nowIso(), jobId]);
+        event(jobId, 'execution_drafted', String(candidate.id));
+        return get('mission_bounty_execution_jobs', jobId);
+      });
+    } catch (error) {
+      // Never persist provider/GitHub error payloads: they can contain untrusted
+      // text or secrets. A blocked job is an honest operator-visible outcome;
+      // it prevents unsafe automatic redispatch after a possibly uncertain call.
+      return this.blockExecution(actor, jobId, executionFailureCode(error));
+    }
+  }
+
+  private blockExecution(actor: MoneyActor, jobId: string, reason: string, verificationJson?: string) {
+    return db.transaction(() => {
+      const current = get('mission_bounty_execution_jobs', jobId);
+      const assignment = this.assignment(String(current.assignment_id)); this.live(actor, assignment);
+      if (['drafted', 'blocked', 'failed'].includes(String(current.state))) return current;
+      db.run("UPDATE mission_bounty_execution_jobs SET state='blocked',blocked_reason=?,verification_json=COALESCE(?,verification_json),updated_at=? WHERE id=?", [reason.slice(0, 120), verificationJson ?? null, nowIso(), jobId]);
+      event(jobId, 'execution_blocked', reason.slice(0, 120));
+      return get('mission_bounty_execution_jobs', jobId);
+    });
+  }
+
+  /** Scheduler-facing, fail-closed autonomous execution pass. If the
+   * deployment has not provisioned a digest-pinned OCI image or a legitimately
+   * billed/configured model resource, it performs no model call, archive fetch,
+   * repository execution, PR mutation, or synthetic fallback. */
+  async runExecutionCycle(actor: MoneyActor): Promise<{ attempted: boolean; queued: boolean; state: string | null; reason: string | null }> {
+    assertMoneyOwner(actor);
+    let job = db.get<Row>("SELECT * FROM mission_bounty_execution_jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1");
+    let queued = false;
+    if (!job) {
+      const assignment = db.get<Row>(`SELECT a.* FROM mission_bounty_assignments a
+        LEFT JOIN mission_bounty_execution_jobs j ON j.assignment_id=a.id
+        WHERE a.state='eligible' AND j.id IS NULL ORDER BY a.created_at,a.id LIMIT 1`);
+      if (!assignment) return { attempted: false, queued: false, state: null, reason: 'no_eligible_assignment' };
+      if (!(await this.sandbox.available())) return { attempted: false, queued: false, state: null, reason: 'sandbox_unavailable' };
+      if (!this.solutions.available(String(assignment.agent_id))) return { attempted: false, queued: false, state: null, reason: 'model_resource_not_ready' };
+      job = this.queueExecution(actor, String(assignment.id)); queued = true;
+    }
+    const assignment = this.assignment(String(job.assignment_id));
+    if (!(await this.sandbox.available())) return { attempted: false, queued, state: String(job.state), reason: 'sandbox_unavailable' };
+    if (!this.solutions.available(String(assignment.agent_id))) return { attempted: false, queued, state: String(job.state), reason: 'model_resource_not_ready' };
+    const result = await this.executeJob(actor, String(job.id));
+    return { attempted: true, queued, state: String(result.state), reason: result.blocked_reason ? String(result.blocked_reason) : null };
   }
 
   /** Prepares a candidate fix — a single file change, commit message, and PR

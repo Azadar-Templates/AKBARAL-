@@ -38,6 +38,12 @@ export interface GithubBountyCycleResult {
   prChecksPassing: number;
   prChecksFailing: number;
   prMonitorFailed: number;
+  /** Isolated source/solution/test pipeline; no PR is submitted here. */
+  executionAttempted: number;
+  executionQueued: number;
+  executionVerified: number;
+  executionDrafted: number;
+  executionBlocked: number;
 }
 
 function isDue(table: string, intervalMs: number): boolean {
@@ -64,6 +70,7 @@ export async function runGithubBountyCycle(actor: MoneyActor, workflow: GithubBo
     discovered: 0, accepted: 0, rejected: 0, policyChecked: 0, policyAllowed: 0, policyBanned: 0, assigned: 0,
     prReviewAttempted: 0, prReviewed: 0, prMerged: 0, prClosedUnmerged: 0, prReviewsApproved: 0,
     prChangesRequested: 0, prChecksPassing: 0, prChecksFailing: 0, prMonitorFailed: 0,
+    executionAttempted: 0, executionQueued: 0, executionVerified: 0, executionDrafted: 0, executionBlocked: 0,
   };
   const reviewDue = isDue('mission_bounty_review_scheduler_state', MIN_PR_REVIEW_INTERVAL_MS);
   const discoveryDue = isDue('mission_bounty_scheduler_state', MIN_DISCOVERY_INTERVAL_MS);
@@ -126,5 +133,18 @@ export async function runGithubBountyCycle(actor: MoneyActor, workflow: GithubBo
     }
   }
 
-  return { ran: true, discovered, accepted, rejected, policyChecked, policyAllowed, policyBanned, assigned, prReviewAttempted, prReviewed, prMerged, prClosedUnmerged, prReviewsApproved, prChangesRequested, prChecksPassing, prChecksFailing, prMonitorFailed };
+  // Execution is intentionally after discovery/assignment and at most one job.
+  // runExecutionCycle itself performs no provider/archive action unless both a
+  // digest-pinned sandbox and authorized, metered model resource are ready.
+  let executionAttempted = 0, executionQueued = 0, executionVerified = 0, executionDrafted = 0, executionBlocked = 0;
+  try {
+    const execution = await workflow.runExecutionCycle(actor);
+    executionAttempted = execution.attempted ? 1 : 0;
+    executionQueued = execution.queued ? 1 : 0;
+    executionVerified = execution.state === 'verified' || execution.state === 'drafted' ? 1 : 0;
+    executionDrafted = execution.state === 'drafted' ? 1 : 0;
+    executionBlocked = execution.state === 'blocked' ? 1 : 0;
+  } catch { /* execution is isolated from discovery; durable job state/audit tells the truth */ }
+
+  return { ran: true, discovered, accepted, rejected, policyChecked, policyAllowed, policyBanned, assigned, prReviewAttempted, prReviewed, prMerged, prClosedUnmerged, prReviewsApproved, prChangesRequested, prChecksPassing, prChecksFailing, prMonitorFailed, executionAttempted, executionQueued, executionVerified, executionDrafted, executionBlocked };
 }
