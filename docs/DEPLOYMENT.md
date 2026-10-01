@@ -31,32 +31,38 @@ an additional child process, but **does not start it by default**. The only
 startup opt-in is the exact value
 `ZA141251SA_MISSION_SERVER_ENABLED=true`; values such as `1`, `yes`, `TRUE`,
 or an unset variable remain disabled. Merely starting the AKBARAL! `both`,
-`web`, or `api` role never implies this opt-in.
+`web`, or `api` role never implies this opt-in, and the disabled path preserves
+the existing public startup sequence and diagnostics.
 
-When explicitly enabled, startup requires
-`dist/scripts/mission-serve.js` to exist and launches it with Node. The mission
-bootstrap continues to own its migrations, identity lockdown, and audit and
-ledger verification before opening its listener. It remains a separate
-process with its own `ZA141251SA_DATABASE_URL`, session secret, credential
-key, owner authentication, bind host, and port. No public AKBARAL! route or
-Next.js rewrite is added for it.
+When explicitly enabled, all of the following are fixed startup invariants:
 
-Operational boundaries:
+- The compiled `dist/scripts/mission-serve.js` entry must exist.
+- The existing mission database must already be mounted at
+  `/data/mission.db`. The wrapper refuses a missing file; it never creates or
+  selects an alternate mission database. Inherited
+  `ZA141251SA_DATABASE_URL` values are ignored and the child always receives
+  `file:/data/mission.db`.
+- The child always receives `ZA141251SA_BIND_HOST=127.0.0.1` and
+  `ZA141251SA_PORT=4200`. Inherited host/port values are ignored. A wider bind,
+  alternate port, public exposure, proxy, and rewrite are prohibited.
+- Before either public web/API tier starts, the wrapper polls the private
+  `http://127.0.0.1:4200/api/health` endpoint for at most 30 seconds. Readiness
+  requires `status: ok`, `service: mission`, verified audit and ledger chains,
+  at least one owner account, and a configured credential vault.
+- A spawn error, early exit, signal exit, invalid/unhealthy readiness response,
+  or readiness timeout terminates startup non-zero. Any later mission exit is
+  also fatal and stops the public sibling processes.
 
-- `ZA141251SA_BIND_HOST` remains loopback-only by default. A wider bind is an
-  explicit private-network decision, and the mission bootstrap refuses it
-  unless an owner authentication path exists.
-- Enabling the server does **not** enable the money, chat, or bounty workers.
-  Those remain separate processes with independent, explicit worker gates.
-- If the explicitly requested mission child exits, the production wrapper
-  shuts down its sibling children rather than silently leaving a partial
-  deployment running.
-- Configure mission variables through the deployment's secret manager; never
-  commit their values. This repository does not set the server opt-in for any
-  deployment target.
+The mission bootstrap continues to own its private migrations and identity
+lockdown. The production wrapper does not generate a mission secret and does
+not run `mission:init`; the existing mission session secret, credential key,
+owner identity, and database must already be provisioned. Enabling the server
+does **not** enable the money, chat, bounty, or any other mission worker. Those
+remain separate processes with independent, explicit worker gates.
 
-This is startup plumbing only. It is not evidence that a private mission
-service has been configured, exposed, deployed, or made production-ready.
+This repository does not set the opt-in for any deployment target. This is
+startup plumbing only—not evidence that a private mission service has been
+configured, exposed, deployed, or made production-ready.
 
 ## First deployment
 
