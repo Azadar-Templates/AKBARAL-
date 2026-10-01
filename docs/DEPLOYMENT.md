@@ -24,6 +24,46 @@ explicitly marked POST-LAUNCH.
   “Scaling honestly” below). The repository layer is deliberately thin and
   typed so that migration is a backend project, not a rewrite.
 
+## Optional private mission server (disabled by default)
+
+`scripts/start-prod.mjs` can supervise the compiled private mission server as
+an additional child process, but **does not start it by default**. The only
+startup opt-in is the exact value
+`ZA141251SA_MISSION_SERVER_ENABLED=true`; values such as `1`, `yes`, `TRUE`,
+or an unset variable remain disabled. Merely starting the AKBARAL! `both`,
+`web`, or `api` role never implies this opt-in, and the disabled path preserves
+the existing public startup sequence and diagnostics.
+
+When explicitly enabled, all of the following are fixed startup invariants:
+
+- The compiled `dist/scripts/mission-serve.js` entry must exist.
+- The existing mission database must already be mounted at
+  `/data/mission.db`. The wrapper refuses a missing file; it never creates or
+  selects an alternate mission database. Inherited
+  `ZA141251SA_DATABASE_URL` values are ignored and the child always receives
+  `file:/data/mission.db`.
+- The child always receives `ZA141251SA_BIND_HOST=127.0.0.1` and
+  `ZA141251SA_PORT=4200`. Inherited host/port values are ignored. A wider bind,
+  alternate port, public exposure, proxy, and rewrite are prohibited.
+- Before either public web/API tier starts, the wrapper polls the private
+  `http://127.0.0.1:4200/api/health` endpoint for at most 30 seconds. Readiness
+  requires `status: ok`, `service: mission`, verified audit and ledger chains,
+  at least one owner account, and a configured credential vault.
+- A spawn error, early exit, signal exit, invalid/unhealthy readiness response,
+  or readiness timeout terminates startup non-zero. Any later mission exit is
+  also fatal and stops the public sibling processes.
+
+The mission bootstrap continues to own its private migrations and identity
+lockdown. The production wrapper does not generate a mission secret and does
+not run `mission:init`; the existing mission session secret, credential key,
+owner identity, and database must already be provisioned. Enabling the server
+does **not** enable the money, chat, bounty, or any other mission worker. Those
+remain separate processes with independent, explicit worker gates.
+
+This repository does not set the opt-in for any deployment target. This is
+startup plumbing only—not evidence that a private mission service has been
+configured, exposed, deployed, or made production-ready.
+
 ## First deployment
 
 ```bash

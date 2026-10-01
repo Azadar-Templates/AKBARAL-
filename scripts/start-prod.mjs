@@ -86,6 +86,21 @@ if (!['both', 'web', 'api'].includes(ROLES)) {
   process.exit(1);
 }
 
+// The private mission server is an independent process with its own database,
+// authentication and secrets. Production startup must remain fail-closed: it
+// is never launched implicitly, by a truthy value, or by an AKBARAL_ROLES
+// selection. Only this exact operator opt-in starts it. The mission workers
+// remain separate and retain their own independent enablement gates.
+const MISSION_SERVER_ENABLED = process.env.ZA141251SA_MISSION_SERVER_ENABLED === 'true';
+const MISSION_HOST = '127.0.0.1';
+const MISSION_PORT = 4200;
+const MISSION_DATABASE_PATH = '/data/mission.db';
+const MISSION_DATABASE_URL = `file:${MISSION_DATABASE_PATH}`;
+const MISSION_HEALTH_URL = `http://${MISSION_HOST}:${MISSION_PORT}/api/health`;
+const MISSION_READINESS_TIMEOUT_MS = 30_000;
+const MISSION_READINESS_POLL_MS = 250;
+const MISSION_READINESS_REQUEST_TIMEOUT_MS = 1_000;
+
 /* ------------------------------------------------------------------ ports
  * The PUBLIC entry point is the Next.js tier: it serves the app and rewrites
  * /api, /uploads and /ws to the API tier (next.config.mjs). So the public port
@@ -132,6 +147,18 @@ for (const [name, value] of [['AKBARAL_WEB_PORT', process.env.AKBARAL_WEB_PORT],
 if (process.argv.includes('--print-ports')) {
   console.log(JSON.stringify({ roles: ROLES, publicPort: webPort, webPort, apiPort }));
   process.exit(0);
+}
+
+// The mission process is allowed to open exactly one pre-provisioned database.
+// Refuse startup before generating any public-session state or launching any
+// child if the operator explicitly requested mission startup without mounting
+// the existing private database. The mission bootstrap must never create an
+// alternate relative database as an accidental fallback.
+if (MISSION_SERVER_ENABLED && !existsSync(MISSION_DATABASE_PATH)) {
+  fail(
+    `private mission startup refused: ${MISSION_DATABASE_PATH} does not exist. ` +
+      'Mount the existing private mission database at that exact path; startup will not create or select an alternate database.',
+  );
 }
 
 /* ----------------------------------------------------- session secret
@@ -225,6 +252,7 @@ if (process.argv.includes('--print-session-secret-status')) {
 const DIST_API_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'index.js');
 const DIST_MIGRATE_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'db', 'migrate.js');
 const DIST_SEED_ENTRY = path.resolve(process.cwd(), 'dist', 'src', 'db', 'seed.js');
+const DIST_MISSION_ENTRY = path.resolve(process.cwd(), 'dist', 'scripts', 'mission-serve.js');
 const NEXT_BUILD_MARKER = path.resolve(process.cwd(), '.next', 'BUILD_ID');
 
 function missingBuildArtifacts() {
@@ -234,6 +262,9 @@ function missingBuildArtifacts() {
   }
   if (ROLES !== 'api' && !existsSync(NEXT_BUILD_MARKER)) {
     missing.push(`${NEXT_BUILD_MARKER} (Next.js build output)`);
+  }
+  if (MISSION_SERVER_ENABLED && !existsSync(DIST_MISSION_ENTRY)) {
+    missing.push(`${DIST_MISSION_ENTRY} (private mission server build output)`);
   }
   return missing;
 }
@@ -322,6 +353,95 @@ function scheduleBackup() {
   scheduleNext();
 }
 
+function missionHealthIsReady(body) {
+  return (
+    body !== null &&
+    typeof body === 'object' &&
+    body.status === 'ok' &&
+    body.service === 'mission' &&
+    body.database === MISSION_DATABASE_PATH &&
+    body.audit === true &&
+    body.ledger === true &&
+    Number.isInteger(body.ownerAccounts) &&
+    body.ownerAccounts >= 1 &&
+    body.vaultConfigured === true
+  );
+}
+
+async function waitForMissionReadiness() {
+  const deadline = Date.now() + MISSION_READINESS_TIMEOUT_MS;
+  let lastFailure = 'no health response received';
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(MISSION_HEALTH_URL, {
+        redirect: 'error',
+        signal: AbortSignal.timeout(MISSION_READINESS_REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        lastFailure = `health endpoint returned HTTP ${response.status}`;
+      } else {
+        const body = await response.json();
+        if (missionHealthIsReady(body)) return;
+        lastFailure = 'health payload did not satisfy the private readiness contract';
+      }
+    } catch (error) {
+      lastFailure = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, MISSION_READINESS_POLL_MS));
+  }
+
+  throw new Error(`private mission readiness timed out after ${MISSION_READINESS_TIMEOUT_MS}ms (${lastFailure})`);
+}
+
+async function startRequiredMission() {
+  // These child values deliberately override inherited environment values.
+  // The production wrapper supports one private listener and one existing
+  // database only; callers cannot widen or redirect either one.
+  const mission = launch('mission', 'node', [DIST_MISSION_ENTRY], {
+    NODE_ENV: 'production',
+    ZA141251SA_BIND_HOST: MISSION_HOST,
+    ZA141251SA_PORT: String(MISSION_PORT),
+    ZA141251SA_DATABASE_URL: MISSION_DATABASE_URL,
+  });
+
+  let missionReady = false;
+  let rejectStartup;
+  const startupFailure = new Promise((_, reject) => {
+    rejectStartup = reject;
+  });
+
+  const failRequiredMission = (reason) => {
+    const error = new Error(`required private mission child ${reason}`);
+    if (!missionReady) {
+      rejectStartup(error);
+      return;
+    }
+    console.error(`[akbaral] ${error.message}; terminating the container.`);
+    shutdown();
+    process.exit(1);
+  };
+
+  mission.once('error', (error) => {
+    failRequiredMission(`failed to run (${error instanceof Error ? error.message : String(error)})`);
+  });
+  mission.once('exit', (code, signal) => {
+    const reason = signal ? `was terminated by signal ${signal}` : `exited unexpectedly with code ${code ?? 'unknown'}`;
+    failRequiredMission(reason);
+  });
+
+  try {
+    await Promise.race([waitForMissionReadiness(), startupFailure]);
+    missionReady = true;
+    log(`private mission readiness verified at ${MISSION_HEALTH_URL}.`);
+  } catch (error) {
+    console.error(`[akbaral] private mission startup failed: ${error instanceof Error ? error.message : String(error)}`);
+    shutdown();
+    process.exit(1);
+  }
+}
+
 /* ----------------------------------------------------- database migrations
  * Applied here — not only in scripts/entrypoint.sh — so this script is a
  * complete, self-sufficient startup contract on its own (the same guarantee
@@ -337,9 +457,16 @@ if (ROLES !== 'web') {
   }
 }
 
-// Backup scheduler must be started before the tiers so StackHost's direct
-// `node scripts/start-prod.mjs` still gets nightly backups without the shell
-// entrypoint. It is backgrounded (unref'd timer) and never blocks startup.
+// When explicitly required, the private child must be healthy before either
+// public tier can bind. A missing database, failed spawn, early/signal exit or
+// bounded readiness failure terminates this wrapper non-zero first.
+if (MISSION_SERVER_ENABLED) {
+  await startRequiredMission();
+}
+
+// Backup scheduler must be started before the public tiers so StackHost's
+// direct `node scripts/start-prod.mjs` still gets nightly backups without the
+// shell entrypoint. It is backgrounded (unref'd timer) and never blocks startup.
 scheduleBackup();
 
 if (ROLES !== 'api') {

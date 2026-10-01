@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, rmSync, mkdtempSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync, mkdtempSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -52,6 +52,7 @@ function runStartProd(args: string[], env: Record<string, string>): RunResult {
       AKBARAL_API_PORT: '',
       SESSION_SECRET: '',
       AKBARAL_SESSION_SECRET_FILE: path.join(defaultSecretDir, '.session-secret'),
+      ZA141251SA_MISSION_SERVER_ENABLED: '',
       ...env,
     },
   });
@@ -60,6 +61,176 @@ function runStartProd(args: string[], env: Record<string, string>): RunResult {
 
 function lastJsonLine(output: string): Record<string, unknown> {
   return JSON.parse(output.trim().split('\n').at(-1) ?? '{}');
+}
+
+interface HarnessSpawn {
+  kind: 'mission' | 'web' | 'api' | 'other';
+  command: string;
+  args: string[];
+  env: Record<string, string | undefined>;
+}
+
+interface HarnessRecord {
+  spawns: HarnessSpawn[];
+  spawnSteps: string[][];
+  fetches: string[];
+  kills: Array<{ kind: HarnessSpawn['kind']; signal: string }>;
+}
+
+interface HarnessResult extends RunResult {
+  record: HarnessRecord;
+}
+
+/**
+ * Run the real production wrapper while replacing only process/FS/network
+ * boundaries in a Node preload. This exercises startup ordering, child env,
+ * readiness and supervision without opening a socket, touching /data, or
+ * starting any real public/mission process.
+ */
+function runMissionStartupHarness(
+  scenario: 'ready' | 'missing-db' | 'missing-entry' | 'readiness-timeout' | 'unexpected-exit' | 'signal-exit',
+  enabled = true,
+): HarnessResult {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'akbaral-mission-startup-'));
+  const preloadPath = path.join(tmpDir, 'preload.mjs');
+  const recordPath = path.join(tmpDir, 'record.json');
+
+  writeFileSync(
+    preloadPath,
+    `
+import { createRequire, syncBuiltinESMExports } from 'node:module';
+const require = createRequire(import.meta.url);
+const childProcess = require('node:child_process');
+const fs = require('node:fs');
+const { EventEmitter } = require('node:events');
+
+const scenario = process.env.AKBARAL_TEST_MISSION_SCENARIO;
+const recordPath = process.env.AKBARAL_TEST_MISSION_RECORD;
+const record = { spawns: [], spawnSteps: [], fetches: [], kills: [] };
+const originalExistsSync = fs.existsSync.bind(fs);
+const originalWriteFileSync = fs.writeFileSync.bind(fs);
+const originalSetTimeout = globalThis.setTimeout.bind(globalThis);
+let missionChild;
+
+function childKind(command, args) {
+  if (args.some((arg) => String(arg).endsWith('/dist/scripts/mission-serve.js'))) return 'mission';
+  if (String(command).includes('node_modules/.bin/next')) return 'web';
+  if (args.some((arg) => String(arg).endsWith('dist/src/index.js'))) return 'api';
+  return 'other';
+}
+
+class FakeChild extends EventEmitter {
+  constructor(kind) {
+    super();
+    this.kind = kind;
+    this.killed = false;
+  }
+  kill(signal = 'SIGTERM') {
+    this.killed = true;
+    record.kills.push({ kind: this.kind, signal });
+    return true;
+  }
+}
+
+childProcess.spawn = (command, args = [], options = {}) => {
+  const kind = childKind(command, args);
+  const env = options.env ?? {};
+  record.spawns.push({
+    kind,
+    command: String(command),
+    args: args.map(String),
+    env: {
+      NODE_ENV: env.NODE_ENV,
+      PORT: env.PORT,
+      ZA141251SA_BIND_HOST: env.ZA141251SA_BIND_HOST,
+      ZA141251SA_PORT: env.ZA141251SA_PORT,
+      ZA141251SA_DATABASE_URL: env.ZA141251SA_DATABASE_URL,
+    },
+  });
+  const child = new FakeChild(kind);
+  if (kind === 'mission') missionChild = child;
+  return child;
+};
+childProcess.spawnSync = (_command, args = []) => {
+  record.spawnSteps.push(args.map(String));
+  return { status: 0, signal: null };
+};
+
+fs.existsSync = (input) => {
+  const value = String(input);
+  if (value === '/data/mission.db') return scenario !== 'missing-db';
+  if (value.endsWith('/dist/scripts/mission-serve.js')) return scenario !== 'missing-entry';
+  if (value.endsWith('/dist/src/index.js') || value.endsWith('/.next/BUILD_ID')) return true;
+  return originalExistsSync(input);
+};
+syncBuiltinESMExports();
+
+if (scenario === 'readiness-timeout') {
+  let now = 0;
+  Date.now = () => (now += 10_000);
+  globalThis.setTimeout = (callback, _delay, ...args) => originalSetTimeout(callback, 0, ...args);
+}
+
+globalThis.fetch = async (url) => {
+  record.fetches.push(String(url));
+  if (scenario === 'readiness-timeout') {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'ok', service: 'mission', database: '/data/mission.db', audit: true, ledger: true, ownerAccounts: 0, vaultConfigured: false }),
+    };
+  }
+  if (scenario === 'unexpected-exit') {
+    originalSetTimeout(() => missionChild.emit('exit', 0, null), 5);
+  }
+  if (scenario === 'signal-exit') {
+    originalSetTimeout(() => missionChild.emit('exit', null, 'SIGTERM'), 5);
+  }
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ status: 'ok', service: 'mission', database: '/data/mission.db', audit: true, ledger: true, ownerAccounts: 1, vaultConfigured: true }),
+  };
+};
+
+process.on('exit', () => {
+  originalWriteFileSync(recordPath, JSON.stringify(record));
+});
+`,
+    'utf8',
+  );
+
+  try {
+    const result = spawnSync(process.execPath, [START_PROD], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${preloadPath}`.trim(),
+        AKBARAL_TEST_MISSION_SCENARIO: scenario,
+        AKBARAL_TEST_MISSION_RECORD: recordPath,
+        AKBARAL_ROLES: 'both',
+        AKBARAL_AUTO_BUILD: 'false',
+        DISABLE_BACKUP_CRON: 'true',
+        PORT: '',
+        AKBARAL_WEB_PORT: '',
+        AKBARAL_API_PORT: '',
+        SESSION_SECRET: 'x'.repeat(40),
+        ZA141251SA_MISSION_SERVER_ENABLED: enabled ? 'true' : '',
+        // Deliberately hostile inherited values: the mission child must replace
+        // every one of them rather than forwarding them.
+        ZA141251SA_BIND_HOST: '0.0.0.0',
+        ZA141251SA_PORT: '9999',
+        ZA141251SA_DATABASE_URL: 'file:/tmp/not-allowed.db',
+      },
+    });
+    const record: HarnessRecord = existsSync(recordPath)
+      ? JSON.parse(readFileSync(recordPath, 'utf8'))
+      : { spawns: [], spawnSteps: [], fetches: [], kills: [] };
+    return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', record };
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -268,6 +439,100 @@ test('AKBARAL_AUTO_BUILD is wired to self-heal a missing build via "npm run buil
     /runStep\('production build \(npm run build\)', 'npm', \['run', 'build'\]\)/,
     'AKBARAL_AUTO_BUILD=true must invoke the real "npm run build"',
   );
+});
+
+test('the private mission server is disabled by default and requires the exact true opt-in', () => {
+  const disabled = runMissionStartupHarness('missing-db', false);
+  assert.equal(disabled.status, 0, disabled.stderr);
+  assert.deepEqual(disabled.record.spawns.map((spawn) => spawn.kind), ['web', 'api']);
+  assert.deepEqual(disabled.record.fetches, []);
+  assert.doesNotMatch(`${disabled.stdout}\n${disabled.stderr}`, /private mission/i);
+
+  for (const value of ['1', 'yes', 'TRUE', ' true ']) {
+    const notExact = runStartProd(['--print-ports'], { ZA141251SA_MISSION_SERVER_ENABLED: value });
+    assert.equal(notExact.status, 0, notExact.stderr);
+    assert.deepEqual(lastJsonLine(notExact.stdout), {
+      roles: 'both',
+      publicPort: 3000,
+      webPort: 3000,
+      apiPort: 4000,
+    });
+  }
+});
+
+test('private mission startup hard-pins loopback, port and the existing database before public tiers', () => {
+  const run = runMissionStartupHarness('ready');
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission', 'web', 'api']);
+  assert.deepEqual(run.record.fetches, ['http://127.0.0.1:4200/api/health']);
+
+  const mission = run.record.spawns[0];
+  assert.equal(mission.command, 'node');
+  assert.match(mission.args[0] ?? '', /[/\\]dist[/\\]scripts[/\\]mission-serve\.js$/);
+  assert.deepEqual(mission.env, {
+    NODE_ENV: 'production',
+    PORT: '',
+    ZA141251SA_BIND_HOST: '127.0.0.1',
+    ZA141251SA_PORT: '4200',
+    ZA141251SA_DATABASE_URL: 'file:/data/mission.db',
+  });
+  assert.match(run.stdout, /private mission readiness verified at http:\/\/127\.0\.0\.1:4200\/api\/health/);
+});
+
+test('private mission startup refuses a missing /data/mission.db without spawning any tier', () => {
+  const run = runMissionStartupHarness('missing-db');
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.record.spawns, []);
+  assert.deepEqual(run.record.fetches, []);
+  assert.match(run.stderr, /\/data\/mission\.db does not exist/);
+  assert.match(run.stderr, /will not create or select an alternate database/);
+});
+
+test('an enabled private mission server requires the compiled production entry', () => {
+  const run = runMissionStartupHarness('missing-entry');
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.record.spawns, []);
+  assert.match(`${run.stdout}\n${run.stderr}`, /dist[/\\]scripts[/\\]mission-serve\.js/);
+});
+
+test('private readiness failure times out non-zero before public tiers start', () => {
+  const run = runMissionStartupHarness('readiness-timeout');
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission']);
+  assert.ok(run.record.fetches.length >= 1);
+  assert.ok(run.record.fetches.every((url) => url === 'http://127.0.0.1:4200/api/health'));
+  assert.deepEqual(run.record.kills, [{ kind: 'mission', signal: 'SIGTERM' }]);
+  assert.match(run.stderr, /private mission readiness timed out/);
+});
+
+test('an unexpected required mission exit terminates non-zero and stops public siblings', () => {
+  const run = runMissionStartupHarness('unexpected-exit');
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission', 'web', 'api']);
+  assert.deepEqual(run.record.kills, [
+    { kind: 'mission', signal: 'SIGTERM' },
+    { kind: 'web', signal: 'SIGTERM' },
+    { kind: 'api', signal: 'SIGTERM' },
+  ]);
+  assert.match(run.stderr, /exited unexpectedly with code 0; terminating the container/);
+});
+
+test('signal termination of the required mission child is also a non-zero failure', () => {
+  const run = runMissionStartupHarness('signal-exit');
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission', 'web', 'api']);
+  assert.match(run.stderr, /terminated by signal SIGTERM; terminating the container/);
+});
+
+test('mission startup never wires workers, a public route, or a proxy', () => {
+  assert.match(
+    startProdSource,
+    /const MISSION_SERVER_ENABLED = process\.env\.ZA141251SA_MISSION_SERVER_ENABLED === 'true';/,
+  );
+  assert.doesNotMatch(startProdSource, /mission-(?:money|chat|bounty)-worker/);
+  assert.doesNotMatch(startProdSource, /ZA141251SA_(?:MONEY|CHAT|BOUNTY)_WORKER_ENABLED/);
+  assert.doesNotMatch(startProdSource, /mission:init|ZA141251SA_SESSION_SECRET/);
+  assert.doesNotMatch(startProdSource, /NEXT_MISSION|mission.*rewrite|mission.*proxy/i);
 });
 
 test('startup preflight checks run before any tier is launched', () => {
