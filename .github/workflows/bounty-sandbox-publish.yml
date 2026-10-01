@@ -29,7 +29,8 @@ jobs:
       - name: Build one local candidate for scan and publish
         run: docker build --pull --tag "$SANDBOX_IMAGE:$SANDBOX_SCAN_TAG" sandbox/github-bounty
       - name: Scan runner image for critical unfixed vulnerabilities
-        uses: aquasecurity/trivy-action@v0.33.1
+        # aquasecurity/trivy-action v0.36.0 (commit pinned for a trusted CI dependency).
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ env.SANDBOX_IMAGE }}:${{ env.SANDBOX_SCAN_TAG }}
           format: json
