@@ -32,10 +32,28 @@ jobs:
         uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: ${{ env.SANDBOX_IMAGE }}:${{ env.SANDBOX_SCAN_TAG }}
-          format: table
+          format: json
+          output: trivy-report.json
           severity: CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          # Emit a report first; the explicit gate below fails closed with a
+          # concise, inspectable finding list rather than losing scan output.
+          exit-code: "0"
+      - name: Fail closed on critical unfixed scan findings
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+          const report = JSON.parse(readFileSync('trivy-report.json', 'utf8'));
+          const critical = (report.Results || []).flatMap(result => result.Vulnerabilities || [])
+            .filter(vulnerability => vulnerability.Severity === 'CRITICAL');
+          if (critical.length) {
+            const findings = critical.map(v => `${v.VulnerabilityID}:${v.PkgName}:${v.InstalledVersion}`).join(', ');
+            console.error(`::error::Critical fixed vulnerabilities found in bounty sandbox: ${findings}`);
+            process.exit(1);
+          }
+          console.log('No critical unfixed vulnerabilities found in bounty sandbox image.');
+          NODE
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
