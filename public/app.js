@@ -65,6 +65,7 @@
     user: null,
     trial: null,
     subscription: null,
+    unlimited: false,
     projects: [],
     agents: [],
     categories: [],
@@ -96,58 +97,59 @@
   }
 
   /**
-   * Honest, actionable failure copy for every real task failure mode.
-   * Never claims success; never hides the underlying reason — the raw
-   * message is always shown alongside the explanation.
+   * Honest failure copy for every real task failure mode.
+   *
+   * PRODUCTION ERROR BOUNDARY (client half). The server already replaces every
+   * raw diagnostic with public copy (src/server/safe-errors.ts); this renderer
+   * is the second line of defence, so even if an internal string reaches the
+   * browser it is never painted on screen. Nothing here names a provider, an
+   * API key, an environment variable, a stack frame, a workflow/agent id or a
+   * database detail — those live in the server-side diagnostics only.
+   *
+   * The copy stays HONEST: a failure is always stated as a failure, and a
+   * refund is only mentioned for the states that really do refund.
    */
   function friendlyTaskError(code, message) {
+    const GENERIC_TASK_FAILURE = "We couldn't complete this task right now. Please try again.";
     const msg = String(message || '');
     const m = {
-      provider_not_configured: {
-        title: 'No AI provider configured',
-        detail: 'This deployment has no model provider key, so the task cannot run. The operator must configure a model provider (see the Environment panel on the MASTER screen for live availability). Your free task credit was refunded.',
-      },
-      provider_auth: {
-        title: 'AI provider rejected the credentials',
-        detail: 'The model provider answered that the API key is invalid or unauthorized. The operator must fix the provider key. Your free task credit was refunded.',
-      },
-      provider_rate_limited: {
-        title: 'AI provider rate limit',
-        detail: 'The model provider is rate-limiting this deployment right now. The task was retried with backoff and then stopped honestly. Your free task credit was refunded — try again shortly.',
-      },
-      provider_outage: {
-        title: 'AI provider outage',
-        detail: 'The model provider returned a server error. The task was retried and then stopped honestly. Your free task credit was refunded — try again shortly.',
+      rate_limited: {
+        title: 'Too much work in progress',
+        detail: 'We are handling a lot of work right now. Please try again in a moment.',
       },
       verification_failed: {
-        title: 'Result rejected by verification',
-        detail: 'The model produced output, but it did not meet this agent\'s verification contract (substance, structure or goal coverage). Nothing unverified is ever returned as a success. Your free task credit was refunded.',
+        title: 'Result rejected by our quality check',
+        detail: "The result did not meet this agent's verification contract, so nothing unverified was returned as a success. Your task credit was refunded.",
       },
       timed_out: {
-        title: 'Execution timed out',
-        detail: 'The execution exceeded its time budget and was stopped. Your free task credit was refunded.',
+        title: 'Task took too long',
+        detail: 'The task exceeded its time budget and was stopped. Your task credit was refunded.',
       },
       cancelled: {
         title: 'Task cancelled',
-        detail: 'This task was cancelled. Your free task credit was refunded.',
+        detail: 'This task was cancelled. Your task credit was refunded.',
       },
       requires_pro: {
         title: 'Free tasks exhausted',
-        detail: 'All free task credits are used. AKBARAL Pro is required to run more tasks.',
+        detail: 'All free task credits are used. Upgrade your plan to keep running tasks.',
+      },
+      paid_resource_required: {
+        title: 'A paid resource is required',
+        detail: 'This task needs a paid resource that is not enabled on your account. Your task credit was refunded.',
+      },
+      emergency_stop: {
+        title: 'Task execution is paused',
+        detail: 'Task execution is paused right now. Please try again shortly.',
       },
     };
-    let key = code || '';
-    if (!key || !m[key]) {
-      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) key = 'provider_auth';
-      else if (msg.includes('HTTP 429')) key = 'provider_rate_limited';
-      else if (msg.includes('HTTP 5') || msg.includes('server error')) key = 'provider_outage';
-      else if (msg.includes('not configured')) key = 'provider_not_configured';
-      else if (msg.includes('verification_failed')) key = 'verification_failed';
-      else if (msg.includes('timed_out')) key = 'timed_out';
+    const entry = m[code || ''];
+    if (!entry) {
+      // Unknown or internal code (provider/runtime/configuration classes):
+      // one neutral line. The raw text is deliberately NOT echoed.
+      return { title: "We couldn't complete this task", detail: GENERIC_TASK_FAILURE, code: 'task_failed' };
     }
-    const entry = m[key];
-    if (!entry) return { title: 'Task failed', detail: 'The task failed honestly. The raw error is shown below.', code: code || 'execution_failed' };
-    return { title: entry.title, detail: entry.detail, code: key };
+    void msg;
+    return { title: entry.title, detail: entry.detail, code: code };
   }
 
   /* ============================================================
@@ -413,10 +415,11 @@
 
     if (status === 'failed' || status === 'cancelled') {
       const friendly = friendlyTaskError(input.code, input.message);
+      // No raw message line: input.message can carry provider/runtime
+      // diagnostics. The failure is stated honestly by title + detail.
       root.innerHTML = `<div class="state-card state-error">
         <h4>${esc(friendly.title)}</h4>
         <p>${esc(friendly.detail)}</p>
-        ${input.message ? `<p class="state-kv">${esc(String(input.message).slice(0, 400))}</p>` : ''}
       </div>`;
       return;
     }
@@ -2077,19 +2080,39 @@ async function loadConnectedAccounts() {
     state.user = body.user;
     state.trial = body.trial;
     state.subscription = body.subscription;
+    // Server-computed entitlement (src/auth/entitlements.ts via /api/me) —
+    // true only for owner/super_admin, the exact same role check the
+    // orchestrator uses to skip credit consumption. The client never
+    // derives this itself from `role`; it only reports what the server
+    // already decided, so the pill can never disagree with reality.
+    state.unlimited = Boolean(body.unlimited);
     updateCreditPill();
   }
 
   function updateCreditPill() {
+    const pill = $('#credit-pill');
+    const shellPill = $('#ak-credit-pill');
+    // Owner/super_admin: real server-side entitlement is unlimited execution
+    // that never consumes a task credit (src/orchestrator/executor.ts). The
+    // trial/credit numbers below are leftover account bookkeeping from
+    // before/around role promotion and are never consulted for this role's
+    // task creation — showing "Trial · N free" here would misrepresent an
+    // account that cannot actually run out. Show the real state instead.
+    if (state.unlimited) {
+      if (pill) pill.textContent = 'Unlimited execution';
+      if (shellPill) {
+        shellPill.textContent = 'Unlimited execution';
+        shellPill.title = 'Owner entitlement: unlimited task execution, no credits consumed';
+      }
+      return;
+    }
     const credits = state.user?.freeCredits ?? 0;
     // /api/me returns trial.active (boolean) — `isActive` never existed, so
     // the trial label silently never showed.
     const onTrial = Boolean(state.trial?.active ?? state.trial?.isActive);
     const label = onTrial ? `Trial · ${credits} free tasks` : `Credits · ${credits}`;
-    const pill = $('#credit-pill');
     if (pill) pill.textContent = label;
     // The app shell carries the same real number in its own top bar.
-    const shellPill = $('#ak-credit-pill');
     if (shellPill) {
       shellPill.textContent = onTrial ? `Trial · ${credits} free` : `Credits · ${credits}`;
       shellPill.title = onTrial ? `${credits} free task credits on trial` : `${credits} task credits`;
@@ -2413,7 +2436,7 @@ async function loadConnectedAccounts() {
       await loadMasterExecution(executionId);
     } catch (e) {
       const friendly = friendlyTaskError(e.code, e.message);
-      toast(`${friendly.title}: ${e.message}`, 'err');
+      toast(`${friendly.title}. ${friendly.detail}`, 'err');
       renderMasterResult(false, { code: e.code, message: e.message });
     }
   }

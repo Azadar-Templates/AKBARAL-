@@ -31,9 +31,12 @@ import { hasUnlimitedTaskCredits } from '../auth/entitlements';
 import { modelRouter } from '../models';
 import { runTool, type ToolResult } from '../tools';
 import { verifyAgentOutput } from './verifier';
+import { detectCurrencyIntent } from './research-evidence';
 import { reconcileTaskFailed } from './task-reconciler';
 import { notifyTaskFinished } from '../push/notify';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { toPublicFailure } from '../server/safe-errors';
+import { logErrorSafe } from '../config/secrets';
 
 /**
  * Task/agent orchestrator.
@@ -311,6 +314,33 @@ export interface DispatchOptions {
   isCancelled?: () => boolean;
 }
 
+/**
+ * Model-routing cost gate keyed on the agent's own pre-existing complexity
+ * classification (costUsage.priority, derived from each domain's
+ * domainCostBase in src/agents/catalog.ts).
+ *
+ * This is the ONLY place a premium/flagship model like GPT-6 Astra
+ * (costOutputPerMillionCents: 5000, see src/models/catalog.ts) can become
+ * reachable for an agent execution — and only for the ~20% of agent
+ * definitions already classified 'high' priority by domain complexity, i.e.
+ * genuinely high-complexity work. 'medium' and 'low' priority agents (the
+ * high-volume/simple majority) are capped below any flagship-tier price so
+ * the router falls through to cheaper capable models (gpt-4o-mini,
+ * gemini-3.8-flash, gemini-3.1-flash-lite, kimi-k2). No agent definition
+ * hardcodes a specific model key; this only bounds the price tier the
+ * existing capability/quality scoring in ModelRouter.score() is allowed to
+ * pick from.
+ */
+function maxCostCentsForPriority(priority: string): number | undefined {
+  if (priority === 'high') {
+    return undefined; // unconstrained — flagship models are eligible, not forced
+  }
+  if (priority === 'medium') {
+    return 1000; // admits gpt-4o / gemini-3.5-flash tier; excludes Astra (5000) and claude-sonnet-4-6 (1500)
+  }
+  return 400; // 'low' — admits only fast/cheap tier (gpt-4o-mini, gemini-3.8-flash, gemini-3.1-flash-lite, kimi-k2)
+}
+
 function resolveDispatchOptions(
   streamOrOptions?: ExecutionStream | DispatchOptions,
 ): DispatchOptions {
@@ -466,6 +496,24 @@ export async function runGenericAgentExecution(
     if (toolStage.contextBlock) {
       systemMessages.push({ role: 'system', content: toolStage.contextBlock });
     }
+    // The request asks for CURRENT data. State the run's real date, require a
+    // dated source URL for every external figure, and make "I could not get
+    // current data" the required answer when the retrieved context has none —
+    // substituting older data is what produced 2024 gold prices for a "today"
+    // question.
+    if (detectCurrencyIntent(goalInput) !== null) {
+      systemMessages.push({
+        role: 'system',
+        content:
+          '--- FRESHNESS REQUIREMENT (the user asked for CURRENT data) ---\n' +
+          `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC).\n` +
+          '1. Only state a figure as current if the retrieved context shows it with a date/time that is current as of today.\n' +
+          '2. For every externally sourced figure, give the source URL exactly as it appears in the retrieved context, plus that source\'s own date/time.\n' +
+          '3. Never present older data as current, and never re-date a figure.\n' +
+          '4. If sources disagree materially, say so explicitly and show both values with their dates and URLs.\n' +
+          '5. If the retrieved context contains no current data, say plainly that current data could not be retrieved, and do not substitute historical values.',
+      });
+    }
     const attachmentContext = buildAttachmentContext(task?.id);
     if (attachmentContext) {
       systemMessages.push({ role: 'system', content: attachmentContext });
@@ -474,6 +522,7 @@ export async function runGenericAgentExecution(
       {
         capability: agent.modelRequirements,
         answerQuality: agent.costUsage.priority === 'high' ? 'high' : 'balanced',
+        maxCostCents: maxCostCentsForPriority(agent.costUsage.priority),
         taskId: task?.id ?? null,
         agentExecutionId: executionId,
       },
@@ -491,6 +540,7 @@ export async function runGenericAgentExecution(
       goal: goalInput,
       content: result.text,
       sourceContextUsed: toolStage.sourceContextUsed,
+      sourceContext: toolStage.contextBlock,
       complete: useLlmVerification
         ? (messages, requirements) =>
             modelRouter.complete(
@@ -736,12 +786,26 @@ async function failExecution(
   updateAgentExecutionStatus({
     id: executionId,
     status: 'failed',
+    // The RAW message is persisted on the execution row: that column is a
+    // server-side diagnostic surface, read by operators and the audit trail,
+    // and it is sanitized at the HTTP boundary before any UI sees it.
     errorMessage: message,
     durationMs: Date.now() - start,
     completedAt: new Date().toISOString(),
   });
-  stream?.pushStatus({ executionId, status: 'failed', message, errorMessage: message });
-  appendLog(executionId, stream, `Execution failed: ${message}`, 'error', 'verification', { code });
+  // Everything below travels to a screen (live status + the execution console
+  // log, which the workspace renders verbatim), so it carries the public
+  // failure copy only — never provider/runtime/configuration detail. The raw
+  // text is kept in the execution row above and in the server log line.
+  const publicFailure = toPublicFailure({ code, message });
+  logErrorSafe('execution.failed', { executionId, taskId: taskId ?? null, code, message });
+  stream?.pushStatus({
+    executionId,
+    status: 'failed',
+    message: publicFailure.message,
+    errorMessage: publicFailure.message,
+  });
+  appendLog(executionId, stream, `Execution failed: ${publicFailure.message}`, 'error', 'verification', { code: publicFailure.code });
 
   if (options?.deferTaskFailure) {
     // Queue-driven execution: task reconciliation (fail + refund) is decided

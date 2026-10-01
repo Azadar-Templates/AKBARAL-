@@ -202,6 +202,38 @@ export const MODEL_SPECS: ModelSpec[] = [
     isDefault: true,
     capabilities: ['speed', 'research', 'writing', 'simple_coding'],
   },
+  // GPT-6 Astra — OpenAI's flagship reasoning/agentic model, released
+  // 2026-09-03 (model id `gpt-6-astra`; verified pricing $10/$50 per
+  // million input/output tokens, 1,050,000-token context, strongest at
+  // long-horizon agentic coding, computer/browser use and multi-step
+  // professional work — openrouter.ai/openai/gpt-6-astra,
+  // llm-stats.com/models/gpt-6-astra, both checked 2026-09-30).
+  //
+  // isDefault: false — it must never be the router's default pick. It is
+  // ~4x the input cost and ~5x the output cost of gpt-4o and ~3x
+  // claude-sonnet-4-6, so it only wins ModelRouter.score() for requests
+  // that explicitly ask for answerQuality:'high' AND set a maxCostCents
+  // high enough to admit it (see src/orchestrator/executor.ts, which caps
+  // maxCostCents by the agent's own costUsage.priority — only the ~20% of
+  // agent definitions already classified 'high' priority by domain
+  // complexity can route to it; the other ~80% are capped below its price
+  // and fall through to gpt-4o-mini / gemini-3.8-flash as before). This is
+  // config-only: no agent definition hardcodes this model key.
+  {
+    key: 'gpt-6-astra',
+    name: 'GPT-6 Astra',
+    providerKey: 'openai',
+    capability: 'llm',
+    modality: 'multimodal',
+    contextTokens: 1050000,
+    maxOutputTokens: 128000,
+    costInputPerMillionCents: 1000,
+    costOutputPerMillionCents: 5000,
+    latencyMs: 4000,
+    reliability: 0.97,
+    isDefault: false,
+    capabilities: ['reasoning', 'coding', 'vision', 'research', 'writing', 'long_context', 'high_complexity', 'computer_use'],
+  },
   // Anthropic — corrected 2026-09-27. The previous entry was keyed
   // 'c3.5-sonnet', which was never a valid Anthropic model ID in any
   // generation, and client.ts sends model.key verbatim as the API `model`

@@ -8,24 +8,65 @@
  * This is the PRIVATE mission dashboard — completely separate from AKBARAL!
  */
 
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { missionDb as db } from '../mission/database';
 import type { Row } from '../mission/database';
+import { HttpError } from '../server/http';
 
 export const bossDashboardRouter = Router();
 
-// Simple bearer auth for mission dashboard
-function requireMissionAuth(req: any, res: any, next: any) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const missionToken = process.env.ZA141251SA_DASHBOARD_TOKEN ?? process.env.MISSION_DASHBOARD_TOKEN;
+/**
+ * Bearer auth for the mission boss dashboard — FAILS CLOSED.
+ *
+ * This router is mounted on the same public AKBARAL! Express app that serves
+ * customer traffic (see src/app.ts), bound to 0.0.0.0 in production. It is
+ * NOT the separate, loopback-bound ZA141251SA mission server
+ * (src/mission/server.ts) — a previous version of this comment incorrectly
+ * assumed a loopback bind that does not apply here, which is exactly how the
+ * original fail-open defect happened. There is no network-level protection
+ * for this route: authorization must be enforced here, unconditionally.
+ *
+ * Security rule: "if this protected mission route is reachable, valid
+ * mission authorization is mandatory." A missing/absent configuration is a
+ * SERVICE MISCONFIGURATION (503), never an implicit grant. This intentionally
+ * does NOT reuse AKBARAL!'s customer `requireAuth`/`requireRole` — a customer
+ * session (even an 'owner'-role customer account) must never be usable as
+ * mission-owner authorization; the mission dashboard token is a wholly
+ * separate credential space.
+ *
+ * next() is called if and only if the presented bearer token exactly matches
+ * the configured mission dashboard token. Every other path calls next(err)
+ * with an HttpError, which the shared error handler (src/server/http.ts)
+ * turns into a safe, generic JSON body — no stack trace, no raw diagnostic
+ * text, no mission-table names. The mission database is never opened by this
+ * middleware; a downstream handler (and therefore any mission DB access) can
+ * only run once this middleware has already called next().
+ */
+function requireMissionAuth(req: Request, _res: Response, next: NextFunction): void {
+  const missionToken = (process.env.ZA141251SA_DASHBOARD_TOKEN ?? process.env.MISSION_DASHBOARD_TOKEN ?? '').trim();
   if (!missionToken) {
-    // No token configured — allow local-only access (bind is 127.0.0.1 by default)
-    return next();
+    // Fail CLOSED: an unconfigured dashboard is unusable, not open.
+    next(new HttpError(503, 'mission dashboard is not configured', 'mission_dashboard_not_configured'));
+    return;
   }
-  if (token !== missionToken) {
-    return res.status(401).json({ error: 'unauthorized' });
+
+  const header = req.header('authorization') ?? '';
+  const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+  if (!presented || !constantTimeEquals(presented, missionToken)) {
+    next(new HttpError(401, 'unauthorized', 'unauthorized'));
+    return;
   }
+
   next();
+}
+
+/** Constant-time string comparison so a wrong-length or wrong-content guess cannot be timed. */
+function constantTimeEquals(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 /** GET /api/boss/overview — Fleet summary */

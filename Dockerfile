@@ -49,8 +49,20 @@ RUN chmod +x scripts/entrypoint.sh && chown -R 1000:1000 /app && chmod -R 755 /a
 # Build stamp: the commit that produced this image. CI passes
 # --build-arg GIT_SHA=<sha>; any runtime (Modal, Docker hosts) can then
 # prove which code it is running instead of trusting a mutable :latest tag.
+#
+# Railway-native builds (a Railway service built directly from this
+# Dockerfile via its GitHub integration, rather than from the CI-published
+# GHCR image) never receive an explicit --build-arg GIT_SHA — Railway only
+# auto-populates an ARG when its name matches one of Railway's own variables
+# (docs.railway.com/guides/build-time-vs-runtime-secrets). Railway's git
+# commit variable is named RAILWAY_GIT_COMMIT_SHA, so it is accepted here as
+# a fallback build arg with the same name Railway already knows how to fill
+# in automatically — no owner configuration required for this path.
 ARG GIT_SHA=unknown
-RUN echo "${GIT_SHA}" > /app/.image-version && chown 1000:1000 /app/.image-version
+ARG RAILWAY_GIT_COMMIT_SHA=""
+RUN sha="$GIT_SHA"; \
+    if [ -z "$sha" ] || [ "$sha" = "unknown" ]; then sha="${RAILWAY_GIT_COMMIT_SHA:-unknown}"; fi; \
+    echo "$sha" > /app/.image-version && chown 1000:1000 /app/.image-version
 EXPOSE 3000 4000 8080
 # Port-aware: mirrors scripts/start-prod.mjs (web honors PORT, api moves on collision)
 # so the image reports healthy on hosts that inject their own public port (Blitz).

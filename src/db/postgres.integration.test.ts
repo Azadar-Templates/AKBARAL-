@@ -29,7 +29,7 @@ import {
   agentHierarchyDepth,
   countAgentChildren,
 } from './economy-repositories';
-import { syncConfiguredOwnerIdentity } from '../auth/owner-identity';
+import { bootstrapOwnerAccount } from '../auth/owner-identity';
 import { translateSqlForPg, placeholdersToPg, resolveDbEngine } from './database';
 
 const PG_URL = process.env.PG_TEST_DATABASE_URL ?? '';
@@ -389,19 +389,21 @@ describe('economy + mission chat parity (PG)', { skip: !RUN ? 'requires PG_TEST_
     assert.ok(windows.todayCents < windows.lifetimeCents, 'old row excluded from today on PG');
   });
 
-  it('promotes the configured owner identity on PG (one-way, changes>0)', () => {
+  it('bootstraps the owner identity on PG (never via registration/login; one-way; credential rotation works)', async () => {
     const email = `pg-owner-${Date.now()}@akbaral.test`;
-    createUser({ email, passwordHash: null, name: 'PG Owner' });
-    process.env.AKBARAL_OWNER_EMAIL = email;
-    try {
-      const result = syncConfiguredOwnerIdentity();
-      assert.deepEqual(result, { promoted: true, email });
-      assert.equal(findUserByEmail(email)!.role, 'owner');
-      // One-way: second sync is a no-op.
-      assert.equal(syncConfiguredOwnerIdentity()!.promoted, false);
-    } finally {
-      delete process.env.AKBARAL_OWNER_EMAIL;
-    }
+    // Test-only override (see src/auth/owner-identity.ts) — production never
+    // passes this and always resolves to the one fixed owner identity, and
+    // never calls this from an HTTP route.
+    const created = await bootstrapOwnerAccount({ password: 'pg-owner-bootstrap-password-1', overrideEmail: email });
+    assert.equal(created.action, 'created');
+    assert.equal(findUserByEmail(email)!.role, 'owner');
+
+    // Re-running is a safe, idempotent credential rotation — never a
+    // duplicate account, never a demotion.
+    const rotated = await bootstrapOwnerAccount({ password: 'pg-owner-bootstrap-password-2', overrideEmail: email });
+    assert.equal(rotated.action, 'rotated');
+    assert.equal(rotated.userId, created.userId);
+    assert.equal(findUserByEmail(email)!.role, 'owner');
   });
 
   it('tracks child-agent hierarchy depth + children counts on PG', () => {

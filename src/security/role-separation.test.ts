@@ -23,9 +23,16 @@ import type { AddressInfo } from 'node:net';
  * formats, because "hidden in the UI" is not isolation: every claim here is an
  * HTTP status code.
  *
- * The owner identity is never hardcoded anywhere in the product: the platform
- * owner is a role on a real account, and the mission owner is provisioned from
- * configuration (ZA141251SA_OWNER_EMAIL) into the mission database only.
+ * The AKBARAL! platform owner is identified by one fixed, server-side email
+ * (src/auth/owner-identity.ts); only the operator-run `npm run owner:bootstrap`
+ * CLI can ever set a matching account's `role` column to 'owner' (never
+ * public registration or login) — this suite exercises the resulting ROLE
+ * separation directly (a role set on a real account) rather than that email,
+ * so it stays valid regardless of which email the fixed identity resolves to
+ * or how the role was assigned. The mission
+ * owner is an entirely separate identity plane, provisioned from
+ * configuration (ZA141251SA_OWNER_EMAIL) into the mission database only, and
+ * is never reachable through this platform's roles or sessions.
  */
 
 const MISSION_DB = path.join(os.tmpdir(), `za-role-separation-${process.pid}.db`);

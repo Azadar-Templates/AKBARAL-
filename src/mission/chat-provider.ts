@@ -9,18 +9,20 @@ export function chatTokenReservation(body: string, config: AgentChatConfig): num
   // Conservative byte-count bound plus protocol overhead; never guessed usage.
   return Buffer.byteLength(body, 'utf8') + Buffer.byteLength(CHAT_INSTRUCTION, 'utf8') + 256 + config.maxOutputTokens;
 }
-export type ChatAdapter = (permit: ResourceCallPermit, signal: AbortSignal, request: { body: string; config: AgentChatConfig }) => Promise<ResourceCallReceipt & { value: string }>;
+export type ChatAdapter = (permit: ResourceCallPermit, signal: AbortSignal, request: { body: string; config: AgentChatConfig; systemInstruction?: string }) => Promise<ResourceCallReceipt & { value: string }>;
 function unavailable(message: string): never { throw new MissionSelfServiceError(502, message, 'chat_provider_uncertain'); }
 /** Fixed endpoint, no tools/grounding, no redirect and no secret in a URL/log. */
-export async function invokeGoogleChat(permit: ResourceCallPermit, signal: AbortSignal, request: { body: string; config: AgentChatConfig }, transport: typeof fetch = fetch): Promise<ResourceCallReceipt & { value: string }> {
+export async function invokeGoogleChat(permit: ResourceCallPermit, signal: AbortSignal, request: { body: string; config: AgentChatConfig; systemInstruction?: string }, transport: typeof fetch = fetch): Promise<ResourceCallReceipt & { value: string }> {
   if (permit.provider !== 'google' || request.config.model !== CHAT_MODEL || signal.aborted) unavailable('provider permit is unavailable');
+  const instruction = request.systemInstruction ?? CHAT_INSTRUCTION;
+  if (typeof instruction !== 'string' || !instruction.trim() || Buffer.byteLength(instruction, 'utf8') > 6000 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(instruction)) unavailable('provider instruction is invalid');
   const row = missionDb.get<Row>('SELECT * FROM mission_credentials WHERE id = ?', [permit.credentialId]);
   if (!row || row.provider !== 'google' || Number(row.rotation_count) !== permit.credentialVersion || !['active', 'expiring'].includes(String(row.status)) || (row.expires_at && (!Number.isFinite(Date.parse(String(row.expires_at))) || Date.parse(String(row.expires_at)) <= Date.now()))) unavailable('provider credential changed');
   const key = decryptCredential({ ciphertext: String(row.ciphertext), iv: String(row.iv), tag: String(row.tag) });
   const response = await transport(`https://generativelanguage.googleapis.com/v1beta/models/${CHAT_MODEL}:generateContent`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: CHAT_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: request.body }] }], generationConfig: { maxOutputTokens: request.config.maxOutputTokens, candidateCount: 1, thinkingConfig: { thinkingBudget: 0 } } }),
+    body: JSON.stringify({ systemInstruction: { parts: [{ text: instruction }] }, contents: [{ role: 'user', parts: [{ text: request.body }] }], generationConfig: { maxOutputTokens: request.config.maxOutputTokens, candidateCount: 1, thinkingConfig: { thinkingBudget: 0 } } }),
   });
   if (!response.ok || !response.body) unavailable('provider response did not establish usage');
   const reader = response.body.getReader();

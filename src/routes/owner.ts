@@ -3,6 +3,8 @@ import { requireAuth } from '../server/middleware/auth';
 import { requireRole } from '../server/middleware/rbac';
 import { db } from '../db';
 import { buildOwnerDashboard } from '../business/owner-analytics';
+import { runLaunchChecks, readinessPercent } from '../launch/checks';
+import { activationStageReport } from '../workforce/activation-stage';
 
 /**
  * AKBARAL! Owner Console API — OWNER + SUPER_ADMIN ONLY.
@@ -132,6 +134,44 @@ export function createOwnerRouter(): Router {
       checks: readiness.checks,
       node: process.version,
     });
+  });
+
+  /**
+   * Production launch/configuration checks, run against THIS process's own
+   * `process.env` — i.e. whatever is actually deployed right now, not a CI
+   * simulation of it.
+   *
+   * Why this exists: the same `runLaunchChecks()` engine already ships as a
+   * CLI (`npm run launch:check`) and is exercised by CI, but until now there
+   * was no way for the owner to ask the LIVE deployment "what is actually
+   * configured on you, right now?" without SSH/redeploy access. A missing
+   * STRIPE_WEBHOOK_SECRET, AKBARAL_SITE_URL or search credential can now be
+   * confirmed directly from the Owner Console against production.
+   *
+   * Safe by default: `offline=true` unless the caller opts into a live
+   * provider probe, so an accidental poll of this endpoint never fires real
+   * Gemini/Tavily/Stripe/SMTP calls. `deep=true` additionally runs the more
+   * expensive "does real work" probes (only meaningful when offline=false).
+   * Query filtering (`only=`) mirrors the CLI's `--only` flag. The underlying
+   * engine never returns secret values — only variable names, booleans and
+   * provider status codes.
+   */
+  router.get('/launch-checks', async (req, res) => {
+    const offline = String(req.query.offline ?? 'true').toLowerCase() !== 'false';
+    const deep = String(req.query.deep ?? 'false').toLowerCase() === 'true';
+    const only = typeof req.query.only === 'string' && req.query.only.trim() ? req.query.only.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    const report = await runLaunchChecks({ offline, deep, only });
+    res.status(200).json({ ...report, readinessPercent: readinessPercent(report) });
+  });
+
+  /**
+   * Controlled activation-stage report for the 4,001-agent workforce — real
+   * counts only (registered → policy-eligible → assigned → verified work →
+   * settled), never a fabricated "N agents earning" headline. See
+   * src/workforce/activation-stage.ts for the exact stage definitions.
+   */
+  router.get('/activation-stage', (_req, res) => {
+    res.status(200).json(activationStageReport());
   });
 
   /**

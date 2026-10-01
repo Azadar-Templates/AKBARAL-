@@ -11,6 +11,12 @@
  *      credits consumed, audited), while an ordinary account whose credits are
  *      exhausted is honestly refused and consumes nothing.
  *
+ * PREREQUISITE: the owner account must already have been bootstrapped once on
+ * this deployment via `npm run owner:bootstrap` (src/auth/owner-identity.ts —
+ * registration/login can never grant the owner role, by design). This
+ * script's own register-then-login helper only reuses an existing account;
+ * without a prior bootstrap the identity check below fails honestly.
+ *
  * Usage:
  *   set -a; . ./.platform-owner.env; set +a
  *   AKBARAL_OWNER_PASSWORD="$(sed -n 2p .platform-owner-credentials.txt)" \

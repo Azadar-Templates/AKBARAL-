@@ -117,6 +117,90 @@ describe('SSE-only free-tier mode (AKBARAL_REALTIME_TRANSPORT=sse)', () => {
     }
   });
 
+  it('logs written in the SAME millisecond as the tail cursor are still delivered (no keyset tie loss)', async () => {
+    // Root-cause regression for the realtime tail. The cursor used to be
+    // `created_at > cursor` and created_at is millisecond resolution, so once
+    // a poll left the cursor on a row, every later row written inside that
+    // same millisecond was `> cursor` == false and was skipped FOREVER. An
+    // agent emitting several log lines per millisecond (the normal case while
+    // a tool runs) silently lost them. The cursor is now the keyset
+    // (created_at, id) over sortable log ids, so delivery is exactly-once.
+    process.env.AKBARAL_REALTIME_TRANSPORT = 'sse';
+    const burst = makeExecution(`sse-burst-${sseSuffix}@akbaral.test`, 'burst');
+    const api: ApiServer = createApiServer();
+    await new Promise<void>((resolve) => api.server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(api.server.address() as { port: number }).port}`;
+    // The clock is frozen so the millisecond collision is deterministic on
+    // every machine instead of depending on disk speed; the real insert path
+    // (appendAgentExecutionLog) is still what runs. Timers are unaffected —
+    // they use the monotonic runtime clock, not Date.
+    const RealDate = Date;
+    const realNow = () => RealDate.now();
+    const frozen = RealDate.now();
+    class FrozenDate extends RealDate {
+      constructor(...args: ConstructorParameters<typeof Date>) {
+        super(...((args.length > 0 ? args : [frozen]) as ConstructorParameters<typeof Date>));
+      }
+      static now(): number { return frozen; }
+    }
+    const freeze = () => { (globalThis as { Date: DateConstructor }).Date = FrozenDate as unknown as DateConstructor; };
+    const unfreeze = () => { (globalThis as { Date: DateConstructor }).Date = RealDate; };
+    const write = (lines: string[]) => {
+      freeze();
+      try {
+        for (const line of lines) {
+          appendAgentExecutionLog({ executionId: burst.executionId, message: line, level: 'info', type: 'log' });
+        }
+      } finally {
+        unfreeze();
+      }
+    };
+    try {
+      const first = ['tie-line-0', 'tie-line-1', 'tie-line-2'];
+      const second = ['tie-line-3', 'tie-line-4', 'tie-line-5'];
+      const response = await fetch(`${base}/api/executions/${burst.executionId}/events?token=${encodeURIComponent(burst.token)}`);
+      assert.equal(response.status, 200);
+      const reader = response.body!.getReader();
+      let received = '';
+      const readUntil = async (lines: string[], budgetMs: number): Promise<void> => {
+        const deadline = realNow() + budgetMs;
+        while (!lines.every((line) => received.includes(`"${line}"`)) && realNow() < deadline) {
+          const chunk = await Promise.race([
+            reader.read(),
+            new Promise<{ done: true; value: undefined }>((resolve) => setTimeout(() => resolve({ done: true, value: undefined }), 2000)),
+          ]);
+          if (chunk.done) break;
+          received += Buffer.from(chunk.value).toString();
+        }
+      };
+
+      // Batch one: the poll delivers these and parks the cursor ON the frozen
+      // millisecond.
+      write(first);
+      await readUntil(first, 8000);
+      assert.deepEqual(first.filter((line) => !received.includes(`"${line}"`)), [], 'the first batch must stream over SSE');
+
+      // Batch two: written into the SAME millisecond the cursor now points at.
+      write(second);
+      await readUntil(second, 8000);
+
+      const persisted = listExecutionLogsAfter(burst.executionId, null, 500);
+      assert.equal(new Set(persisted.map((row) => row.created_at)).size, 1, 'both batches must share one millisecond for this regression to be meaningful');
+      const missing = second.filter((line) => !received.includes(`"${line}"`));
+      assert.deepEqual(missing, [], `logs written in the cursor's own millisecond must still arrive (missing: ${missing.join(',')})`);
+
+      // Exactly-once, in insertion order.
+      const order = [...received.matchAll(/tie-line-(\d+)/g)].map((match) => Number(match[1]));
+      assert.deepEqual(order, [0, 1, 2, 3, 4, 5], 'logs must arrive exactly once, in insertion order');
+      await reader.cancel().catch(() => undefined);
+    } finally {
+      unfreeze();
+      api.server.closeAllConnections?.();
+      await api.close();
+      db.run('DELETE FROM users WHERE email = ?', [`sse-burst-${sseSuffix}@akbaral.test`]);
+    }
+  });
+
   it('the SSE channel keeps full authentication + ownership isolation and streams real logs', async () => {
     process.env.AKBARAL_REALTIME_TRANSPORT = 'sse';
     const owner = makeExecution(`sse-owner-${sseSuffix}@akbaral.test`, 'owner');

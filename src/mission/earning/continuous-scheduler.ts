@@ -14,6 +14,10 @@ import * as GlobalDiscovery from './global-discovery';
 import * as Allocator from './workload-allocator';
 import * as ExecutionPipeline from './execution-pipeline';
 import * as ProviderReadiness from './provider-capability-registry';
+import { configuredGithubBountyWorkflow } from './github-bounty-workflow';
+import { runGithubBountyCycle } from './github-bounty-scheduler';
+
+
 
 function deny(code: string): never { throw new MoneyError(`scheduler_${code}` as any); }
 
@@ -32,6 +36,22 @@ export interface TickResult {
   rateLimited: number;
   reinvested: number;
   scaled: number;
+  /** GitHub-issue-bounty sweep, self-paced (at most once per ~10min regardless
+   * of tick frequency). 0/undefined when the cycle wasn't due this tick. */
+  bountyDiscovered: number;
+  bountyRejected: number;
+  bountyPolicyAllowed: number;
+  bountyAssigned: number;
+  /** Read-only GitHub evidence for PRs already submitted by the workflow. */
+  bountyPrReviewed: number;
+  bountyPrMerged: number;
+  bountyPrClosedUnmerged: number;
+  bountyChecksPassing: number;
+  bountyChecksFailing: number;
+  /** Isolated bounty source/test execution, not a PR or settlement count. */
+  bountyExecutionAttempted: number;
+  bountyExecutionDrafted: number;
+  bountyExecutionBlocked: number;
   detail: string;
 }
 
@@ -64,7 +84,7 @@ export function disableScheduler(actor: MoneyActor): Row {
 }
 
 /** One durable tick: never fabricates work; if no permitted opportunity, it discovers more. */
-export function tickScheduler(actor: MoneyActor): TickResult {
+export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
   if (tickRunning) deny('tick_already_running');
   const policy = currentPolicy();
   if (policy.killSwitch) {
@@ -85,6 +105,9 @@ export function tickScheduler(actor: MoneyActor): TickResult {
   }
 
   let discovered = 0, qualified = 0, matched = 0, locked = 0, executing = 0, verified = 0, settled = 0, failed = 0, retried = 0, expired = 0, rateLimited = 0, reinvested = 0, scaled = 0;
+  let bountyDiscovered = 0, bountyRejected = 0, bountyPolicyAllowed = 0, bountyAssigned = 0;
+  let bountyPrReviewed = 0, bountyPrMerged = 0, bountyPrClosedUnmerged = 0, bountyChecksPassing = 0, bountyChecksFailing = 0;
+  let bountyExecutionAttempted = 0, bountyExecutionDrafted = 0, bountyExecutionBlocked = 0;
   let detail = '';
   try {
     // ── 1. DISCOVER: global beyond-57 sweep + qualify
@@ -101,6 +124,29 @@ export function tickScheduler(actor: MoneyActor): TickResult {
       // provider outage → retried count
       if (/provider|timeout|outage/i.test(msg)) retried++;
       throw e;
+    }
+
+    // ── 1b. GitHub-issue-bounty sweep: discover → auto-reject fraud/bait leads →
+    // policy-check → assign. Fully autonomous, self-paced; never depends on a
+    // human/owner calling the HTTP API. Never fatal to the rest of the tick.
+    try {
+      const bounty = await runGithubBountyCycle(actor, configuredGithubBountyWorkflow());
+      bountyDiscovered = bounty.discovered;
+      bountyRejected = bounty.rejected;
+      bountyPolicyAllowed = bounty.policyAllowed;
+      bountyAssigned = bounty.assigned;
+      bountyPrReviewed = bounty.prReviewed;
+      bountyPrMerged = bounty.prMerged;
+      bountyPrClosedUnmerged = bounty.prClosedUnmerged;
+      bountyChecksPassing = bounty.prChecksPassing;
+      bountyChecksFailing = bounty.prChecksFailing;
+      bountyExecutionAttempted = bounty.executionAttempted;
+      bountyExecutionDrafted = bounty.executionDrafted;
+      bountyExecutionBlocked = bounty.executionBlocked;
+    } catch (e) {
+      const msg = String((e as any)?.code ?? (e as any)?.message ?? '');
+      if (/rate_limited/i.test(msg)) rateLimited++;
+      // never rethrown — a bounty-sweep failure must never abort the rest of the tick
     }
 
     // ── 2. Expiry sweep: mark expired opportunities
@@ -240,7 +286,7 @@ export function tickScheduler(actor: MoneyActor): TickResult {
     // Nothing was recorded then and nothing is recorded now; the counters in
     // `detail` below remain the honest per-cycle record.
 
-    detail = `cycle ${cycle}: disc ${discovered} qual ${qualified} match ${matched} lock ${locked} exec ${executing} verify ${verified} settle ${settled} fail ${failed} retry ${retried} expire ${expired}`;
+    detail = `cycle ${cycle}: disc ${discovered} qual ${qualified} match ${matched} lock ${locked} exec ${executing} verify ${verified} settle ${settled} fail ${failed} retry ${retried} expire ${expired} bounty(disc ${bountyDiscovered} rej ${bountyRejected} allow ${bountyPolicyAllowed} assign ${bountyAssigned} pr-review ${bountyPrReviewed} merge ${bountyPrMerged} closed ${bountyPrClosedUnmerged} checks-pass ${bountyChecksPassing} checks-fail ${bountyChecksFailing} exec-attempt ${bountyExecutionAttempted} exec-drafted ${bountyExecutionDrafted} exec-blocked ${bountyExecutionBlocked})`;
     db.run('UPDATE mission_scheduler_ticks SET completed_at=?, discovered=?, qualified=?, matched=?, locked=?, executing=?, verified=?, settled=?, failed=?, retried=?, expired=?, rate_limited=?, detail=?, status=\'completed\' WHERE id=?',
       [nowIso(), discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, detail, tickId]);
     db.run('UPDATE mission_scheduler_state SET last_tick_at=?, last_cycle=?, consecutive_failures=0, last_error=NULL, updated_at=? WHERE id=\'global\'', [nowIso(), cycle, nowIso()]);
@@ -252,7 +298,7 @@ export function tickScheduler(actor: MoneyActor): TickResult {
           [missionId('intel'), cycle, String(roi.registry_key), Number(roi.attempts), Number(roi.successes), Number(roi.successes), Number(roi.total_gross_cents), Number(roi.total_fees_cents), Number(roi.total_net_cents), Number(roi.avg_score ?? 0), nowIso()]);
       }
     } catch {}
-    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, detail };
+    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, bountyExecutionAttempted, bountyExecutionDrafted, bountyExecutionBlocked, detail };
   } catch (e) {
     const msg = (e as any)?.message ?? String(e);
     failed++;
@@ -260,7 +306,7 @@ export function tickScheduler(actor: MoneyActor): TickResult {
       [nowIso(), discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, `failed: ${msg.slice(0,500)}`, tickId]);
     db.run('UPDATE mission_scheduler_state SET consecutive_failures=consecutive_failures+1, last_error=?, updated_at=? WHERE id=\'global\'', [msg.slice(0,500), nowIso()]);
     detail = `failed: ${msg.slice(0,500)}`;
-    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, detail };
+    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, bountyExecutionAttempted, bountyExecutionDrafted, bountyExecutionBlocked, detail };
   } finally {
     tickRunning = false;
   }
@@ -277,7 +323,7 @@ export function startAutoScheduler(actor: MoneyActor, intervalMs= 60_000): void 
   if (intervalHandle) return;
   enableScheduler(actor);
   intervalHandle = setInterval(()=> {
-    try { tickScheduler(actor); } catch {}
+    tickScheduler(actor).catch(() => {});
   }, Math.max(5000, intervalMs));
   // Do not keep process alive just for this interval
   if (intervalHandle && typeof (intervalHandle as any).unref === 'function') (intervalHandle as any).unref();

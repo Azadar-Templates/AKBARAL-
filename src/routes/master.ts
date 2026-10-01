@@ -8,6 +8,7 @@ import { db, getWorkflow, listWorkflowSteps } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
+import { publicErrorMessage, toPublicFailure, withPublicErrorMessage } from '../server/safe-errors';
 
 /**
  * MASTER AI one-shot API.
@@ -109,18 +110,31 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
     }
     const steps = listWorkflowSteps(req.params.id);
     const job = executionQueue.getJobByWorkflowId(req.params.id) ?? null;
+    // error_message columns are raw operator diagnostics; the API only ever
+    // emits the public copy (see src/server/safe-errors.ts).
     const tasks = steps
       .map((step) => (step.task_id ? String(step.task_id) : null))
       .filter((taskId): taskId is string => Boolean(taskId))
       .map((taskId) =>
-        db.get('SELECT id, status, title, error_message, created_at, completed_at FROM tasks WHERE id = ?', [taskId]),
-      );
+        db.get<Record<string, unknown>>('SELECT id, status, title, error_message, created_at, completed_at FROM tasks WHERE id = ?', [taskId]),
+      )
+      .map((row) => (row ? { ...row, error_message: publicErrorMessage(row.error_message) } : row));
     res.status(200).json({
-      workflow,
-      steps,
+      workflow: withPublicErrorMessage(workflow),
+      steps: steps.map(withPublicErrorMessage),
       tasks,
       job: job
-        ? { id: job.id, status: job.status, attempts: job.attempts, maxAttempts: job.max_attempts, errorCode: job.error_code, errorMessage: job.error_message }
+        ? (() => {
+            const failure = toPublicFailure({ code: job.error_code, message: job.error_message });
+            return {
+              id: job.id,
+              status: job.status,
+              attempts: job.attempts,
+              maxAttempts: job.max_attempts,
+              errorCode: job.error_message || job.error_code ? failure.code : null,
+              errorMessage: job.error_message ? failure.message : null,
+            };
+          })()
         : null,
       finalResult: workflow.result_json ? JSON.parse(String(workflow.result_json))?.finalResult ?? null : null,
     });

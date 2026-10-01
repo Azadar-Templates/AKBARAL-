@@ -122,22 +122,29 @@ describe('responsive + honest error-state contract', () => {
     assert.match(appJs, /Knowledge search failed/, 'search-failure state exists (never faked as empty)');
   });
 
-  it('client maps every real failure mode to an honest, actionable message', () => {
+  it('client maps every user-facing failure mode to an honest, non-technical message', () => {
+    // Outcome-level states keep their own specific copy.
     for (const marker of [
-      'provider_not_configured',
-      'provider_auth',
-      'provider_rate_limited',
-      'provider_outage',
       'verification_failed',
       'timed_out',
       'cancelled',
       'requires_pro',
+      'paid_resource_required',
+      'emergency_stop',
+      'rate_limited',
     ]) {
       assert.ok(appJs.includes(`${marker}:`), `friendlyTaskError must handle ${marker}`);
     }
+    // PRODUCTION ERROR BOUNDARY: provider/configuration classes must NOT have
+    // their own customer-visible copy — they collapse to the neutral line, so
+    // no screen can name a provider, a key or an environment variable.
+    for (const internal of ['provider_not_configured', 'provider_auth', 'provider_rate_limited', 'provider_outage']) {
+      assert.ok(!appJs.includes(`${internal}:`), `${internal} must not have customer-facing copy`);
+    }
+    assert.ok(appJs.includes("We couldn't complete this task right now."), 'the neutral failure line exists');
     // Honesty rules: failures are never dressed as success.
     assert.match(appJs, /credit was refunded/, 'refund outcome is stated');
-    assert.match(appJs, /Nothing unverified is ever returned as a success/, 'verification failure copy is explicit');
+    assert.match(appJs, /nothing unverified was returned as a success/i, 'verification failure copy is explicit');
   });
 
   it('SPA mounts the console, result, environment-info and workspace-empty hooks', () => {

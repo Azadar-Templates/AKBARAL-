@@ -12,9 +12,9 @@ before(()=> { applyMissionMigrations(); PlatformDiscovery.seedPlatforms(); Provi
 after(()=> { const { missionDb } = require('../database') as typeof import('../database'); missionDb.close(); });
 
 describe('provider capability/readiness registry', ()=> {
-  it('lists 36 earning sources, infra/tools not counted', ()=> {
+  it('lists 37 earning sources, infra/tools not counted', ()=> {
     const summary = ProviderReadiness.providerReadinessSummary() as any;
-    assert.equal(summary.earningSources.total, 36);
+    assert.equal(summary.earningSources.total, 37);
     assert.equal(summary.infrastructure > 0, true);
     assert.equal(summary.paymentRails > 0, true);
     assert.ok(summary.tools > 0);
@@ -23,7 +23,7 @@ describe('provider capability/readiness registry', ()=> {
   it('ready vs not_configured honestly (no credentials)', ()=> {
     const list = ProviderReadiness.listEarningReadiness() as any;
     // Fresh DB has no vault credentials → most not_configured, none ready for credential-required
-    assert.ok(list.total === 36);
+    assert.ok(list.total === 37);
     // direct_client_research does not require credential → should be ready even without vault
     const direct = ProviderReadiness.getProviderReadiness('direct_client_research') as any;
     assert.equal(direct.status, 'ready');

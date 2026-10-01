@@ -13,7 +13,6 @@ import {
   appendAuditLog,
   countRecentSecurityEvents,
 } from '../db';
-import { syncConfiguredOwnerIdentity } from './owner-identity';
 import {
   hashPassword,
   verifyPassword,
@@ -187,11 +186,12 @@ export async function login(input: { email: string; password: string; ipAddress?
     throw new HttpError(403, 'account is not active', 'account_not_active');
   }
 
-  // Configured owner identity: if this account's email matches
-  // AKBARAL_OWNER_EMAIL, promote it (one-way, audited) so the issued access
-  // token carries the owner role immediately.
-  syncConfiguredOwnerIdentity(user.id);
-  const freshOwner = findUserByEmail(email);
+  // Fixed platform owner identity (src/auth/owner-identity.ts): role is never
+  // touched here, even if this account's email is the fixed owner email.
+  // The 'owner' role can ONLY ever be granted by the operator-invoked
+  // `npm run owner:bootstrap` CLI, run with direct server/database access —
+  // never by registering or logging in through the public API. The token
+  // below simply carries whatever role is already on the account.
 
   const now = Date.now();
   const refreshToken = newBearerToken();
@@ -208,7 +208,7 @@ export async function login(input: { email: string; password: string; ipAddress?
   const accessToken = signAccessToken({
     sub: user.id,
     email: user.email,
-    role: freshOwner?.role ?? user.role,
+    role: user.role,
     sid: session.id,
   });
 
