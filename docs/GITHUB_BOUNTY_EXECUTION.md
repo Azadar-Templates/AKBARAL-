@@ -24,7 +24,7 @@ The worker fails closed unless both of these are ready:
 - an owner-configured, legitimately metered model resource for the assigned agent, including the existing free-tier/billing gate; and
 - a locally pre-provisioned, immutable OCI image whose digest is configured in `ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST` (value must be `sha256:<64 lowercase hex>`).
 
-Build the trusted runner image from `sandbox/github-bounty/Dockerfile` in deployment CI, scan/sign it, load it into the runtime's local image store, and configure only its digest. The worker runs `docker|podman image inspect` and `run --pull=never`; it will never build or pull a tag, run an image selected by repository/model input, or fall back to `unshare`/the host shell. Optional `ZA141251SA_BOUNTY_SANDBOX_RUNTIME` is restricted to `docker` or `podman` and defaults to `docker`.
+Build the trusted runner image from `sandbox/github-bounty/Dockerfile` in deployment CI, scan it, load it into the runtime's local image store, and configure only its digest. The worker runs `docker|podman image inspect` and `run --pull=never`; it will never build or pull a tag, run an image selected by repository/model input, or fall back to `unshare`/the host shell. Optional `ZA141251SA_BOUNTY_SANDBOX_RUNTIME` is restricted to `docker` or `podman` and defaults to `docker`. The publish workflow currently establishes build/scan/pull provenance; image signing is not claimed or required by this deployment path.
 
 Every invocation is a new `--rm` container with:
 
@@ -49,8 +49,11 @@ GitHub-hosted Ubuntu runner in `.github/workflows/mission-bounty-worker.yml`:
 it runs the existing application worker directly on the runner and Docker runs
 the untrusted repository only in the nested no-network OCI container. It is a
 bounded one-cycle job at minutes 17 and 47, with GitHub Actions concurrency
-preventing overlap. It never submits a PR. Its JSON result includes the safe
-`executionReason` readiness/state-machine reason (for example
+preventing overlap. GitHub Actions schedules run only from the default branch,
+so this workflow must first be merged into `main`; a branch push validates the
+image-publish workflow but cannot activate the scheduled worker. It never
+submits a PR. Its JSON result includes the safe `executionReason`
+readiness/state-machine reason (for example
 `sandbox_unavailable`, `model_resource_not_ready`, or `no_eligible_assignment`)
 rather than reporting a fabricated attempt.
 
