@@ -109,6 +109,12 @@ describe('workforce production layer', () => {
     const readiness = workforceReadiness();
     assert.equal(readiness.model, false);
     assert.ok(readiness.summary.length > 10);
+
+    process.env.GOOGLE_API_KEY = 'synthetic-test-google-key';
+    const configuredGemini = integrationStatus().find((status) => status.key === 'gemini')!;
+    assert.equal(configuredGemini.configured, true);
+    assert.equal(configuredGemini.status, 'WORK-READY');
+    assert.equal(workforceReadiness().model, true);
     process.env = saved;
   });
 

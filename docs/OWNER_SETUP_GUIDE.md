@@ -7,10 +7,10 @@ Never paste credentials into chat, source code, issues, screenshots, or logs. Us
 
 ## 1. Google Gemini
 
-1. In the owner's Google AI project, enable the Gemini API and create a server-side API key.
+1. In the owner's Google AI project, enable the Gemini API and create a server-side API key. The Gemini free tier can be used for initial active agent execution, subject to Google's current eligibility, rate limits, and quotas.
 2. Restrict the key to the intended API/project where Google supports that restriction.
 3. Set `GOOGLE_API_KEY` in the local `.env` for local testing or in Railway Variables for deployment.
-4. Restart the API. Never expose this value through a `NEXT_PUBLIC_*` variable.
+4. Restart the API. Never expose this value through a `NEXT_PUBLIC_*` variable. The readiness engine then reports Gemini as `WORK-READY`; agents whose remaining declared dependencies are satisfied become work-ready dynamically.
 5. Verify:
    - authenticated `GET /api/models` reports the selected Gemini model as available;
    - Chat defaults to `gemini-3.8-flash` and streams real tokens;
@@ -22,7 +22,7 @@ Provider free-tier and rate quotas are external limits. “No chat credits” do
 
 1. Create a Web OAuth client in Google Cloud Console.
 2. Add the production origin and the exact callback URL shown by the deployment, normally `https://YOUR_HOST/api/auth/oauth/google/callback`.
-3. Set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in encrypted server variables.
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in encrypted server variables. These are the canonical variables consumed by AKBARAL! customer sign-in; do not substitute the separate YouTube/social OAuth aliases.
 4. Set the application's public/base URL variable to the canonical HTTPS host if the deployment configuration requires it.
 5. Verify `GET /api/auth/oauth/providers` reports Google configured, then complete one owner-controlled test sign-in. Confirm state validation, callback host, account creation, logout, and refresh rotation.
 
