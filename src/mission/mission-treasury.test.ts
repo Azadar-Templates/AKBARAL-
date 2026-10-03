@@ -256,17 +256,17 @@ test('expenses inside budget either auto-approve under the threshold or queue fo
   );
 });
 
-test('payout slots are exactly four, configurable without handing over credentials', () => {
+test('payout slots are exactly five, configurable without handing over credentials', () => {
   const slots = ensurePayoutSlots();
   assert.equal(slots.length, PAYOUT_SLOT_COUNT);
-  assert.deepEqual(slots.map((slot) => Number(slot.slot)), [1, 2, 3, 4]);
+  assert.deepEqual(slots.map((slot) => Number(slot.slot)), [1, 2, 3, 4, 5]);
   for (const slot of slots) {
     assert.equal(String(slot.status), 'unconfigured', 'slots start unconfigured — nothing is demanded up front');
   }
 
   const configured = configurePayoutSlot({
     slot: 1, label: 'Primary business account', destinationType: 'bank',
-    holderName: 'Mission Holder', maskedAccount: '**** **** 4821', currency: 'USD',
+    holderName: 'Mission Holder', maskedAccount: '**** **** 4821', providerRef: 'dest_test_primary_4821', currency: 'USD',
     minPayoutCents: 5_000, maxPayoutCents: 500_000, approvalRequired: true, actorId: OWNER,
   });
   assert.equal(String(configured.status), 'pending_verification', 'a configured slot needs owner verification');
@@ -275,8 +275,8 @@ test('payout slots are exactly four, configurable without handing over credentia
   const stored = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = 1');
   assert.ok(!JSON.stringify(stored).includes('**** **** 4821'), 'the raw destination string is re-masked before storage');
 
-  assert.throws(() => configurePayoutSlot({ slot: 5, label: 'nope', actorId: OWNER }), (error: unknown) => error instanceof MissionTreasuryError, 'only four slots exist');
-  const slot2 = configurePayoutSlot({ slot: 2, label: 'Backup wallet', destinationType: 'wallet', maskedAccount: 'acct-000000000042', actorId: OWNER });
+  assert.throws(() => configurePayoutSlot({ slot: 6, label: 'nope', actorId: OWNER }), (error: unknown) => error instanceof MissionTreasuryError, 'only five slots exist');
+  const slot2 = configurePayoutSlot({ slot: 2, label: 'Backup wallet', destinationType: 'wallet', maskedAccount: 'acct-000000000042', providerRef: 'dest_test_backup_0042', actorId: OWNER });
   assert.equal(String(slot2.status), 'pending_verification', 'a configured destination is pending until verified');
   const labelOnly = configurePayoutSlot({ slot: 3, label: 'Reserve (label only)', actorId: OWNER });
   assert.equal(String(labelOnly.label), 'Reserve (label only)');

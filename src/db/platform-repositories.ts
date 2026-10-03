@@ -217,7 +217,7 @@ export function ensureBootstrapPlans(): void {
   });
   upsertPlan({
     key: 'pro',
-    name: 'Professional',
+    name: 'Pro',
     description: 'Unlimited core agent usage with a monthly credit allowance.',
     priceCents: 5000, // $50.00 per month
     currency: 'USD',

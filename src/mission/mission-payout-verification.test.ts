@@ -65,6 +65,7 @@ describe('mission payout destination verification', () => {
       destinationType: 'bank',
       holderName: 'Mission Holder',
       maskedAccount: '**** **** 4821',
+      providerRef: 'dest_test_primary_4821',
       currency: 'USD',
       minPayoutCents: 5_000,
       approvalRequired: true,
@@ -250,14 +251,14 @@ describe('mission payout destination verification', () => {
     assert.ok(mission.verifyMissionAudit().ok);
   });
 
-  it('requires a destination before verification can start, and reports all four slots', () => {
+  it('requires a destination before verification can start, and reports all five slots', () => {
     assert.throws(
       () => verification.startPayoutVerification({ slot: 4, ownerId: OWNER }),
       (error: unknown) => (error as { code?: string }).code === 'conflict',
       'an unconfigured slot cannot be verified',
     );
     const statuses = verification.listPayoutSlotVerificationStatuses();
-    assert.equal(statuses.length, 4);
+    assert.equal(statuses.length, 5);
     for (const status of statuses) {
       assert.equal(typeof status.payable, 'boolean');
       assert.ok(Array.isArray(status.blockers));

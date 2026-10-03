@@ -269,7 +269,7 @@ export default function OwnerConsole() {
             <Note text={d.revenue.mrrNote} />
           </Section>
 
-          <Section title="Revenue (AKBARAL! customer ledger)">
+          <Section title="AKBARAL! Payments">
             <Grid>
               <Metric label="Paid" value={money(d.revenue.paidCents, d.revenue.currency)} />
               <Metric label="Refunded" value={money(d.revenue.refundedCents, d.revenue.currency)} />
@@ -279,6 +279,7 @@ export default function OwnerConsole() {
               <Metric label="Payments ok / failed" value={`${compact(d.revenue.payments.succeeded)} / ${compact(d.revenue.payments.failed)}`} />
             </Grid>
             <Sparkline title="Paid revenue · last 30 days" rows={revenueSeries.map((r) => ({ label: r.day, value: r.cents }))} max={maxRevenue} format={(v) => money(v, d.revenue.currency)} />
+            <Note text="Ledger classification: AKBARAL! customer revenue. This is separate from private mission agent earnings and from the five owner-controlled payout destinations." />
           </Section>
 
           <Section title="Tasks, credits & agents">

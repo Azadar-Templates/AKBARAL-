@@ -213,7 +213,7 @@ check('mission owner sign-in succeeds', missionLogin.status === 200 && Boolean(m
 const missionAuth = { authorization: `Bearer ${missionLogin.body?.token}`, 'content-type': 'application/json' };
 
 const slots = await jsonFetch(`${MISSION}/api/payout-slots`, { headers: missionAuth });
-check('four payout slots exist', slots.status === 200 && slots.body?.slots?.length === 4, `HTTP ${slots.status}`);
+check('five payout slots exist', slots.status === 200 && slots.body?.slots?.length === 5, `HTTP ${slots.status}`);
 check('verification payload is returned per slot', Array.isArray(slots.body?.verification) && slots.body.verification.length === 4);
 check('an unconfigured slot is not payable', slots.body?.verification?.every((entry) => entry.payable === false), 'all four slots blocked');
 check('the required control checks are published', Array.isArray(slots.body?.checks) && slots.body.checks.length >= 5, `${slots.body?.checks?.length} checks`);

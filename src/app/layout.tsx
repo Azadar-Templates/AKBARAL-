@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import Script from 'next/script';
 import { existsSync } from 'node:fs';
+import { LegacyAppLoader } from './_components/legacy-app-loader';
 import path from 'node:path';
 
 export const metadata: Metadata = {
@@ -45,32 +45,29 @@ const adsenseClient = (process.env.AKBARAL_ADSENSE_CLIENT ?? '').trim();
  *   <html data-theme> before hydration). The server renders the dark
  *   identity by default and public/app.js applies the stored theme from
  *   inside boot(), which runs strictly after hydration.
- * - The SPA bundle loads via next/script `afterInteractive` — Next.js
- *   injects it after hydration, so the raw <script> tag that React had to
- *   hydrate (a hydration-error source) is gone. The bundle additionally
- *   self-gates on the window load event as defense in depth.
+ * - LegacyAppLoader loads the SPA bundle after hydration on application
+ *   routes and defers it entirely on the typed marketing experience. A hash
+ *   change away from marketing loads it immediately, so public calls to
+ *   action still enter the application without carrying unrelated legacy
+ *   JavaScript on the landing critical path.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-theme="dark">
       <head>
         <meta name="color-scheme" content="dark" />
-        <meta name="theme-color" content="#08080a" />
+        <meta name="theme-color" content="#020617" />
         {heroVideoEnabled ? <meta name="akbaral-hero-video" content="1" /> : null}
         {adsenseClient ? <meta name="akbaral-adsense-client" content={adsenseClient} /> : null}
-        {/* Premium editorial type: Sora (display) + Inter (text) + Space Grotesk Mono (technical),
-            swapped with system fallbacks — never a render blocker. */}
+        {/* Inter carries the product/editorial voice; JetBrains Mono carries
+            technical labels. Loading remains off the critical path. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* Typography stays OFF the critical path: `media="print"` never blocks
-            first paint (the system stack renders immediately) and public/app.js
-            flips it to `all` inside boot() — the same after-hydration mechanism
-            as the rest of the client, never a pre-hydration inline mutation. */}
         <link
           id="ak-fonts"
           rel="stylesheet"
           media="print"
-          href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Grotesk+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         />
         {/* Compressed, long-cached text assets (≈3× smaller on the wire) — see
             src/app/assets/[file]/route.ts for why compression lives there and
@@ -80,7 +77,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
-        <Script src="/assets/app.js?v=akbaral-lux-18" strategy="afterInteractive" />
+        <LegacyAppLoader />
       </body>
     </html>
   );

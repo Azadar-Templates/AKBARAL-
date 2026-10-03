@@ -688,7 +688,7 @@ export const EXTERNAL_ACTIVATION: Array<{ provider: string; action: string; why:
   { provider: 'google', action: 'Set GOOGLE_API_KEY in the deployment secret store', why: 'Real Gemini calls are refused (honest provider_not_configured error) until a key exists.' },
   { provider: 'search', action: 'Set a search provider key (TAVILY_API_KEY / BRAVE_SEARCH_API_KEY / SERPER_API_KEY) or AKBARAL_SEARCH_ENDPOINT', why: 'Without it the platform falls back to the keyless provider, which may be unavailable.' },
   { provider: 'payments', action: 'Connect the payment provider and set its webhook secret', why: 'Revenue can only be recorded as received against a verified provider/webhook reference.' },
-  { provider: 'payouts', action: 'Configure and verify at least one of the four payout slots', why: 'Payouts are refused until a destination slot is verified by the owner.' },
+  { provider: 'payouts', action: 'Configure and verify at least one of the five payout slots', why: 'Payouts are refused until a destination slot is verified by the owner.' },
   { provider: 'social', action: 'Activate platform accounts (YouTube/Instagram/TikTok OAuth) for publishing', why: 'Publishing is restricted until a platform account exists; engagement is only ever read from those APIs.' },
 ];
 

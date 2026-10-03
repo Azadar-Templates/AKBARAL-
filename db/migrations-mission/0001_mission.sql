@@ -106,13 +106,13 @@ CREATE TABLE IF NOT EXISTS mission_owner (
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
--- ── Payout destinations: exactly four configurable slots ───────────────────
+-- ── Payout destinations: exactly five configurable slots ───────────────────
 -- Slot metadata only. Account numbers are never required at setup time and are
 -- stored masked: the full destination is held by the payment provider, and the
 -- mission system keeps a reference plus a masked hint. A slot must be verified
 -- by the owner before any payout may target it.
 CREATE TABLE IF NOT EXISTS mission_payout_slots (
-  slot                 INTEGER PRIMARY KEY CHECK (slot BETWEEN 1 AND 4),
+  slot                 INTEGER PRIMARY KEY CHECK (slot BETWEEN 1 AND 5),
   label                TEXT NOT NULL,
   destination_type     TEXT,                      -- bank|wallet|crypto|provider|other
   holder_name          TEXT,

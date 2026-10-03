@@ -10,7 +10,7 @@ import { canAgentSpend, currentPolicy, dailySpendCents, requestApproval, type Mi
  *   individual controlled wallets / budgets
  *        → agent + worker revenue
  *        → mission treasury
- *        → approved owner payout (one of four configured slots)
+ *        → approved owner payout (one of five configured slots)
  *
  * Two invariants are enforced structurally:
  *   1. MONEY IS ONLY MOVED BY LEDGER ROWS. Every balance change writes an
@@ -741,12 +741,12 @@ export function listExpenses(limit = 100): Row[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Four configurable payout destination slots
+// Five configurable payout destination slots
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const PAYOUT_SLOT_COUNT = 4;
+export const PAYOUT_SLOT_COUNT = 5;
 
-/** The four slots always exist, so the dashboard can render them immediately. */
+/** The five slots always exist, so the dashboard can render them immediately. */
 export function ensurePayoutSlots(): Array<Row> {
   return missionDb.transaction(() => {
     for (let slot = 1; slot <= PAYOUT_SLOT_COUNT; slot += 1) {
@@ -849,7 +849,9 @@ export function configurePayoutSlot(input: {
         throw new MissionTreasuryError(400, `${field}: ${verdict.reason} — ${DESTINATION_SAFETY_RULE}`, 'unsafe_destination');
       }
     }
-    const hasDestination = Boolean(input.providerRef || input.maskedAccount);
+    // Only a provider-issued token/reference makes a destination configurable.
+    // maskedAccount is display-only and can never authorize or route money.
+    const hasDestination = Boolean(input.providerRef ?? before.provider_ref);
     const status = hasDestination ? 'pending_verification' : 'unconfigured';
 
     missionDb.run(
@@ -911,8 +913,8 @@ export function verifyPayoutSlot(slot: number, actorId: string, actorType?: Deci
     assertOwnerDecision(actorType, 'verify a payout destination');
     const existing = missionDb.get<Row>('SELECT * FROM mission_payout_slots WHERE slot = ?', [slot]);
     if (!existing) throw new MissionTreasuryError(404, 'payout slot not found', 'not_found');
-    if (!existing.provider_ref && !existing.masked_account) {
-      throw new MissionTreasuryError(409, 'the slot has no destination yet — configure it before verifying', 'conflict');
+    if (!existing.provider_ref) {
+      throw new MissionTreasuryError(409, 'the slot has no provider-tokenized destination yet — configure it before verifying', 'conflict');
     }
     missionDb.run(
       `UPDATE mission_payout_slots SET status = 'active', verified_at = ?, verified_by = ?, updated_at = ? WHERE slot = ?`,

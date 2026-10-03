@@ -1,0 +1,34 @@
+.button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: .7rem 1.15rem;
+  font: 600 .875rem/1 var(--font-sans);
+  letter-spacing: -.01em;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast), border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.button:hover:not(:disabled) { transform: translateY(-2px); }
+.button:active:not(:disabled) { transform: translateY(0); }
+.button:focus-visible, .iconButton:focus-visible { outline: 3px solid rgba(125, 211, 252, .5); outline-offset: 3px; }
+.button:disabled { opacity: .46; cursor: not-allowed; }
+.primary { color: #fff; background: #0369a1; box-shadow: 0 12px 32px rgba(14, 165, 233, .2); }
+.primary:hover:not(:disabled) { box-shadow: 0 16px 40px rgba(14, 165, 233, .3); }
+.secondary { color: var(--text); background: rgba(248, 250, 252, .06); border-color: rgba(226, 232, 240, .15); }
+.secondary:hover:not(:disabled) { background: rgba(248, 250, 252, .1); border-color: rgba(125, 211, 252, .36); }
+.ghost { color: var(--text-2); background: transparent; }
+.ghost:hover:not(:disabled) { color: var(--text); background: rgba(248, 250, 252, .06); }
+.sm { min-height: 36px; padding: .5rem .85rem; font-size: .8125rem; }
+.lg { min-height: 52px; padding: .9rem 1.4rem; font-size: .9375rem; }
+.iconButton { width: 44px; height: 44px; display: inline-grid; place-items: center; border-radius: 999px; color: var(--text); background: rgba(248, 250, 252, .06); border: 1px solid rgba(226, 232, 240, .14); cursor: pointer; }
+.surface { background: rgba(15, 23, 42, .7); border: 1px solid rgba(226, 232, 240, .1); border-radius: 18px; box-shadow: 0 24px 70px rgba(2, 6, 23, .32); backdrop-filter: blur(18px); }
+.container { width: min(100% - 40px, 1240px); margin-inline: auto; }
+.eyebrow { display: inline-flex; align-items: center; gap: .55rem; margin: 0; color: #7dd3fc; font: 500 .7rem/1.2 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
+.eyebrow::before { content: ''; width: 24px; height: 1px; background: currentColor; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 520px) { .container { width: min(100% - 28px, 1240px); } }
+@media (prefers-reduced-motion: reduce) { .button { transition: none; } .button:hover:not(:disabled) { transform: none; } }

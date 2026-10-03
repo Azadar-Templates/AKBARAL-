@@ -2,7 +2,7 @@
  * Agent Registry catalog.
  *
  * Agent definitions are NOT handwritten duplicates: they are generated from a
- * combinatorial matrix of real domain blueprints (80 professional domains) and
+ * combinatorial matrix of 80 specialist-generation blueprints and
  * genuinely different specialization profiles (50 specialist archetypes).
  * Each combination yields a unique id, specialization, system instructions,
  * capabilities, inputs/outputs, model requirements, tools, workflow, verification,
@@ -195,12 +195,21 @@ const SPECIALIZATIONS: SpecializationProfile[] = [
   { key: 'project-director', name: 'Project Director', responsibility: 'Direct large projects and stakeholders.', inputs: ['initiative', 'stakeholders', 'constraints'], outputs: ['project charter', 'plan', 'communications plan'], workflow: ['scope initiative', 'identify stakeholders', 'build plan', 'manage risks', 'set cadence'], verification: ['scope discipline', 'risk coverage', 'stakeholder alignment'], security: ['confidential materials'], modelCapabilities: ['reasoning', 'writing'] },
 ];
 
-export const AGENT_CATEGORIES = DOMAINS.map((domain) => ({
-  slug: domain.slug,
-  name: domain.name,
-  description: domain.description,
-  icon: 'bot',
-}));
+const EXPANDED_TAXONOMY = [
+  { slug: 'assistant', name: 'Assistant', description: 'General-purpose assistance, organization and reliable task support.', roleDescription: 'Organize, draft and coordinate owner-approved everyday work.', instructionsTemplate: 'Clarify the goal, preserve privacy, propose a concise plan and verify each deliverable.', toolPermissions: ['knowledge_search'], modelRequirements: ['reasoning', 'writing'] },
+  { slug: 'email', name: 'Email', description: 'Consent-based email drafting, triage and transactional communication.', roleDescription: 'Draft and classify consented email without bulk sending or impersonation.', instructionsTemplate: 'Confirm recipient consent and owner approval; draft only accurate, non-deceptive correspondence.', toolPermissions: ['knowledge_search'], modelRequirements: ['writing', 'reasoning'] },
+  { slug: 'home', name: 'Home', description: 'Household planning, maintenance information and home organization.', roleDescription: 'Provide household organization and low-risk maintenance information.', instructionsTemplate: 'State safety limits, never replace a licensed trade, and escalate hazardous work.', toolPermissions: ['knowledge_search', 'web_search'], modelRequirements: ['reasoning', 'research'] },
+  { slug: 'agriculture', name: 'Agriculture', description: 'Agricultural information, planning and evidence-led farm operations.', roleDescription: 'Research crop, soil and farm operations with local-context caveats.', instructionsTemplate: 'Use dated evidence, identify geography and season, and require qualified review for chemical or veterinary decisions.', toolPermissions: ['web_search', 'page_fetch', 'knowledge_search'], modelRequirements: ['research', 'reasoning'] },
+  { slug: 'health-information', name: 'Health Information', description: 'General health information with explicit clinical and emergency boundaries.', roleDescription: 'Summarize reputable general health information without diagnosis or treatment.', instructionsTemplate: 'Cite reputable sources, state that this is not medical advice, and direct emergencies to local emergency services.', toolPermissions: ['web_search', 'page_fetch', 'knowledge_search'], modelRequirements: ['research', 'reasoning'] },
+  { slug: 'jobs', name: 'Jobs', description: 'Truthful job discovery and application support without automated submission.', roleDescription: 'Find permitted opportunities and prepare truthful owner-reviewed applications.', instructionsTemplate: 'Never invent credentials, auto-submit, evade platform rules or share accounts; preserve a human approval gate.', toolPermissions: ['web_search', 'page_fetch', 'knowledge_search'], modelRequirements: ['research', 'writing'] },
+  { slug: 'custom-builder', name: 'Custom Builder', description: 'Owner-directed custom agent and workflow design.', roleDescription: 'Design scoped custom agents from approved tools, policies and evaluation criteria.', instructionsTemplate: 'Default deny tools, minimize permissions, specify tests and require owner approval before activation.', toolPermissions: ['knowledge_search', 'code_repository_read'], modelRequirements: ['reasoning', 'coding'] },
+  { slug: 'traders', name: 'Traders', description: 'Market information and risk education, never autonomous financial advice or trading.', roleDescription: 'Explain cross-platform market data and risk without executing or recommending trades.', instructionsTemplate: 'Use delayed-data caveats, separate facts from scenarios, refuse autonomous orders and require licensed advice where applicable.', toolPermissions: ['web_search', 'page_fetch', 'knowledge_search'], modelRequirements: ['research', 'reasoning'] },
+] as const;
+
+export const AGENT_CATEGORIES = [
+  ...DOMAINS.map((domain) => ({ slug: domain.slug, name: domain.name, description: domain.description, icon: 'bot' })),
+  ...EXPANDED_TAXONOMY.map((category) => ({ ...category, icon: 'bot' })),
+];
 
 function buildDefinition(domain: DomainBlueprint, spec: SpecializationProfile, index: number): AgentDefinition {
   const key = `${domain.slug}-${spec.key}`;
@@ -302,7 +311,7 @@ export function agentDefinitionCount(): number {
 }
 
 export function listDomainCount(): number {
-  return DOMAINS.length;
+  return AGENT_CATEGORIES.length;
 }
 
 /** All specialization archetype keys (e.g. 'strategist', 'researcher'). */

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 
 const extraBase = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined;
@@ -15,16 +15,18 @@ export class ApiClient {
   private refreshToken: string | null = null;
 
   async init(): Promise<void> {
-    this.accessToken = await AsyncStorage.getItem('ak_access');
-    this.refreshToken = await AsyncStorage.getItem('ak_refresh');
+    this.accessToken = await SecureStore.getItemAsync('ak_access');
+    this.refreshToken = await SecureStore.getItemAsync('ak_refresh');
   }
 
   async login(email: string, password: string): Promise<LoginResponse> {
     const body = await this.request('/api/auth/login', { method: 'POST', body: { email, password } });
     this.accessToken = body.accessToken;
     this.refreshToken = body.refreshToken;
-    await AsyncStorage.setItem('ak_access', body.accessToken);
-    await AsyncStorage.setItem('ak_refresh', body.refreshToken);
+    await Promise.all([
+      SecureStore.setItemAsync('ak_access', body.accessToken),
+      SecureStore.setItemAsync('ak_refresh', body.refreshToken),
+    ]);
     return body;
   }
 
@@ -38,7 +40,10 @@ export class ApiClient {
     }
     this.accessToken = null;
     this.refreshToken = null;
-    await AsyncStorage.multiRemove(['ak_access', 'ak_refresh']);
+    await Promise.all([
+      SecureStore.deleteItemAsync('ak_access'),
+      SecureStore.deleteItemAsync('ak_refresh'),
+    ]);
   }
 
   async refresh(): Promise<boolean> {
@@ -52,7 +57,10 @@ export class ApiClient {
     const body = await response.json();
     this.accessToken = body.accessToken;
     this.refreshToken = body.refreshToken;
-    await AsyncStorage.multiSet([['ak_access', body.accessToken], ['ak_refresh', body.refreshToken]]);
+    await Promise.all([
+      SecureStore.setItemAsync('ak_access', body.accessToken),
+      SecureStore.setItemAsync('ak_refresh', body.refreshToken),
+    ]);
     return true;
   }
 

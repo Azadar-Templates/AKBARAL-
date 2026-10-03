@@ -1,0 +1,344 @@
+# Consolidation Audit — 2026-10-03
+
+## Measured repository state
+
+- Branch: `arena/01a0ff96-akbaral`.
+- Local base before the consolidation commit: `d90c315`; the same branch on GitHub contains Phase 2A commits `75df728` and `754ae1b`. Their source is present in this working tree together with Phase 2B/2C changes; no unrelated feature branch exists locally or remotely.
+- Repository files (excluding dependencies, build outputs, logs and Git internals): **783**.
+- TypeScript/TSX files: **480**.
+- Test files: **160**.
+- Code/schema/style lines (TS/TSX/JS/MJS/CSS/HTML/Swift/SQL, excluding dependencies/build/logs): **141,720**.
+
+## Existing systems
+
+- **Landing page / cinematic six scenes:** src/app/_components/landing, src/app/page.tsx; six-scene browser snapshots in tests/visual/baselines.
+- **Typed Chat interface:** src/app/_components/workbench/workbench-shell.tsx and src/routes/chat.ts; authenticated per-user persistence and SSE.
+- **Typed Work interface:** same typed shell plus src/routes/master.ts; six persisted SSE stages, cancellation, history, retry, artifact preview/download.
+- **MASTER orchestrator:** src/master and src/routes/master.ts.
+- **Agent registry (4,001):** src/agents/catalog.ts and registry repositories/tests; 88-category taxonomy.
+- **Agent factory and router:** src/agents/factory.ts, src/routes/factory.ts, src/master/router.ts.
+- **Provider adapters:** src/providers: Gemini, OpenAI, Anthropic, OmniRoute and fixture adapters.
+- **Research verification:** src/research and task verification paths.
+- **Credits and billing:** src/billing, src/routes/billing.ts, platform repositories and webhook/idempotency tests.
+- **Authentication / OAuth / RBAC:** src/auth, src/routes/auth.ts, oauth.ts, security role tests.
+- **Task lifecycle and realtime:** src/tasks, workflows, queue, SSE/realtime routes.
+- **User and owner dashboards:** src/app/dashboard and src/app/owner; owner registry, health, billing, AKBARAL! Payments summary.
+- **Mobile Expo app:** mobile; typed API client, platform SecureStore token persistence, Android/iOS export configuration.
+- **Private mission stack:** src/mission plus mission-dashboard; separate auth, database, treasury, ledger, wallets, connectors, scheduler, safety and audit chain.
+- **Design system:** design-system/tokens.json is canonical; design-system/build.mjs generates public/mobile/iOS consumers.
+
+## Conflict and duplicate review
+
+- `public/app.js` remains intentionally referenced by `LegacyAppLoader`, the compressed asset route, legacy clean-path pages, smoke/audit tools and regression tests. It is not loaded on the typed public landing and is not an orphan.
+- `/workspace` and `/chat` are typed Chat entry aliases; `/master` and `/work` are typed Work entry aliases. The aliases are intentional compatibility routes, not duplicate implementations.
+- The private `mission-dashboard/app.js` is a separate loopback/private application and does not replace or share customer auth, customer data, customer money, or public UI.
+- Source scan found no actionable `TODO`, `FIXME`, `XXX`, or `HACK` markers. Matches were the word HackerOne or historical documentation statements.
+- No source file was deleted merely because a static import search could not prove runtime use. Dynamic routes, worker entry points, scripts, Expo files, generated consumers and legacy compatibility assets all have explicit runtime/test/documentation references. No confirmed orphan was found.
+- Overlapping tests exist by layer (source contract, integration, browser visual/accessibility, mobile parity). They verify different boundaries and are retained.
+
+## Canonical sources
+
+- Design tokens: `design-system/tokens.json` → `design-system/build.mjs` generated consumers.
+- Agent registry: `src/agents/catalog.ts` and registry synchronization/repository layer.
+- Pricing: database plan rows seeded/migrated by `db/migrations`; API/UI consume repository values. Only the $50 name changes from Professional to Pro.
+- Authentication: `src/auth` and mounted `/api/auth` + `/api/auth/oauth` routers.
+- Mission configuration: private `src/mission/config.ts` / mission database and owner-controlled mission APIs.
+
+## Public API mounts
+
+- `GET /`
+- `GET /api/health`
+- `GET /api/ready`
+- `GET /api/metrics (admin)`
+- `/api/auth`
+- `/api/auth/oauth`
+- `/api/me`
+- `/api/agents`
+- `/api/tasks`
+- `/api/workflows`
+- `/api/automations`
+- `/api/master`
+- `/api/chat`
+- `/api/projects`
+- `/api/files and artifact endpoints`
+- `/api/billing`
+- `/api/dashboard`
+- `/api/boss`
+- `/api/admin`
+- `/api/tools`
+- `/api/models`
+- `/api/factory`
+- `/api/owner`
+- `/api/economy`
+- `/api/workforce`
+- `/api/marketplace`
+- `/api/world`
+- `/api/public`
+- `/api/contact`
+- `/api/realtime and upload routes`
+- `/api/notifications`
+- `/api/crm`
+- `/api/trust and feedback routes`
+
+## Database migrations (91)
+
+- `db/migrations-mission/0001_mission.sql`
+- `db/migrations-mission/0002_social.sql`
+- `db/migrations-mission/0003_payout_verification.sql`
+- `db/migrations-mission/0004_ledger_sequence.sql`
+- `db/migrations-mission/0005_ledger_idempotency.sql`
+- `db/migrations-mission/0006_identity_lock.sql`
+- `db/migrations-mission/0007_reinvestment_daily_target.sql`
+- `db/migrations-mission/0008_billionaire_daily_per_agent.sql`
+- `db/migrations-mission/0008_payout_binding.sql`
+- `db/migrations-mission/0009_opportunity_catalog.sql`
+- `db/migrations-mission/0009_resource_provisioning.sql`
+- `db/migrations-mission/0010_agent_messages.sql`
+- `db/migrations-mission/0010_opportunity_catalog_postgres_scale.sql`
+- `db/migrations-mission/0011_resource_calls.sql`
+- `db/migrations-mission/0012_resource_call_deadlines.sql`
+- `db/migrations-mission/0013_resource_call_budgets.sql`
+- `db/migrations-mission/0014_agent_chat_jobs.sql`
+- `db/migrations-mission/0015_resource_periods.sql`
+- `db/migrations-mission/0016_verified_money.sql`
+- `db/migrations-mission/0017_money_allocation_policy.sql`
+- `db/migrations-mission/0018_awin_workflow.sql`
+- `db/migrations-mission/0019_freelancer_work.sql`
+- `db/migrations-mission/0020_freelancer_settlement.sql`
+- `db/migrations-mission/0021_upwork_workflow.sql`
+- `db/migrations-mission/0022_fiverr_workflow.sql`
+- `db/migrations-mission/0023_contra_workflow.sql`
+- `db/migrations-mission/0024_toptal_workflow.sql`
+- `db/migrations-mission/0025_customer_work.sql`
+- `db/migrations-mission/0026_autonomous_verification.sql`
+- `db/migrations-mission/0027_opportunity_discovery.sql`
+- `db/migrations-mission/0028_earning_engine.sql`
+- `db/migrations-mission/0029_platform_connectors.sql`
+- `db/migrations-mission/0030_global_network.sql`
+- `db/migrations-mission/0031_provider_readiness.sql`
+- `db/migrations-mission/0032_owner_safety_gate.sql`
+- `db/migrations-mission/0033_human_action_tasks.sql`
+- `db/migrations-mission/0034_github_bounty_workflow.sql`
+- `db/migrations-mission/0035_github_bounty_risk_screen.sql`
+- `db/migrations-mission/0036_github_bounty_scheduler_gate.sql`
+- `db/migrations-mission/0037_github_bounty_pr_monitoring.sql`
+- `db/migrations-mission/0038_github_bounty_execution.sql`
+- `db/migrations-mission/0039_five_payout_slots.sql`
+- `db/migrations-mission/README.md`
+- `db/migrations-pg/0001_init.sql`
+- `db/migrations-pg/0002_platform.sql`
+- `db/migrations-pg/0003_business.sql`
+- `db/migrations-pg/0004_knowledge_fts_cleanup.sql`
+- `db/migrations-pg/0005_trust_feedback.sql`
+- `db/migrations-pg/0006_execution_queue.sql`
+- `db/migrations-pg/0007_agent_reviews.sql`
+- `db/migrations-pg/0008_billing_hardening.sql`
+- `db/migrations-pg/0009_mobile_push.sql`
+- `db/migrations-pg/0010_automation.sql`
+- `db/migrations-pg/0011_oauth_identities.sql`
+- `db/migrations-pg/0012_currency_usd.sql`
+- `db/migrations-pg/0013_pricing_tiers.sql`
+- `db/migrations-pg/0014_agent_economy.sql`
+- `db/migrations-pg/0015_mission_chat.sql`
+- `db/migrations-pg/0016_artifacts_transfers.sql`
+- `db/migrations-pg/0017_hierarchy_controls.sql`
+- `db/migrations-pg/0018_workforce.sql`
+- `db/migrations-pg/0019_production_blockers.sql`
+- `db/migrations-pg/0020_workforce_earning.sql`
+- `db/migrations-pg/0021_primary_assignments.sql`
+- `db/migrations-pg/0022_command_quotas_inventory.sql`
+- `db/migrations-pg/0023_chat_history.sql`
+- `db/migrations-pg/0024_pro_plan_name.sql`
+- `db/migrations/0001_init.sql`
+- `db/migrations/0002_platform.sql`
+- `db/migrations/0003_business.sql`
+- `db/migrations/0004_knowledge_fts_cleanup.sql`
+- `db/migrations/0005_trust_feedback.sql`
+- `db/migrations/0006_execution_queue.sql`
+- `db/migrations/0007_agent_reviews.sql`
+- `db/migrations/0008_billing_hardening.sql`
+- `db/migrations/0009_mobile_push.sql`
+- `db/migrations/0010_automation.sql`
+- `db/migrations/0011_oauth_identities.sql`
+- `db/migrations/0012_currency_usd.sql`
+- `db/migrations/0013_pricing_tiers.sql`
+- `db/migrations/0014_agent_economy.sql`
+- `db/migrations/0015_mission_chat.sql`
+- `db/migrations/0016_artifacts_transfers.sql`
+- `db/migrations/0017_hierarchy_controls.sql`
+- `db/migrations/0018_workforce.sql`
+- `db/migrations/0019_production_blockers.sql`
+- `db/migrations/0020_workforce_earning.sql`
+- `db/migrations/0021_primary_assignments.sql`
+- `db/migrations/0022_command_quotas_inventory.sql`
+- `db/migrations/0023_chat_history.sql`
+- `db/migrations/0024_pro_plan_name.sql`
+
+## Test files (160)
+
+- `src/agents/access.test.ts`
+- `src/agents/registry.test.ts`
+- `src/agents/search-providers.test.ts`
+- `src/agents/web-research.test.ts`
+- `src/app/asset-delivery.test.ts`
+- `src/app/auth-provider-ux.test.ts`
+- `src/app/build-runtime-assets.test.ts`
+- `src/app/deep-link-refresh.test.ts`
+- `src/app/economy-ui.test.ts`
+- `src/app/final-ui-ux.test.ts`
+- `src/app/master-routing.test.ts`
+- `src/app/owner-credit-pill.test.ts`
+- `src/app/phase2a-landing.test.ts`
+- `src/app/phase2b-shell.test.ts`
+- `src/app/preview-stack.test.ts`
+- `src/app/preview-supervisor.test.ts`
+- `src/app/prod-roles.test.ts`
+- `src/app/responsive-contract.test.ts`
+- `src/app/result-state-contract.test.ts`
+- `src/app/stackhost-deploy.test.ts`
+- `src/app/user-journey.test.ts`
+- `src/app/website-builder.test.ts`
+- `src/app/workspace-ux-contract.test.ts`
+- `src/auth/oauth.test.ts`
+- `src/auth/owner-identity.test.ts`
+- `src/auth/service.test.ts`
+- `src/automation/automation.test.ts`
+- `src/automation/cron.test.ts`
+- `src/billing/billing.test.ts`
+- `src/billing/capability-detection.test.ts`
+- `src/billing/stripe-webhook.http.test.ts`
+- `src/billing/stripe-webhook.test.ts`
+- `src/business/owner-analytics.test.ts`
+- `src/config/data-dir.test.ts`
+- `src/config/env.test.ts`
+- `src/db/business.test.ts`
+- `src/db/database-display.test.ts`
+- `src/db/database.test.ts`
+- `src/db/migration-parity.test.ts`
+- `src/db/pg-bridge-wakeup.test.ts`
+- `src/db/pg-connection.test.ts`
+- `src/db/postgres.integration.test.ts`
+- `src/db/trust.test.ts`
+- `src/db/workforce-parity.test.ts`
+- `src/economy/delegation-scale.test.ts`
+- `src/economy/discovery.test.ts`
+- `src/economy/economy.test.ts`
+- `src/economy/financial-atomicity.test.ts`
+- `src/economy/hierarchy.test.ts`
+- `src/economy/mission-chat.test.ts`
+- `src/economy/payment-concurrency.test.ts`
+- `src/economy/za-autonomy-routes.test.ts`
+- `src/economy/za-autonomy.test.ts`
+- `src/integrations/smtp.test.ts`
+- `src/launch/checks.test.ts`
+- `src/mission/adversarial-safety.test.ts`
+- `src/mission/chat-billing-gate.test.ts`
+- `src/mission/chat-worker.test.ts`
+- `src/mission/database-isolation.test.ts`
+- `src/mission/earning/agent-opportunity-routing.test.ts`
+- `src/mission/earning/awin-workflow.test.ts`
+- `src/mission/earning/awin.test.ts`
+- `src/mission/earning/connector-contracts.test.ts`
+- `src/mission/earning/contra-workflow.test.ts`
+- `src/mission/earning/country-eligibility.test.ts`
+- `src/mission/earning/customer-work.test.ts`
+- `src/mission/earning/earning-engine.test.ts`
+- `src/mission/earning/execution-pipeline.test.ts`
+- `src/mission/earning/fiverr-workflow.test.ts`
+- `src/mission/earning/freelancer-settlement.test.ts`
+- `src/mission/earning/freelancer-workflow.test.ts`
+- `src/mission/earning/freelancer.test.ts`
+- `src/mission/earning/github-bounty-client.test.ts`
+- `src/mission/earning/github-bounty-execution.test.ts`
+- `src/mission/earning/github-bounty-sandbox.test.ts`
+- `src/mission/earning/github-bounty-scheduler.test.ts`
+- `src/mission/earning/github-bounty-workflow.test.ts`
+- `src/mission/earning/ledger-isolation.test.ts`
+- `src/mission/earning/opportunity-discovery.test.ts`
+- `src/mission/earning/opportunity-eligibility.test.ts`
+- `src/mission/earning/opportunity-registry.test.ts`
+- `src/mission/earning/provider-readiness.test.ts`
+- `src/mission/earning/providers/stripe-direct-earning.test.ts`
+- `src/mission/earning/settlement-verification.test.ts`
+- `src/mission/earning/toptal-workflow.test.ts`
+- `src/mission/earning/upwork-workflow.test.ts`
+- `src/mission/ledger-reconciliation.test.ts`
+- `src/mission/mission-core.test.ts`
+- `src/mission/mission-dashboard-render.test.ts`
+- `src/mission/mission-financial-atomicity.test.ts`
+- `src/mission/mission-identity-lock.test.ts`
+- `src/mission/mission-payout-verification.test.ts`
+- `src/mission/mission-probe-policy.test.ts`
+- `src/mission/mission-reinvestment.test.ts`
+- `src/mission/mission-server.test.ts`
+- `src/mission/mission-social.test.ts`
+- `src/mission/mission-treasury.test.ts`
+- `src/mission/money-concurrency.test.ts`
+- `src/mission/money-stripe.test.ts`
+- `src/mission/money.test.ts`
+- `src/mission/opportunity-catalog.test.ts`
+- `src/mission/production-provisioning.test.ts`
+- `src/mission/registry-sync.test.ts`
+- `src/mission/resource-budgets.test.ts`
+- `src/mission/resource-calls.test.ts`
+- `src/mission/resource-periods.test.ts`
+- `src/mission/wallet-economy.test.ts`
+- `src/models/catalog-contract.test.ts`
+- `src/models/models-api.test.ts`
+- `src/models/provider-hardening.test.ts`
+- `src/models/provider-retry.test.ts`
+- `src/models/router.test.ts`
+- `src/orchestrator/executor.test.ts`
+- `src/orchestrator/factory-templates.test.ts`
+- `src/orchestrator/factory.test.ts`
+- `src/orchestrator/goal-analyzer.test.ts`
+- `src/orchestrator/master-flow.test.ts`
+- `src/orchestrator/owner-entitlement.test.ts`
+- `src/orchestrator/queue.test.ts`
+- `src/orchestrator/recovery.test.ts`
+- `src/orchestrator/research-freshness.test.ts`
+- `src/orchestrator/synthesizer.test.ts`
+- `src/orchestrator/tool-stage.test.ts`
+- `src/orchestrator/verifier.test.ts`
+- `src/push/push.test.ts`
+- `src/realtime/execution-stream.test.ts`
+- `src/routes/auth.international-registration.test.ts`
+- `src/routes/boss-dashboard.test.ts`
+- `src/routes/chat-work-shell.test.ts`
+- `src/routes/contact.test.ts`
+- `src/routes/marketplace-world.test.ts`
+- `src/routes/owner-entitlement-display.test.ts`
+- `src/routes/public.test.ts`
+- `src/routes/user-dashboard.test.ts`
+- `src/routes/workspace.test.ts`
+- `src/scripts/backup.test.ts`
+- `src/security/attack-surface.test.ts`
+- `src/security/mission-cash-boundary.test.ts`
+- `src/security/password.test.ts`
+- `src/security/role-separation.test.ts`
+- `src/security/scan-secrets.test.ts`
+- `src/security/three-plane-isolation.test.ts`
+- `src/server/app.test.ts`
+- `src/server/health.test.ts`
+- `src/server/middleware/rate-limit.test.ts`
+- `src/server/production-error-boundary.test.ts`
+- `src/testing/checkpoint-runner.test.ts`
+- `src/tools/tools.test.ts`
+- `src/workforce/activation-stage.test.ts`
+- `src/workforce/alerts.test.ts`
+- `src/workforce/catalog-validation.test.ts`
+- `src/workforce/earning.test.ts`
+- `src/workforce/execution-cost.test.ts`
+- `src/workforce/execution-integrity.test.ts`
+- `src/workforce/images.test.ts`
+- `src/workforce/inventory-import.test.ts`
+- `src/workforce/primary.test.ts`
+- `src/workforce/readiness-status.test.ts`
+- `src/workforce/staging.test.ts`
+- `src/workforce/workforce.test.ts`
+
+## Consolidation conclusion
+
+- No unrelated branch contains work requiring a merge. The GitHub copy of this same Arena branch carries the previously published Phase 2A commits; the final consolidation commit will supersede the local base without dropping those files.
+- Legacy and typed shells currently coexist by explicit routing while migration remains compatibility-safe. The typed Chat/Work shell is the source for `/chat`, `/work`, `/workspace`, and `/master`; legacy routes remain for other application screens.
+- Deployment, provider availability, agent productivity, external settlements and revenue are not inferred from source code. They require independent live evidence.

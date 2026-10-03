@@ -332,7 +332,7 @@ describe('Milestone 8: trial/credits/billing', () => {
     const expected: Array<[string, string, number]> = [
       ['free', 'Free Trial', 0],
       ['starter', 'Starter', 1000],        // $10
-      ['pro', 'Professional', 5000],       // $50
+      ['pro', 'Pro', 5000],                // $50
       ['business', 'Business', 9000],      // $90
       ['scale', 'Scale', 20000],           // $200
       ['enterprise', 'Enterprise', 40000], // $400

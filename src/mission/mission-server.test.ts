@@ -294,12 +294,12 @@ test('targets are labelled as targets and progress counts only verified revenue'
 test('the payout surface requires owner authority and verified destinations', async () => {
   const slots = await owner('/api/payout-slots');
   assert.equal(slots.status, 200);
-  assert.equal(slots.body.slots.length, 4);
-  assert.equal(slots.body.count, 4);
+  assert.equal(slots.body.slots.length, 5);
+  assert.equal(slots.body.count, 5);
 
   const configure = await owner('/api/payout-slots/1', {
     method: 'POST',
-    body: JSON.stringify({ label: 'Primary destination', destinationType: 'bank', maskedAccount: 'ending-4821', currency: 'USD', minPayoutCents: 1_000 }),
+    body: JSON.stringify({ label: 'Primary destination', destinationType: 'bank', maskedAccount: 'ending-4821', providerRef: 'dest_test_server_primary_4821', currency: 'USD', minPayoutCents: 1_000 }),
   });
   assert.equal(configure.status, 200);
   assert.equal(configure.body.slot.status, 'pending_verification');
@@ -325,7 +325,8 @@ test('the private dashboard is served by the mission server only', async () => {
   assert.match(asset.headers.get('content-security-policy') ?? '', /default-src 'self'/);
   assert.equal(asset.headers.get('x-frame-options'), 'DENY');
   assert.match(html, /ZA141251SA/);
-  assert.ok(!html.includes('AKBARAL!'), 'the mission dashboard never renders AKBARAL! branding');
+  assert.equal((html.match(/AKBARAL! Payments/g) ?? []).length, 1, 'the one customer-ledger section is explicitly labelled');
+  assert.ok(!html.replace('AKBARAL! Payments', '').includes('AKBARAL!'), 'the private mission identity remains separate from public product branding');
 });
 
 test('reporting helpers agree with the HTTP payloads', () => {

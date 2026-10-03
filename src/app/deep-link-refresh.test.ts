@@ -75,17 +75,24 @@ test('every clean deep link the SPA opens has a real server route', () => {
     const page = join(appDir, path.slice(1), 'page.tsx');
     assert.ok(existsSync(page), `${page} must exist`);
     const source = readFileSync(page, 'utf8');
-    assert.match(source, /return <Home \/>;/, `${path} must render the application shell`);
+    if (path === '/workspace' || path === '/master') {
+      assert.match(source, /<WorkbenchShell(?:\s+initialMode="(?:chat|work)")?\s*\/>/, `${path} must render the typed Chat/Work shell`);
+    } else {
+      assert.match(source, /return <Home \/>;/, `${path} must render the legacy application shell`);
+    }
     assert.match(source, /robots: \{ index: false/, `${path} is an application surface and must not be indexed`);
   }
 });
 
 test('the SPA map and the route set cannot drift apart', () => {
   // Every non-marketing app route on disk must be one the SPA can open.
-  const appSurfaces = ['/workspace', '/master', '/signin', '/signup', '/projects', '/billing', '/admin'];
-  for (const surface of appSurfaces) {
+  const legacyAppSurfaces = ['/workspace', '/master', '/signin', '/signup', '/projects', '/billing', '/admin'];
+  for (const surface of legacyAppSurfaces) {
     assert.ok(routes.has(surface), `${surface} route file missing`);
     assert.ok(pathViews[surface], `${surface} exists but the SPA does not map it to a screen`);
+  }
+  for (const surface of ['/chat', '/work']) {
+    assert.ok(routes.has(surface), `${surface} typed shell route file missing`);
   }
 });
 

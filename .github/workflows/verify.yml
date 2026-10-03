@@ -12,7 +12,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.ref }}
+  # Push and pull_request events for the same head must share one group; running
+  # two database-heavy suites concurrently on the same commit caused false
+  # per-file timeouts on otherwise passing tests.
+  group: verify-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

@@ -183,7 +183,7 @@ async function main(): Promise<void> {
     const authorized = await fetch(`${base}/api/payout-slots`, { headers: { authorization: `Bearer ${session.token}` } });
     assert.equal(authorized.status, 200);
     const slots = (await authorized.json()) as { slots: unknown[]; verification: Array<{ slot: number; payable: boolean }> };
-    assert.equal(slots.slots.length, 4, 'four payout slots exist');
+    assert.equal(slots.slots.length, 5, 'five payout slots exist');
     assert.equal(slots.verification.find((entry) => entry.slot === 1)?.payable, true, 'slot 1 is payable after verification');
     record('http surface', 'health, owner-only enforcement and the payout verification payload all behave identically over PostgreSQL');
   } finally {

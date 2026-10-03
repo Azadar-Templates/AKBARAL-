@@ -1,3 +1,5 @@
+import { normalizeReadiness, type ReadinessStatus } from './readiness-status';
+
 /**
  * WORKFORCE INTEGRATIONS — honest, central status for every earning-relevant
  * provider. Each entry reports:
@@ -21,7 +23,7 @@ export interface IntegrationStatus {
   missingEnv: string[];
   unlocks: string;
   ownerAction: string;
-  status: 'ready' | 'needs_owner_action';
+  status: ReadinessStatus;
 }
 
 function envPresent(name: string): boolean {
@@ -120,7 +122,13 @@ export function integrationStatus(): IntegrationStatus[] {
     const presentEnv = def.requiredEnv.filter(envPresent);
     const missingEnv = def.requiredEnv.filter((name) => !envPresent(name));
     const configured = missingEnv.length === 0;
-    return { ...def, configured, presentEnv, missingEnv, status: configured ? 'ready' : 'needs_owner_action' };
+    return {
+      ...def,
+      configured,
+      presentEnv,
+      missingEnv,
+      status: normalizeReadiness(configured ? 'READY' : 'NEEDS_OWNER_ACTION'),
+    };
   });
 }
 

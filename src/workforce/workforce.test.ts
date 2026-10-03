@@ -96,7 +96,7 @@ describe('workforce production layer', () => {
     assert.equal(after.costByCategory['api_cost'], (before.costByCategory['api_cost'] ?? 0) + 120);
   });
 
-  it('reports integration status honestly (missing credentials labelled needs_owner_action)', () => {
+  it('reports integration status honestly (missing credentials labelled CONDITIONAL)', () => {
     const saved = { ...process.env };
     delete process.env.GOOGLE_API_KEY;
     delete process.env.STRIPE_SECRET_KEY;
@@ -104,11 +104,17 @@ describe('workforce production layer', () => {
     const statuses = integrationStatus();
     const gemini = statuses.find((s) => s.key === 'gemini')!;
     assert.equal(gemini.configured, false);
-    assert.equal(gemini.status, 'needs_owner_action');
+    assert.equal(gemini.status, 'CONDITIONAL');
     assert.ok(gemini.ownerAction.includes('GOOGLE_API_KEY'));
     const readiness = workforceReadiness();
     assert.equal(readiness.model, false);
     assert.ok(readiness.summary.length > 10);
+
+    process.env.GOOGLE_API_KEY = 'synthetic-test-google-key';
+    const configuredGemini = integrationStatus().find((status) => status.key === 'gemini')!;
+    assert.equal(configuredGemini.configured, true);
+    assert.equal(configuredGemini.status, 'WORK-READY');
+    assert.equal(workforceReadiness().model, true);
     process.env = saved;
   });
 

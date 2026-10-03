@@ -55,6 +55,22 @@ const tokensCss = `/* ==========================================================
 ${colorBlock(DARK, ':root')}
 
 :root {
+  /* Public primitive aliases — stable contract for React/CSS consumers. */
+  --color-primary-500: ${tokens.palette.primary['500']};
+  --color-primary-600: ${tokens.palette.primary['600']};
+  --color-neutral-900: ${tokens.palette.neutral['900']};
+  --color-neutral-800: ${tokens.palette.neutral['800']};
+  --color-neutral-700: ${tokens.palette.neutral['700']};
+  --color-neutral-400: ${tokens.palette.neutral['400']};
+  --color-neutral-300: ${tokens.palette.neutral['300']};
+  --color-neutral-100: ${tokens.palette.neutral['100']};
+  --color-neutral-0: ${tokens.palette.neutral['0']};
+  --color-success: ${tokens.palette.semantic.success};
+  --color-warning: ${tokens.palette.semantic.warning};
+  --color-error: ${tokens.palette.semantic.error};
+  --shadow-glow: 0 0 40px -10px rgb(14 165 233 / 0.4);
+  --gradient-hero: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e3a5f 100%);
+
   /* Typography (families resolved per-platform; scale semantics in tokens.json) */
   --font-sans: ${tokens.typography.families.web.sans};
   --font-display: ${tokens.typography.families.web.display};

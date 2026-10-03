@@ -68,7 +68,7 @@ export function eligibilityDecision(registryKey: string, platformId?: string): E
   if (cls.status==='candidate') blockers.push(`Class ${cls.key} candidate: needs official re-check + owner enrollment before auto-assignment`);
   // Payout slot readiness
   const payoutSlots = db.get<Row>("SELECT COUNT(*) as c FROM mission_payout_slots WHERE status='active'")?.c ?? 0;
-  if (!payoutSlots && cls.paymentVerifiable) blockers.push('No active payout slot verified — owner must verify at least one of four slots (180-day attestation)');
+  if (!payoutSlots && cls.paymentVerifiable) blockers.push('No active payout slot verified — owner must verify at least one of five slots (180-day attestation)');
   // But eligibility for discovery should not be blocked solely by payout slot — only settlement will be.
   // For execution gating, we require payout slot only when transitioning to settlement; for assignment we allow without.
   const requiresOwnerAccount = cls.humanControlled.length>0 || blockers.some(b=> b.includes('Owner must create'));
