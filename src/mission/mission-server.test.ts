@@ -327,6 +327,9 @@ test('the private dashboard is served by the mission server only', async () => {
   assert.match(html, /ZA141251SA/);
   assert.equal((html.match(/AKBARAL! Payments/g) ?? []).length, 1, 'the one customer-ledger section is explicitly labelled');
   assert.ok(!html.replace('AKBARAL! Payments', '').includes('AKBARAL!'), 'the private mission identity remains separate from public product branding');
+  assert.equal((html.match(/name="slot"[^>]*max="5"/g) ?? []).length, 4, 'all five payout slots are selectable in every slot input');
+  assert.ok(!html.includes('max="4"'), 'the dashboard does not cap payout selection at four slots');
+  assert.match(html, /placeholder="1–5"/, 'payout guidance includes slot five');
 });
 
 test('reporting helpers agree with the HTTP payloads', () => {

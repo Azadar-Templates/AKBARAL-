@@ -175,7 +175,7 @@
           <div class="grid-2">
             <form id="slot-form" class="stack-form">
               <h3>Configure a slot</h3>
-              <label>Slot <input name="slot" type="number" min="1" max="4" value="1" required /></label>
+              <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
               <label>Label <input name="label" placeholder="Primary business account" /></label>
               <label>Destination type
                 <select name="destinationType">
@@ -198,7 +198,7 @@
             <div>
               <h3>Payouts</h3>
               <form id="payout-form" class="inline-form">
-                <input name="slot" type="number" min="1" max="4" placeholder="slot" required />
+                <input name="slot" type="number" min="1" max="5" placeholder="slot" required />
                 <input name="amountCents" type="number" min="1" placeholder="amount (minor units)" required />
                 <input name="memo" placeholder="memo" />
                 <button type="submit">Request payout</button>
@@ -241,7 +241,7 @@
             <form id="withdraw-slot-form" class="stack-form">
               <h3>Add / select payout destination</h3>
               <p class="muted small">Store only masked details / provider reference; full numbers are refused.</p>
-              <label>Slot <input name="slot" type="number" min="1" max="4" value="1" required /></label>
+              <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
               <label>Label <input name="label" placeholder="Primary business account" /></label>
               <label>Destination type
                 <select name="destinationType">
@@ -261,7 +261,7 @@
               <h3>Request withdrawal</h3>
               <p class="muted small" id="withdraw-balance-hint"></p>
               <form id="withdraw-form" class="stack-form">
-                <label>Verified payout slot <input name="slot" type="number" min="1" max="4" placeholder="1–4" required /></label>
+                <label>Verified payout slot <input name="slot" type="number" min="1" max="5" placeholder="1–5" required /></label>
                 <label>Amount (minor units, verified balance only) <input name="amountCents" type="number" min="1" placeholder="e.g. 50000" required /></label>
                 <label>Memo <input name="memo" placeholder="optional reference" /></label>
                 <button type="submit">Request withdrawal — needs approval</button>
