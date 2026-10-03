@@ -6,6 +6,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "akbaral",
+    "plugins": [
+      ["expo-secure-store", { "faceIDPermission": "Allow AKBARAL! to securely access your signed-in session." }]
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

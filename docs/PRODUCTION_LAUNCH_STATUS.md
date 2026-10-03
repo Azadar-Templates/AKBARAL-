@@ -30,7 +30,7 @@ exists.
 | 3 | Stripe payments + webhooks | Set `STRIPE_SECRET_KEY`; create a webhook endpoint at `https://<domain>/api/billing/webhook/stripe` subscribed to `checkout.session.completed`, `payment_intent.succeeded`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`; set `STRIPE_WEBHOOK_SECRET`; set `AKBARAL_SITE_URL` (return URLs) | `real-providers` job verifies the key; a real purchase then settles through the webhook |
 | 4 | SMTP | Set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (+ `SMTP_PORT`, `SMTP_FROM`) | `real-providers` job; until then password reset / verification return an honest 503 |
 | 5 | Real reachable host + domain/TLS | Run the already-published image on a host (free tiers work: Fly.io / Render / Railway, or any VPS with `docker-compose.production.yml`), point DNS and TLS at it, set `AKBARAL_SITE_URL` + `PRODUCTION_BASE_URL` | `deployment-reachability` probes the host and, when it answers, `production-e2e` runs the full MASTER flow against it |
-| 6 | Mission payout destination | Verify one of the four payout slots in the mission dashboard (owner decision; no account details are required before then) | `verify:mission-money` payout path |
+| 6 | Mission payout destination | Verify one of the five payout slots in the mission dashboard (owner decision; no account details are required before then) | `verify:mission-money` payout path |
 | 7 | Social publishing OAuth (optional) | Register the YouTube / Instagram / TikTok apps and set their client IDs/secrets | publishing agents stop returning `provider_not_configured` |
 | 8 | Android signing (optional) | Provide the signing keystore | release build |
 

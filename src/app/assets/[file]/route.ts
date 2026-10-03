@@ -85,7 +85,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ file
     return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   }
 
-  const absolutePath = path.join(process.cwd(), asset.file);
+  const absolutePath = path.join(/* turbopackIgnore: true */ process.cwd(), asset.file);
   let encoded: Encoded;
   try {
     encoded = negotiate(request, file, absolutePath);

@@ -20,7 +20,7 @@
  * Usage: node scripts/responsive-audit.mjs [--json] [--widths 320,390,...]
  */
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 const repo = process.cwd();
 const args = process.argv.slice(2);
@@ -319,6 +319,18 @@ const path = (el) => {
 // the public AKBARAL! web app by default, the private ZA141251SA mission console
 // with AUDIT_CSS/AUDIT_JS/AUDIT_HTML pointed at mission-dashboard/.
 const cssFiles = (process.env.AUDIT_CSS || 'public/tokens.css,public/styles.css').split(',').map((file) => file.trim()).filter(Boolean);
+// Next compiles CSS modules into hashed chunk selectors. Include those chunks
+// for the default public audit so the cascade model measures the delivered
+// React components instead of treating them as unstyled HTML. Custom mission
+// audits remain fully controlled by AUDIT_CSS.
+if (!process.env.AUDIT_CSS) {
+  const chunkDir = `${repo}/.next/static/chunks`;
+  if (existsSync(chunkDir)) {
+    for (const entry of readdirSync(chunkDir, { recursive: true, encoding: 'utf8' })) {
+      if (entry.endsWith('.css')) cssFiles.push(`.next/static/chunks/${entry}`);
+    }
+  }
+}
 const rules = parseCss(cssFiles.map((file) => readFileSync(`${repo}/${file}`, 'utf8')).join('\n'));
 const appJs = readFileSync(`${repo}/${process.env.AUDIT_JS || 'public/app.js'}`, 'utf8');
 const HTML_FILE = process.env.AUDIT_HTML || '';

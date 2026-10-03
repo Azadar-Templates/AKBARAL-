@@ -1,0 +1,84 @@
+{
+  "url": "http://127.0.0.1:3200/#/",
+  "generatedAt": "2026-10-03T05:54:16.449Z",
+  "scores": {
+    "performance": 93,
+    "accessibility": 100,
+    "best-practices": 96,
+    "seo": 100
+  },
+  "thresholds": {
+    "performance": 90,
+    "accessibility": 90,
+    "best-practices": 90,
+    "seo": 90
+  },
+  "failingAudits": [
+    {
+      "id": "largest-contentful-paint",
+      "title": "Largest Contentful Paint",
+      "score": 0.79,
+      "displayValue": "3.0 s"
+    },
+    {
+      "id": "max-potential-fid",
+      "title": "Max Potential First Input Delay",
+      "score": 0.87,
+      "displayValue": "140 ms"
+    },
+    {
+      "id": "errors-in-console",
+      "title": "Browser errors were logged to the console",
+      "score": 0,
+      "displayValue": null
+    },
+    {
+      "id": "mainthread-work-breakdown",
+      "title": "Minimize main-thread work",
+      "score": 0,
+      "displayValue": "2.4 s"
+    },
+    {
+      "id": "unminified-css",
+      "title": "Minify CSS",
+      "score": 0.5,
+      "displayValue": "Est savings of 8 KiB"
+    },
+    {
+      "id": "unused-css-rules",
+      "title": "Reduce unused CSS",
+      "score": 0,
+      "displayValue": "Est savings of 31 KiB"
+    },
+    {
+      "id": "unused-javascript",
+      "title": "Reduce unused JavaScript",
+      "score": 0,
+      "displayValue": "Est savings of 100 KiB"
+    },
+    {
+      "id": "cache-insight",
+      "title": "Use efficient cache lifetimes",
+      "score": 0,
+      "displayValue": "Est savings of 15 KiB"
+    },
+    {
+      "id": "legacy-javascript-insight",
+      "title": "Legacy JavaScript",
+      "score": 0,
+      "displayValue": "Est savings of 12 KiB"
+    },
+    {
+      "id": "network-dependency-tree-insight",
+      "title": "Network dependency tree",
+      "score": 0,
+      "displayValue": null
+    },
+    {
+      "id": "render-blocking-insight",
+      "title": "Render-blocking requests",
+      "score": 0,
+      "displayValue": "Est savings of 450 ms"
+    }
+  ]
+}

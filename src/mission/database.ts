@@ -225,7 +225,14 @@ export function applyMissionMigrations(target = missionDb): { applied: string[];
     if (already) continue;
     const sql = fs.readFileSync(path.join(dir, file), 'utf8');
     target.transaction(() => {
-      target.exec(sql);
+      if (file === '0039_five_payout_slots.sql' && target.engineName() === 'postgres') {
+        target.exec(
+          `ALTER TABLE mission_payout_slots DROP CONSTRAINT IF EXISTS mission_payout_slots_slot_check;
+           ALTER TABLE mission_payout_slots ADD CONSTRAINT mission_payout_slots_slot_check CHECK (slot BETWEEN 1 AND 5);`,
+        );
+      } else {
+        target.exec(sql);
+      }
       target.run('INSERT INTO mission_migrations (name) VALUES (?)', [file]);
     });
     applied.push(file);

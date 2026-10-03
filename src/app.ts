@@ -12,6 +12,7 @@ import { createWorkflowsRouter } from './routes/workflows';
 import { createAutomationsRouter } from './routes/automations';
 import { createOAuthRouter } from './routes/oauth';
 import { createMasterRouter } from './routes/master';
+import { createChatRouter } from './routes/chat';
 import { executionQueue } from './orchestrator/queue';
 import { automationScheduler } from './automation/scheduler';
 import { createProjectsRouter } from './routes/projects';
@@ -201,6 +202,7 @@ export function createApiServer(): ApiServer {
   app.use('/api/workflows', createWorkflowsRouter(stream));
   app.use('/api/automations', createAutomationsRouter());
   app.use('/api/master', createMasterRouter(stream));
+  app.use('/api/chat', createChatRouter());
   app.use('/api/projects', createProjectsRouter());
   app.use('/api', createFilesRouter());
   app.use('/api/billing', createBillingRouter());

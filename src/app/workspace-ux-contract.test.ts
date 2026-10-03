@@ -34,7 +34,10 @@ const root = process.cwd();
 const appJs = readFileSync(join(root, 'public', 'app.js'), 'utf8');
 const css = readFileSync(join(root, 'public', 'styles.css'), 'utf8');
 const page = readFileSync(join(root, 'src', 'app', 'page.tsx'), 'utf8');
-const shell = readFileSync(join(root, 'src', 'app', 'layout.tsx'), 'utf8');
+const shell = [
+  readFileSync(join(root, 'src', 'app', 'layout.tsx'), 'utf8'),
+  readFileSync(join(root, 'src', 'app', '_components', 'legacy-app-loader.tsx'), 'utf8'),
+].join('\n');
 const mobile = readFileSync(join(root, 'mobile', 'src', 'screens', 'MasterScreen.tsx'), 'utf8');
 
 /** Extract a top-level `function name(…) {…}` from app.js by brace matching. */
@@ -309,7 +312,7 @@ describe('AKBARAL! application shell — source contract (web)', () => {
   it('the workspace is a real route (`/workspace`), not only a hash screen', () => {
     const route = readFileSync(join(root, 'src', 'app', 'workspace', 'page.tsx'), 'utf8');
     assert.match(route, /export default function WorkspacePage\(\)/, 'the route has a component');
-    assert.match(route, /<Home \/>/, 'it renders the same application as `/` (one shell, one behaviour)');
+    assert.match(route, /<WorkbenchShell \/>/, 'it renders the typed Chat/Work application shell');
     assert.match(route, /robots: \{ index: false, follow: false \}/, 'a signed-in surface is never indexed');
     // Clean deep links are mapped explicitly (path → screen). `/workspace` and
     // `/master` both open the MASTER surface; the sign-in, sign-up, projects,

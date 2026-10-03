@@ -1918,7 +1918,7 @@ async function handleApi(
       break;
     }
 
-    // ── Payout slots (exactly four) + payouts ──────────────────────────────
+    // ── Payout slots (exactly five) + payouts ──────────────────────────────
     case 'payout-slots': {
       requireRead(context);
       if (method === 'GET') {
@@ -1927,8 +1927,8 @@ async function handleApi(
         const swept = sweepPayoutVerifications();
         json(res, 200, {
           slots: ensurePayoutSlots(),
-          count: 4,
-          note: 'Four configurable payout destinations. Slots can be labelled now and completed later; nothing needs to be provided up front.',
+          count: 5,
+          note: 'Five configurable payout destinations. Slots can be labelled now and completed later; nothing needs to be provided up front.',
           verification: listPayoutSlotVerificationStatuses(),
           checks: PAYOUT_VERIFICATION_CHECKS,
           validityDays: PAYOUT_VERIFICATION_VALIDITY_DAYS,

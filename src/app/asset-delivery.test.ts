@@ -30,6 +30,7 @@ const root = process.cwd();
 const nextConfig = readFileSync(join(root, 'next.config.mjs'), 'utf8');
 const layout = readFileSync(join(root, 'src', 'app', 'layout.tsx'), 'utf8');
 const appJs = readFileSync(join(root, 'public', 'app.js'), 'utf8');
+const legacyLoader = readFileSync(join(root, 'src', 'app', '_components', 'legacy-app-loader.tsx'), 'utf8');
 const assetRoute = readFileSync(join(root, 'src', 'app', 'assets', '[file]', 'route.ts'), 'utf8');
 
 describe('browser payload delivery — compressed, cacheable, off the critical path', () => {
@@ -64,7 +65,7 @@ describe('browser payload delivery — compressed, cacheable, off the critical p
   });
 
   it('serves those assets from the compressed endpoint with one shared cache-busting version', () => {
-    const references = [...layout.matchAll(/\/(?:assets\/)?(?:tokens\.css|styles\.css|app\.js)\?v=([\w.-]+)/g)].map((m) => m[0]);
+    const references = [...`${layout}\n${legacyLoader}`.matchAll(/\/(?:assets\/)?(?:tokens\.css|styles\.css|app\.js)\?v=([\w.-]+)/g)].map((m) => m[0]);
     assert.ok(references.length >= 3, `all three assets are referenced (${references.join(', ')})`);
     assert.ok(references.every((ref) => ref.startsWith('/assets/')), 'every asset goes through the compressed endpoint');
     const versions = new Set(references.map((ref) => ref.split('?v=')[1]));

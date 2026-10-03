@@ -99,6 +99,13 @@ userDashboardRouter.get(
       [userId]
     );
 
+    const recentChats = db.all(
+      `SELECT id, title, model_key, updated_at FROM chat_conversations
+       WHERE user_id = ? ORDER BY updated_at DESC LIMIT 5`,
+      [userId]
+    );
+    const profile = db.get(`SELECT trial_ends_at FROM profiles WHERE user_id = ?`, [userId]);
+
     // Task counts by status
     const taskCounts = db.all(
       `SELECT status, COUNT(*) as count FROM tasks WHERE user_id = ? GROUP BY status`,
@@ -171,6 +178,18 @@ userDashboardRouter.get(
         // (src/auth/entitlements.ts) — never a second implementation.
         unlimited: hasUnlimitedTaskCredits(userId),
       },
+      cycleResetAt: subscription
+        ? String((subscription as Record<string, unknown>).current_period_end ?? '')
+        : String((profile as Record<string, unknown> | undefined)?.trial_ends_at ?? ''),
+      chats: recentChats.map((chat) => {
+        const row = chat as Record<string, unknown>;
+        return {
+          id: String(row.id),
+          title: String(row.title),
+          model: String(row.model_key),
+          updatedAt: String(row.updated_at),
+        };
+      }),
       plan: plan ? {
         key: String((plan as any).key),
         name: String((plan as any).name),

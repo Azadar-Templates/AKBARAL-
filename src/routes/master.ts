@@ -103,6 +103,59 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
     }),
   );
 
+  // Six-stage SSE projection for the typed Work shell. Every status is derived
+  // from persisted workflow/step state; no synthetic completion is emitted.
+  router.get('/:id/events', (req: AuthenticatedRequest, res) => {
+    const workflow = getWorkflow(req.params.id);
+    if (!workflow || String(workflow.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'workflow not found', 'not_found');
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    let lastPayload = '';
+    const publish = () => {
+      const current = getWorkflow(req.params.id);
+      if (!current || res.destroyed) return;
+      const steps = listWorkflowSteps(req.params.id);
+      const workflowStatus = String(current.status);
+      const completed = steps.filter((step) => String(step.status) === 'completed').length;
+      const failed = steps.some((step) => ['failed', 'cancelled'].includes(String(step.status)));
+      const total = steps.length;
+      const terminal = ['completed', 'failed', 'cancelled'].includes(workflowStatus);
+      const stageStatus = (index: number): 'complete' | 'active' | 'pending' | 'failed' => {
+        if (failed && index >= 3) return 'failed';
+        if (index <= 2) return 'complete';
+        if (workflowStatus === 'completed') return 'complete';
+        if (index === 3) return completed < total ? 'active' : 'complete';
+        if (index === 4) return completed === total && total > 0 ? 'active' : 'pending';
+        return 'pending';
+      };
+      const payload = JSON.stringify({
+        type: terminal ? 'done' : 'progress',
+        workflowId: req.params.id,
+        workflowStatus,
+        completedSteps: completed,
+        totalSteps: total,
+        stages: ['Understanding', 'Planning', 'Routing', 'Executing', 'Verifying', 'Complete'].map((label, index) => ({ label, status: stageStatus(index) })),
+      });
+      if (payload !== lastPayload) {
+        lastPayload = payload;
+        res.write(`data: ${payload}\n\n`);
+      }
+      if (terminal) {
+        clearInterval(timer);
+        res.end();
+      }
+    };
+    const timer = setInterval(publish, 1_000);
+    publish();
+    res.on('close', () => clearInterval(timer));
+  });
+
   router.get('/:id', (req: AuthenticatedRequest, res) => {
     const workflow = getWorkflow(req.params.id);
     if (!workflow || String(workflow.user_id) !== req.auth!.userId) {

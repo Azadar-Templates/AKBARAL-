@@ -86,13 +86,13 @@ describe('ZA141251SA wallet economy — operating costs only', () => {
 
   it('6. Mission Treasury can later fund owner withdrawal (requires verified slot)', () => {
     const slots = ensurePayoutSlots();
-    assert.equal(slots.length, 4);
+    assert.equal(slots.length, 5);
     assert.throws(()=> requestPayout({ slot:1, amountCents: 100, idempotencyKey:'no-slot-'+randomUUID(), requestedBy:'owner-test' }), (e:any)=> String(e.message).includes('unconfigured') || String(e.message).includes('slot_not_active') || String(e.message).includes('verification_required') || String(e.message).includes('configure and verify'));
   });
 
   it('7. owner payout account/card remains optional and unconfigured until future withdrawal', () => {
     const slots = listPayoutSlots();
-    assert.equal(slots.length, 4);
+    assert.equal(slots.length, 5);
     for(const s of slots) assert.ok(['unconfigured','pending_verification','active','paused'].includes(String(s.status)));
     const sum = treasurySummary().totals.missionBalanceCents;
     assert.ok(sum >= 0);

@@ -170,7 +170,7 @@ export function buildCommandCenter(): CommandCenterView {
   if (db.get<Row>('SELECT 1 FROM mission_platforms WHERE kind=\'EARNING_SOURCE\' AND status!=\'ACTIVE\' LIMIT 1')) ownerActions.push('New earning sources discovered — qualify/policy-review/permit steps pending');
 
   const payoutStatus = {
-    verification: '4-slot payout verification required before any payout',
+    verification: '5-slot payout verification required before any payout',
     wallets,
     ledgerEntries: Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_ledger')?.c ?? 0),
   };
