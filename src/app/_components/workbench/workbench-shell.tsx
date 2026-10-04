@@ -335,7 +335,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
           {accountOpen && <nav className={styles.accountPopover} aria-label="Account menu">
             <div><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email}</small></div>
             <a href="/dashboard">Account &amp; plan</a>
-            <a href="/#/settings">Settings</a>
+            <a href="/dashboard">Settings</a>
             {['owner', 'super_admin'].includes(account?.role ?? '') && <a href="/owner"><ShieldCheck size={16} /> Owner console</a>}
             {['admin', 'super_admin'].includes(account?.role ?? '') && <a href="/admin"><ShieldCheck size={16} /> Admin console</a>}
             <button type="button" onClick={() => { localStorage.removeItem('ak_access'); localStorage.removeItem('ak_refresh'); window.location.href = '/signin'; }}>Sign out</button>
