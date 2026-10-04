@@ -125,8 +125,8 @@ describe('owner/super_admin display entitlement — /api/me, /api/dashboard, /ap
       // queue may already be stopped
     }
     db.run('DELETE FROM users WHERE id IN (?, ?, ?)', [owner.id, superAdmin.id, normalUser.id]);
-    db.close();
     await api.close();
+    db.close();
   });
 
   describe('GET /api/me', () => {
@@ -215,6 +215,11 @@ describe('owner/super_admin display entitlement — /api/me, /api/dashboard, /ap
   describe('owner execution remains unlimited end-to-end (unchanged behaviour, exercised over real HTTP)', () => {
     it('dispatches a real task for a zero-credit owner without requires_pro, exactly as before this fix', async () => {
       drainCredits(owner.id);
+      // The API server starts the durable queue automatically, but this test is
+      // only locking the HTTP entitlement gate/display parity. Stop the worker
+      // before enqueueing so no background execution continues past teardown and
+      // touches the test database after it has closed.
+      executionQueue.stop();
       const response = await fetch(`${baseUrl}/api/tasks/research`, {
         method: 'POST',
         headers: { ...authed(owner.token), 'content-type': 'application/json' },

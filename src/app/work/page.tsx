@@ -3,7 +3,7 @@ import { WorkbenchShell } from '../_components/workbench/workbench-shell';
 
 export const metadata: Metadata = {
   title: 'Work — AKBARAL!',
-  description: 'Route a task through AKBARAL! MASTER and receive a verified artifact.',
+  description: 'Route a task through AKBARAL! and receive a verified artifact.',
   robots: { index: false, follow: false },
 };
 

@@ -1679,9 +1679,9 @@
     const wantsMarketing = hash === '#/' || hash === '#/landing';
     // An explicit hash always wins (so `#/login` renders the sign-in screen);
     // the clean path decides when the visitor landed without a hash.
-    // `#/workspace` IS the compact application shell (ChatGPT/Arena model) —
-    // the legacy Projects & knowledge screen moved to `#/projects`, so every
-    // "Workspace" entry point in the product reaches the new UI.
+    // `#/workspace` IS the compact application shell — the legacy Projects &
+    // knowledge screen moved to `#/projects`, so every "Workspace" entry point
+    // in the product reaches the new UI.
     // Clean, refreshable deep links. The application is hash-routed (`#/login`,
     // `#/projects`, …), which means a hard refresh of a hash URL always lands
     // on `/` and works. A CLEAN path has no such guarantee: the server must

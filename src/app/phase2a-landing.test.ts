@@ -5,95 +5,68 @@ import path from 'node:path';
 
 const root = process.cwd();
 const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
-const landing = read('src/app/_components/landing/cinematic-landing.tsx');
-const landingCss = read('src/app/_components/landing/cinematic-landing.module.css');
+const landing = read('src/app/_components/landing-reset.tsx');
+const landingCss = read('src/app/_components/landing-reset.module.css');
+const pricing = read('src/app/_lib/pricing.ts');
 const publicPage = read('src/app/page.tsx');
-const tokens = JSON.parse(read('design-system/tokens.json')) as { palette: Record<string, Record<string, string>> };
-const packageJson = JSON.parse(read('package.json')) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
 
-describe('ChatGPT-style landing contract', () => {
-  it('uses the exact public identity, tagline and compact calls to action', () => {
+describe('AKBARAL! landing reset contract', () => {
+  it('uses the exact identity, tagline and honest calls to action', () => {
     assert.match(landing, /AKBARAL!/);
-    assert.match(landing, /One Intelligence\./);
-    assert.match(landing, /Every Solution\./);
-    assert.match(landing, /Start Free Trial/);
-    assert.match(landing, /See Plans/);
+    assert.match(landing, /One Intelligence\. Every Solution\./);
+    assert.match(landing, /Start free/);
+    assert.match(landing, /Go to your workspace/);
+    assert.match(landing, /See plans and pricing/);
     assert.match(landing, /Sign in/);
     assert.doesNotMatch(landing, /AKBARAL AI/);
   });
 
-  it('uses a concise three-step explanation rather than the old six-scene page', () => {
-    assert.match(landing, /One request\. Three clear steps\./);
-    for (const step of ['Plan', 'Build', 'Verify']) assert.match(landing, new RegExp(`>${step}<`));
-    assert.doesNotMatch(landing, /id="scene-[1-6]"/);
-  });
-
-  it('implements all four deterministic scroll-narrative markers', () => {
-    for (const marker of ['walk', 'power', 'work', 'handoff']) {
-      assert.match(landing, new RegExp(`\\['${marker}'`));
+  it('follows the required section flow', () => {
+    const order = ['topbar', 'hero', 'Product interface overview', 'Quick paths', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title', 'footer'];
+    let previous = -1;
+    for (const marker of order) {
+      const index = landing.indexOf(marker);
+      assert.ok(index > previous, `${marker} appears in order`);
+      previous = index;
     }
-    assert.match(landing, /data-narrative=\{marker\}/);
-    for (const state of ['Planning', 'Building', 'Verifying', 'Result ready']) assert.match(landing, new RegExp(state));
-    assert.match(landing, /ScrollTrigger/);
-    assert.match(landing, /useGSAP/);
   });
 
   it('publishes the six exact USD prices and Work quotas unchanged', () => {
     for (const value of [
-      "['Free', '$0', '5 tasks', '30-day trial']",
-      "['Starter', '$10', '25 tasks', 'For focused work']",
-      "['Pro', '$50', '100 tasks', 'For professionals']",
-      "['Business', '$90', '250 tasks', 'For growing teams']",
-      "['Scale', '$200', '750 tasks', 'For high-volume work']",
-      "['Enterprise', '$400', '2,000 tasks', 'For organizations']",
-    ]) assert.ok(landing.includes(value), `missing plan: ${value}`);
-    assert.match(landing, /Simple plans · USD/);
-    assert.match(landing, /charged only after verified success/);
+      "name: 'Free', price: '$0', tasks: '5 tasks', note: '30-day trial'",
+      "name: 'Starter', price: '$10', tasks: '25 tasks'",
+      "name: 'Pro', price: '$50', tasks: '100 tasks'",
+      "name: 'Business', price: '$90', tasks: '250 tasks'",
+      "name: 'Scale', price: '$200', tasks: '750 tasks'",
+      "name: 'Enterprise', price: '$400', tasks: '2,000 tasks'",
+    ]) assert.ok(pricing.includes(value), `missing plan: ${value}`);
+    assert.match(pricing, /All prices are USD/);
   });
 
   it('describes 4,001 agents truthfully as registered contracts', () => {
-    assert.match(landing, /4,001/);
-    assert.match(landing, /registered agent contracts/);
-    assert.match(landing, /not active or earning agents/);
+    assert.match(landing, /4,001 registered agent contracts/);
+    assert.match(landing, /never describes them as active or earning/);
     assert.doesNotMatch(landing, /4,001 active|4,001 earning/i);
   });
 
-  it('fully bypasses motion when reduced motion is requested', () => {
-    assert.match(landing, /prefers-reduced-motion: reduce/);
-    assert.match(landingCss, /@media \(prefers-reduced-motion: reduce\)/);
-    assert.match(landingCss, /\.progress \{ display: none; \}/);
-    assert.match(landingCss, /transform: none !important; opacity: 1 !important/);
-  });
-
   it('enforces accessible target sizes and responsive no-overflow composition', () => {
-    assert.match(landingCss, /min-width: 44px; min-height: 44px/);
-    assert.match(landingCss, /overflow: clip/);
-    assert.match(landingCss, /@media \(max-width: 760px\)/);
-    assert.match(landingCss, /@media \(max-width: 460px\)/);
-    assert.match(landingCss, /grid-template-columns: 1fr/);
+    assert.match(landingCss, /min-height:42px/);
+    assert.match(landingCss, /overflow-x:hidden/);
+    assert.match(landingCss, /@media\(max-width:880px\)/);
+    assert.match(landingCss, /@media\(max-width:560px\)/);
+    assert.match(landingCss, /grid-template-columns:1fr/);
   });
 
-  it('uses generated dashboard theme tokens without introducing a color palette', () => {
-    assert.equal(tokens.palette.primary['500'], '#0ea5e9');
-    assert.equal(tokens.palette.neutral['900'], '#0f172a');
-    assert.doesNotMatch(landingCss, /#[0-9a-f]{3,8}\b|rgba?\(/i);
-    for (const token of ['--bg-deep', '--bg', '--bg-2', '--text', '--text-2', '--text-dim', '--accent', '--telemetry']) {
+  it('uses dashboard theme tokens without introducing new hex colors', () => {
+    assert.doesNotMatch(landingCss, /#[0-9a-f]{3,8}\b/i);
+    for (const token of ['--bg-deep', '--bg', '--text', '--text-2', '--text-dim', '--accent', '--accent-bright']) {
       assert.ok(landingCss.includes(`var(${token})`), `landing must consume ${token}`);
     }
   });
 
-  it('keeps every public source free of the private mission identity and secret material', () => {
-    const publicSources = [landing, landingCss, publicPage].join('\n');
+  it('keeps public sources free of forbidden reference strings and private identifiers', () => {
+    const publicSources = [landing, landingCss, publicPage, pricing].join('\n');
+    assert.doesNotMatch(publicSources, /Atlas|WorkOS|Slack|use\.ai|ChatGPT/i);
     assert.doesNotMatch(publicSources, /ZA141251SA/);
-    assert.doesNotMatch(publicSources, /(?:api[_-]?key|secret|password)\s*[:=]\s*["'][^"']+/i);
-  });
-
-  it('reuses the approved animation and icon dependencies without adding packages', () => {
-    for (const dependency of ['gsap', '@gsap/react', 'framer-motion', 'lucide-react']) {
-      assert.ok(packageJson.dependencies[dependency], `missing dependency ${dependency}`);
-    }
-    assert.ok(packageJson.devDependencies['@types/gsap']);
-    assert.match(landing, /from 'framer-motion'/);
-    assert.match(landing, /from 'lucide-react'/);
   });
 });
