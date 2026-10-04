@@ -3948,3 +3948,39 @@ pre, code, .chat-msg .cm-body, .console-line, .result-block { overflow-wrap: any
   .modal-card > h2,
   .modal-card > #legal-title { padding-right: 56px; }
 }
+
+/* ============================================================
+   13 · GLOBAL REFLOW CONTRACT — every product surface
+   ============================================================ */
+:where(.screen, .screen *, .site-header, .site-header *) { min-width: 0; }
+:where(.screen, .site-header) :where(h1, h2, h3, h4, p, li, label, small, strong, b, span, a, button) {
+  overflow-wrap: anywhere;
+}
+:where(.actions, .toolbar, .page-head, .header-actions, .composer-head, .composer-row,
+  .composer-tools, .ws-panel-head, .ws-panel-actions, .quick-amounts, .form-actions,
+  .modal-actions, .ak-top-actions, .ak-rail-head, .ak-rail-tabs) {
+  flex-wrap: wrap;
+}
+:where(input, select, textarea, button, .btn) { max-width: 100%; }
+:where(.cols-2, .cols-3, .stat-grid, .price-grid, .agent-grid, .media-grid) > * { min-width: 0; }
+:where(.panel, .list-item, .chat-msg, .result-block, .output, .detail-panel) { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .aw-container { padding-inline: 14px; }
+  .page-head { align-items: flex-start; gap: 14px; }
+  .page-head > .btn, .page-head > button { width: 100%; }
+  .toolbar > :where(input, select, button, .btn) { flex: 1 1 100%; width: 100%; }
+  :where(.actions, .form-actions, .modal-actions) > :where(button, .btn, a) { flex: 1 1 100%; width: 100%; }
+  .composer-head > *, .composer-row > * { min-width: 0; }
+  .composer-tools { width: 100%; }
+  .composer-tools > :where(button, label, .btn) { flex: 1 1 auto; }
+  .ak-rail-tabs { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .ak-rail-tabs button { flex: 1 0 auto; }
+  .ak-command { padding: 10px; }
+  .ak-command-input { flex-wrap: wrap; }
+  .ak-command-input input { flex: 1 1 calc(100% - 44px); }
+}
+@media (max-width: 360px) {
+  .header-actions { gap: 4px; }
+  .header-actions .btn { padding-inline: 10px; }
+  .panel { padding-inline: 14px; }
+}

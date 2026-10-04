@@ -159,3 +159,20 @@ html, body { max-width: 100%; overflow-x: hidden; }
 /* Author display:grid/flex rules otherwise override the browser's hidden rule.
    Owner-only controls and inactive panels must stay absent from rendering. */
 [hidden] { display: none !important; }
+
+/* Global reflow contract: private controls wrap rather than overlap. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { max-width: 100%; overflow-x: hidden; }
+:where(main, section, article, form, fieldset, .panel, .card, .grid, .grid-2, .inline-form, .stack-form) { min-width: 0; max-width: 100%; }
+:where(h1, h2, h3, h4, p, label, span, small, strong, code, pre, td, th) { overflow-wrap: anywhere; }
+:where(input, select, textarea, button) { min-width: 0; max-width: 100%; }
+:where(.inline-form, .toolbar, .actions, .button-row, header) { flex-wrap: wrap; }
+pre, code { white-space: pre-wrap; word-break: break-word; }
+@media (max-width: 720px) {
+  .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); }
+  .inline-form > :where(input, select, textarea, button) { flex: 1 1 100%; width: 100%; }
+  button, a, input, select { min-height: 44px; }
+  main { padding-inline: 12px; }
+  table { min-width: 560px; }
+  .table-wrap, .table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+}
