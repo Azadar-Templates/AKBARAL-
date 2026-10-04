@@ -41,6 +41,8 @@ const modelsSchema = z.object({ models: z.array(z.object({
   key: z.string(), name: z.string(), provider: z.string(), available: z.boolean(),
 })) });
 const accountSchema = z.object({ user: z.object({ name: z.string().nullable(), email: z.string(), role: z.string() }) });
+const projectsSchema = z.object({ projects: z.array(z.object({ id: z.string() }).passthrough()) });
+const uploadSchema = z.object({ file: z.object({ fileId: z.string(), originalName: z.string(), kind: z.string(), sizeBytes: z.number() }) });
 type Account = z.infer<typeof accountSchema>['user'];
 const errorSchema = z.object({ error: z.object({ message: z.string().optional() }).optional(), message: z.string().optional() });
 
@@ -113,8 +115,8 @@ function CopyButton({ value }: { value: string }) {
   }}>{copied ? <Check size={16} /> : <Clipboard size={16} />}</button>;
 }
 
-function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, minRows = 1, buttonLabel = 'Send' }: {
-  value: string; setValue: (value: string) => void; onSubmit: () => void; busy: boolean; onStop: () => void; placeholder: string; minRows?: number; buttonLabel?: string;
+function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, minRows = 1, buttonLabel = 'Send', onAttach, attachments = [] }: {
+  value: string; setValue: (value: string) => void; onSubmit: () => void; busy: boolean; onStop: () => void; placeholder: string; minRows?: number; buttonLabel?: string; onAttach?: (file: File) => void; attachments?: string[];
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -123,6 +125,8 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, minRow
     ref.current.style.height = `${Math.min(Math.max(ref.current.scrollHeight, minRows * 24), 240)}px`;
   }, [minRows, value]);
   return <div className={`${styles.composer} ${minRows > 1 ? styles.tallComposer : ''}`}>
+    {onAttach && <label className={styles.attachButton} title="Attach an image"><span>＋</span><input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) onAttach(file); event.currentTarget.value = ''; }} /> </label>}
+    {attachments.length > 0 && <div className={styles.attachmentList} aria-label="Attached files">{attachments.map((name) => <span key={name}>{name}</span>)}</div>}
     <textarea ref={ref} value={value} rows={minRows} maxLength={20_000} placeholder={placeholder} aria-label={placeholder}
       onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!busy) onSubmit(); }
@@ -175,6 +179,9 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [artifact, setArtifact] = useState<unknown>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<Array<{ id: string; name: string }>>([]);
+  const [uploading, setUploading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const refreshHistory = useCallback(async () => {
@@ -200,6 +207,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     void Promise.all([
       refreshHistory(),
       api('/api/me', accountSchema).then((data) => setAccount(data.user)),
+      api('/api/projects', projectsSchema).then((data) => setProjectId(data.projects[0]?.id ?? null)),
       api('/api/models', modelsSchema).then((data) => {
         const choices = data.models.filter((item) => item.provider === 'google');
         setModels(choices.length ? choices : data.models);
@@ -238,6 +246,25 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     } finally { abortRef.current = null; setBusy(false); }
   };
 
+  const attachImage = async (file: File) => {
+    if (!file.type.startsWith('image/') || file.size > 25 * 1024 * 1024) { setError('Choose an image smaller than 25 MB.'); return; }
+    setUploading(true); setError('');
+    try {
+      let id = projectId;
+      if (!id) {
+        const created = await api('/api/projects', z.object({ project: z.object({ id: z.string() }) }), { method: 'POST', body: JSON.stringify({ name: 'My Workbench files', description: 'Private attachments from Chat and Work.' }) });
+        id = created.project.id; setProjectId(id);
+      }
+      const form = new FormData(); form.append('file', file);
+      const response = await fetch(`/api/projects/${encodeURIComponent(id)}/files`, { method: 'POST', body: form, headers: { authorization: `Bearer ${token()}` } });
+      const payload: unknown = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error('Image upload failed.');
+      const parsed = uploadSchema.parse(payload);
+      setAttachments((current) => [...current, { id: parsed.file.fileId, name: parsed.file.originalName }].slice(-5));
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : 'Image upload failed.'); }
+    finally { setUploading(false); }
+  };
+
   const runWork = async (goalOverride?: string) => {
     const goal = (goalOverride ?? workInput).trim();
     if (!goal || busy) return;
@@ -245,7 +272,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     setStages(STAGES.map((stage, index) => ({ ...stage, status: index === 0 ? 'active' : 'pending' })));
     const controller = new AbortController(); abortRef.current = controller;
     try {
-      const started = await api('/api/master', masterStartSchema, { method: 'POST', body: JSON.stringify({ goal, auto_run: true }) });
+      const started = await api('/api/master', masterStartSchema, { method: 'POST', body: JSON.stringify({ goal, auto_run: true, ...(projectId ? { project_id: projectId } : {}), attachment_file_ids: attachments.map((file) => file.id) }) });
       const id = started.workflow.id; setWorkflowId(id);
       setStages(STAGES.map((stage, index) => ({ ...stage, status: index <= 2 ? 'complete' : index === 3 ? 'active' : 'pending' })));
       const response = await fetch(`/api/master/${encodeURIComponent(id)}/events`, { signal: controller.signal, headers: { authorization: `Bearer ${token()}` } });
@@ -307,10 +334,11 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const chatGroups = useMemo(() => groupByDate(conversations), [conversations]);
   const workGroups = useMemo(() => groupByDate(workItems), [workItems]);
   const artifactText = useMemo(() => artifact === null ? '' : typeof artifact === 'string' ? artifact : JSON.stringify(artifact, null, 2), [artifact]);
-  const downloadArtifact = () => {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([artifactText], { type: 'application/json' }));
-    link.download = `akbaral-work-${workflowId ?? 'artifact'}.json`; link.click(); URL.revokeObjectURL(link.href);
+  const downloadArtifact = async () => {
+    if (!workflowId) return;
+    const response = await fetch(`/api/master/${encodeURIComponent(workflowId)}/export`, { headers: { authorization: `Bearer ${token()}` } });
+    if (!response.ok) { setError('The authenticated export could not be downloaded.'); return; }
+    const link = document.createElement('a'); link.href = URL.createObjectURL(await response.blob()); link.download = `akbaral-work-${workflowId}.zip`; link.click(); URL.revokeObjectURL(link.href);
   };
 
   if (authenticated === null) return <main className={styles.authState}><span className={styles.logo}>A!</span><p>Opening AKBARAL!</p></main>;
@@ -380,14 +408,14 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
               {messages.map((message) => <article key={message.id} className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}><header><b>{message.role === 'user' ? 'You' : 'AKBARAL!'}</b>{message.content && <CopyButton value={message.content} />}</header><Markdown content={message.content || '…'} /></article>)}
             </div>
             {error && <p className={styles.error} role="alert">{error}</p>}
-            <div className={styles.composerDock}><Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" />
+            <div className={styles.composerDock}><Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" onAttach={attachImage} attachments={attachments.map((file) => file.name)} />
               <p className={styles.fairUse}>Fair use applies. <a href="/terms">See terms.</a> Chat never deducts Work task credits.</p>
               {messages.some((item) => item.role === 'assistant' && item.content) && !busy && <button className={styles.regenerate} type="button" onClick={() => { const last = [...messages].reverse().find((item) => item.role === 'user'); if (last) void sendChat(last.content); }}><RefreshCw size={15} /> Regenerate</button>}
             </div>
           </motion.div> : <motion.div key="work" className={styles.modePanel} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
             <div className={styles.panelHead}><div><span>WORK · MASTER ROUTING</span><h1>From goal to verified artifact.</h1><p>5 successful tasks during the 30-day Free trial. Failed or cancelled work is refunded.</p></div></div>
             <div className={styles.examples}>{EXAMPLES.map((example) => <button type="button" key={example} onClick={() => setWorkInput(example)}>{example}</button>)}</div>
-            <div className={styles.workComposer}><Composer value={workInput} setValue={setWorkInput} onSubmit={() => void runWork()} busy={busy} onStop={() => void cancelWork()} placeholder="Describe what you want built or done..." minRows={4} buttonLabel="Start Task" /></div>
+            <div className={styles.workComposer}><Composer value={workInput} setValue={setWorkInput} onSubmit={() => void runWork()} busy={busy} onStop={() => void cancelWork()} placeholder="Describe what you want built or done..." minRows={4} buttonLabel={uploading ? 'Uploading…' : 'Start Task'} onAttach={attachImage} attachments={attachments.map((file) => file.name)} /></div>
             <ol className={styles.stages} aria-label="Work progress">{stages.map((stage, index) => <li key={stage.label} data-status={stage.status}><span>{stage.status === 'complete' ? <Check size={16} /> : index + 1}</span><div><b>{stage.label}</b><small>{stage.status}</small></div></li>)}</ol>
             {error && <p className={styles.error} role="alert">{error}</p>}
             {Boolean(artifact) && <button type="button" className={styles.artifactCard} onClick={() => setArtifactOpen(true)}><FileText size={22} /><span><b>Final artifact</b><small>Preview and download verified output</small></span><Play size={17} /></button>}
@@ -397,7 +425,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
 
       <aside className={`${styles.artifactPanel} ${artifactOpen ? styles.artifactOpen : ''}`} aria-label="Artifact preview">
         <header><div><span>ARTIFACT</span><b>{workflowId ? `Work ${workflowId.slice(-8)}` : 'Preview'}</b></div><div><button type="button" className={styles.iconButton} onClick={downloadArtifact} disabled={!artifact} aria-label="Download artifact"><Download size={18} /></button><button type="button" className={styles.iconButton} onClick={() => setArtifactOpen(false)} aria-label="Close artifact"><X size={18} /></button></div></header>
-        <div className={styles.preview}>{artifact ? <pre>{artifactText}</pre> : <div className={styles.empty}><FileText size={30} /><p>Your completed Work artifact will appear here.</p></div>}</div>
+        <div className={styles.preview}>{artifact ? /^\s*<(?:!doctype html|html[\s>])/i.test(artifactText) ? <iframe title="Sandboxed website artifact" sandbox="" srcDoc={`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">${artifactText}`} /> : <pre>{artifactText}</pre> : <div className={styles.empty}><FileText size={30} /><p>Your completed Work artifact will appear here.</p></div>}</div>
         <footer><span data-ready={Boolean(artifact)}>{artifact ? 'Ready' : busy ? 'Working' : 'Waiting'}</span><small>{artifactText.length ? `${artifactText.length.toLocaleString()} characters` : 'No artifact yet'}</small></footer>
       </aside>
     </div>

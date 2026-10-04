@@ -9,6 +9,7 @@ import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
 import { publicErrorMessage, toPublicFailure, withPublicErrorMessage } from '../server/safe-errors';
+import { Buffer } from 'node:buffer';
 
 /**
  * MASTER AI one-shot API.
@@ -154,6 +155,25 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
     const timer = setInterval(publish, 1_000);
     publish();
     res.on('close', () => clearInterval(timer));
+  });
+
+  // Authenticated, owner-scoped bundle export. The archive contains only the
+  // persisted result for this workflow; no client-created Blob is trusted.
+  router.get('/:id/export', (req: AuthenticatedRequest, res) => {
+    const workflow = getWorkflow(req.params.id);
+    if (!workflow || String(workflow.user_id) !== req.auth!.userId) throw new HttpError(404, 'workflow not found', 'not_found');
+    const result = String(workflow.result_json ?? '{}');
+    const name = 'artifact.json';
+    const data = Buffer.from(result, 'utf8');
+    const crc32 = (input: Buffer) => { let crc = 0xffffffff; for (const byte of input) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ 0xffffffff) >>> 0; };
+    const crc = crc32(data);
+    const nameBytes = Buffer.from(name);
+    const local = Buffer.alloc(30 + nameBytes.length);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6); local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10); local.writeUInt16LE(0, 12); local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nameBytes.length, 26); local.writeUInt16LE(0, 28); nameBytes.copy(local, 30);
+    const central = Buffer.alloc(46 + nameBytes.length); central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0, 8); central.writeUInt16LE(0, 10); central.writeUInt16LE(0, 12); central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(nameBytes.length, 28); central.writeUInt16LE(0, 30); central.writeUInt16LE(0, 32); central.writeUInt16LE(0, 34); central.writeUInt16LE(0, 36); central.writeUInt32LE(0, 38); central.writeUInt32LE(0, 42); nameBytes.copy(central, 46);
+    const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(central.length, 12); end.writeUInt32LE(local.length + data.length, 16);
+    res.setHeader('content-type', 'application/zip'); res.setHeader('content-disposition', `attachment; filename="akbaral-${req.params.id}.zip"`); res.status(200).send(Buffer.concat([local, data, central, end]));
   });
 
   router.get('/:id', (req: AuthenticatedRequest, res) => {
