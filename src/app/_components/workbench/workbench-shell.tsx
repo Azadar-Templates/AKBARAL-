@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check, ChevronDown, ChevronLeft, Clipboard, Download, FileText, History, Menu, MessageSquare,
-  Octagon, PanelRight, Play, Plus, RefreshCw, Send, Settings, ShieldCheck, Sparkles, Trash2, UserCircle, X, Zap,
+  Octagon, PanelRight, Play, Plus, RefreshCw, Send, Settings, Sparkles, Trash2, UserCircle, X, Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
@@ -364,8 +364,6 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             <div><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email}</small></div>
             <a href="/dashboard">Account &amp; plan</a>
             <a href="/dashboard">Settings</a>
-            {['owner', 'super_admin'].includes(account?.role ?? '') && <a href="/owner"><ShieldCheck size={16} /> Owner console</a>}
-            {['admin', 'super_admin'].includes(account?.role ?? '') && <a href="/admin"><ShieldCheck size={16} /> Admin console</a>}
             <button type="button" onClick={() => { localStorage.removeItem('ak_access'); localStorage.removeItem('ak_refresh'); window.location.href = '/signin'; }}>Sign out</button>
           </nav>}
         </div>
