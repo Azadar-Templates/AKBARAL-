@@ -18,6 +18,7 @@ import { CanonicalHashGuard } from './_components/canonical-hash-guard';
 export default function Home() {
   return (
     <>
+      <script dangerouslySetInnerHTML={{ __html: `(function(){var h=(location.hash||"").replace(/^#\/?/,'').split('?')[0].toLowerCase();if(!h||h==='login'||h==='register'||h==='oauth/callback')return;var w={master:1,workspace:1,tasks:1};var p=w[h]?'/work':('/');location.replace(p);})()` }} />
       <CanonicalHashGuard />
 <noscript><style>{`#boot-veil{display:none !important}#screen-landing{display:block !important}`}</style></noscript><div id="boot-veil" aria-hidden="true"><div className="boot-core"><span className="boot-ring"></span><span className="boot-ring r2"></span><span className="boot-mark">A!</span></div><div className="boot-word">AKBARAL!</div><div className="boot-tagline">ONE INTELLIGENCE · EVERY SOLUTION</div><div className="boot-line"><i></i></div></div><div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
   Skip to content</a><header className="site-header" id="site-header"><div className="header-bar"><a className="brand" href="#/" aria-label="AKBARAL home"><span className="brand-mark" aria-hidden="true"><span className="brand-mark-glow"></span>
