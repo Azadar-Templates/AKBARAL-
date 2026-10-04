@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { verifyAccessToken } from '../../security';
 import { activeSessionExists } from '../../db';
 import { HttpError } from '../http';
+import { readAuthSessionCookie } from '../../auth/session-cookie';
 
 export interface AuthenticatedRequest extends Request {
   auth?: {
@@ -20,7 +21,9 @@ export interface AuthenticatedRequest extends Request {
  */
 export function requireAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
   const header = req.header('authorization') ?? '';
-  const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+  const token = header.startsWith('Bearer ')
+    ? header.slice('Bearer '.length).trim()
+    : readAuthSessionCookie(req.header('cookie'));
 
   if (!token) {
     next(new HttpError(401, 'missing bearer token', 'unauthorized'));

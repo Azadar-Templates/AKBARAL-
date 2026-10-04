@@ -1826,22 +1826,9 @@
       location.hash = '#/login';
       return;
     }
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
-    if (!accessToken || !refreshToken) { toast('Incomplete sign-in response', 'err'); location.hash = '#/login'; return; }
-    state.accessToken = accessToken;
-    state.refreshToken = refreshToken;
-    storageSet('ak_access', accessToken);
-    storageSet('ak_refresh', refreshToken);
-    if (params.get('mode') === 'link') {
-      toast('Provider account linked', 'ok');
-      location.hash = '#/settings';
-      await loadMe().catch(() => {});
-      return;
-    }
-    await loadMe().catch(() => {});
-    toast(`Welcome, ${state.user?.name || state.user?.email || ''}`, 'ok');
-    afterSignIn();
+    // OAuth callback sessions are restored by the HttpOnly cookie set by the
+    // server. No credential is accepted from the URL fragment or query.
+    window.location.href = '/chat';
   }
 
   /**

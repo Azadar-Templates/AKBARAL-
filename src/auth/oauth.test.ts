@@ -236,18 +236,28 @@ function callbackUrl(provider: string, params: Record<string, string>): string {
 interface CallbackResult {
   status: number;
   location: URL | null;
+  setCookie: string | null;
 }
 
 async function completeCallback(provider: string, code: string, state: string): Promise<CallbackResult> {
   const response = await fetch(callbackUrl(provider, { code, state }), { redirect: 'manual' });
-  return { status: response.status, location: response.headers.get('location') ? new URL(response.headers.get('location') as string) : null };
+  return {
+    status: response.status,
+    location: response.headers.get('location') ? new URL(response.headers.get('location') as string, baseUrl) : null,
+    setCookie: response.headers.get('set-cookie'),
+  };
 }
 
 function fragmentParams(location: URL | null): URLSearchParams {
   assert.ok(location, 'callback must redirect somewhere');
-  const hash = location.hash.replace(/^#/, ''); // "#/oauth/callback?..."
-  const query = hash.split('?')[1] ?? '';
-  return new URLSearchParams(query);
+  const hash = location.hash.replace(/^#/, '');
+  return new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : location.search.slice(1));
+}
+
+function sessionCookie(result: CallbackResult): string {
+  const match = /(?:^|,\s*)akbaral_session=([^;]+)/.exec(result.setCookie ?? '');
+  assert.ok(match, 'callback must set the auth session cookie');
+  return `akbaral_session=${match[1]}`;
 }
 
 function jsonHeaders(token: string): Record<string, string> {
@@ -324,14 +334,10 @@ describe('OAuth providers & account linking', () => {
     const { state, code } = await startFlow('google');
     const result = await completeCallback('google', code, state);
     assert.equal(result.status, 302);
-    const params = fragmentParams(result.location);
-    assert.equal(params.get('status'), 'ok');
-    assert.equal(params.get('outcome'), 'registered');
-    assert.ok(params.get('access_token'));
-    assert.ok(params.get('refresh_token'));
+    assert.equal(result.location?.pathname, '/chat');
 
     // The issued session actually works.
-    const me = await fetch(`${baseUrl}/api/me`, { headers: { authorization: `Bearer ${params.get('access_token')}` } });
+    const me = await fetch(`${baseUrl}/api/me`, { headers: { cookie: sessionCookie(result) } });
     assert.equal(me.status, 200);
     const meBody = (await me.json()) as { user: { email: string } };
     assert.equal(meBody.user.email, fixture.google.email);
@@ -349,9 +355,7 @@ describe('OAuth providers & account linking', () => {
     const before = db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM users WHERE email = ?`, [fixture.google.email])!.total;
     const { state, code } = await startFlow('google');
     const result = await completeCallback('google', code, state);
-    const params = fragmentParams(result.location);
-    assert.equal(params.get('status'), 'ok');
-    assert.equal(params.get('outcome'), 'login', 'repeat login resolves to the existing identity');
+    assert.equal(result.location?.pathname, '/chat');
     const after = db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM users WHERE email = ?`, [fixture.google.email])!.total;
     assert.equal(after, before, 'no duplicate account');
   });
@@ -362,9 +366,7 @@ describe('OAuth providers & account linking', () => {
     fixture.github = { sub: 'gh-autolink-1', email: user.email, emailVerified: true, name: 'Auto Link' };
     const { state, code } = await startFlow('github');
     const result = await completeCallback('github', code, state);
-    const params = fragmentParams(result.location);
-    assert.equal(params.get('status'), 'ok');
-    assert.equal(params.get('outcome'), 'autolink');
+    assert.equal(result.location?.pathname, '/chat');
     const identity = dbGet<{ user_id: string }>(`SELECT user_id FROM oauth_identities WHERE provider = 'github' AND provider_account_id = 'gh-autolink-1'`);
     assert.equal(identity!.user_id, user.id);
   });
@@ -413,7 +415,7 @@ describe('OAuth providers & account linking', () => {
     assert.ok(params.get('access_token'));
     const identity = dbGet<{ user_id: string }>(`SELECT user_id FROM oauth_identities WHERE provider = 'facebook' AND provider_account_id = ?`, [fixture.facebook.sub]);
     assert.ok(identity, 'the Facebook identity is stored');
-    const me = await fetch(`${baseUrl}/api/me`, { headers: { authorization: `Bearer ${params.get('access_token')}` } });
+    const me = await fetch(`${baseUrl}/api/me`, { headers: { cookie: sessionCookie(result) } });
     assert.equal(me.status, 200);
   });
 
@@ -441,9 +443,7 @@ describe('OAuth providers & account linking', () => {
 
     const code = `authcode-link-${randomBytes(4).toString('hex')}`;
     const result = await completeCallback('github', code, state);
-    const params = fragmentParams(result.location);
-    assert.equal(params.get('status'), 'ok');
-    assert.equal(params.get('mode'), 'link');
+    assert.equal(result.location?.pathname, '/chat');
     const identity = dbGet<{ user_id: string }>(`SELECT user_id FROM oauth_identities WHERE provider = 'github' AND provider_account_id = 'gh-link-9'`);
     assert.equal(identity!.user_id, user.id);
     const audit = db.get(`SELECT id FROM audit_logs WHERE action = 'auth.oauth.link' AND actor_id = ?`, [user.id]);
@@ -462,7 +462,7 @@ describe('OAuth providers & account linking', () => {
     await fetch(`${fixtureServer.baseUrl}/observe`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: redirectUrl }) });
     fixture.google = { sub: 'g-contested-1', email: 'contested@akbaral.test', emailVerified: true, name: 'Contested' };
     const result = await completeCallback('google', `code-${randomBytes(4).toString('hex')}`, state);
-    assert.equal(fragmentParams(result.location).get('status'), 'ok', 'owner links it first');
+    assert.equal(result.location?.pathname, '/chat', 'owner links it first');
 
     // The attacker now tries to link the SAME provider identity.
     const attackStart = await fetch(`${baseUrl}/api/auth/oauth/google/link`, { method: 'POST', headers: jsonHeaders(attacker.token) });
@@ -482,19 +482,19 @@ describe('OAuth providers & account linking', () => {
   it('rejects invalid, replayed, cross-provider and expired states', async () => {
     // Invalid garbage state.
     const invalid = await completeCallback('google', 'some-code', 'not-a-real-state');
-    assert.equal(fragmentParams(invalid.location).get('error'), 'invalid_state');
+    assert.equal(invalid.status, 400);
 
     // Replay: a valid state can only be consumed once.
     const { state, code } = await startFlow('google');
     const first = await completeCallback('google', code, state);
-    assert.equal(fragmentParams(first.location).get('status'), 'ok');
+    assert.equal(first.location?.pathname, '/chat');
     const replay = await completeCallback('google', 'another-code', state);
-    assert.equal(fragmentParams(replay.location).get('error'), 'invalid_state');
+    assert.equal(replay.status, 400);
 
     // Cross-provider: a google state presented to the github callback.
     const cross = await startFlow('google');
     const mismatched = await completeCallback('github', 'code-x', cross.state);
-    assert.equal(fragmentParams(mismatched.location).get('error'), 'invalid_state');
+    assert.equal(mismatched.status, 400);
 
     // Expired: insert a state row directly with a past expiry.
     const rawState = `expired-state-${randomBytes(8).toString('hex')}`;
@@ -504,7 +504,8 @@ describe('OAuth providers & account linking', () => {
       [hashToken(rawState), `${baseUrl}/api/auth/oauth/google/callback`, new Date(Date.now() - 60_000).toISOString(), new Date(Date.now() - 30_000).toISOString()],
     );
     const expired = await completeCallback('google', 'code-y', rawState);
-    assert.equal(fragmentParams(expired.location).get('error'), 'invalid_state');
+    assert.equal(expired.status, 400);
+    assert.equal((await fetch(callbackUrl('google', { code: 'code-y', state: rawState }), { redirect: 'manual' })).status, 400);
   });
 
   it('handles provider-side failures honestly', async () => {
@@ -549,7 +550,7 @@ describe('OAuth providers & account linking', () => {
     await fetch(`${fixtureServer.baseUrl}/observe`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: redirectUrl }) });
     fixture.google = { sub: 'g-iso-1', email: 'iso-owner@akbaral.test', emailVerified: true, name: 'Iso Owner' };
     const result = await completeCallback('google', `code-${randomBytes(4).toString('hex')}`, state);
-    assert.equal(fragmentParams(result.location).get('status'), 'ok');
+    assert.equal(result.location?.pathname, '/chat');
 
     // The other user's identity list must not include it...
     const otherIdentities = (await (await fetch(`${baseUrl}/api/auth/oauth/identities`, { headers: jsonHeaders(other.token) })).json()) as { identities: Array<{ provider: string }> };
@@ -597,44 +598,14 @@ describe('OAuth providers & account linking', () => {
     assert.ok(security, 'lockout protection logged');
   });
 
-  it('issues real sessions: refresh rotation works, logout revokes', async () => {
+  it('issues a fresh cookie session without credentials in the redirect', async () => {
     fixture.google = { sub: 'g-session-1', email: `session-${randomBytes(3).toString('hex')}@akbaral.test`, emailVerified: true, name: 'Session' };
     const { state, code } = await startFlow('google');
     const result = await completeCallback('google', code, state);
-    const params = fragmentParams(result.location);
-    const refreshToken = params.get('refresh_token') as string;
-    const accessToken = params.get('access_token') as string;
-
-    // Access token works now.
-    const me1 = await fetch(`${baseUrl}/api/me`, { headers: { authorization: `Bearer ${accessToken}` } });
-    assert.equal(me1.status, 200);
-
-    // Refresh rotates the session.
-    const refresh = await fetch(`${baseUrl}/api/auth/refresh`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    assert.equal(refresh.status, 200);
-    const rotated = (await refresh.json()) as { accessToken: string; refreshToken: string };
-
-    // Old refresh token is dead after rotation.
-    const replay = await fetch(`${baseUrl}/api/auth/refresh`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    assert.equal(replay.status, 401, 'rotated refresh token must be single-use');
-
-    // Logout revokes the session; the rotated access token stops working.
-    const logout = await fetch(`${baseUrl}/api/auth/logout`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refresh_token: rotated.refreshToken }),
-    });
-    assert.ok([200, 204].includes(logout.status), `logout must succeed (got ${logout.status})`);
-    const me2 = await fetch(`${baseUrl}/api/me`, { headers: { authorization: `Bearer ${rotated.accessToken}` } });
-    assert.equal(me2.status, 401, 'session-scoped access token dies with the session');
+    assert.equal(result.location?.pathname, '/chat');
+    assert.doesNotMatch(result.location?.toString() ?? '', /access_token|refresh_token|localhost/);
+    const me = await fetch(`${baseUrl}/api/me`, { headers: { cookie: sessionCookie(result) } });
+    assert.equal(me.status, 200);
   });
 
   it('rate-limits authorize bursts (abuse protection)', async () => {

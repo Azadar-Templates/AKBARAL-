@@ -10,6 +10,7 @@ import { completeOAuthLink, completeOAuthLogin, isProviderConfigured, issueAutho
 import type { OAuthProviderKey } from '../db/oauth-repositories';
 import { env } from '../config/env';
 import { notifyAuthEvent } from '../integrations/auth-notifications';
+import { serializeAuthSession } from '../auth/session-cookie';
 
 /**
  * OAuth routes (mounted at /api/auth/oauth).
@@ -38,10 +39,11 @@ const CALLBACK_ERROR_CODES = new Set([
   'provider_not_configured',
 ]);
 
-function webCallbackUrl(params: Record<string, string>): string {
-  const base = env.publicWebUrl.replace(/\/$/, '');
+function webCallbackUrl(req: AuthenticatedRequest, params: Record<string, string>): string {
   const fragment = new URLSearchParams(params).toString();
-  return `${base}/#/oauth/callback?${fragment}`;
+  // Use the origin that initiated the flow; production never falls back to a
+  // localhost development URL for an auth redirect.
+  return `${requestOrigin(req)}/#/oauth/callback?${fragment}`;
 }
 
 function requestOrigin(req: AuthenticatedRequest): string {
@@ -147,20 +149,21 @@ export function createOAuthRouter(): Router {
         description: `OAuth callback received an error from the provider: ${String(providerError).slice(0, 120)}`,
         metadata: { provider: provider.definition.key },
       });
-      res.status(302).redirect(webCallbackUrl({ status: 'error', error: 'provider_error', provider: provider.definition.key }));
+      res.status(302).redirect(webCallbackUrl(req, { status: 'error', error: 'provider_error', provider: provider.definition.key }));
       return;
     }
 
     const code = (req.query.code ?? req.body?.code) as string | undefined;
     const state = (req.query.state ?? req.body?.state) as string | undefined;
     if (!code || !state) {
-      res.status(302).redirect(webCallbackUrl({ status: 'error', error: 'invalid_state', provider: provider.definition.key }));
+      res.status(302).redirect(webCallbackUrl(req, { status: 'error', error: 'invalid_state', provider: provider.definition.key }));
       return;
     }
 
     try {
       validateOAuthCookie(req, state);
-      res.setHeader('Set-Cookie', `${OAUTH_COOKIE}=; Max-Age=0; Path=/api/auth/oauth; HttpOnly; Secure; SameSite=Lax`);
+      const clearOAuthCookie = `${OAUTH_COOKIE}=; Max-Age=0; Path=/api/auth/oauth; HttpOnly; Secure; SameSite=Lax`;
+      res.setHeader('Set-Cookie', clearOAuthCookie);
       // Peek at the state (read-only) to branch link vs login mode; the
       // authoritative single-use consumption happens inside the completers.
       const stateRow = peekOAuthState(hashToken(state));
@@ -173,7 +176,7 @@ export function createOAuthRouter(): Router {
           ip: req.ip ?? null,
           userAgent: req.header('user-agent') ?? null,
         });
-        res.status(302).redirect(webCallbackUrl({ status: 'ok', provider: provider.definition.key, mode: 'link' }));
+        res.status(302).redirect('/chat');
         return;
       }
 
@@ -190,18 +193,10 @@ export function createOAuthRouter(): Router {
         event: result.outcome === 'registered' ? 'signup' : 'signin',
         provider: provider.definition.label,
       });
-      res
-        .status(302)
-        .redirect(
-          webCallbackUrl({
-            status: 'ok',
-            provider: provider.definition.key,
-            mode: 'login',
-            outcome: result.outcome,
-            access_token: result.accessToken,
-            refresh_token: result.refreshToken,
-          }),
-        );
+      // The browser receives the same HttpOnly session cookie as password login.
+      // Credentials never enter a Location header, fragment, query, or history.
+      res.setHeader('Set-Cookie', [clearOAuthCookie, serializeAuthSession(result.accessToken)]);
+      res.status(302).redirect('/chat');
     } catch (error) {
       if (error instanceof HttpError && CALLBACK_ERROR_CODES.has(error.code)) {
         appendSecurityLog({
@@ -215,7 +210,7 @@ export function createOAuthRouter(): Router {
         if (error.code === 'invalid_state') {
           res.status(400).json({ error: { code: error.code, message: error.message } });
         } else {
-          res.status(302).redirect(webCallbackUrl({ status: 'error', error: error.code, provider: provider.definition.key }));
+          res.status(302).redirect(webCallbackUrl(req, { status: 'error', error: error.code, provider: provider.definition.key }));
         }
         return;
       }

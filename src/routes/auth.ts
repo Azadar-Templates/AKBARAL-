@@ -19,6 +19,7 @@ import { sendEmail, smtpConfigured, EmailDeliveryNotConfiguredError } from '../i
 import { env } from '../config/env';
 import { redactSecrets } from '../config/secrets';
 import { notifyAuthEvent } from '../integrations/auth-notifications';
+import { clearAuthSession, serializeAuthSession } from '../auth/session-cookie';
 
 export const authRouter = Router();
 
@@ -52,6 +53,7 @@ authRouter.post(
       userAgent: req.headers['user-agent'] ?? null,
     });
     void notifyAuthEvent({ email: result.user.email, event: 'signin' });
+    res.setHeader('Set-Cookie', serializeAuthSession(result.accessToken));
     res.status(200).json(result);
   }),
 );
@@ -110,6 +112,7 @@ authRouter.post(
         description: 'user logged out',
       });
     }
+    res.setHeader('Set-Cookie', clearAuthSession());
     res.status(204).send();
   },
 );
