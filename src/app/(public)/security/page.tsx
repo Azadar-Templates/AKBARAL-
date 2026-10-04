@@ -12,7 +12,7 @@ const CONTROLS = [
     'Email/password accounts with industry-standard password hashing and strength policy',
     'Short-lived JWT access tokens plus rotating refresh tokens with revocation on logout',
     'Email verification and password reset flows with single-use, expiring tokens',
-    'OAuth sign-in (Google, GitHub, Microsoft, Apple) — providers appear only when actually configured',
+    'OAuth sign-in (Google and GitHub) — providers appear only when actually configured',
   ]},
   { title: 'Authorization & isolation', items: [
     'Role-based access control (user / admin) enforced at the route layer',

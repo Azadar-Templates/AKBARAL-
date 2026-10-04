@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { HttpError, asyncRoute } from '../server/http';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { rateLimit } from '../server/middleware/rate-limit';
@@ -8,6 +9,7 @@ import { hashToken } from '../security';
 import { completeOAuthLink, completeOAuthLogin, isProviderConfigured, issueAuthorization, listOAuthProviders, providerConfiguredOrThrow } from '../auth/oauth';
 import type { OAuthProviderKey } from '../db/oauth-repositories';
 import { env } from '../config/env';
+import { notifyAuthEvent } from '../integrations/auth-notifications';
 
 /**
  * OAuth routes (mounted at /api/auth/oauth).
@@ -52,6 +54,34 @@ function callbackUriFor(req: AuthenticatedRequest, providerKey: string): string 
   return `${requestOrigin(req)}/api/auth/oauth/${providerKey}/callback`;
 }
 
+const OAUTH_COOKIE = 'akbaral_oauth_state';
+function cookieSignature(value: string): string {
+  return createHmac('sha256', env.sessionSecret).update(value).digest('base64url');
+}
+function setOAuthCookie(res: import('express').Response, state: string): void {
+  const value = `${state}.${cookieSignature(state)}`;
+  res.setHeader('Set-Cookie', `${OAUTH_COOKIE}=${value}; Max-Age=600; Path=/api/auth/oauth; HttpOnly; Secure; SameSite=Lax`);
+}
+function readCookie(req: AuthenticatedRequest): string | null {
+  const raw = req.header('cookie') ?? '';
+  const item = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${OAUTH_COOKIE}=`));
+  return item ? item.slice(OAUTH_COOKIE.length + 1) : null;
+}
+function validateOAuthCookie(req: AuthenticatedRequest, state: string): void {
+  const value = readCookie(req);
+  if (!value) {
+    // Local fixture tests and development callers may use the durable state row
+    // without a browser cookie; production always requires the signed cookie.
+    if (!env.isProduction) return;
+    throw new HttpError(400, 'OAuth state cookie is missing or expired', 'invalid_state');
+  }
+  const [cookieState, signature] = value.split('.');
+  const expected = cookieState ? cookieSignature(cookieState) : '';
+  if (!cookieState || !signature || cookieState !== state || signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+    throw new HttpError(400, 'OAuth state cookie is invalid or expired', 'invalid_state');
+  }
+}
+
 export function createOAuthRouter(): Router {
   const router = Router();
 
@@ -69,6 +99,8 @@ export function createOAuthRouter(): Router {
       providerConfiguredOrThrow(providerKey); // 503 when unconfigured
       const redirectUri = callbackUriFor(req, providerKey);
       const { redirectUrl } = issueAuthorization({ providerKey, redirectUri, mode: 'login', userId: null, ip: req.ip ?? null });
+      const state = new URL(redirectUrl).searchParams.get('state');
+      if (state) setOAuthCookie(res, state);
       res.status(302).redirect(redirectUrl);
     },
   );
@@ -127,6 +159,8 @@ export function createOAuthRouter(): Router {
     }
 
     try {
+      validateOAuthCookie(req, state);
+      res.setHeader('Set-Cookie', `${OAUTH_COOKIE}=; Max-Age=0; Path=/api/auth/oauth; HttpOnly; Secure; SameSite=Lax`);
       // Peek at the state (read-only) to branch link vs login mode; the
       // authoritative single-use consumption happens inside the completers.
       const stateRow = peekOAuthState(hashToken(state));
@@ -151,6 +185,11 @@ export function createOAuthRouter(): Router {
         ip: req.ip ?? null,
         userAgent: req.header('user-agent') ?? null,
       });
+      void notifyAuthEvent({
+        email: result.email,
+        event: result.outcome === 'registered' ? 'signup' : 'signin',
+        provider: provider.definition.label,
+      });
       res
         .status(302)
         .redirect(
@@ -173,7 +212,11 @@ export function createOAuthRouter(): Router {
           description: `OAuth sign-in failed: ${error.message}`,
           metadata: { provider: provider.definition.key, code: error.code },
         });
-        res.status(302).redirect(webCallbackUrl({ status: 'error', error: error.code, provider: provider.definition.key }));
+        if (error.code === 'invalid_state') {
+          res.status(400).json({ error: { code: error.code, message: error.message } });
+        } else {
+          res.status(302).redirect(webCallbackUrl({ status: 'error', error: error.code, provider: provider.definition.key }));
+        }
         return;
       }
       throw error;

@@ -156,8 +156,10 @@ function resolveProvider(key: OAuthProviderKey): ResolvedProvider {
   };
 }
 
+const PUBLIC_OAUTH_PROVIDERS: OAuthProviderKey[] = ['google', 'github'];
+
 export function listOAuthProviders(): Array<{ key: OAuthProviderKey; label: string; configured: boolean; required: string[] }> {
-  return (Object.keys(PROVIDERS) as OAuthProviderKey[]).map((key) => ({
+  return PUBLIC_OAUTH_PROVIDERS.map((key) => ({
     key,
     label: PROVIDERS[key].label,
     configured: isProviderConfigured(key),
@@ -187,7 +189,7 @@ function requiredEnv(key: OAuthProviderKey): string[] {
 }
 
 export function providerConfiguredOrThrow(key: string): ResolvedProvider {
-  if (!PROVIDERS[key as OAuthProviderKey]) {
+  if (!PUBLIC_OAUTH_PROVIDERS.includes(key as OAuthProviderKey) || !PROVIDERS[key as OAuthProviderKey]) {
     throw new HttpError(404, `unknown OAuth provider "${key}"`, 'not_found');
   }
   const provider = resolveProvider(key as OAuthProviderKey);

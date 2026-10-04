@@ -78,9 +78,10 @@ describe('pre-login surface — a clean front door', () => {
   it('renders polished provider controls with official marks and no badges', () => {
     assert.match(appJs, /const OAUTH_LOGOS = \{/, 'the official marks are inlined (no third-party asset host)');
     assert.match(renderer, /OAUTH_LOGOS\[p\.key\]/, 'each control renders the mark for its provider');
-    for (const key of ['google', 'github', 'microsoft', 'facebook', 'apple']) {
+    for (const key of ['google', 'github']) {
       assert.ok(new RegExp(`\\n    ${key}: '<svg`).test(appJs), `${key} has its official mark`);
     }
+    for (const retired of ['microsoft', 'facebook', 'apple']) assert.ok(!new RegExp(`\\n    ${retired}: '<svg`).test(appJs), `${retired} is removed`);
     assert.match(renderer, /<span class="oauth-mark" aria-hidden="true">\$\{mark\}<\/span>/, 'the mark is rendered in the control');
     assert.match(renderer, /<span class="oauth-label">Continue with \$\{esc\(p\.label\)\}<\/span>/, 'the label names the provider');
     assert.ok(!/setup needed/i.test(renderer), 'no "setup needed" badge is rendered');

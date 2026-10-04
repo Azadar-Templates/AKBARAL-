@@ -18,6 +18,7 @@ import {
 import { sendEmail, smtpConfigured, EmailDeliveryNotConfiguredError } from '../integrations/smtp';
 import { env } from '../config/env';
 import { redactSecrets } from '../config/secrets';
+import { notifyAuthEvent } from '../integrations/auth-notifications';
 
 export const authRouter = Router();
 
@@ -35,6 +36,7 @@ authRouter.post(
       name: optionalString(body, 'name'),
       metadata,
     });
+    void notifyAuthEvent({ email: user.email, event: 'signup' });
     res.status(201).json({ user });
   }),
 );
@@ -49,6 +51,7 @@ authRouter.post(
       ipAddress: req.ip ?? null,
       userAgent: req.headers['user-agent'] ?? null,
     });
+    void notifyAuthEvent({ email: result.user.email, event: 'signin' });
     res.status(200).json(result);
   }),
 );
@@ -123,7 +126,7 @@ authRouter.post(
         503,
         'email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD',
         'provider_not_configured',
-        { requiredCredential: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] },
+        { requiredCredential: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'] },
       );
     }
 
@@ -149,7 +152,7 @@ authRouter.post(
     res.status(202).json({
       status: 'requested',
       emailDelivery: emailConfigured ? 'configured' : 'not_configured',
-      emailDeliveryRequired: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'],
+      emailDeliveryRequired: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'],
       // Only present in development/test environments.
       ...(devToken ? { devToken } : {}),
     });
@@ -190,7 +193,7 @@ authRouter.post(
         503,
         'email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD',
         'provider_not_configured',
-        { requiredCredential: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'] },
+        { requiredCredential: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'] },
       );
     }
     const devToken = process.env.NODE_ENV !== 'production' && user ? createAuthToken({ userId: user.id, purpose: 'email_verify', ip: req.ip ?? null }).token : null;
@@ -215,7 +218,7 @@ authRouter.post(
     res.status(202).json({
       status: 'requested',
       emailDelivery: emailConfigured ? 'configured' : 'not_configured',
-      emailDeliveryRequired: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'],
+      emailDeliveryRequired: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'],
       ...(devToken ? { devToken } : {}),
     });
   }),

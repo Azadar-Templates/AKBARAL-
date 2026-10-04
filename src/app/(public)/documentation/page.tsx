@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 const API_GROUPS = [
   { group: 'Authentication', endpoints: 'POST /api/auth/register · login · logout · refresh · password reset · email verification' },
-  { group: 'OAuth', endpoints: 'GET /api/auth/oauth/:provider/authorize · callback · POST link — google, github, microsoft, apple (visible only when configured)' },
+  { group: 'OAuth', endpoints: 'GET /api/auth/oauth/:provider/authorize · callback · POST link — google and github (visible only when configured)' },
   { group: 'MASTER orchestration', endpoints: 'POST /api/master (goal → workflow) · GET /api/master/:id (plan, steps, agents, status)' },
   { group: 'Tasks', endpoints: 'GET /api/tasks · /api/tasks/:id · POST /api/tasks/:id/cancel · /api/tasks/research · task files' },
   { group: 'Agents (account)', endpoints: 'GET /api/agents · /:slug · /categories · POST /:slug/save' },

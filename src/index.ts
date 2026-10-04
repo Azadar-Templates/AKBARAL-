@@ -13,6 +13,7 @@ import { syncAgentRegistryNonBlocking, countAgentRegistry } from './agents/regis
 import { agentDefinitionCount } from './agents/catalog';
 import { recoverInterruptedWork } from './orchestrator/recovery';
 import { executionQueue } from './orchestrator/queue';
+import { logSmtpConfiguration } from './integrations/smtp';
 
 function checkDatabase(): void {
   const [userCount, taskCount, agentCount, projectCount] = [
@@ -61,6 +62,7 @@ async function start(): Promise<void> {
   // Validates mandatory runtime config before the DB/server starts. Provider
   // credentials remain optional and are surfaced only as configured booleans.
   validateEnvironment();
+  logSmtpConfiguration();
 
   try {
     ensureBootstrapPlans();

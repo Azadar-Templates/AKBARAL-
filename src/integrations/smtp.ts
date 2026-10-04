@@ -18,9 +18,9 @@ import { env } from '../config/env';
 
 export class EmailDeliveryNotConfiguredError extends Error {
   readonly code = 'email_delivery_not_configured';
-  readonly requiredCredential = 'SMTP_HOST/SMTP_USER/SMTP_PASSWORD';
+  readonly requiredCredential = 'SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS';
   constructor() {
-    super('email delivery requires SMTP_HOST, SMTP_USER and SMTP_PASSWORD');
+    super('email delivery requires SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS');
     this.name = 'EmailDeliveryNotConfiguredError';
   }
 }
@@ -43,7 +43,7 @@ interface Reply {
 function resolveSmtpConfig(): SmtpConfig {
   const host = (process.env.SMTP_HOST ?? '').trim();
   const user = (process.env.SMTP_USER ?? '').trim();
-  const password = process.env.SMTP_PASSWORD ?? '';
+  const password = process.env.SMTP_PASS ?? process.env.SMTP_PASSWORD ?? '';
   if (!host || !user || !password) {
     throw new EmailDeliveryNotConfiguredError();
   }
@@ -240,7 +240,12 @@ export async function sendEmail(input: {
 }
 
 export function smtpConfigured(): boolean {
-  return Boolean((process.env.SMTP_HOST ?? '').trim() && (process.env.SMTP_USER ?? '').trim() && process.env.SMTP_PASSWORD);
+  return Boolean((process.env.SMTP_HOST ?? '').trim() && (process.env.SMTP_PORT ?? '').trim() && (process.env.SMTP_USER ?? '').trim() && (process.env.SMTP_PASS ?? process.env.SMTP_PASSWORD));
+}
+
+export function logSmtpConfiguration(): void {
+  if (smtpConfigured()) console.log('[akbaral] auth email notifications enabled');
+  else console.log('[akbaral] auth email notifications disabled: missing SMTP_HOST, SMTP_PORT, SMTP_USER or SMTP_PASS');
 }
 
 function sanitizeHeader(value: string): string {
