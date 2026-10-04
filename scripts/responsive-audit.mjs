@@ -332,7 +332,6 @@ if (!process.env.AUDIT_CSS) {
   }
 }
 const rules = parseCss(cssFiles.map((file) => readFileSync(`${repo}/${file}`, 'utf8')).join('\n'));
-const appJs = readFileSync(`${repo}/${process.env.AUDIT_JS || 'public/app.js'}`, 'utf8');
 const HTML_FILE = process.env.AUDIT_HTML || '';
 const WEB = process.env.AUDIT_BASE || 'http://127.0.0.1:3000';
 const screens = process.argv.find((a) => a.startsWith('--screens='))?.split('=')[1]?.split(',');
@@ -350,11 +349,17 @@ window.fetch = (i, init = {}) => { const raw = typeof i === 'string' ? i : i.url
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
 window.scrollTo = () => {}; window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
 window.XMLHttpRequest = class { open() {} send() {} setRequestHeader() {} addEventListener() {} };
-window.eval(appJs);
-await new Promise((r) => setTimeout(r, 1200));
+const auditJsPath = process.env.AUDIT_JS || 'public/app.js';
+const shouldRunAuditJs = process.env.AUDIT_JS
+  ? process.env.AUDIT_JS !== 'none'
+  : Boolean(doc.querySelector('#main-nav, #menu-toggle, section.screen'));
+if (shouldRunAuditJs) {
+  window.eval(readFileSync(`${repo}/${auditJsPath}`, 'utf8'));
+  await new Promise((r) => setTimeout(r, 1200));
+}
 doc.dispatchEvent(new window.Event('DOMContentLoaded'));
 window.dispatchEvent(new window.Event('load'));
-await new Promise((r) => setTimeout(r, 1500));
+await new Promise((r) => setTimeout(r, shouldRunAuditJs ? 1500 : 200));
 
 const findings = [];
 const hidden = (el) => chain(el).some((n) => n.hasAttribute('hidden'));
@@ -386,7 +391,14 @@ for (const width of WIDTHS) {
 
   resetCaches();
   // Screens plus every dialog surface: a modal has to survive a 320px phone too.
-  const surfaces = [...doc.querySelectorAll('section.screen'), ...doc.querySelectorAll('[role="dialog"]')];
+  // The reset App Router pages do not use the retired hash-SPA `section.screen`
+  // convention, so fall back to the delivered `<main>` landmarks when auditing
+  // the new SSR surfaces.
+  let surfaces = [...doc.querySelectorAll('section.screen'), ...doc.querySelectorAll('[role="dialog"]')];
+  if (!surfaces.length) {
+    surfaces = [...doc.querySelectorAll('[data-audit-surface], main'), ...doc.querySelectorAll('[role="dialog"]')];
+  }
+  if (!surfaces.length) surfaces = [doc.body];
 if (SELFTEST) {
   // Plant four regressions and prove the audit reports every one of them.
   const planted = `

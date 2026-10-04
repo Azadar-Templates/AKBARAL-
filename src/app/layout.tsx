@@ -3,10 +3,11 @@ import type { ReactNode } from 'react';
 import { existsSync } from 'node:fs';
 import { LegacyAppLoader } from './_components/legacy-app-loader';
 import path from 'node:path';
+import './app-reset.css';
 
 export const metadata: Metadata = {
   title: 'AKBARAL! — One Intelligence. Every Solution.',
-  description: 'AKBARAL! / MASTER AI turns a goal into coordinated AI execution: planning, specialist agents, real tools, verification and honest credits. 4,000+ specialists across 80 disciplines.',
+  description: 'AKBARAL! is one simple workspace for Chat, Task, files, images, projects, agents, automations, dashboard, billing, pricing, settings, and help. The registry contains 4,001 registered agent contracts.',
 };
 
 /**
@@ -72,8 +73,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Compressed, long-cached text assets (≈3× smaller on the wire) — see
             src/app/assets/[file]/route.ts for why compression lives there and
             not in next.config.mjs (SSE must stay uncompressed). */}
-        <link rel="stylesheet" href="/assets/tokens.css?v=akbaral-lux-18" />
-        <link rel="stylesheet" href="/assets/styles.css?v=akbaral-lux-18" />
+        <link rel="stylesheet" href="/assets/tokens.css?v=akbaral-ui-reset-1" />
       </head>
       <body>
         {children}

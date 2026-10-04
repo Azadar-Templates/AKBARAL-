@@ -158,15 +158,14 @@ describe('preview stack contract', () => {
     }
   });
 
-  it('the page shell mounts the SPA and references the versioned assets', () => {
+  it('the page shell mounts the typed landing and token stylesheet without the legacy SPA overlay', () => {
     const page = readRepo('src/app/page.tsx');
     const layout = readRepo('src/app/layout.tsx');
-    assert.ok(page.includes('id="app-root"'), 'page must expose the SPA mount (#app-root)');
-    assert.ok(page.includes('id="boot-veil"'), 'page must keep the boot veil (removed only after SPA boot)');
-    assert.ok(page.includes('id="toast-root"'), 'page must keep the toast root (user-visible error surface)');
-    const shell = `${page}\n${layout}`;
-    for (const asset of ['/app.js', '/styles.css', '/tokens.css']) {
-      assert.ok(shell.includes(asset), `page shell must reference ${asset}`);
-    }
+    const loader = readRepo('src/app/_components/legacy-app-loader.tsx');
+    assert.ok(page.includes('<LandingReset />'), 'root renders the typed landing reset');
+    assert.ok(layout.includes('/assets/tokens.css?v=akbaral-ui-reset-1'), 'layout references the versioned token stylesheet');
+    assert.ok(loader.includes('/assets/app.js?v=akbaral-ui-reset-1'), 'archived app asset remains referenced for audits');
+    assert.ok(loader.includes('not mounted over the new UI'), 'legacy overlay is explicitly retired');
+    assert.ok(!page.includes('id="app-root"'), 'root no longer exposes the legacy SPA mount');
   });
 });

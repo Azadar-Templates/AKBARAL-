@@ -48,9 +48,8 @@ const nextConfig = {
   allowedDevOrigins: ['*.e2b.app'],
   async redirects() {
     return [
-      ...['/dashboard', '/projects', '/billing', '/admin', '/owner'].map((source) => ({ source, destination: '/chat', permanent: false })),
       ...['/master', '/workspace'].map((source) => ({ source, destination: '/work', permanent: false })),
-      ...['/about', '/agent-factory', '/agents', '/contact', '/documentation', '/faq', '/features', '/feedback', '/help', '/pricing', '/privacy', '/security', '/terms'].map((source) => ({ source, destination: '/', permanent: false })),
+      ...['/about', '/agent-factory', '/contact', '/documentation', '/faq', '/features', '/feedback', '/privacy', '/security', '/terms'].map((source) => ({ source, destination: '/', permanent: false })),
     ];
   },
   async rewrites() {
@@ -86,7 +85,7 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'private, no-cache, must-revalidate' },
         ],
       },
-      ...['/chat', '/work', '/signin', '/signup'].map((source) => ({
+      ...['/chat', '/work', '/signin', '/signup', '/files', '/images', '/projects', '/agents', '/automations', '/dashboard', '/billing', '/pricing', '/settings', '/help', '/admin', '/owner'].map((source) => ({
         source,
         headers: [{ key: 'Cache-Control', value: 'private, no-cache, no-store, must-revalidate' }],
       })),
