@@ -1747,7 +1747,7 @@
           return;
         }
         if (state.user) {
-          location.hash = '#/workspace';
+          window.location.href = '/chat';
           return;
         }
       }
@@ -1850,7 +1850,7 @@
    * An explicit same-origin `next` path (e.g. `#/login?next=/owner` used by
    * the owner console) is honoured — it must be a site-relative path, never
    * an absolute URL, so a crafted link cannot become an open redirect. With
-   * no `next`, the sign-in lands on the MASTER workspace: the product home.
+   * no `next`, the sign-in lands on the simple typed Chat | Work shell.
    */
   function afterSignIn() {
     const query = (location.hash || '').split('?')[1] || '';
@@ -1859,7 +1859,7 @@
       window.location.href = next;
       return;
     }
-    location.hash = '#/master';
+    window.location.href = '/chat';
   }
 
   /* Official provider marks, inlined: the sign-in surface never waits on a

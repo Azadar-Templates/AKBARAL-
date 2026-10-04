@@ -45,7 +45,7 @@ export default function UserDashboardPage() {
   if (error || !data) return <main className={styles.state}><span>A!</span><h1>Dashboard unavailable</h1><p>{error}</p><a href="/signin">Sign in</a></main>;
 
   return <main className={styles.page}>
-    <header><a href="/#/"><span>A!</span><b>AKBARAL!</b></a><nav><a href="/workspace">Chat & Work</a><a href="/billing">Billing</a></nav></header>
+    <header><a href="/"><span>A!</span><b>AKBARAL!</b></a><nav><a href="/chat">Chat</a><a href="/work">Work</a></nav></header>
     <div className={styles.wrap}>
       <div className={styles.title}><div><small>USER DASHBOARD</small><h1>Welcome{data.user.name ? `, ${data.user.name}` : ''}.</h1><p>{data.user.email} · {data.user.status}</p></div><button type="button" onClick={() => void load()}>Refresh</button></div>
       <section className={styles.metrics} aria-label="Account overview">

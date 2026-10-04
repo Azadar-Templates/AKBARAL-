@@ -2,8 +2,8 @@
 
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Check, ChevronLeft, Clipboard, Download, FileText, History, Menu, MessageSquare,
-  Octagon, PanelRight, Play, Plus, RefreshCw, Send, Settings, Sparkles, Trash2, UserCircle, X, Zap,
+  Check, ChevronDown, ChevronLeft, Clipboard, Download, FileText, History, Menu, MessageSquare,
+  Octagon, PanelRight, Play, Plus, RefreshCw, Send, Settings, ShieldCheck, Sparkles, Trash2, UserCircle, X, Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
@@ -40,6 +40,8 @@ const masterResultSchema = z.object({
 const modelsSchema = z.object({ models: z.array(z.object({
   key: z.string(), name: z.string(), provider: z.string(), available: z.boolean(),
 })) });
+const accountSchema = z.object({ user: z.object({ name: z.string().nullable(), email: z.string(), role: z.string() }) });
+type Account = z.infer<typeof accountSchema>['user'];
 const errorSchema = z.object({ error: z.object({ message: z.string().optional() }).optional(), message: z.string().optional() });
 
 function token() {
@@ -131,6 +133,28 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, minRow
   </div>;
 }
 
+function groupByDate<T extends { updatedAt: string }>(items: T[]): Array<[string, T[]]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const label = historyGroup(item.updatedAt);
+    groups.set(label, [...(groups.get(label) ?? []), item]);
+  }
+  return [...groups.entries()];
+}
+
+function historyGroup(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Earlier';
+  const today = new Date();
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const distance = Math.round((current - day) / 86_400_000);
+  if (distance <= 0) return 'Today';
+  if (distance === 1) return 'Yesterday';
+  if (distance < 7) return 'Previous 7 days';
+  return 'Earlier';
+}
+
 export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -149,6 +173,8 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [error, setError] = useState('');
   const [stages, setStages] = useState<Stage[]>(STAGES);
   const [artifact, setArtifact] = useState<unknown>(null);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const refreshHistory = useCallback(async () => {
@@ -173,6 +199,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     if (!hasToken) return;
     void Promise.all([
       refreshHistory(),
+      api('/api/me', accountSchema).then((data) => setAccount(data.user)),
       api('/api/models', modelsSchema).then((data) => {
         const choices = data.models.filter((item) => item.provider === 'google');
         setModels(choices.length ? choices : data.models);
@@ -277,6 +304,8 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     } catch (deleteError) { setError(deleteError instanceof Error ? deleteError.message : 'Conversation could not be deleted.'); }
   };
 
+  const chatGroups = useMemo(() => groupByDate(conversations), [conversations]);
+  const workGroups = useMemo(() => groupByDate(workItems), [workItems]);
   const artifactText = useMemo(() => artifact === null ? '' : typeof artifact === 'string' ? artifact : JSON.stringify(artifact, null, 2), [artifact]);
   const downloadArtifact = () => {
     const link = document.createElement('a');
@@ -297,7 +326,23 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
           <span>{item === 'chat' ? <MessageSquare size={17} /> : <Zap size={17} />}{item === 'chat' ? 'Chat' : 'Work'}</span>
         </button>)}
       </div>
-      <div className={styles.topActions}><span className={styles.planBadge}>Free · 5 Work tasks</span><a className={styles.accountLink} href="/dashboard" aria-label="Open account dashboard"><UserCircle size={20} /><span>Account</span></a>{Boolean(artifact) && <button type="button" className={styles.iconButton} aria-label="Open artifact" onClick={() => setArtifactOpen(true)}><PanelRight size={20} /></button>}</div>
+      <div className={styles.topActions}>
+        <span className={styles.planBadge}>Free · 5 Work tasks</span>
+        <div className={styles.accountMenu}>
+          <button type="button" className={styles.accountButton} aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((open) => !open)}>
+            <UserCircle size={20} /><span>{account?.name || 'Account'}</span><ChevronDown size={14} />
+          </button>
+          {accountOpen && <nav className={styles.accountPopover} aria-label="Account menu">
+            <div><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email}</small></div>
+            <a href="/dashboard">Account &amp; plan</a>
+            <a href="/#/settings">Settings</a>
+            {['owner', 'super_admin'].includes(account?.role ?? '') && <a href="/owner"><ShieldCheck size={16} /> Owner console</a>}
+            {['admin', 'super_admin'].includes(account?.role ?? '') && <a href="/admin"><ShieldCheck size={16} /> Admin console</a>}
+            <button type="button" onClick={() => { localStorage.removeItem('ak_access'); localStorage.removeItem('ak_refresh'); window.location.href = '/signin'; }}>Sign out</button>
+          </nav>}
+        </div>
+        {Boolean(artifact) && <button type="button" className={styles.iconButton} aria-label="Open artifact" onClick={() => setArtifactOpen(true)}><PanelRight size={20} /></button>}
+      </div>
     </header>
 
     <div className={styles.body}>
@@ -308,15 +353,18 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
           <button className={styles.newButton} type="button" onClick={() => { stop(); setMode('work'); setWorkflowId(null); setArtifact(null); setStages(STAGES); setError(''); }}><Zap size={17} /> New Work Task</button>
         </div>
         <div className={styles.historyList}>
-          {mode === 'chat' ? conversations.map((item) => <div className={styles.historyItem} key={item.id}>
-            <button type="button" onClick={() => void openConversation(item.id)}><span>{item.title}</span><small>{new Date(item.updatedAt).toLocaleDateString()}</small></button>
-            <button type="button" aria-label={`Delete ${item.title}`} onClick={() => void deleteConversation(item.id)}><Trash2 size={15} /></button>
-          </div>) : workItems.map((item) => <div className={styles.workHistoryRow} key={item.id}>
-            <button className={styles.workHistoryItem} type="button" onClick={() => void openWork(item)}><span>{item.title}</span><small>{item.status}</small></button>
-            <button className={styles.retryWork} type="button" aria-label={`Retry ${item.title}`} onClick={() => retryWork(item)}><RefreshCw size={15} /></button>
-          </div>)}
+          {(mode === 'chat' ? chatGroups : workGroups).map(([label, items]) => <section className={styles.historyGroup} key={label} aria-label={label}>
+            <h2>{label}</h2>
+            {mode === 'chat' ? (items as Conversation[]).map((item) => <div className={styles.historyItem} key={item.id}>
+              <button type="button" onClick={() => void openConversation(item.id)}><span>{item.title}</span><small>{new Date(item.updatedAt).toLocaleDateString()}</small></button>
+              <button type="button" aria-label={`Delete ${item.title}`} onClick={() => void deleteConversation(item.id)}><Trash2 size={15} /></button>
+            </div>) : (items as WorkItem[]).map((item) => <div className={styles.workHistoryRow} key={item.id}>
+              <button className={styles.workHistoryItem} type="button" onClick={() => void openWork(item)}><span>{item.title}</span><small>{item.status}</small></button>
+              <button className={styles.retryWork} type="button" aria-label={`Retry ${item.title}`} onClick={() => retryWork(item)}><RefreshCw size={15} /></button>
+            </div>)}
+          </section>)}
         </div>
-        <a className={styles.settingsLink} href="/#/settings"><Settings size={17} /> Settings</a>
+        <a className={styles.settingsLink} href="/dashboard"><Settings size={17} /> Settings</a>
         <div className={styles.sideFooter}><Sparkles size={16} /><p><b>Fair-use Chat</b><br />Chat uses available model-provider quotas and never deducts task credits.</p></div>
       </aside>
       {sidebarOpen && <button type="button" className={styles.scrim} aria-label="Close history" onClick={() => setSidebarOpen(false)} />}

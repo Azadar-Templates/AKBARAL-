@@ -6,7 +6,11 @@ const SCRIPT_ID = 'akbaral-legacy-app';
 const SCRIPT_SOURCE = '/assets/app.js?v=akbaral-lux-18';
 
 function isTypedExperience() {
-  return window.location.pathname === '/workspace' || window.location.pathname === '/master';
+  // Every clean App Router route owns its UI. The legacy hash application is
+  // loaded only by the three routes that intentionally render the legacy Home
+  // document (marketing root and password auth). This prevents its broad
+  // dashboard navigation from mounting over Chat, Work, account, or owner UI.
+  return !['/', '/signin', '/signup'].includes(window.location.pathname);
 }
 
 function shouldDeferLegacyApp() {
