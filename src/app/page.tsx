@@ -13,10 +13,12 @@
  * ============================================================ */
 
 import { CinematicLanding } from './_components/landing/cinematic-landing';
+import { CanonicalHashGuard } from './_components/canonical-hash-guard';
 
 export default function Home() {
   return (
     <>
+      <CanonicalHashGuard />
 <noscript><style>{`#boot-veil{display:none !important}#screen-landing{display:block !important}`}</style></noscript><div id="boot-veil" aria-hidden="true"><div className="boot-core"><span className="boot-ring"></span><span className="boot-ring r2"></span><span className="boot-mark">A!</span></div><div className="boot-word">AKBARAL!</div><div className="boot-tagline">ONE INTELLIGENCE · EVERY SOLUTION</div><div className="boot-line"><i></i></div></div><div id="toast-root" aria-live="polite" aria-atomic="false"></div><a className="skip-link" href="#app-root">
   Skip to content</a><header className="site-header" id="site-header"><div className="header-bar"><a className="brand" href="#/" aria-label="AKBARAL home"><span className="brand-mark" aria-hidden="true"><span className="brand-mark-glow"></span>
       A!</span><span className="brand-text">

@@ -46,6 +46,13 @@ const nextConfig = {
   // Allow the sandbox preview host(s) to reach dev-mode resources (HMR)
   // so the proxied preview works from the browser.
   allowedDevOrigins: ['*.e2b.app'],
+  async redirects() {
+    return [
+      ...['/dashboard', '/projects', '/billing', '/admin', '/owner'].map((source) => ({ source, destination: '/chat', permanent: false })),
+      ...['/master', '/workspace'].map((source) => ({ source, destination: '/work', permanent: false })),
+      ...['/about', '/agent-factory', '/agents', '/contact', '/documentation', '/faq', '/features', '/feedback', '/help', '/pricing', '/privacy', '/security', '/terms'].map((source) => ({ source, destination: '/', permanent: false })),
+    ];
+  },
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${backend}/api/:path*` },
@@ -79,6 +86,10 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'private, no-cache, must-revalidate' },
         ],
       },
+      ...['/chat', '/work', '/signin', '/signup'].map((source) => ({
+        source,
+        headers: [{ key: 'Cache-Control', value: 'private, no-cache, no-store, must-revalidate' }],
+      })),
       {
         source: '/workspace', // the application entry — same rule as `/` above
         headers: [
