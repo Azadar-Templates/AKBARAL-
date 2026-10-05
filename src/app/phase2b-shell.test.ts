@@ -15,8 +15,8 @@ describe('typed Chat/Task shell contract', () => {
   it('uses dedicated App Router routes with the unified signed-in chrome', () => {
     assert.match(chatPage, /<WorkbenchShell initialMode="chat" \/>/);
     assert.match(workPage, /<WorkbenchShell initialMode="work" \/>/);
-    assert.match(component, /<AppShell title=\{title\}>/);
-    assert.match(appShell, /NAV_ITEMS/);
+    assert.match(component, /<AppShell title=\{title\} viewportLocked>/);
+    assert.match(appShell, /NAV_GROUPS/);
   });
 
   it('provides streaming Chat, stop, model choice, Markdown, copy, and no task credits', () => {
@@ -52,7 +52,7 @@ describe('typed Chat/Task shell contract', () => {
 
   it('keeps the one-product navigation exact and removes old broad menu entries', () => {
     for (const item of ['Chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) assert.match(appShell, new RegExp(item.replace('+', '\\+')));
-    for (const oldItem of ['Marketplace', 'Agent Factory', 'CRM']) assert.doesNotMatch(appShell + component, new RegExp(oldItem));
+    for (const oldItem of ['Marketplace', 'CRM']) assert.doesNotMatch(appShell + component, new RegExp(oldItem));
   });
 
   it('contains no explicit any type in the typed shell', () => {

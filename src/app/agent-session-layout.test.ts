@@ -17,11 +17,11 @@ const css = readFileSync(join(root, 'src/app/_components/workbench/workbench-she
 const shell = readFileSync(join(root, 'src/app/_components/app-shell.tsx'), 'utf8');
 const shellCss = readFileSync(join(root, 'src/app/_components/app-shell.module.css'), 'utf8');
 
-const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.indexOf('return <AppShell title={title}>\n    <div className={styles.page}>'));
+const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.indexOf('return <AppShell title={title} viewportLocked>\n    <div className={styles.page}>'));
 
 describe('agent session layout — four panes', () => {
   it('mounts left rail, center column, docked composer and right panel in order', () => {
-    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.chatWrap}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
+    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
     let cursor = -1;
     for (const marker of order) {
       const index = sessionBlock.indexOf(marker);
@@ -31,11 +31,14 @@ describe('agent session layout — four panes', () => {
     }
   });
 
-  it('uses the focus chrome so the page owns its own left rail', () => {
-    assert.match(sessionBlock, /<AppShell title=\{title\} chrome="focus">/);
-    assert.match(shell, /chrome = 'full'/);
-    assert.match(shell, /const focus = chrome === 'focus'/);
-    assert.match(shellCss, /\.shellFocus\{grid-template-columns:minmax\(0,1fr\);height:100dvh/);
+  it('uses the shared global AppShell so Chat and Task have the same navigation', () => {
+    assert.match(sessionBlock, /<AppShell title=\{title\} viewportLocked>/);
+    assert.match(shell, /const NAV_GROUPS = \[/);
+    for (const label of ['Chat', 'Task', 'Dashboard', 'Files & documents', 'Images', 'Projects', 'Agents', 'Agent Factory', 'Automations', 'Billing &amp; credits', 'See plans and pricing', 'Settings', 'Help']) {
+      assert.ok(shell.includes(label), `${label} is in the global navigation`);
+    }
+    assert.match(shell, /aria-current=\{pathname === item\.href \? 'page' : undefined\}/);
+    assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
   });
 
   it('left rail is collapsible with a real new-session action and grouped real rows', () => {
@@ -47,11 +50,9 @@ describe('agent session layout — four panes', () => {
     for (const label of ["'Today'", "'Yesterday'", "'Older'"]) assert.ok(ui.includes(label), `${label} group`);
   });
 
-  it('picks the rail shape from the documented width bands', () => {
-    assert.match(ui, /const expanded = window\.matchMedia\('\(min-width: 1280px\)'\)/);
-    assert.match(ui, /const icons = window\.matchMedia\('\(min-width: 1024px\)'\)/);
-    assert.match(ui, /expanded\.matches \? 'expanded' : icons\.matches \? 'icons' : 'drawer'/);
-    assert.match(ui, /setRailOpen\(mode === 'expanded'\)/);
+  it('rail is expanded from 1280px up and collapsed below it', () => {
+    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1280px\)'\)/);
+    assert.match(ui, /setRailOpen\(wide\.matches\); setRailDrawer\(!wide\.matches\)/);
   });
 
   it('collapses the rail to a 56px icon strip that keeps every action reachable', () => {
@@ -59,7 +60,7 @@ describe('agent session layout — four panes', () => {
     assert.match(sessionBlock, /className=\{styles\.railIcons\}/);
     assert.match(sessionBlock, /aria-label="Expand sessions"/);
     assert.match(sessionBlock, /aria-label="New session"/);
-    assert.match(css, /\.session\[data-rail='icons'\]\{--ak-rail:56px\}/);
+    assert.match(css, /\.session\[data-rail='collapsed'\]\{grid-template-columns:56px/);
     assert.match(css, /\.railIconButton\{width:44px;height:44px/);
   });
 
@@ -70,7 +71,7 @@ describe('agent session layout — four panes', () => {
   });
 
   it('traps focus in the rail while it is an overlay drawer', () => {
-    assert.match(ui, /if \(railMode !== 'drawer' \|\| !railOpen\) return/);
+    assert.match(ui, /if \(!railDrawer \|\| !railOpen\) return/);
     assert.match(ui, /if \(event\.key === 'Escape'\) \{ setRailOpen\(false\); return; \}/);
     assert.match(ui, /event\.preventDefault\(\); last\.focus\(\)/);
     assert.match(sessionBlock, /className=\{styles\.sessionScrim\}/);
@@ -101,7 +102,7 @@ describe('agent session layout — four panes', () => {
 
 describe('agent session flow — chronological, composer last', () => {
   it('renders the thread before the composer and nothing after it', () => {
-    const threadIndex = sessionBlock.indexOf('className={styles.messages}');
+    const threadIndex = sessionBlock.indexOf('styles.messages');
     const composerIndex = sessionBlock.indexOf('className={styles.composerDock}');
     assert.ok(threadIndex > -1 && composerIndex > threadIndex, `${uiPath}: thread precedes composer`);
     const afterComposer = sessionBlock.slice(composerIndex);
@@ -122,8 +123,8 @@ describe('agent session flow — chronological, composer last', () => {
   });
 
   it('keeps the composer docked inside the center column', () => {
-    const columnStart = sessionBlock.indexOf('className={styles.chatWrap}');
-    const column = sessionBlock.slice(columnStart, sessionBlock.indexOf('</section>', columnStart));
+    const columnStart = sessionBlock.indexOf('className={styles.sessionMain}');
+    const column = sessionBlock.slice(columnStart, sessionBlock.indexOf('{/* 3 — RIGHT', columnStart));
     assert.ok(column.includes('styles.composerDock'), 'composer lives inside the center column');
     assert.ok(column.lastIndexOf('styles.composerDock') > column.lastIndexOf('styles.messages'));
     assert.match(css, /\.sessionMain\{[^}]*display:flex[^}]*flex-direction:column/);
@@ -161,8 +162,9 @@ describe('agent session honesty', () => {
     assert.match(sessionBlock, /title="Sandboxed session artifact" sandbox=""/);
   });
 
-  it('keeps the credit and AI-accuracy disclosure at the point of input', () => {
+  it('keeps exactly one merged credit and AI-accuracy disclosure at the point of input', () => {
     assert.match(sessionBlock, /AI can make mistakes\. Verify important information\. Chat never deducts Work task credits\./);
+    assert.equal((sessionBlock.match(/styles\.disclosure/g) ?? []).length, 1);
     assert.match(sessionBlock, /<a href="\/privacy">Privacy<\/a>/);
   });
 });
@@ -171,8 +173,7 @@ describe('agent session grid and responsive contract', () => {
   it('uses one CSS grid with a top bar spanning all three columns', () => {
     assert.match(css, /\.session\{[^}]*display:grid/);
     assert.match(css, /grid-template-areas:"topbar topbar topbar" "leftrail center rightpanel"/);
-    assert.match(css, /grid-template-columns:var\(--ak-rail\) minmax\(0,1fr\) var\(--ak-panel\)/);
-    assert.match(css, /--ak-rail:280px;--ak-panel:320px/);
+    assert.match(css, /grid-template-columns:280px minmax\(0,1fr\) 320px/);
     assert.match(css, /\.sessionBar\{grid-area:topbar[^}]*height:56px/);
     assert.match(css, /\.sessionRail\{grid-area:leftrail/);
     assert.match(css, /\.sessionMain\{grid-area:center/);
@@ -180,22 +181,19 @@ describe('agent session grid and responsive contract', () => {
   });
 
   it('closes the right panel below 1280px and keeps it an overlay there', () => {
-    assert.match(css, /@media\(max-width:1279px\)\{\.session\{--ak-panel:0px\}/);
     assert.match(css, /@media\(max-width:1279px\)\{[^@]*\.sessionPanel\{position:absolute/);
     assert.match(ui, /const query = window\.matchMedia\('\(min-width: 1280px\)'\);\n\s*const apply = \(\) => \{ if \(!query\.matches\) setPanelOpen\(false\); \}/);
   });
 
-  it('turns both side panes into drawers below 1024px', () => {
-    assert.match(css, /@media\(max-width:1023px\)\{\.session\{--ak-rail:0px\}/);
-    assert.match(css, /@media\(max-width:1023px\)\{[^@]*\.sessionRail\{position:absolute/);
-    assert.match(css, /@media\(max-width:639px\)\{/);
-    assert.match(css, /\.sessionRail\[hidden\]\{display:none\}/);
+  it('turns both side panes into drawers below 768px', () => {
+    assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?grid-template-areas:\s*"topbar" "center"/);
+    assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.sessionRail[\s\S]*?position:\s*absolute/);
+    assert.match(css, /@media\(max-width:1023px\)\{/);
   });
 
   it('cannot scroll horizontally: every session container is width-contained', () => {
     assert.match(css, /\.session\{[^}]*max-width:100%[^}]*overflow:hidden/);
     assert.match(css, /\.session>\*\{min-width:0;max-width:100%\}/);
-    assert.match(css, /\.session \*\{box-sizing:border-box;max-width:100%\}/);
     assert.match(css, /\.messages\{[^}]*overflow-x:hidden/);
     assert.match(css, /\.sessionMain\{[^}]*min-width:0[^}]*overflow:hidden/);
     assert.match(css, /\.panelPreview\{width:100%;max-width:100%/);

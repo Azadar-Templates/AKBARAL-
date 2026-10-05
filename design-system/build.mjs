@@ -68,8 +68,8 @@ ${colorBlock(DARK, ':root')}
   --color-success: ${tokens.palette.semantic.success};
   --color-warning: ${tokens.palette.semantic.warning};
   --color-error: ${tokens.palette.semantic.error};
-  --shadow-glow: 0 0 40px -10px rgb(14 165 233 / 0.4);
-  --gradient-hero: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e3a5f 100%);
+  --shadow-glow: 0 0 40px -10px rgb(47 131 72 / 0.4);
+  --gradient-hero: linear-gradient(135deg, #07100b 0%, #102318 50%, #1d4b2b 100%);
 
   /* Typography (families resolved per-platform; scale semantics in tokens.json) */
   --font-sans: ${tokens.typography.families.web.sans};

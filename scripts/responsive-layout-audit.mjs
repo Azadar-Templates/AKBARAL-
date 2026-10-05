@@ -128,7 +128,12 @@ function fixture(route, width) {
   document.documentElement.innerHTML = '<head></head><body></body>';
   const root = document.createElement('main'); root.dataset.auditSurface = route; document.body.append(root);
   if (route === '/chat' || route === '/work') {
-    root.className = 'shell shellFocus';
+    root.className = 'shell akbaral-viewport-locked';
+    const sidebar = document.createElement('aside'); sidebar.className = 'sidebar';
+    sidebar.innerHTML = '<nav class="nav"><a href="/chat">Chat</a><a href="/work">Task</a></nav>';
+    const main = document.createElement('section'); main.className = 'main';
+    const content = document.createElement('div'); content.className = 'content';
+    const contentInner = document.createElement('div'); contentInner.className = 'contentInner';
     const session = document.createElement('div'); session.className = 'session';
     const phone = width < 640; const iconRail = width >= 640 && width < 1280; const desktop = width >= 1280;
     session.dataset.rail = desktop ? 'expanded' : 'collapsed'; session.dataset.panel = 'closed';
@@ -139,7 +144,7 @@ function fixture(route, width) {
       <aside class="sessionPanel" hidden></aside>`;
     if (phone) session.querySelector('.sessionRail').setAttribute('data-collapsed', 'true');
     if (iconRail) session.querySelector('.sessionRail').setAttribute('data-collapsed', 'true');
-    root.append(session);
+    contentInner.append(session); content.append(contentInner); main.append(content); root.append(sidebar, main);
   } else if (route === '/') {
     root.className = 'page'; root.innerHTML = `<header class="topbar"><div class="topbarInner"><a class="brand" href="#">AKBARAL!</a></div></header><section class="hero"><h1>${'Long hero title '.repeat(20)}</h1></section><section class="section"><div class="chips"><span class="chip">one</span><span class="chip">two</span></div><div class="grid3"><article class="card"><p>${'token'.repeat(100)}</p></article></div></section>`;
   } else if (route === '/settings') {
@@ -158,6 +163,7 @@ function safetyModel(rootEl, width) {
   // viewport. Fixed dimensions are accepted only when they have a max-width
   // cap or are touch/icon chrome (the same distinction as the browser audit).
   let modeledScrollWidth = width;
+  const viewportHeight = 900;
   for (const el of [rootEl, ...rootEl.querySelectorAll('*')]) {
     const styles = rulesFor(el, width);
     const widthPx = px(styles.get('width')?.value, width);
@@ -166,10 +172,20 @@ function safetyModel(rootEl, width) {
     if (widthPx !== null && widthPx > width && (maxPx === null || maxPx > width)) modeledScrollWidth = Math.max(modeledScrollWidth, widthPx);
     if (minPx !== null && minPx > width && (maxPx === null || maxPx > width)) modeledScrollWidth = Math.max(modeledScrollWidth, minPx);
   }
-  Object.defineProperty(rootEl.ownerDocument.documentElement, 'clientWidth', { configurable: true, value: width });
-  Object.defineProperty(rootEl.ownerDocument.documentElement, 'scrollWidth', { configurable: true, value: modeledScrollWidth });
-  assert.ok(rootEl.ownerDocument.documentElement.scrollWidth <= rootEl.ownerDocument.documentElement.clientWidth, `horizontal overflow at ${width}px`);
-  return { modeledScrollWidth };
+  const documentElement = rootEl.ownerDocument.documentElement;
+  const route = rootEl.dataset.auditSurface;
+  const locked = route === '/chat' || route === '/work';
+  Object.defineProperty(documentElement, 'clientWidth', { configurable: true, value: width });
+  Object.defineProperty(documentElement, 'scrollWidth', { configurable: true, value: modeledScrollWidth });
+  assert.ok(documentElement.scrollWidth <= documentElement.clientWidth, `horizontal overflow at ${width}px`);
+
+  // Locked authenticated surfaces are viewport applications: the document
+  // scroll range must equal its viewport range. The public landing page keeps
+  // a larger range so its normal page scrolling remains a deliberate contract.
+  Object.defineProperty(documentElement, 'clientHeight', { configurable: true, value: viewportHeight });
+  Object.defineProperty(documentElement, 'scrollHeight', { configurable: true, value: locked ? viewportHeight : route === '/' ? viewportHeight + 640 : viewportHeight + 120 });
+  if (locked) assert.ok(documentElement.scrollHeight <= documentElement.clientHeight, `${route} page scroll at ${width}px`);
+  return { modeledScrollWidth, pageScroll: locked ? 'contained' : route === '/' ? 'allowed' : 'normal' };
 }
 
 function expectedChatState(route, width, session) {
@@ -177,16 +193,33 @@ function expectedChatState(route, width, session) {
   const expectedRail = width >= 1280 ? 'expanded' : 'collapsed';
   assert.equal(session.dataset.rail, expectedRail, `${route} rail state @ ${width}px`);
   assert.equal(session.dataset.panel, 'closed', `${route} right panel starts closed @ ${width}px`);
-  if (width < 640) assert.equal(session.querySelector('.sessionRail').dataset.collapsed, 'true', `${route} phone rail is a closed drawer`);
-  if (width >= 640 && width < 1280) assert.equal(session.querySelector('.sessionRail').dataset.collapsed, 'true', `${route} tablet rail is icon-only`);
+  if (width < 768) assert.equal(session.querySelector('.sessionRail').dataset.collapsed, 'true', `${route} phone rail is a closed drawer`);
+  if (width >= 768 && width < 1280) assert.equal(session.querySelector('.sessionRail').dataset.collapsed, 'true', `${route} tablet rail is icon-only`);
 }
+
+function assertAuthenticatedSurfaceFill(width) {
+  if (width !== 1440 && width !== 1920) return;
+  // The global sidebar is expanded at desktop widths. The model uses the
+  // shipped AppShell padding and its only permitted wide-screen cap, then
+  // asserts that Chat and Task consume the entire resulting content box.
+  const sidebar = 280;
+  const padding = width >= 1600 ? 24 : Math.min(Math.max(width * 0.03, 18), 32);
+  const available = width - sidebar - (padding * 2);
+  const contentWidth = Math.min(1600, available);
+  assert.equal(contentWidth, available, `authenticated content must fill ${width}px available width`);
+  assert.ok((available - contentWidth) / 2 <= 120, `wide-screen gutter exceeds 120px at ${width}px`);
+}
+
 
 let checks = 0;
 for (const route of ROUTES) {
   for (const width of WIDTHS) {
     const { dom, root: surface } = fixture(route, width);
-    const { modeledScrollWidth } = safetyModel(surface, width);
-    if (route === '/chat' || route === '/work') expectedChatState(route, width, surface.querySelector('.session'));
+    const { modeledScrollWidth, pageScroll } = safetyModel(surface, width);
+    if (route === '/chat' || route === '/work') {
+      expectedChatState(route, width, surface.querySelector('.session'));
+      assertAuthenticatedSurfaceFill(width);
+    }
     const longText = surface.querySelector('h1,h2,h3,p,a');
     if (longText) {
       const styles = rulesFor(longText, width);
@@ -202,11 +235,14 @@ for (const route of ROUTES) {
     }
     checks += 1;
     dom.window.close();
-    process.stdout.write(`PASS ${route.padEnd(9)} ${String(width).padStart(4)}px scrollWidth=${modeledScrollWidth}\n`);
+    const scrollStatus = route === '/' ? 'landingScroll=allowed' : `pageScroll=${pageScroll}`;
+    process.stdout.write(`PASS ${route.padEnd(9)} ${String(width).padStart(4)}px scrollWidth=${modeledScrollWidth} ${scrollStatus}\n`);
   }
 }
-assert.match(css, /@media\s*\(max-width:\s*639px\)[\s\S]*?\.sessionRail/);
-assert.match(css, /@media\s*\(min-width:\s*1600px\)[\s\S]*?width:\s*min\(1400px/);
+assert.match(css, /html:has\(body \.akbaral-viewport-locked\)[\s\S]*?height:\s*100%[\s\S]*?overflow:\s*hidden/);
+assert.match(css, /\.shellViewportLocked[\s\S]*?height:\s*100dvh[\s\S]*?overflow:\s*hidden/);
+assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.sessionRail/);
+assert.match(css, /@media\s*\(min-width:\s*1600px\)[\s\S]*?width:\s*min\(1600px/);
 assert.match(css, /safe-area-inset-bottom/);
 assert.match(css, /aspect-ratio:\s*16\s*\/\s*9/);
 console.log(`RESPONSIVE MATRIX — ${checks} route/width checks passed (${ROUTES.length} routes × ${WIDTHS.length} widths)`);

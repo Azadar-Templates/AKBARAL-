@@ -1,12 +1,9 @@
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg-deep);color:var(--text);font-family:var(--font-sans)}body{overflow-x:hidden}a{color:inherit}button,input,select,textarea{font:inherit}button:disabled,[aria-disabled="true"]{opacity:.62;cursor:not-allowed}::selection{background:var(--accent-soft);color:var(--text)}
-/* Cross-page layout invariants. Component CSS owns visual tokens; this reset
-   owns the box model and replaced-element guardrails. */
-*, *::before, *::after { box-sizing: border-box; }
-html, body { max-width: 100%; overflow-x: hidden; }
-body { min-width: 0; overflow-wrap: anywhere; }
-main, section, article, aside, header, footer, nav, form, div, ul, ol, dl,
-figure, figcaption, p, h1, h2, h3, h4, h5, h6, a, button, input, select, textarea,
-label, span, b, small, strong, pre, code { min-width: 0; max-width: 100%; }
-img, video, canvas, svg { display: block; max-width: 100%; height: auto; }
-iframe { display: block; max-width: 100%; width: 100%; aspect-ratio: 16 / 9; }
-pre, code { overflow-wrap: anywhere; white-space: pre-wrap; }
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;max-width:100%;background:var(--bg-deep);color:var(--text);font-family:var(--font-sans)}body{min-width:0;overflow-x:hidden;overflow-wrap:anywhere}a{color:inherit}button,input,select,textarea{font:inherit}button:disabled,[aria-disabled="true"]{opacity:.62;cursor:not-allowed}::selection{background:var(--accent-soft);color:var(--text)}main,section,article,aside,header,footer,nav,form,div,ul,ol,dl,figure,figcaption,p,h1,h2,h3,h4,h5,h6,a,button,input,select,textarea,label,span,b,small,strong,pre,code{min-width:0;max-width:100%}img,video,canvas,svg{display:block;max-width:100%;height:auto}iframe{display:block;max-width:100%;width:100%;aspect-ratio:16 / 9}pre,code{overflow-wrap:anywhere;white-space:pre-wrap}:where(a,button,input,select,textarea,summary):focus-visible{outline:2px solid var(--accent-bright);outline-offset:3px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+
+/* Only authenticated Chat/Task shells opt into viewport locking. Public
+   marketing routes do not receive this marker and remain normally scrollable. */
+html:has(body .akbaral-viewport-locked),
+html:has(body .akbaral-viewport-locked) body {
+  height: 100%;
+  overflow: hidden;
+}

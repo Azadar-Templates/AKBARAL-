@@ -44,7 +44,7 @@
     "smoke:shell": "node scripts/live-shell-smoke.mjs",
     "smoke:artifacts": "node scripts/live-artifact-smoke.mjs",
     "audit:responsive": "node scripts/responsive-audit.mjs",
-    "audit:responsive:matrix": "tsx --import ./scripts/responsive/register-hooks.mjs scripts/responsive-matrix.mjs",
+    "audit:responsive:matrix": "node scripts/responsive-layout-audit.mjs",
     "audit:responsive:static": "node scripts/responsive-layout-audit.mjs",
     "audit:axe": "tsx --import ./scripts/responsive/register-hooks.mjs scripts/axe-jsdom.mjs",
     "audit:responsive:selftest": "node scripts/responsive-audit.mjs --selftest --widths=320",

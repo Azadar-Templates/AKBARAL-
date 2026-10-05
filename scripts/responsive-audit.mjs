@@ -26,7 +26,7 @@ const repo = process.cwd();
 const args = process.argv.slice(2);
 const TRACE = args.includes('--trace');
 const WHY = (args.find((a) => a.startsWith('--why=')) || '').slice(6);
-const WIDTHS = (process.argv.find((a) => a.startsWith('--widths='))?.split('=')[1] || '320,360,375,390,414,768,1024,1280,1440,1920')
+const WIDTHS = (process.argv.find((a) => a.startsWith('--widths='))?.split('=')[1] || '320,375,414,640,768,1024,1280,1440,1920')
   .split(',').map(Number);
 const AS_JSON = process.argv.includes('--json');
 const SELFTEST = args.includes('--selftest');

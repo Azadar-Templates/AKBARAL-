@@ -12,6 +12,13 @@ function useSignedInHint() {
   return signedIn;
 }
 
+const pipeline = [
+  ['01', 'Understand', 'Goal understanding'],
+  ['02', 'Plan', 'Planner and task lifecycle'],
+  ['03', 'Route', 'MASTER and specialist agents'],
+  ['04', 'Verify', 'Tools, fallback, and review'],
+];
+
 export function LandingReset() {
   const signedIn = useSignedInHint();
   const primaryHref = signedIn ? '/chat' : '/signup';
@@ -21,12 +28,15 @@ export function LandingReset() {
     <main className={styles.page}>
       <header className={styles.topbar}>
         <div className={styles.topbarInner}>
-          <Link className={styles.brand} href="/" aria-label="AKBARAL! home"><span className={styles.mark}>A!</span> AKBARAL!</Link>
+          <Link className={styles.brand} href="/" aria-label="AKBARAL! home">
+            <span className={styles.mark}>A!</span>
+            <span><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span>
+          </Link>
           <nav className={styles.nav} aria-label="Landing sections">
-            <a href="#features">Features</a>
-            <a href="#agents">Agents</a>
-            <a href="#security">Security</a>
-            <a href="#faq">FAQ</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#surfaces">Product</a>
+            <a href="#safety">Safety</a>
+            <Link href="/pricing">Pricing</Link>
           </nav>
           <div className={styles.actions}>
             <Link className={styles.ghost} href="/signin">Sign in</Link>
@@ -36,118 +46,74 @@ export function LandingReset() {
       </header>
 
       <section className={styles.hero} aria-labelledby="hero-title">
-        <span className={styles.kicker}>One simple product</span>
-        <h1 id="hero-title">One Intelligence. Every Solution.</h1>
-        <p>AKBARAL! gives you a single place to chat, run Work tasks, manage files, review credits, and keep projects organized without switching products.</p>
-        <div className={styles.heroCtas}>
-          <Link className={styles.primary} href={primaryHref}>{primaryLabel}</Link>
-          <Link className={styles.secondary} href="/pricing">See plans and pricing</Link>
-        </div>
-        <div className={styles.mock} aria-label="Product interface overview">
-          <div className={styles.mockTop}><span>AKBARAL! workspace</span><span className={styles.dots} aria-hidden="true"><span /><span /><span /></span></div>
-          <div className={styles.mockBody}>
-            <div className={styles.mockMain}>
-              <div className={styles.mockEmpty}><b>Ready for your first request</b><span>Real chats and Work results appear after sign-in.</span></div>
-              <div className={styles.composer}>
-                <div className={styles.composerBox}>Large goal composer</div>
-                <div className={styles.composerFoot}><span>Enter sends · Shift+Enter adds a line</span><span>Gemini family when configured</span></div>
-              </div>
-            </div>
-            <aside className={styles.mockRail} aria-label="Workspace inventory">
-              <div className={styles.railCard}><b>Files</b><p>Your uploaded documents and images stay account-scoped.</p></div>
-              <div className={styles.railCard}><b>Projects</b><p>Group task context, artifacts, and knowledge by workspace.</p></div>
-              <div className={styles.railCard}><b>Credits</b><p>Work credits are charged only on successful completion.</p></div>
-            </aside>
+        <div className={styles.heroCopy}>
+          <span className={styles.kicker}>A calmer way to get real work done</span>
+          <h1 id="hero-title">One intelligence for the whole job.</h1>
+          <p>AKBARAL! understands the goal, plans the work, routes it through the right capabilities, and returns a result you can review.</p>
+          <div className={styles.heroCtas}>
+            <Link className={styles.primary} href={primaryHref}>{primaryLabel}<span aria-hidden="true">↗</span></Link>
+            <Link className={styles.secondary} href="/work">See Work in action</Link>
           </div>
+          <p className={styles.heroNote}><span className={styles.liveDot} /> Real Chat and Work flows. Configured providers only.</p>
+        </div>
+
+        <div className={styles.heroVisual} aria-label="Product interface overview: AKBARAL! orchestration">
+          <div className={styles.visualGrid} aria-hidden="true" />
+          <div className={styles.pipelineCard}>
+            <div className={styles.visualHeader}><span>AKBARAL! core</span><span className={styles.status}>READY</span></div>
+            <div className={styles.goalRow}><span className={styles.goalMark}>⌁</span><div><small>YOUR GOAL</small><b>Turn a complex brief into a useful result.</b></div></div>
+            <div className={styles.pipelineList}>
+              {pipeline.map(([number, title, detail], index) => <div className={styles.pipelineRow} key={number}><span className={styles.pipelineNumber}>{number}</span><span className={styles.pipelineLine} data-active={index === 1 ? 'true' : undefined} /><span><b>{title}</b><small>{detail}</small></span><span className={styles.pipelineState}>{index < 1 ? 'done' : index === 1 ? 'active' : 'next'}</span></div>)}
+            </div>
+          </div>
+          <div className={styles.signalCard}><span className={styles.signalIcon}>✓</span><div><b>Verification stays visible</b><small>Outputs, activity, and limits remain part of the product surface.</small></div></div>
+          <div className={styles.orb}><span>A!</span><small>ONE CORE</small></div>
         </div>
       </section>
 
-      <section className={styles.section} aria-label="Quick paths">
-        <div className={styles.chips}>
-          {['New chat', 'Files & documents', 'Images', 'Projects', 'Agents', 'Billing & credits'].map((chip) => <span className={styles.chip} key={chip}>{chip}</span>)}
+      <section className={styles.proofBar} aria-label="Quick paths and product principles">
+        <div><span className={styles.proofIcon}>↳</span><span><b>Goal → result</b><small>One continuous work surface</small></span></div>
+        <div><span className={styles.proofIcon}>◌</span><span><b>Real capabilities</b><small>Catalog and provider truth</small></span></div>
+        <div><span className={styles.proofIcon}>⌁</span><span><b>Reviewable work</b><small>Artifacts, stages, and activity</small></span></div>
+      </section>
+
+      <section className={styles.section} id="how-it-works" aria-labelledby="features-title">
+        <div className={styles.sectionHead}><span className={styles.eyebrow}>From intent to outcome</span><h2 id="features-title">The handoff between thinking and doing, made clear.</h2><p>AKBARAL! is One simple product: it brings the orchestration layer into view without making you manage the machinery.</p></div>
+        <div className={styles.storyGrid}>
+          <article className={styles.storyLead}><span className={styles.storyNumber}>01</span><h3>Start with the goal, not a tool.</h3><p>Use Chat for an open-ended conversation or Work for a tracked task. The system begins with what you are trying to accomplish.</p><div className={styles.quote}><span>“</span><p>Describe the goal in your own words. The next step is planning, not menu hunting.</p></div></article>
+          <div className={styles.storySteps}>{pipeline.map(([number, title, detail]) => <div className={styles.storyStep} key={number}><span>{number}</span><div><b>{title}</b><p>{detail}. AKBARAL! keeps the transition explicit and the state honest.</p></div></div>)}</div>
         </div>
       </section>
 
-      <section className={styles.section} id="features" aria-labelledby="features-title">
-        <div className={styles.sectionHead}>
-          <h2 id="features-title">Focused on the work surface you actually use.</h2>
-          <p>One dark interface, large inputs, honest empty states, and no route that swaps you into a different design.</p>
-        </div>
-        <div className={styles.grid3}>
-          <article className={styles.card}><span className={styles.icon}>1</span><h3>Ask naturally</h3><p>Use the large chat composer for planning, writing, analysis, and follow-up conversation.</p></article>
-          <article className={styles.card}><span className={styles.icon}>2</span><h3>Run a task</h3><p>Work mode shows the goal, stages, preview rail, image upload, and authenticated export.</p></article>
-          <article className={styles.card}><span className={styles.icon}>3</span><h3>Keep context</h3><p>Files, images, projects, billing, settings, and help live in one consistent workspace chrome.</p></article>
+      <section className={styles.section} id="surfaces" aria-labelledby="integrations-title">
+        <div className={styles.sectionHead}><span className={styles.eyebrow}>One product, four surfaces</span><h2 id="integrations-title">Everything you need stays close to the work.</h2></div>
+        <div className={styles.surfaceGrid}>
+          <Link className={`${styles.surfaceCard} ${styles.surfacePrimary}`} href="/chat"><span className={styles.surfaceTag}>PRIMARY MODE</span><h3 id="thread-title">Chat</h3><p>Think out loud with one intelligence. Conversations, attachments, model truth, and tool activity stay together.</p><span className={styles.surfaceArrow}>Open Chat ↗</span></Link>
+          <Link className={styles.surfaceCard} href="/work"><span className={styles.surfaceTag}>PRIMARY MODE</span><h3>Work</h3><p>Turn a goal into a tracked run with visible stages, a sandboxed preview, and authenticated export.</p><span className={styles.surfaceArrow}>Open Work ↗</span></Link>
+          <Link className={styles.surfaceCard} href="/agents"><span className={styles.surfaceTag}>CAPABILITY REGISTRY</span><h3 id="agents-title">Agents</h3><p>Search the 4,001 registered agent contracts by capability and category. AKBARAL! never describes them as active or earning; the registry tells you what is configured.</p><span className={styles.surfaceArrow}>Explore Agents ↗</span></Link>
+          <Link className={styles.surfaceCard} href="/dashboard"><span className={styles.surfaceTag}>ACCOUNT VIEW</span><h3>Dashboard</h3><p>Current work, credits, activity, plan, and sessions in a compact view that helps you decide what is next.</p><span className={styles.surfaceArrow}>Open Dashboard ↗</span></Link>
         </div>
       </section>
 
-      <section className={styles.section} aria-labelledby="integrations-title">
-        <div className={styles.note}>
-          <div><h2 id="integrations-title">Integrations are reported honestly.</h2><p>The app reads configured model availability from the existing model catalog, uploads through project file endpoints, and exports Work results through authenticated ZIP downloads.</p></div>
-          <div className={styles.noteList}><span>Configured models only</span><span>Project files</span><span>Authenticated exports</span></div>
-        </div>
+      <section className={`${styles.section} ${styles.safetySection}`} id="safety" aria-labelledby="security-title">
+        <div className={styles.safetyPanel}><div><span className={styles.eyebrow}>Built for trust</span><h2 id="security-title">Power is useful when the boundaries are visible.</h2><p>AKBARAL! reports configured providers, available agents, task state, credits, and artifacts as they are. It does not turn an empty state into a promise.</p></div><div className={styles.safetyList}><span><i>01</i>Scoped account records</span><span><i>02</i>Sandboxed previews</span><span><i>03</i>Server-enforced permissions</span><span><i>04</i>Successful Work only consumes credits</span></div></div>
       </section>
 
-      <section className={styles.section} aria-labelledby="thread-title">
-        <div className={styles.sectionHead}>
-          <h2 id="thread-title">Chat stays clear.</h2>
-          <p>The thread area starts empty, then fills with your real messages and AKBARAL! responses after sign-in.</p>
-        </div>
-        <div className={styles.thread} aria-label="Chat thread layout demonstration">
-          <div className={`${styles.bubble} ${styles.bubbleUser}`}><b>You</b><p>Your actual prompt appears here.</p></div>
-          <div className={styles.bubble}><b>AKBARAL!</b><p>The response area streams real output from the configured model route. Chat never deducts Work task credits.</p></div>
-        </div>
+      <section className={`${styles.section} ${styles.factorySection}`} aria-labelledby="steps-title">
+        <div className={styles.factoryVisual} aria-hidden="true"><div className={styles.factoryCore}>A!</div><span className={styles.factoryNode} data-node="one">Purpose</span><span className={styles.factoryNode} data-node="two">Tools</span><span className={styles.factoryNode} data-node="three">Verify</span></div>
+        <div className={styles.factoryCopy}><span className={styles.eyebrow}>Agent Factory</span><h2 id="steps-title">Shape the specialist you actually need.</h2><p>Describe a purpose, choose capabilities and permissions, create it through the existing factory, then review its security and benchmark state before it becomes part of your workspace.</p><Link className={styles.secondary} href="/agent-factory">Open Agent Factory ↗</Link></div>
       </section>
 
-      <section className={styles.section} id="agents" aria-labelledby="agents-title">
-        <div className={styles.note}>
-          <div><h2 id="agents-title">4,001 registered agent contracts.</h2><p>The registry describes specialist contracts, capabilities, inputs, tool permissions, and verification rules. AKBARAL! never describes them as active or earning unless a real run proves it.</p></div>
-          <Link className={styles.secondary} href="/agents">Open Agents</Link>
-        </div>
+      <section className={`${styles.section} ${styles.pricingSection}`} aria-labelledby="pricing-title">
+        <div className={styles.pricingIntro}><span className={styles.eyebrow}>Simple capacity</span><h2 id="pricing-title">Start small. Scale when the work does.</h2><p>USD plans built around successful Work tasks. No invented usage, no mystery tiers.</p><Link className={styles.textLink} href="/pricing">See plans and pricing ↗</Link></div>
+        <div className={styles.priceRail}><div><small>FREE TRIAL</small><b>$0</b><span>5 tasks · 30 days</span></div><div className={styles.priceFeatured}><small>PRO</small><b>$50</b><span>100 tasks</span></div><div><small>ENTERPRISE</small><b>$400</b><span>2,000 tasks</span></div></div>
       </section>
 
-      <section className={styles.section} id="security" aria-labelledby="security-title">
-        <div className={styles.note}>
-          <div><h2 id="security-title">Security is built into the visible flow.</h2><p>Passwords use server-side hashing, refresh sessions are rotated, authenticated APIs scope records to the owner, and file previews stay sandboxed.</p></div>
-          <div className={styles.noteList}><span>Scoped records</span><span>Rotated sessions</span><span>Sandboxed preview</span></div>
-        </div>
-      </section>
+      <section className={`${styles.section} ${styles.faqSection}`} aria-labelledby="faq-title"><div className={styles.sectionHead}><span className={styles.eyebrow}>A few clear answers</span><h2 id="faq-title">Less ceremony. More useful work.</h2></div><div className={styles.faqGrid}><details className={styles.faqItem}><summary>Does Chat use Work task credits?</summary><p>No. Chat is a conversation surface. Work task credits are consumed only when a successful Work task is recorded.</p></details><details className={styles.faqItem}><summary>Can I see what happened during a Work run?</summary><p>Yes, where the configured flow supports it: task state, tool activity, verification, output, and history remain in the Work surface.</p></details><details className={styles.faqItem}><summary>Can I create a specialist agent?</summary><p>Yes. Agent Factory uses the authenticated factory contracts for templates, creation, security review, benchmarks, versions, and lifecycle status.</p></details><details className={styles.faqItem}><summary>Are plans priced in USD?</summary><p>Yes. AKBARAL! pricing is USD-only, with six published plans and no hidden regional currency switch.</p></details></div></section>
 
-      <section className={styles.section} aria-labelledby="steps-title">
-        <div className={styles.sectionHead}>
-          <h2 id="steps-title">Three steps from blank page to result.</h2>
-        </div>
-        <div className={styles.steps}>
-          <article className={styles.step}><span className={styles.stepNum}>01</span><h3>Sign in</h3><p>Use email and password, or a configured Google or GitHub provider.</p></article>
-          <article className={styles.step}><span className={styles.stepNum}>02</span><h3>Describe the goal</h3><p>Choose Chat for conversation or Task for a tracked Work run.</p></article>
-          <article className={styles.step}><span className={styles.stepNum}>03</span><h3>Review the result</h3><p>Check the stage trail, preview the artifact, and export only authenticated work.</p></article>
-        </div>
-      </section>
+      <section className={styles.final} aria-labelledby="final-title"><span className={styles.eyebrow}>Ready when you are</span><h2 id="final-title">Give the goal one place to go.</h2><p>Open the workspace and let AKBARAL! carry the work from first sentence to verified result.</p><div className={styles.heroCtas}><Link className={styles.primary} href={primaryHref}>{primaryLabel}<span aria-hidden="true">↗</span></Link><Link className={styles.secondary} href="/help">Read the product guide</Link></div></section>
 
-      <section className={styles.section} id="faq" aria-labelledby="faq-title">
-        <div className={styles.sectionHead}><h2 id="faq-title">FAQ</h2></div>
-        <div className={styles.faq}>
-          <details className={styles.faqItem}><summary>Does the landing page redirect signed-in visitors?</summary><p>No. The landing page remains the landing page. Signed-in visitors use the workspace CTA to open Chat.</p></details>
-          <details className={styles.faqItem}><summary>When are Work credits used?</summary><p>Credits are consumed only on success. Failed or cancelled Work is refunded automatically by the credit flow.</p></details>
-          <details className={styles.faqItem}><summary>Which chat models are shown?</summary><p>The app lists only currently functional Gemini-family choices reported by the model catalog. It does not list unavailable providers.</p></details>
-          <details className={styles.faqItem}><summary>Is there a light theme?</summary><p>The committed product theme is dark. Light appearance is marked coming soon until it is real.</p></details>
-        </div>
-      </section>
-
-      <section className={styles.final} aria-labelledby="final-title">
-        <h2 id="final-title">Open one workspace for every task.</h2>
-        <p>Start free with 5 successful Work tasks during the 30-day trial, then choose a USD plan when you need more capacity.</p>
-        <div className={styles.heroCtas}>
-          <Link className={styles.primary} href={primaryHref}>{primaryLabel}</Link>
-          <Link className={styles.secondary} href="/help">Read help</Link>
-        </div>
-      </section>
-
-      <footer className={styles.footer}>
-        <div className={styles.footerInner}>
-          <span>© {new Date().getUTCFullYear()} AKBARAL!</span>
-          <div className={styles.footerLinks}><Link href="/pricing">Pricing</Link><Link href="/help">Help</Link><Link href="/signin">Sign in</Link></div>
-        </div>
-      </footer>
+      <footer className={styles.footer}><div className={styles.footerInner}><div className={styles.footerBrand}><span className={styles.mark}>A!</span><span><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span></div><div className={styles.footerLinks}><Link href="/pricing">Pricing</Link><Link href="/help">Help</Link><Link href="/signin">Sign in</Link><Link href="/privacy">Privacy</Link></div><span className={styles.footerMeta}>© {new Date().getUTCFullYear()} AKBARAL!</span></div></footer>
     </main>
   );
 }
