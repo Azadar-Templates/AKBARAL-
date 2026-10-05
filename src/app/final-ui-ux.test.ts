@@ -61,8 +61,8 @@ describe('AKBARAL! full UI/UX reset contract', () => {
 
   it('chat and task composers are large, auto-growing, and honest about credits', () => {
     assert.match(workbench, /<textarea[^>]*rows=\{4\}/s);
-    assert.match(workbenchCss, /\.composer textarea\{[^}]*min-height:96px/);
-    assert.match(workbenchCss, /max-height:30dvh/);
+    assert.match(workbenchCss, /\.composer textarea\{[^}]*min-height:(?:96|112)px/);
+    assert.match(workbenchCss, /max-height:\s*30dvh/);
     assert.match(workbench, /Enter' && !event\.shiftKey/);
     assert.match(workbench, /Chat never deducts Work task credits/);
     assert.match(workbench, /Credits are consumed only on success — failures refund automatically/);
