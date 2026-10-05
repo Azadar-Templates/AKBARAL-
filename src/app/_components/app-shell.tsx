@@ -22,22 +22,26 @@ type MePayload = {
   subscription?: unknown;
 };
 
-const NAV_ITEMS = [
-  { href: '/chat', label: 'Chat', short: 'C' },
-  { href: '/work', label: 'Task', short: 'T' },
-  { href: '/pricing', label: 'See plans and pricing', short: '$' },
-] as const;
-
-const OTHER_NAV_ITEMS = [
-  { href: '/files', label: 'Files & documents', short: 'F' },
-  { href: '/images', label: 'Images', short: 'I' },
-  { href: '/projects', label: 'Projects', short: 'P' },
-  { href: '/agents', label: 'Agents', short: 'A' },
-  { href: '/automations', label: 'Automations', short: 'Au' },
-  { href: '/dashboard', label: 'Dashboard', short: 'D' },
-  { href: '/settings', label: 'Settings', short: 'S' },
-  { href: '/help', label: 'Help', short: '?' },
-  { href: '/billing', label: 'Billing & credits', short: 'B' },
+const NAV_GROUPS = [
+  { title: 'PRIMARY MODES', items: [
+    { href: '/chat', label: 'Chat', short: 'C' },
+    { href: '/work', label: 'Task', short: 'T' },
+  ] },
+  { title: 'WORKSPACE', items: [
+    { href: '/dashboard', label: 'Dashboard', short: 'D' },
+    { href: '/files', label: 'Files & documents', short: 'F' },
+    { href: '/images', label: 'Images', short: 'I' },
+    { href: '/projects', label: 'Projects', short: 'P' },
+    { href: '/agents', label: 'Agents', short: 'A' },
+    { href: '/agent-factory', label: 'Agent Factory', short: 'F+' },
+    { href: '/automations', label: 'Automations', short: 'Au' },
+  ] },
+  { title: 'ACCOUNT', items: [
+    { href: '/billing', label: 'Billing & credits', short: 'B' },
+    { href: '/pricing', label: 'See plans and pricing', short: '$' },
+    { href: '/settings', label: 'Settings', short: 'S' },
+    { href: '/help', label: 'Help', short: '?' },
+  ] },
 ] as const;
 
 export function storedAccessToken() {
@@ -122,7 +126,6 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [othersOpen, setOthersOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const { account, authenticated } = useAccount();
   const initials = useMemo(() => (account?.name || account?.email || 'A').slice(0, 1).toUpperCase(), [account]);
@@ -198,32 +201,22 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
           <button className={styles.collapse} type="button" aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} onClick={() => setCollapsed((value) => !value)}>{collapsed ? '›' : '‹'}</button>
         </div>
         <nav className={styles.nav} aria-label="Primary workspace navigation">
-          {NAV_ITEMS.map((item) => (
-            <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
-              <span className={styles.navBullet} aria-hidden="true">{item.short}</span>
-              <span className={styles.navText}>{item.label}</span>
-            </Link>
-          ))}
-          <div className={styles.navGroup}>
-            <button
-              className={styles.navGroupToggle}
-              type="button"
-              aria-expanded={othersOpen}
-              aria-controls="sidebar-others-group"
-              onClick={() => setOthersOpen((open) => !open)}
-            >
-              <span className={styles.navBullet} aria-hidden="true">…</span>
-              <span className={styles.navText}>Others</span>
-              <span className={styles.navChevron} aria-hidden="true">{othersOpen ? '▾' : '▸'}</span>
-            </button>
-            <div className={styles.navGroupItems} id="sidebar-others-group" hidden={!othersOpen}>
-              {OTHER_NAV_ITEMS.map((item) => (
-                <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
-                  <span className={styles.navBullet} aria-hidden="true">{item.short}</span>
-                  <span className={styles.navText}>{item.label}</span>
-                </Link>
-              ))}
+          {NAV_GROUPS.map((group) => (
+            <div className={styles.navGroup} key={group.title}>
+              <span className={styles.navSectionTitle}>{group.title}</span>
+              <div className={styles.navGroupItems}>
+                {group.items.map((item) => (
+                  <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
+                    <span className={styles.navBullet} aria-hidden="true">{item.short}</span>
+                    <span className={styles.navText}>{item.label}</span>
+                  </Link>
+                ))}
+              </div>
             </div>
+          ))}
+          <div className={styles.navGroupOptional}>
+            {canOwner ? <Link href="/owner" aria-current={pathname === '/owner' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">O</span><span className={styles.navText}>Owner Console</span></Link> : null}
+            {canAdmin ? <Link href="/admin" aria-current={pathname === '/admin' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">Ad</span><span className={styles.navText}>Admin</span></Link> : null}
           </div>
         </nav>
       </aside>}
