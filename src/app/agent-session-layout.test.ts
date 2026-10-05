@@ -47,8 +47,8 @@ describe('agent session layout — four panes', () => {
     for (const label of ["'Today'", "'Yesterday'", "'Older'"]) assert.ok(ui.includes(label), `${label} group`);
   });
 
-  it('rail is expanded from 1024px up and collapsed below it', () => {
-    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1024px\)'\)/);
+  it('rail is expanded from 1280px up and collapsed below it', () => {
+    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1280px\)'\)/);
     assert.match(ui, /setRailOpen\(wide\.matches\); setRailDrawer\(!wide\.matches\)/);
   });
 

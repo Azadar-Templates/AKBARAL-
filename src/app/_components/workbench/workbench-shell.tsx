@@ -211,7 +211,13 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, button
     const textarea = ref.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 112), Math.max(window.innerHeight * 0.3, 180))}px`;
+    // Phones get a compact single-line starting surface; desktop keeps the
+    // larger four-line composer. Both caps follow the viewport, not a fixed
+    // device height.
+    const phone = window.matchMedia('(max-width: 639px)').matches;
+    const minimum = phone ? 44 : 112;
+    const maximum = Math.max(window.innerHeight * 0.3, phone ? 120 : 180);
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minimum), maximum)}px`;
   }, [value]);
 
   return <div className={styles.composerCard}>
@@ -259,8 +265,11 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [attachmentNote, setAttachmentNote] = useState('');
   const [tools, setTools] = useState<ToolEvent[]>([]);
   const [disclosureOpen, setDisclosureOpen] = useState(true);
-  const [railOpen, setRailOpen] = useState(true);
-  const [railDrawer, setRailDrawer] = useState(false);
+  // The session rail starts closed below the wide desktop breakpoint. At
+  // tablet widths that means the required 56px icon strip; on phones the CSS
+  // turns the same closed state into an off-canvas drawer.
+  const [railOpen, setRailOpen] = useState(false);
+  const [railDrawer, setRailDrawer] = useState(true);
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [threadPinned, setThreadPinned] = useState(true);
   const [hasNewBelow, setHasNewBelow] = useState(false);
@@ -292,10 +301,12 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     try { if (window.sessionStorage.getItem(DISCLOSURE_KEY) === '1') setDisclosureOpen(false); } catch {}
   }, []);
 
-  // Breakpoint contract: the rail is expanded from 1024px up, icon-only
-  // between 640px and 1023px, and an overlay drawer below 640px.
+  // Breakpoint contract: the rail is expanded from 1280px up, icon-only
+  // between 640px and 1279px, and an overlay drawer below 640px. The same
+  // closed state is deliberately used for both tablet and phone so a resize
+  // never leaves an expanded drawer stranded over the thread.
   useEffect(() => {
-    const wide = window.matchMedia('(min-width: 1024px)');
+    const wide = window.matchMedia('(min-width: 1280px)');
     const apply = () => { setRailOpen(wide.matches); setRailDrawer(!wide.matches); };
     apply();
     wide.addEventListener('change', apply);
@@ -335,6 +346,17 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     rail.addEventListener('keydown', onKeyDown);
     return () => rail.removeEventListener('keydown', onKeyDown);
   }, [railDrawer, railOpen]);
+
+  // The output panel is also a drawer below 1280px. Escape closes it without
+  // changing the streaming or conversation flow.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPanelOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [panelOpen]);
 
   /** Right panel content: real project files and artifacts only. */
   const loadPanel = useCallback(async (id: string) => {
@@ -698,7 +720,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             : <p className={styles.hint}>No preview yet. A completed website artifact renders here in a sandboxed frame.</p>) : null}
         </div>
       </aside>
-      {railDrawer && railOpen ? <button className={styles.sessionScrim} type="button" aria-label="Close sessions" onClick={() => setRailOpen(false)} /> : null}
+      {(railDrawer && railOpen) || (panelOpen && railDrawer) ? <button className={styles.sessionScrim} type="button" aria-label="Close drawers" onClick={() => { setRailOpen(false); setPanelOpen(false); }} /> : null}
     </div>
   </AppShell>;
 

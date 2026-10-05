@@ -404,11 +404,11 @@ if (SELFTEST) {
   const planted = `
     #audit-selftest-wide { width: 900px; }
     #audit-selftest-tiny { font-size: 9px; }
-    #audit-selftest-small { height: 22px; }
+    #audit-selftest-small { min-height: 22px !important; height: 22px; }
     #audit-selftest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }`;
   const extra = parseCss(planted).map((r) => ({ ...r, order: rules.length + r.order }));
   rules.push(...extra);
-  const host = doc.querySelector('section.screen') || doc.body;
+  const host = surfaces[0] || doc.body;
   host.insertAdjacentHTML('beforeend',
     '<div id="audit-selftest-wide"></div><span id="audit-selftest-tiny">tiny</span>' +
     '<button id="audit-selftest-small" type="button">x</button><div id="audit-selftest-grid"></div>');

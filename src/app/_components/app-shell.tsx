@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import styles from './app-shell.module.css';
 
 type Account = {
@@ -123,11 +123,32 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [othersOpen, setOthersOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
   const { account, authenticated } = useAccount();
   const initials = useMemo(() => (account?.name || account?.email || 'A').slice(0, 1).toUpperCase(), [account]);
   const role = account?.role || '';
   const canOwner = ['owner', 'super_admin'].includes(role);
   const canAdmin = ['admin', 'super_admin'].includes(role);
+
+  // Workspace navigation is a real drawer below the desktop breakpoint: Escape
+  // closes it and Tab stays inside while it is open.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setMobileOpen(false); return; }
+      if (event.key !== 'Tab') return;
+      const focusable = sidebar.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input,select,textarea');
+      if (!focusable.length) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    sidebar.addEventListener('keydown', onKeyDown);
+    return () => sidebar.removeEventListener('keydown', onKeyDown);
+  }, [mobileOpen]);
 
   const signOut = async () => {
     const refreshToken = storedRefreshToken();
@@ -168,7 +189,7 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   return (
     <main className={`${styles.shell} ${collapsed ? styles.shellCollapsed : ''} ${focus ? styles.shellFocus : ''}`}>
       {mobileOpen && !focus ? <button className={styles.scrim} type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
-      {focus ? null : <aside className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Workspace navigation">
+      {focus ? null : <aside ref={sidebarRef} className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Workspace navigation">
         <div className={styles.brandRow}>
           <Link className={styles.brand} href="/chat" aria-label="AKBARAL! workspace">
             <span className={styles.mark} aria-hidden="true">A!</span>
