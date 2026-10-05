@@ -96,7 +96,7 @@ describe('chat layout contract', () => {
 
   it('keeps the composer honest, large, and keyboard friendly', () => {
     assert.match(workbench, /rows=\{4\}/);
-    assert.match(workbenchCss, /\.composer textarea\{[^}]*max-height:30vh/);
+    assert.match(workbenchCss, /\.composer textarea\{[^}]*max-height:30dvh/);
     assert.match(workbench, /event\.key === 'Enter' && !event\.shiftKey/);
     assert.match(workbench, /Upload image/);
     assert.match(workbench, /Chat never deducts Work task credits\./);

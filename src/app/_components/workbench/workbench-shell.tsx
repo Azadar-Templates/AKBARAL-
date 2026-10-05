@@ -41,6 +41,10 @@ type ProjectDetailPayload = { files?: Array<{ id?: string; original_name?: strin
 type ArtifactsPayload = { artifacts?: Array<{ id?: string; original_name?: string; mime_type?: string; size_bytes?: number; created_at?: string }> };
 type WebsiteArtifactPayload = { artifact?: { title?: string; content?: string; version?: number } | null; note?: string };
 type PanelTab = 'files' | 'artifacts' | 'preview';
+/** Which shape the session rail takes at the current viewport width. */
+type RailMode = 'expanded' | 'icons' | 'drawer';
+/** What the rail is actually doing right now, including user overrides. */
+type RailState = 'expanded' | 'icons' | 'drawer-open' | 'drawer-closed';
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const DISCLOSURE_KEY = 'ak_ai_disclosure_dismissed';
@@ -211,7 +215,11 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, button
     const textarea = ref.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 112), Math.max(window.innerHeight * 0.3, 180))}px`;
+    // Phones get a 44px floor so the composer never eats the thread; desktops
+    // keep a roomier 96px. The cap is always 30% of the live viewport height.
+    const floor = window.innerWidth < 640 ? 44 : 96;
+    const ceiling = Math.max(window.innerHeight * 0.3, floor);
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, floor), ceiling)}px`;
   }, [value]);
 
   return <div className={styles.composerCard}>
@@ -259,8 +267,8 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [attachmentNote, setAttachmentNote] = useState('');
   const [tools, setTools] = useState<ToolEvent[]>([]);
   const [disclosureOpen, setDisclosureOpen] = useState(true);
-  const [railOpen, setRailOpen] = useState(true);
-  const [railDrawer, setRailDrawer] = useState(false);
+  const [railOpen, setRailOpen] = useState(false);
+  const [railMode, setRailMode] = useState<RailMode>('drawer');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [threadPinned, setThreadPinned] = useState(true);
   const [hasNewBelow, setHasNewBelow] = useState(false);
@@ -292,14 +300,22 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     try { if (window.sessionStorage.getItem(DISCLOSURE_KEY) === '1') setDisclosureOpen(false); } catch {}
   }, []);
 
-  // Breakpoint contract: the rail is expanded from 1024px up, icon-only
-  // between 640px and 1023px, and an overlay drawer below 640px.
+  // Breakpoint contract, one source of truth:
+  //   <1024px   the rail is an off-canvas drawer, closed, opened from the bar
+  //   1024-1279 the rail is a 56px in-flow icon strip
+  //   >=1280px  the rail is a 280px expanded column
   useEffect(() => {
-    const wide = window.matchMedia('(min-width: 1024px)');
-    const apply = () => { setRailOpen(wide.matches); setRailDrawer(!wide.matches); };
+    const expanded = window.matchMedia('(min-width: 1280px)');
+    const icons = window.matchMedia('(min-width: 1024px)');
+    const apply = () => {
+      const mode: RailMode = expanded.matches ? 'expanded' : icons.matches ? 'icons' : 'drawer';
+      setRailMode(mode);
+      setRailOpen(mode === 'expanded');
+    };
     apply();
-    wide.addEventListener('change', apply);
-    return () => wide.removeEventListener('change', apply);
+    expanded.addEventListener('change', apply);
+    icons.addEventListener('change', apply);
+    return () => { expanded.removeEventListener('change', apply); icons.removeEventListener('change', apply); };
   }, []);
 
   // Right panel never steals width below 1280px.
@@ -319,7 +335,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
 
   // Drawer focus trap: while the rail is an overlay it keeps Tab inside it.
   useEffect(() => {
-    if (!railDrawer || !railOpen) return;
+    if (railMode !== 'drawer' || !railOpen) return;
     const rail = railRef.current;
     if (!rail) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -334,7 +350,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     };
     rail.addEventListener('keydown', onKeyDown);
     return () => rail.removeEventListener('keydown', onKeyDown);
-  }, [railDrawer, railOpen]);
+  }, [railMode, railOpen]);
 
   /** Right panel content: real project files and artifacts only. */
   const loadPanel = useCallback(async (id: string) => {
@@ -573,6 +589,9 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
 
   const title = mode === 'chat' ? 'Session' : 'Task';
   const sessionStatus = error ? 'error' : busy ? 'streaming' : 'idle';
+  const railState: RailState = railMode === 'expanded' ? 'expanded'
+    : railMode === 'icons' ? (railOpen ? 'expanded' : 'icons')
+    : railOpen ? 'drawer-open' : 'drawer-closed';
   const sessionTitle = conversations.find((item) => item.id === conversationId)?.title || 'New session';
   const visibleConversations = debouncedQuery
     ? conversations.filter((item) => (item.title || 'Untitled session').toLowerCase().includes(debouncedQuery))
@@ -586,7 +605,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
 
   if (mode === 'chat') return <AppShell title={title} chrome="focus">
     {/* Grid areas: "topbar topbar topbar" / "leftrail center rightpanel" */}
-    <div className={styles.session} data-rail={railOpen ? 'expanded' : 'collapsed'} data-panel={panelOpen ? 'open' : 'closed'}>
+    <div className={styles.session} data-rail={railState} data-panel={panelOpen ? 'open' : 'closed'}>
       {/* 0 — TOP BAR spans all three columns */}
       <header className={styles.sessionBar}>
         <a className={styles.backLink} href="/chat" aria-label="Back to sessions">‹</a>
@@ -598,7 +617,8 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
       </header>
 
       {/* 1 — LEFT: real sessions for this account */}
-      <aside className={styles.sessionRail} id="session-rail" ref={railRef} aria-label="Sessions" data-collapsed={railOpen ? undefined : 'true'}>
+      <aside className={styles.sessionRail} id="session-rail" ref={railRef} aria-label="Sessions"
+        data-mode={railState} data-collapsed={railOpen ? undefined : 'true'} hidden={railState === 'drawer-closed'}>
         {railOpen ? <>
           <div className={styles.railBrand}>
             <span className={styles.railMark} aria-hidden="true">A!</span>
@@ -619,7 +639,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
               <h3>{group.label}</h3>
               <ul>
                 {group.rows.map((conversation) => <li key={conversation.id}>
-                  <button className={styles.historyOpenButton} type="button" aria-current={conversationId === conversation.id ? 'true' : undefined} onClick={() => { void resumeConversation(conversation.id); if (railDrawer) setRailOpen(false); }}>
+                  <button className={styles.historyOpenButton} type="button" aria-current={conversationId === conversation.id ? 'true' : undefined} onClick={() => { void resumeConversation(conversation.id); if (railMode === 'drawer') setRailOpen(false); }}>
                     <b>{conversation.title || 'Untitled session'}</b><small>{conversation.updatedAt?.slice(0, 10) || ''}</small>
                   </button>
                   <button className={styles.historyDeleteButton} type="button" aria-label={`Delete session ${conversation.title || 'Untitled session'}`} onClick={() => void deleteConversation(conversation.id)}>Delete</button>
@@ -659,7 +679,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
             {attachmentNote ? <p className={styles.attachNote}>{attachmentNote}</p> : null}
             <div className={styles.composerMeta}>
-              <label className={styles.modelLabel}>Model
+              <label className={styles.modelLabel}><span className={styles.modelLabelText}>Model</span>
                 <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="Chat model">
                   {models.length ? models.map((item) => <option key={item.key} value={item.key} disabled={!item.available}>{modelOptionLabel(item)}</option>) : <option value={DEFAULT_MODEL}>Loading catalog…</option>}
                 </select>
@@ -698,7 +718,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             : <p className={styles.hint}>No preview yet. A completed website artifact renders here in a sandboxed frame.</p>) : null}
         </div>
       </aside>
-      {railDrawer && railOpen ? <button className={styles.sessionScrim} type="button" aria-label="Close sessions" onClick={() => setRailOpen(false)} /> : null}
+      {railMode === 'drawer' && railOpen ? <button className={styles.sessionScrim} type="button" aria-label="Close sessions" onClick={() => setRailOpen(false)} /> : null}
     </div>
   </AppShell>;
 

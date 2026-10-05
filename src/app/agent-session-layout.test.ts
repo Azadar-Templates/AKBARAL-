@@ -47,9 +47,11 @@ describe('agent session layout — four panes', () => {
     for (const label of ["'Today'", "'Yesterday'", "'Older'"]) assert.ok(ui.includes(label), `${label} group`);
   });
 
-  it('rail is expanded from 1024px up and collapsed below it', () => {
-    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1024px\)'\)/);
-    assert.match(ui, /setRailOpen\(wide\.matches\); setRailDrawer\(!wide\.matches\)/);
+  it('picks the rail shape from the documented width bands', () => {
+    assert.match(ui, /const expanded = window\.matchMedia\('\(min-width: 1280px\)'\)/);
+    assert.match(ui, /const icons = window\.matchMedia\('\(min-width: 1024px\)'\)/);
+    assert.match(ui, /expanded\.matches \? 'expanded' : icons\.matches \? 'icons' : 'drawer'/);
+    assert.match(ui, /setRailOpen\(mode === 'expanded'\)/);
   });
 
   it('collapses the rail to a 56px icon strip that keeps every action reachable', () => {
@@ -57,7 +59,7 @@ describe('agent session layout — four panes', () => {
     assert.match(sessionBlock, /className=\{styles\.railIcons\}/);
     assert.match(sessionBlock, /aria-label="Expand sessions"/);
     assert.match(sessionBlock, /aria-label="New session"/);
-    assert.match(css, /\.session\[data-rail='collapsed'\]\{grid-template-columns:56px/);
+    assert.match(css, /\.session\[data-rail='icons'\]\{--ak-rail:56px\}/);
     assert.match(css, /\.railIconButton\{width:44px;height:44px/);
   });
 
@@ -68,7 +70,7 @@ describe('agent session layout — four panes', () => {
   });
 
   it('traps focus in the rail while it is an overlay drawer', () => {
-    assert.match(ui, /if \(!railDrawer \|\| !railOpen\) return/);
+    assert.match(ui, /if \(railMode !== 'drawer' \|\| !railOpen\) return/);
     assert.match(ui, /if \(event\.key === 'Escape'\) \{ setRailOpen\(false\); return; \}/);
     assert.match(ui, /event\.preventDefault\(\); last\.focus\(\)/);
     assert.match(sessionBlock, /className=\{styles\.sessionScrim\}/);
@@ -169,7 +171,8 @@ describe('agent session grid and responsive contract', () => {
   it('uses one CSS grid with a top bar spanning all three columns', () => {
     assert.match(css, /\.session\{[^}]*display:grid/);
     assert.match(css, /grid-template-areas:"topbar topbar topbar" "leftrail center rightpanel"/);
-    assert.match(css, /grid-template-columns:280px minmax\(0,1fr\) 320px/);
+    assert.match(css, /grid-template-columns:var\(--ak-rail\) minmax\(0,1fr\) var\(--ak-panel\)/);
+    assert.match(css, /--ak-rail:280px;--ak-panel:320px/);
     assert.match(css, /\.sessionBar\{grid-area:topbar[^}]*height:56px/);
     assert.match(css, /\.sessionRail\{grid-area:leftrail/);
     assert.match(css, /\.sessionMain\{grid-area:center/);
@@ -177,19 +180,22 @@ describe('agent session grid and responsive contract', () => {
   });
 
   it('closes the right panel below 1280px and keeps it an overlay there', () => {
+    assert.match(css, /@media\(max-width:1279px\)\{\.session\{--ak-panel:0px\}/);
     assert.match(css, /@media\(max-width:1279px\)\{[^@]*\.sessionPanel\{position:absolute/);
     assert.match(ui, /const query = window\.matchMedia\('\(min-width: 1280px\)'\);\n\s*const apply = \(\) => \{ if \(!query\.matches\) setPanelOpen\(false\); \}/);
   });
 
-  it('turns both side panes into drawers below 640px', () => {
-    assert.match(css, /@media\(max-width:639px\)\{[^@]*grid-template-areas:"topbar" "center"/);
-    assert.match(css, /@media\(max-width:639px\)\{[^@]*\.sessionRail,\.sessionRail\[data-collapsed\]\{position:absolute/);
-    assert.match(css, /@media\(max-width:1023px\)\{/);
+  it('turns both side panes into drawers below 1024px', () => {
+    assert.match(css, /@media\(max-width:1023px\)\{\.session\{--ak-rail:0px\}/);
+    assert.match(css, /@media\(max-width:1023px\)\{[^@]*\.sessionRail\{position:absolute/);
+    assert.match(css, /@media\(max-width:639px\)\{/);
+    assert.match(css, /\.sessionRail\[hidden\]\{display:none\}/);
   });
 
   it('cannot scroll horizontally: every session container is width-contained', () => {
     assert.match(css, /\.session\{[^}]*max-width:100%[^}]*overflow:hidden/);
     assert.match(css, /\.session>\*\{min-width:0;max-width:100%\}/);
+    assert.match(css, /\.session \*\{box-sizing:border-box;max-width:100%\}/);
     assert.match(css, /\.messages\{[^}]*overflow-x:hidden/);
     assert.match(css, /\.sessionMain\{[^}]*min-width:0[^}]*overflow:hidden/);
     assert.match(css, /\.panelPreview\{width:100%;max-width:100%/);
