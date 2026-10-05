@@ -352,6 +352,17 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     return () => rail.removeEventListener('keydown', onKeyDown);
   }, [railMode, railOpen]);
 
+  // The output panel is also a drawer below 1280px. Escape closes it without
+  // changing the streaming or conversation flow.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPanelOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [panelOpen]);
+
   /** Right panel content: real project files and artifacts only. */
   const loadPanel = useCallback(async (id: string) => {
     try {
@@ -718,7 +729,9 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             : <p className={styles.hint}>No preview yet. A completed website artifact renders here in a sandboxed frame.</p>) : null}
         </div>
       </aside>
-      {railMode === 'drawer' && railOpen ? <button className={styles.sessionScrim} type="button" aria-label="Close sessions" onClick={() => setRailOpen(false)} /> : null}
+      {/* One scrim serves both drawers: whichever is floating, tapping it closes them. */}
+      {(railMode === 'drawer' && railOpen) || (panelOpen && railMode !== 'expanded')
+        ? <button className={styles.sessionScrim} type="button" aria-label="Close drawers" onClick={() => { setRailOpen(false); setPanelOpen(false); }} /> : null}
     </div>
   </AppShell>;
 
