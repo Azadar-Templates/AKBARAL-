@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { PublicInfoPage } from '../public-info';
 
-export default function RedirectToLanding() {
-  redirect('/');
+export default function FeaturesPage() {
+  return <PublicInfoPage kind="features" />;
 }

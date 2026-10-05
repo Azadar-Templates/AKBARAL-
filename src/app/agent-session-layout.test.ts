@@ -21,7 +21,7 @@ const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.inde
 
 describe('agent session layout — four panes', () => {
   it('mounts left rail, center column, docked composer and right panel in order', () => {
-    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.chatWrap}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
+    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
     let cursor = -1;
     for (const marker of order) {
       const index = sessionBlock.indexOf(marker);
@@ -47,8 +47,8 @@ describe('agent session layout — four panes', () => {
     for (const label of ["'Today'", "'Yesterday'", "'Older'"]) assert.ok(ui.includes(label), `${label} group`);
   });
 
-  it('rail is expanded from 1024px up and collapsed below it', () => {
-    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1024px\)'\)/);
+  it('rail is expanded from 1280px up and collapsed below it', () => {
+    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1280px\)'\)/);
     assert.match(ui, /setRailOpen\(wide\.matches\); setRailDrawer\(!wide\.matches\)/);
   });
 
@@ -99,7 +99,7 @@ describe('agent session layout — four panes', () => {
 
 describe('agent session flow — chronological, composer last', () => {
   it('renders the thread before the composer and nothing after it', () => {
-    const threadIndex = sessionBlock.indexOf('className={styles.messages}');
+    const threadIndex = sessionBlock.indexOf('styles.messages');
     const composerIndex = sessionBlock.indexOf('className={styles.composerDock}');
     assert.ok(threadIndex > -1 && composerIndex > threadIndex, `${uiPath}: thread precedes composer`);
     const afterComposer = sessionBlock.slice(composerIndex);
@@ -120,8 +120,8 @@ describe('agent session flow — chronological, composer last', () => {
   });
 
   it('keeps the composer docked inside the center column', () => {
-    const columnStart = sessionBlock.indexOf('className={styles.chatWrap}');
-    const column = sessionBlock.slice(columnStart, sessionBlock.indexOf('</section>', columnStart));
+    const columnStart = sessionBlock.indexOf('className={styles.sessionMain}');
+    const column = sessionBlock.slice(columnStart, sessionBlock.indexOf('{/* 3 — RIGHT', columnStart));
     assert.ok(column.includes('styles.composerDock'), 'composer lives inside the center column');
     assert.ok(column.lastIndexOf('styles.composerDock') > column.lastIndexOf('styles.messages'));
     assert.match(css, /\.sessionMain\{[^}]*display:flex[^}]*flex-direction:column/);
@@ -159,8 +159,9 @@ describe('agent session honesty', () => {
     assert.match(sessionBlock, /title="Sandboxed session artifact" sandbox=""/);
   });
 
-  it('keeps the credit and AI-accuracy disclosure at the point of input', () => {
+  it('keeps exactly one merged credit and AI-accuracy disclosure at the point of input', () => {
     assert.match(sessionBlock, /AI can make mistakes\. Verify important information\. Chat never deducts Work task credits\./);
+    assert.equal((sessionBlock.match(/styles\.disclosure/g) ?? []).length, 1);
     assert.match(sessionBlock, /<a href="\/privacy">Privacy<\/a>/);
   });
 });

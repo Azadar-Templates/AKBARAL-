@@ -34,7 +34,7 @@ describe('AKBARAL! full UI/UX reset contract', () => {
   });
 
   it('landing sections follow the required one-product flow', () => {
-    const markers = ['topbar', 'hero', 'chips', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title', 'footer'];
+    const markers = ['topbar', 'hero', 'Product interface overview', 'Quick paths', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title', 'footer'];
     let previous = -1;
     for (const marker of markers) {
       const index = landing.indexOf(marker);
@@ -56,7 +56,7 @@ describe('AKBARAL! full UI/UX reset contract', () => {
     for (const label of ['Chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
       assert.ok(appShell.includes(`label: '${label}'`), `${label} is in NAV_ITEMS`);
     }
-    for (const old of ['Marketplace', 'Agent Factory', 'CRM', 'Start Building']) assert.doesNotMatch(appShell, new RegExp(old));
+    for (const old of ['Marketplace', 'CRM', 'Start Building']) assert.doesNotMatch(appShell, new RegExp(old));
   });
 
   it('chat and task composers are large, auto-growing, and honest about credits', () => {

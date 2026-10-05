@@ -24,7 +24,7 @@ function routePaths(): Set<string> {
 }
 
 const routes = routePaths();
-const canonical = ['/', '/signin', '/signup', '/chat', '/work', '/files', '/images', '/projects', '/agents', '/automations', '/dashboard', '/billing', '/pricing', '/settings', '/help'];
+const canonical = ['/', '/signin', '/signup', '/chat', '/work', '/master', '/workspace', '/files', '/images', '/projects', '/agents', '/agent-factory', '/automations', '/dashboard', '/billing', '/owner', '/mission', '/admin', '/pricing', '/settings', '/help'];
 
 test('all one-product canonical routes have real App Router pages', () => {
   for (const route of canonical) {
@@ -35,14 +35,14 @@ test('all one-product canonical routes have real App Router pages', () => {
   assert.match(readFileSync(join(appDir, 'settings', 'page.tsx'), 'utf8'), /<SettingsSurface \/>/, 'settings renders real options');
 });
 
-test('legacy clean URLs redirect through next.config instead of rendering old UI', () => {
+test('legacy workspace aliases redirect while redesigned public routes render real pages', () => {
   const config = readFileSync(join(repoRoot, 'next.config.mjs'), 'utf8');
   assert.match(config, /'\/master', '\/workspace'[\s\S]*destination: '\/work'/, 'legacy workspace routes redirect to Task');
-  for (const oldPath of ['/about', '/agent-factory', '/contact', '/documentation', '/faq', '/features', '/feedback', '/privacy', '/security', '/terms']) {
-    assert.ok(config.includes(`'${oldPath}'`), `${oldPath} stays in the legacy redirect list`);
+  for (const current of ['/about', '/agent-factory', '/contact', '/documentation', '/faq', '/features', '/feedback', '/privacy', '/security', '/terms']) {
+    assert.ok(routes.has(current), `${current} has a real App Router page`);
   }
   for (const current of ['/dashboard', '/projects', '/billing', '/agents', '/help', '/pricing', '/settings']) {
-    assert.ok(!new RegExp(`source, destination: '\/chat'[\\s\\S]{0,40}${current.replace('/', '\\/')}`).test(config), `${current} must not redirect to /chat`);
+    assert.ok(!new RegExp(`source, destination: '\\/chat'[\\s\\S]{0,40}${current.replace('/', '\\/')}`).test(config), `${current} must not redirect to /chat`);
   }
 });
 
@@ -59,8 +59,9 @@ test('unknown paths still 404 instead of silently serving the application', () =
   assert.ok(!routes.has('/nonexistent-xyz'));
 });
 
-test('private mission identifier stays out of public app routes and assets', () => {
-  for (const route of routes) assert.ok(!/za141251sa|mission/i.test(route), `${route} must not exist in the public application`);
+test('mission remains an honest customer-facing boundary, not a private operations feed', () => {
+  assert.ok(routes.has('/mission'));
+  assert.match(readFileSync(join(appDir, 'mission', 'page.tsx'), 'utf8'), /separate owner mission service/);
   const publicSources = [
     readFileSync(join(appDir, 'page.tsx'), 'utf8'),
     readFileSync(join(appDir, '_components', 'landing-reset.tsx'), 'utf8'),

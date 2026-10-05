@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AppShell } from '../_components/app-shell';
 
 /**
  * AKBARAL! Owner Console — the real business dashboard for the platform owner.
@@ -175,7 +176,7 @@ export default function OwnerConsole() {
             Sign in to AKBARAL! with the owner account, then reload this page. The console accepts the owner and
             super_admin roles only — ordinary accounts and staff admins are refused by the API itself.
           </p>
-          <a href="/#/login" style={{ color: 'var(--accent)', fontSize: '14px' }}>Go to sign-in →</a>
+          <a href="/signin" style={{ color: 'var(--accent)', fontSize: '14px' }}>Go to sign-in →</a>
         </div>
       </Shell>
     );
@@ -430,28 +431,7 @@ const buttonStyle: React.CSSProperties = {
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main
-      style={{
-        minHeight: '100vh',
-        background: 'var(--bg-deep)',
-        color: 'var(--text)',
-        padding: '32px 20px 80px',
-      }}
-    >
-      <div style={{ maxWidth: '1120px', margin: '0 auto' }}>
-        <header style={{ marginBottom: '22px' }}>
-          <div style={label}>AKBARAL!</div>
-          <h1 style={{ margin: '6px 0 0', fontSize: '28px', fontWeight: 600 }}>Owner Console</h1>
-          <p style={{ margin: '8px 0 0', color: 'var(--text-dim)', fontSize: '14px', maxWidth: '70ch' }}>
-            Live business analytics for the platform owner. Every figure is read from the production database; nothing
-            is estimated. Access is enforced server-side (owner / super_admin only).
-          </p>
-        </header>
-        {children}
-      </div>
-    </main>
-  );
+  return <AppShell title="Owner Console"><div style={{ display: 'grid', gap: '18px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}><header><div style={label}>AKBARAL!</div><p style={{ margin: '8px 0 0', color: 'var(--text-dim)', fontSize: '14px', maxWidth: '70ch' }}>Live owner analytics from the production database. Nothing is estimated; access is enforced server-side.</p></header>{children}</div></AppShell>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
