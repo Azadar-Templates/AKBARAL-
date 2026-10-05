@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 const root = process.cwd();
 const ui = readFileSync(join(root, 'src/app/_components/workbench/workbench-shell.tsx'), 'utf8');
 const css = readFileSync(join(root, 'src/app/_components/workbench/workbench-shell.module.css'), 'utf8');
-const chat = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.indexOf('  return <AppShell title={title}>'));
+const chat = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.indexOf('  return <AppShell title={title} viewportLocked>'));
 const center = chat.slice(chat.indexOf('className={styles.sessionMain}'), chat.indexOf('{/* 3 — RIGHT'));
 const topbar = chat.slice(chat.indexOf('className={styles.sessionBar}'), chat.indexOf('{/* 1 — LEFT'));
 

@@ -639,7 +639,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     setConversationId(null); setMessages([]); setChatInput(''); setError(''); setAttachmentNote(''); setAttachments([]);
   };
 
-  if (mode === 'chat') return <AppShell title={title}>
+  if (mode === 'chat') return <AppShell title={title} viewportLocked>
     {/* Grid areas: "topbar topbar topbar" / "leftrail center rightpanel" */}
     <div className={styles.session} data-rail={railOpen ? 'expanded' : 'collapsed'} data-panel={panelOpen ? 'open' : 'closed'}>
       {/* 0 — TOP BAR spans all three columns */}
@@ -769,7 +769,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     </div>
   </AppShell>;
 
-  return <AppShell title={title}>
+  return <AppShell title={title} viewportLocked>
     <div className={styles.page}>
       <>
         <section className={styles.hero} aria-labelledby="work-title">

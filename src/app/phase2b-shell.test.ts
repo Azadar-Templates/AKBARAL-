@@ -15,7 +15,7 @@ describe('typed Chat/Task shell contract', () => {
   it('uses dedicated App Router routes with the unified signed-in chrome', () => {
     assert.match(chatPage, /<WorkbenchShell initialMode="chat" \/>/);
     assert.match(workPage, /<WorkbenchShell initialMode="work" \/>/);
-    assert.match(component, /<AppShell title=\{title\}>/);
+    assert.match(component, /<AppShell title=\{title\} viewportLocked>/);
     assert.match(appShell, /NAV_GROUPS/);
   });
 

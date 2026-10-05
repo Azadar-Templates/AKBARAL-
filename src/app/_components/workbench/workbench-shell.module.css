@@ -386,3 +386,65 @@
 @media (prefers-reduced-motion: reduce) {
   .sessionRail { transition: none; }
 }
+
+/* Scroll containment release: the center column is a bounded flex region.
+   The thread is its sole message scroll owner; composer/model/disclosure stay
+   in normal flow at the bottom and never force document scrolling. */
+.session,
+.sessionMain,
+.sessionRail,
+.sessionPanel {
+  min-height: 0;
+  overflow: hidden;
+}
+.sessionMain {
+  height: 100%;
+  flex: 1 1 auto;
+}
+.messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.composerDock {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-height: 0;
+  overflow: visible;
+}
+.sessionPanel .panelBody {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.sessionRail .railList {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Work has no message thread; its bounded task canvas is the route-local
+   scroll region while the document remains locked by AppShell. */
+:global(.akbaral-viewport-locked) .contentInner > .page {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Point-of-input controls are fixed-flow siblings of the flexible thread;
+   none may collapse when the viewport or the composer content gets tight. */
+.composerDock > .composerMeta,
+.composerDock > .starters,
+.composerDock > .composer,
+.composerDock > .composerCard,
+.composerDock > .disclosure,
+.composerDock .modelLabel {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-height: 0;
+}

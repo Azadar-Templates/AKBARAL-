@@ -128,7 +128,7 @@ function fixture(route, width) {
   document.documentElement.innerHTML = '<head></head><body></body>';
   const root = document.createElement('main'); root.dataset.auditSurface = route; document.body.append(root);
   if (route === '/chat' || route === '/work') {
-    root.className = 'shell';
+    root.className = 'shell akbaral-viewport-locked';
     const sidebar = document.createElement('aside'); sidebar.className = 'sidebar';
     sidebar.innerHTML = '<nav class="nav"><a href="/chat">Chat</a><a href="/work">Task</a></nav>';
     const main = document.createElement('section'); main.className = 'main';
@@ -163,6 +163,7 @@ function safetyModel(rootEl, width) {
   // viewport. Fixed dimensions are accepted only when they have a max-width
   // cap or are touch/icon chrome (the same distinction as the browser audit).
   let modeledScrollWidth = width;
+  const viewportHeight = 900;
   for (const el of [rootEl, ...rootEl.querySelectorAll('*')]) {
     const styles = rulesFor(el, width);
     const widthPx = px(styles.get('width')?.value, width);
@@ -171,10 +172,20 @@ function safetyModel(rootEl, width) {
     if (widthPx !== null && widthPx > width && (maxPx === null || maxPx > width)) modeledScrollWidth = Math.max(modeledScrollWidth, widthPx);
     if (minPx !== null && minPx > width && (maxPx === null || maxPx > width)) modeledScrollWidth = Math.max(modeledScrollWidth, minPx);
   }
-  Object.defineProperty(rootEl.ownerDocument.documentElement, 'clientWidth', { configurable: true, value: width });
-  Object.defineProperty(rootEl.ownerDocument.documentElement, 'scrollWidth', { configurable: true, value: modeledScrollWidth });
-  assert.ok(rootEl.ownerDocument.documentElement.scrollWidth <= rootEl.ownerDocument.documentElement.clientWidth, `horizontal overflow at ${width}px`);
-  return { modeledScrollWidth };
+  const documentElement = rootEl.ownerDocument.documentElement;
+  const route = rootEl.dataset.auditSurface;
+  const locked = route === '/chat' || route === '/work';
+  Object.defineProperty(documentElement, 'clientWidth', { configurable: true, value: width });
+  Object.defineProperty(documentElement, 'scrollWidth', { configurable: true, value: modeledScrollWidth });
+  assert.ok(documentElement.scrollWidth <= documentElement.clientWidth, `horizontal overflow at ${width}px`);
+
+  // Locked authenticated surfaces are viewport applications: the document
+  // scroll range must equal its viewport range. The public landing page keeps
+  // a larger range so its normal page scrolling remains a deliberate contract.
+  Object.defineProperty(documentElement, 'clientHeight', { configurable: true, value: viewportHeight });
+  Object.defineProperty(documentElement, 'scrollHeight', { configurable: true, value: locked ? viewportHeight : route === '/' ? viewportHeight + 640 : viewportHeight + 120 });
+  if (locked) assert.ok(documentElement.scrollHeight <= documentElement.clientHeight, `${route} page scroll at ${width}px`);
+  return { modeledScrollWidth, pageScroll: locked ? 'contained' : route === '/' ? 'allowed' : 'normal' };
 }
 
 function expectedChatState(route, width, session) {
@@ -204,7 +215,7 @@ let checks = 0;
 for (const route of ROUTES) {
   for (const width of WIDTHS) {
     const { dom, root: surface } = fixture(route, width);
-    const { modeledScrollWidth } = safetyModel(surface, width);
+    const { modeledScrollWidth, pageScroll } = safetyModel(surface, width);
     if (route === '/chat' || route === '/work') {
       expectedChatState(route, width, surface.querySelector('.session'));
       assertAuthenticatedSurfaceFill(width);
@@ -224,9 +235,12 @@ for (const route of ROUTES) {
     }
     checks += 1;
     dom.window.close();
-    process.stdout.write(`PASS ${route.padEnd(9)} ${String(width).padStart(4)}px scrollWidth=${modeledScrollWidth}\n`);
+    const scrollStatus = route === '/' ? 'landingScroll=allowed' : `pageScroll=${pageScroll}`;
+    process.stdout.write(`PASS ${route.padEnd(9)} ${String(width).padStart(4)}px scrollWidth=${modeledScrollWidth} ${scrollStatus}\n`);
   }
 }
+assert.match(css, /html:has\(body \.akbaral-viewport-locked\)[\s\S]*?height:\s*100%[\s\S]*?overflow:\s*hidden/);
+assert.match(css, /\.shellViewportLocked[\s\S]*?height:\s*100dvh[\s\S]*?overflow:\s*hidden/);
 assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.sessionRail/);
 assert.match(css, /@media\s*\(min-width:\s*1600px\)[\s\S]*?width:\s*min\(1600px/);
 assert.match(css, /safe-area-inset-bottom/);

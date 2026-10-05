@@ -36,3 +36,34 @@
   .content { padding: 24px; }
   .contentInner { width: min(1600px, 100%); max-width: 1600px; }
 }
+
+/* Chat and Task are viewport applications: their content owns the scroll
+   regions instead of the document. The marker is route-scoped by AppShell. */
+.shellViewportLocked {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.shellViewportLocked .sidebar {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.shellViewportLocked .topbar {
+  min-height: 0;
+  overflow: hidden;
+}
+.shellViewportLocked .main {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.shellViewportLocked .content {
+  min-height: 0;
+  overflow: hidden;
+}
+.shellViewportLocked .contentInner {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}

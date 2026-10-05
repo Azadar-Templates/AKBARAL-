@@ -36,7 +36,7 @@ describe('authenticated layout fill and shared Chat navigation', () => {
     assert.match(shell, /title: 'WORKSPACE'/);
     assert.match(shell, /title: 'ACCOUNT'/);
     assert.match(shell, /aria-current=\{pathname === item\.href \? 'page' : undefined\}/);
-    assert.match(workbench, /if \(mode === 'chat'\) return <AppShell title=\{title\}>/);
+    assert.match(workbench, /if \(mode === 'chat'\) return <AppShell title=\{title\} viewportLocked>/);
     assert.doesNotMatch(workbench, /if \(mode === 'chat'\) return <AppShell title=\{title\} chrome="focus">/);
   });
 

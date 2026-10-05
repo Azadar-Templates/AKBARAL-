@@ -121,7 +121,7 @@ export function useAccount() {
  * area run full-bleed. Every other surface keeps the default chrome, so this
  * prop changes nothing anywhere it is not passed.
  */
-export function AppShell({ title, children, allowAnonymous = false, chrome = 'full' }: { title: string; children: ReactNode; allowAnonymous?: boolean; chrome?: 'full' | 'focus' }) {
+export function AppShell({ title, children, allowAnonymous = false, chrome = 'full', viewportLocked = false }: { title: string; children: ReactNode; allowAnonymous?: boolean; chrome?: 'full' | 'focus'; viewportLocked?: boolean }) {
   const pathname = usePathname() || '/';
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -190,7 +190,7 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   const focus = chrome === 'focus';
 
   return (
-    <main className={`${styles.shell} ${collapsed ? styles.shellCollapsed : ''} ${focus ? styles.shellFocus : ''}`}>
+    <main className={`${styles.shell} ${collapsed ? styles.shellCollapsed : ''} ${focus ? styles.shellFocus : ''} ${viewportLocked ? `${styles.shellViewportLocked} akbaral-viewport-locked` : ''}`}>
       {mobileOpen && !focus ? <button className={styles.scrim} type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
       {focus ? null : <aside ref={sidebarRef} className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Workspace navigation">
         <div className={styles.brandRow}>

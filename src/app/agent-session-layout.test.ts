@@ -17,7 +17,7 @@ const css = readFileSync(join(root, 'src/app/_components/workbench/workbench-she
 const shell = readFileSync(join(root, 'src/app/_components/app-shell.tsx'), 'utf8');
 const shellCss = readFileSync(join(root, 'src/app/_components/app-shell.module.css'), 'utf8');
 
-const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.indexOf('return <AppShell title={title}>\n    <div className={styles.page}>'));
+const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.indexOf('return <AppShell title={title} viewportLocked>\n    <div className={styles.page}>'));
 
 describe('agent session layout — four panes', () => {
   it('mounts left rail, center column, docked composer and right panel in order', () => {
@@ -32,7 +32,7 @@ describe('agent session layout — four panes', () => {
   });
 
   it('uses the shared global AppShell so Chat and Task have the same navigation', () => {
-    assert.match(sessionBlock, /<AppShell title=\{title\}>/);
+    assert.match(sessionBlock, /<AppShell title=\{title\} viewportLocked>/);
     assert.match(shell, /const NAV_GROUPS = \[/);
     for (const label of ['Chat', 'Task', 'Dashboard', 'Files & documents', 'Images', 'Projects', 'Agents', 'Agent Factory', 'Automations', 'Billing &amp; credits', 'See plans and pricing', 'Settings', 'Help']) {
       assert.ok(shell.includes(label), `${label} is in the global navigation`);
