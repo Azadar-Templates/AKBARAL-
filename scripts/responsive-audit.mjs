@@ -419,6 +419,8 @@ if (SELFTEST) {
    for (const el of [surface, ...surface.querySelectorAll('*')]) {
     if (hidden(el)) continue;
     if (el.closest('.sr-only, [aria-hidden="true"].sr-only')) continue;
+    // Not painted at this width → it cannot overflow, clip or be untappable.
+    if (chain(el).some((n) => winning(n, 'display', rules, width)?.value?.trim() === 'none')) continue;
     const tag = el.tagName.toLowerCase();
     const isHiddenVisually = ['script', 'style', 'meta', 'link', 'title', 'noscript'].includes(tag);
     if (isHiddenVisually) continue;
