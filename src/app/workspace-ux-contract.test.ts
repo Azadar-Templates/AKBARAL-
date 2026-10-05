@@ -32,7 +32,9 @@ describe('one-product workspace UX contract', () => {
   it('Chat centers the large composer and honest empty thread', () => {
     assert.match(workbench, /How can I help\?/);
     assert.match(workbench, /<textarea[^>]*rows=\{4\}/s);
-    assert.match(workCss, /max-width:880px/);
+    assert.match(workCss, /\.sessionMain > \.messages,[\s\S]*?width: 100%/);
+    assert.match(workCss, /\.page,[\s\S]*?\.session[\s\S]*?width: 100%/);
+    assert.doesNotMatch(workCss, /max-width:880px/);
     assert.match(workbench, /No conversation yet\./);
     assert.match(workbench, /Chat never deducts Work task credits/);
   });
