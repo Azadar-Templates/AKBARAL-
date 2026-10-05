@@ -61,9 +61,9 @@ enum AKBARALTheme {
     // MARK: - Atmosphere (the only accent family)
 
     /// Violet — the AKBARAL! accent.
-    static let accent = hex("#0ea5e9")
+    static let accent = hex("#2f8348")
     /// Indigo — accent companion.
-    static let accent2 = hex("#0284c7")
+    static let accent2 = hex("#286f3d")
     /// Text on accent fills.
     static let onAccent = hex("#ffffff")
     /// Cyan — live/running telemetry only.

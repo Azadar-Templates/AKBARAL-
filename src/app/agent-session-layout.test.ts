@@ -21,7 +21,7 @@ const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.inde
 
 describe('agent session layout — four panes', () => {
   it('mounts left rail, center column, docked composer and right panel in order', () => {
-    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.chatWrap}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
+    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
     let cursor = -1;
     for (const marker of order) {
       const index = sessionBlock.indexOf(marker);
@@ -31,11 +31,14 @@ describe('agent session layout — four panes', () => {
     }
   });
 
-  it('uses the focus chrome so the page owns its own left rail', () => {
-    assert.match(sessionBlock, /<AppShell title=\{title\} chrome="focus">/);
-    assert.match(shell, /chrome = 'full'/);
-    assert.match(shell, /const focus = chrome === 'focus'/);
-    assert.match(shellCss, /\.shellFocus\{grid-template-columns:minmax\(0,1fr\);height:100dvh/);
+  it('uses the shared global AppShell so Chat and Task have the same navigation', () => {
+    assert.match(sessionBlock, /<AppShell title=\{title\}>/);
+    assert.match(shell, /const NAV_GROUPS = \[/);
+    for (const label of ['Chat', 'Task', 'Dashboard', 'Files & documents', 'Images', 'Projects', 'Agents', 'Agent Factory', 'Automations', 'Billing &amp; credits', 'See plans and pricing', 'Settings', 'Help']) {
+      assert.ok(shell.includes(label), `${label} is in the global navigation`);
+    }
+    assert.match(shell, /aria-current=\{pathname === item\.href \? 'page' : undefined\}/);
+    assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
   });
 
   it('left rail is collapsible with a real new-session action and grouped real rows', () => {
@@ -47,8 +50,8 @@ describe('agent session layout — four panes', () => {
     for (const label of ["'Today'", "'Yesterday'", "'Older'"]) assert.ok(ui.includes(label), `${label} group`);
   });
 
-  it('rail is expanded from 1024px up and collapsed below it', () => {
-    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1024px\)'\)/);
+  it('rail is expanded from 1280px up and collapsed below it', () => {
+    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1280px\)'\)/);
     assert.match(ui, /setRailOpen\(wide\.matches\); setRailDrawer\(!wide\.matches\)/);
   });
 
@@ -99,7 +102,7 @@ describe('agent session layout — four panes', () => {
 
 describe('agent session flow — chronological, composer last', () => {
   it('renders the thread before the composer and nothing after it', () => {
-    const threadIndex = sessionBlock.indexOf('className={styles.messages}');
+    const threadIndex = sessionBlock.indexOf('styles.messages');
     const composerIndex = sessionBlock.indexOf('className={styles.composerDock}');
     assert.ok(threadIndex > -1 && composerIndex > threadIndex, `${uiPath}: thread precedes composer`);
     const afterComposer = sessionBlock.slice(composerIndex);
@@ -120,8 +123,8 @@ describe('agent session flow — chronological, composer last', () => {
   });
 
   it('keeps the composer docked inside the center column', () => {
-    const columnStart = sessionBlock.indexOf('className={styles.chatWrap}');
-    const column = sessionBlock.slice(columnStart, sessionBlock.indexOf('</section>', columnStart));
+    const columnStart = sessionBlock.indexOf('className={styles.sessionMain}');
+    const column = sessionBlock.slice(columnStart, sessionBlock.indexOf('{/* 3 — RIGHT', columnStart));
     assert.ok(column.includes('styles.composerDock'), 'composer lives inside the center column');
     assert.ok(column.lastIndexOf('styles.composerDock') > column.lastIndexOf('styles.messages'));
     assert.match(css, /\.sessionMain\{[^}]*display:flex[^}]*flex-direction:column/);
@@ -159,8 +162,9 @@ describe('agent session honesty', () => {
     assert.match(sessionBlock, /title="Sandboxed session artifact" sandbox=""/);
   });
 
-  it('keeps the credit and AI-accuracy disclosure at the point of input', () => {
+  it('keeps exactly one merged credit and AI-accuracy disclosure at the point of input', () => {
     assert.match(sessionBlock, /AI can make mistakes\. Verify important information\. Chat never deducts Work task credits\./);
+    assert.equal((sessionBlock.match(/styles\.disclosure/g) ?? []).length, 1);
     assert.match(sessionBlock, /<a href="\/privacy">Privacy<\/a>/);
   });
 });
@@ -181,9 +185,9 @@ describe('agent session grid and responsive contract', () => {
     assert.match(ui, /const query = window\.matchMedia\('\(min-width: 1280px\)'\);\n\s*const apply = \(\) => \{ if \(!query\.matches\) setPanelOpen\(false\); \}/);
   });
 
-  it('turns both side panes into drawers below 640px', () => {
-    assert.match(css, /@media\(max-width:639px\)\{[^@]*grid-template-areas:"topbar" "center"/);
-    assert.match(css, /@media\(max-width:639px\)\{[^@]*\.sessionRail,\.sessionRail\[data-collapsed\]\{position:absolute/);
+  it('turns both side panes into drawers below 768px', () => {
+    assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?grid-template-areas:\s*"topbar" "center"/);
+    assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.sessionRail[\s\S]*?position:\s*absolute/);
     assert.match(css, /@media\(max-width:1023px\)\{/);
   });
 

@@ -26,7 +26,7 @@ const repo = process.cwd();
 const args = process.argv.slice(2);
 const TRACE = args.includes('--trace');
 const WHY = (args.find((a) => a.startsWith('--why=')) || '').slice(6);
-const WIDTHS = (process.argv.find((a) => a.startsWith('--widths='))?.split('=')[1] || '320,360,375,390,414,768,1024,1280,1440,1920')
+const WIDTHS = (process.argv.find((a) => a.startsWith('--widths='))?.split('=')[1] || '320,375,414,640,768,1024,1280,1440,1920')
   .split(',').map(Number);
 const AS_JSON = process.argv.includes('--json');
 const SELFTEST = args.includes('--selftest');
@@ -404,11 +404,11 @@ if (SELFTEST) {
   const planted = `
     #audit-selftest-wide { width: 900px; }
     #audit-selftest-tiny { font-size: 9px; }
-    #audit-selftest-small { height: 22px; }
+    #audit-selftest-small { min-height: 22px !important; height: 22px; }
     #audit-selftest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }`;
   const extra = parseCss(planted).map((r) => ({ ...r, order: rules.length + r.order }));
   rules.push(...extra);
-  const host = doc.querySelector('section.screen') || doc.body;
+  const host = surfaces[0] || doc.body;
   host.insertAdjacentHTML('beforeend',
     '<div id="audit-selftest-wide"></div><span id="audit-selftest-tiny">tiny</span>' +
     '<button id="audit-selftest-small" type="button">x</button><div id="audit-selftest-grid"></div>');
@@ -419,6 +419,8 @@ if (SELFTEST) {
    for (const el of [surface, ...surface.querySelectorAll('*')]) {
     if (hidden(el)) continue;
     if (el.closest('.sr-only, [aria-hidden="true"].sr-only')) continue;
+    // Not painted at this width → it cannot overflow, clip or be untappable.
+    if (chain(el).some((n) => winning(n, 'display', rules, width)?.value?.trim() === 'none')) continue;
     const tag = el.tagName.toLowerCase();
     const isHiddenVisually = ['script', 'style', 'meta', 'link', 'title', 'noscript'].includes(tag);
     if (isHiddenVisually) continue;

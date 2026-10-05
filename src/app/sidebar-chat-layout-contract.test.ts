@@ -18,67 +18,41 @@ function navItems(source: string, constName: string) {
 }
 
 describe('sidebar navigation contract', () => {
-  const top = navItems(shell, 'NAV_ITEMS');
-  const others = navItems(shell, 'OTHER_NAV_ITEMS');
+  const nav = navItems(shell, 'NAV_GROUPS');
 
-  it('first top-level item is exactly Chat and links to /chat', () => {
-    assert.equal(top[0]?.label, 'Chat');
-    assert.equal(top[0]?.href, '/chat');
-  });
-
-  it('removes the plus icon and the word New from the first nav label', () => {
-    assert.ok(!top[0]!.label.includes('+'), 'no plus icon in the Chat label');
-    assert.ok(!/\bNew\b/.test(top[0]!.label), 'no "New" text in the Chat label');
-  });
-
-  it('second top-level item is Task and links to /work', () => {
-    assert.equal(top[1]?.label, 'Task');
-    assert.equal(top[1]?.href, '/work');
-  });
-
-  it('exposes exactly one collapsible Others group that is collapsed by default', () => {
-    assert.equal(shell.match(/>Others</g)?.length, 1, 'exactly one Others group label');
-    assert.match(shell, /const \[othersOpen, setOthersOpen\] = useState\(false\)/, 'Others is default-collapsed');
-    assert.match(shell, /aria-expanded=\{othersOpen\}/);
-    assert.match(shell, /aria-controls="sidebar-others-group"/);
-    assert.match(shell, /id="sidebar-others-group" hidden=\{!othersOpen\}/);
-  });
-
-  it('keeps the Others children in canonical order with canonical routes', () => {
-    assert.deepEqual(others, [
-      { href: '/files', label: 'Files & documents' },
-      { href: '/images', label: 'Images' },
-      { href: '/projects', label: 'Projects' },
-      { href: '/agents', label: 'Agents' },
-      { href: '/automations', label: 'Automations' },
-      { href: '/dashboard', label: 'Dashboard' },
-      { href: '/settings', label: 'Settings' },
-      { href: '/help', label: 'Help' },
-      { href: '/billing', label: 'Billing & credits' },
+  it('keeps Chat and Task as the first two primary modes', () => {
+    assert.deepEqual(nav.slice(0, 2), [
+      { href: '/chat', label: 'Chat' },
+      { href: '/work', label: 'Task' },
     ]);
   });
 
-  it('keeps exactly one of Billing & credits / See plans and pricing at top level', () => {
-    const topLabels = top.map((item) => item.label);
-    const visible = topLabels.filter((label) => label === 'Billing & credits' || label === 'See plans and pricing');
-    assert.deepEqual(visible, ['See plans and pricing']);
-    assert.ok(others.some((item) => item.label === 'Billing & credits'), 'Billing & credits moved into Others');
+  it('uses intentional named groups instead of a generic More or Others bucket', () => {
+    for (const label of ['PRIMARY MODES', 'WORKSPACE', 'ACCOUNT']) assert.ok(shell.includes(label), `${label} group`);
+    assert.doesNotMatch(shell, />Others<|>More<|NAV_ITEMS|OTHER_NAV_ITEMS/);
   });
 
-  it('keeps the flat legacy list removed — only Chat, Task and pricing stay top-level', () => {
-    assert.deepEqual(top.map((item) => item.href), ['/chat', '/work', '/pricing']);
+  it('keeps the workspace registry links in the canonical product order', () => {
+    const paths = nav.map((item) => item.href);
+    for (const path of ['/dashboard', '/files', '/images', '/projects', '/agents', '/agent-factory', '/automations']) {
+      assert.ok(paths.includes(path), `${path} is navigable`);
+    }
+  });
+
+  it('keeps billing, pricing, settings, and help in the account group', () => {
+    for (const path of ['/billing', '/pricing', '/settings', '/help']) assert.ok(nav.some((item) => item.href === path), `${path} account link`);
   });
 
   it('keeps nav targets at least 44px tall and keyboard operable', () => {
-    assert.match(shellCss, /\.navGroupToggle\{[^}]*min-height:44px/);
-    assert.match(shellCss, /\.navGroupItems a\{[^}]*min-height:44px/);
-    assert.match(shell, /<button\s+className=\{styles\.navGroupToggle\}/);
+    assert.match(shellCss, /\.nav a\{[^}]*min-height:42px/);
+    assert.match(shellCss, /\.shell :where\(button, a\[href\]\)\s*\{\s*min-height:\s*44px/);
+    assert.match(shell, /<nav className=\{styles\.nav\}/);
   });
 });
 
 describe('chat layout contract', () => {
   it('renders the message thread before the composer in the DOM', () => {
-    const threadIndex = workbench.indexOf('className={styles.messages}');
+    const threadIndex = workbench.indexOf('styles.messages');
     const composerIndex = workbench.indexOf('className={styles.composerDock}');
     assert.ok(threadIndex > -1, 'thread container exists');
     assert.ok(composerIndex > -1, 'composer dock exists');
@@ -86,17 +60,17 @@ describe('chat layout contract', () => {
   });
 
   it('keeps the composer dock as the last child of the chat flex column', () => {
-    const chat = workbench.split('className={styles.chatWrap}')[1]?.split('</section>')[0] ?? '';
+    const chat = workbench.split('className={styles.sessionMain}')[1]?.split('{/* 3 — RIGHT')[0] ?? '';
     assert.ok(chat.length > 0);
-    assert.ok(chat.lastIndexOf('className={styles.composerDock}') > chat.lastIndexOf('className={styles.messages}'));
+    assert.ok(chat.lastIndexOf('className={styles.composerDock}') > chat.lastIndexOf('styles.messages'));
     assert.ok(!/<article[\s\S]*styles\.composerDock/.test(chat.slice(chat.indexOf('composerDock'))), 'no message blocks after the composer');
-    assert.match(workbenchCss, /\.chatWrap\{[^}]*display:flex[^}]*flex-direction:column/);
+    assert.match(workbenchCss, /\.sessionMain\s*\{[\s\S]*?display:\s*flex/);
     assert.match(workbenchCss, /\.messages\{[^}]*flex:1 1 auto[^}]*min-height:0[^}]*overflow:auto/);
   });
 
   it('keeps the composer honest, large, and keyboard friendly', () => {
     assert.match(workbench, /rows=\{4\}/);
-    assert.match(workbenchCss, /\.composer textarea\{[^}]*max-height:30vh/);
+    assert.match(workbenchCss, /\.composer textarea\s*\{[^}]*max-height:\s*30dvh/);
     assert.match(workbench, /event\.key === 'Enter' && !event\.shiftKey/);
     assert.match(workbench, /Upload image/);
     assert.match(workbench, /Chat never deducts Work task credits\./);

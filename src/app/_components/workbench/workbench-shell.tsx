@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppShell, apiJson, storedAccessToken } from '../app-shell';
+import { AppShell, apiJson, clearStoredTokens, storedAccessToken, storedRefreshToken, useAccount } from '../app-shell';
 import styles from './workbench-shell.module.css';
 
 type Mode = 'chat' | 'work';
@@ -52,6 +53,16 @@ const STARTER_PROMPTS = [
   'Summarize an article',
   'Draft a proposal',
 ];
+
+function normalizeSessionTitle(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isStarterPromptSession(row: Conversation) {
+  const title = normalizeSessionTitle(row.title || '');
+  return STARTER_PROMPTS.some((prompt) => normalizeSessionTitle(prompt) === title);
+}
+
 const STAGES: Stage[] = ['Understanding', 'Planning', 'Routing', 'Executing', 'Verifying', 'Complete'].map((label) => ({ label, status: 'pending' }));
 
 function authHeaders(json = true) {
@@ -211,7 +222,13 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, button
     const textarea = ref.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 112), Math.max(window.innerHeight * 0.3, 180))}px`;
+    // Phones get a compact single-line starting surface; desktop keeps the
+    // larger four-line composer. Both caps follow the viewport, not a fixed
+    // device height.
+    const phone = window.matchMedia('(max-width: 639px)').matches;
+    const minimum = phone ? 44 : 112;
+    const maximum = Math.max(window.innerHeight * 0.3, phone ? 120 : 180);
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minimum), maximum)}px`;
   }, [value]);
 
   return <div className={styles.composerCard}>
@@ -259,8 +276,15 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [attachmentNote, setAttachmentNote] = useState('');
   const [tools, setTools] = useState<ToolEvent[]>([]);
   const [disclosureOpen, setDisclosureOpen] = useState(true);
-  const [railOpen, setRailOpen] = useState(true);
-  const [railDrawer, setRailDrawer] = useState(false);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const { account } = useAccount();
+  const canOwner = ['owner', 'super_admin'].includes(account?.role ?? '');
+  const canAdmin = ['admin', 'super_admin'].includes(account?.role ?? '');
+  // The session rail starts closed below the wide desktop breakpoint. At
+  // tablet widths that means the required 56px icon strip; on phones the CSS
+  // turns the same closed state into an off-canvas drawer.
+  const [railOpen, setRailOpen] = useState(false);
+  const [railDrawer, setRailDrawer] = useState(true);
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [threadPinned, setThreadPinned] = useState(true);
   const [hasNewBelow, setHasNewBelow] = useState(false);
@@ -280,7 +304,10 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     setHistoryLoading(true);
     try {
       const payload = await apiJson<ConversationsPayload>(`/api/chat${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`);
-      setConversations(payload.conversations ?? []);
+      // Starter chips only prefill the composer. Never render a chip label as a
+      // persisted session, even if stale or malformed API data contains one.
+      const realSessions = (payload.conversations ?? []).filter((row) => !isStarterPromptSession(row));
+      setConversations(realSessions);
       setHistoryError('');
     } catch (cause) {
       setConversations([]);
@@ -292,10 +319,12 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     try { if (window.sessionStorage.getItem(DISCLOSURE_KEY) === '1') setDisclosureOpen(false); } catch {}
   }, []);
 
-  // Breakpoint contract: the rail is expanded from 1024px up, icon-only
-  // between 640px and 1023px, and an overlay drawer below 640px.
+  // Breakpoint contract: the rail is expanded from 1280px up, icon-only
+  // between 640px and 1279px, and an overlay drawer below 640px. The same
+  // closed state is deliberately used for both tablet and phone so a resize
+  // never leaves an expanded drawer stranded over the thread.
   useEffect(() => {
-    const wide = window.matchMedia('(min-width: 1024px)');
+    const wide = window.matchMedia('(min-width: 1280px)');
     const apply = () => { setRailOpen(wide.matches); setRailDrawer(!wide.matches); };
     apply();
     wide.addEventListener('change', apply);
@@ -335,6 +364,17 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     rail.addEventListener('keydown', onKeyDown);
     return () => rail.removeEventListener('keydown', onKeyDown);
   }, [railDrawer, railOpen]);
+
+  // The output panel is also a drawer below 1280px. Escape closes it without
+  // changing the streaming or conversation flow.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPanelOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [panelOpen]);
 
   /** Right panel content: real project files and artifacts only. */
   const loadPanel = useCallback(async (id: string) => {
@@ -574,6 +614,21 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const title = mode === 'chat' ? 'Session' : 'Task';
   const sessionStatus = error ? 'error' : busy ? 'streaming' : 'idle';
   const sessionTitle = conversations.find((item) => item.id === conversationId)?.title || 'New session';
+  const signOut = async () => {
+    const refreshToken = storedRefreshToken();
+    try {
+      if (refreshToken) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      }
+    } catch {}
+    clearStoredTokens();
+    window.location.href = '/signin';
+  };
   const visibleConversations = debouncedQuery
     ? conversations.filter((item) => (item.title || 'Untitled session').toLowerCase().includes(debouncedQuery))
     : conversations;
@@ -584,17 +639,33 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     setConversationId(null); setMessages([]); setChatInput(''); setError(''); setAttachmentNote(''); setAttachments([]);
   };
 
-  if (mode === 'chat') return <AppShell title={title} chrome="focus">
+  if (mode === 'chat') return <AppShell title={title}>
     {/* Grid areas: "topbar topbar topbar" / "leftrail center rightpanel" */}
     <div className={styles.session} data-rail={railOpen ? 'expanded' : 'collapsed'} data-panel={panelOpen ? 'open' : 'closed'}>
       {/* 0 — TOP BAR spans all three columns */}
       <header className={styles.sessionBar}>
-        <a className={styles.backLink} href="/chat" aria-label="Back to sessions">‹</a>
-        <button className={styles.railOpenButton} type="button" aria-expanded={railOpen} aria-controls="session-rail" aria-label={railOpen ? 'Collapse sessions' : 'Expand sessions'} onClick={() => setRailOpen((open) => !open)}>≡</button>
-        <h2 className={styles.sessionTitle}>{sessionTitle}</h2>
-        <span className={styles.statusDot} data-state={sessionStatus} aria-hidden="true" />
-        <span className={styles.statusText} role="status">{sessionStatus}</span>
-        <button className={styles.panelToggle} type="button" aria-expanded={panelOpen} aria-controls="session-panel" onClick={() => setPanelOpen((open) => !open)}>Files</button>
+        <div className={styles.sessionBarLeft}>
+          <a className={styles.backLink} href="/chat" aria-label="Back to sessions">‹</a>
+          <button className={styles.railOpenButton} type="button" aria-expanded={railOpen} aria-controls="session-rail" aria-label={railOpen ? 'Collapse sessions' : 'Expand sessions'} onClick={() => setRailOpen((open) => !open)}>≡</button>
+          <h2 className={styles.sessionTitle}>{sessionTitle}</h2>
+        </div>
+        <div className={styles.sessionBarRight}>
+          <button className={styles.panelToggle} type="button" aria-expanded={panelOpen} aria-controls="session-panel" aria-label={panelOpen ? 'Close session output' : 'Open session output'} onClick={() => setPanelOpen((open) => !open)}>Output</button>
+          <span className={styles.sessionStatus} role="status" aria-label={`Session status: ${sessionStatus}`}><span className={styles.statusDot} data-state={sessionStatus} aria-hidden="true" /><span className={styles.statusText}>{sessionStatus}</span></span>
+          <div className={styles.sessionAccount}>
+            <button className={styles.sessionAvatarButton} type="button" aria-expanded={sessionMenuOpen} aria-haspopup="menu" aria-label="Open account menu" onClick={() => setSessionMenuOpen((open) => !open)}>
+              <span className={styles.sessionAvatar} aria-hidden="true">{(account?.name || account?.email || 'A').slice(0, 1).toUpperCase()}</span><span className={styles.sessionAvatarName}>{account?.name || account?.email || 'Account'}</span>
+            </button>
+            {sessionMenuOpen ? <nav className={styles.sessionMenu} aria-label="Account menu" role="menu">
+              <Link href="/settings" role="menuitem">Settings</Link>
+              <Link href="/billing" role="menuitem">Billing &amp; credits</Link>
+              <Link href="/help" role="menuitem">Help</Link>
+              {canOwner ? <Link href="/owner" role="menuitem">Owner</Link> : null}
+              {canAdmin ? <Link href="/admin" role="menuitem">Admin</Link> : null}
+              <button type="button" role="menuitem" onClick={() => void signOut()}>Log out</button>
+            </nav> : null}
+          </div>
+        </div>
       </header>
 
       {/* 1 — LEFT: real sessions for this account */}
@@ -643,37 +714,33 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
       {/* 2 — CENTER: chronological thread, then the docked composer */}
       <div className={styles.sessionMain}>
         {/* Thread renders BEFORE the composer; the composer dock is the last child. */}
-        <section className={styles.chatWrap}>
-          <div className={styles.messages} ref={threadRef} onScroll={onThreadScroll} aria-live="polite" aria-label="Conversation">
-            {messages.length === 0 ? <div className={styles.empty}><h3>How can I help?</h3><p>No conversation yet. Your real chat will appear here after you send a message.</p></div> : null}
-            {messages.map((message) => <article key={message.id} className={styles.message} data-role={message.role}><header><b>{message.role === 'user' ? 'You' : 'AKBARAL!'}</b>{message.content ? <CopyButton value={message.content} /> : null}</header><Markdown content={message.content || '…'} />{busy && message.role === 'assistant' && !message.content ? <span className={styles.streamCursor} aria-hidden="true" /> : null}</article>)}
-            {tools.length > 0 ? <ol className={styles.inlineTools} aria-label="Tool activity">
-              {tools.map((event) => <li key={event.id} data-status={event.status}><b>{event.tool}</b><span>{event.message}</span>{event.code ? <code>{event.code}</code> : null}{event.requiredEnvKey ? <small>set {event.requiredEnvKey}</small> : null}</li>)}
-            </ol> : null}
+        <div className={`${styles.messages} ${messages.length === 0 ? styles.messagesEmpty : ''}`} ref={threadRef} onScroll={onThreadScroll} aria-live="polite" aria-label="Conversation">
+          {messages.length === 0 ? <div className={styles.empty}><h3>How can I help?</h3><p>No conversation yet. Your real chat will appear here after you send a message.</p></div> : null}
+          {messages.map((message) => <article key={message.id} className={styles.message} data-role={message.role}><header><b>{message.role === 'user' ? 'You' : 'AKBARAL!'}</b>{message.content ? <CopyButton value={message.content} /> : null}</header><Markdown content={message.content || '…'} />{busy && message.role === 'assistant' && !message.content ? <span className={styles.streamCursor} aria-hidden="true" /> : null}</article>)}
+          {tools.length > 0 ? <ol className={styles.inlineTools} aria-label="Tool activity">
+            {tools.map((event) => <li key={event.id} data-status={event.status}><b>{event.tool}</b><span>{event.message}</span>{event.code ? <code>{event.code}</code> : null}{event.requiredEnvKey ? <small>set {event.requiredEnvKey}</small> : null}</li>)}
+          </ol> : null}
+        </div>
+        {hasNewBelow ? <button className={styles.newBelowToast} type="button" onClick={scrollThreadToEnd}>↓ New</button> : null}
+        <div className={styles.composerDock}>
+          {error ? <p className={styles.error} role="alert">{error}</p> : null}
+          {attachmentNote ? <p className={styles.attachNote}>{attachmentNote}</p> : null}
+          <div className={styles.composerMeta}>
+            <label className={styles.modelLabel}>Model
+              <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="Chat model">
+                {models.length ? models.map((item) => <option key={item.key} value={item.key} disabled={!item.available}>{modelOptionLabel(item)}</option>) : <option value={DEFAULT_MODEL}>Loading catalog…</option>}
+              </select>
+            </label>
           </div>
-          {hasNewBelow ? <button className={styles.newBelowToast} type="button" onClick={scrollThreadToEnd}>↓ New</button> : null}
-          <div className={styles.composerDock}>
-            {messages.length === 0 ? <div className={styles.starters}>
-              {STARTER_PROMPTS.map((prompt) => <button key={prompt} className={styles.starterChip} type="button" onClick={() => setChatInput(prompt)}>{prompt}</button>)}
-            </div> : null}
-            {error ? <p className={styles.error} role="alert">{error}</p> : null}
-            {attachmentNote ? <p className={styles.attachNote}>{attachmentNote}</p> : null}
-            <div className={styles.composerMeta}>
-              <label className={styles.modelLabel}>Model
-                <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="Chat model">
-                  {models.length ? models.map((item) => <option key={item.key} value={item.key} disabled={!item.available}>{modelOptionLabel(item)}</option>) : <option value={DEFAULT_MODEL}>Loading catalog…</option>}
-                </select>
-              </label>
-              <button className={styles.smallButton} type="button" onClick={startNewSession}>New chat</button>
-            </div>
-            <Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" buttonLabel={uploading ? 'Uploading…' : 'Send'} onAttach={attachImage} onAttachFile={attachFile} attachments={attachments} attachDisabledReason={attachDisabledReason} />
-            <p className={styles.hint}>AI can make mistakes. Verify important information. Chat never deducts Work task credits.</p>
-            {disclosureOpen ? <div className={styles.disclosure} role="note">
-              <span>AI can make mistakes. Verify important information. <a href="/privacy">Privacy</a></span>
-              <button type="button" aria-label="Dismiss AI notice" onClick={() => { setDisclosureOpen(false); try { window.sessionStorage.setItem(DISCLOSURE_KEY, '1'); } catch {} }}>Dismiss</button>
-            </div> : null}
-          </div>
-        </section>
+          {messages.length === 0 ? <div className={styles.starters} aria-label="Starter prompts">
+            {STARTER_PROMPTS.map((prompt) => <button key={prompt} className={styles.starterChip} type="button" onClick={() => setChatInput(prompt)}>{prompt}</button>)}
+          </div> : null}
+          <Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" buttonLabel={uploading ? 'Uploading…' : 'Send'} onAttach={attachImage} onAttachFile={attachFile} attachments={attachments} attachDisabledReason={attachDisabledReason} />
+          {disclosureOpen ? <div className={styles.disclosure} role="note">
+            <span>AI can make mistakes. Verify important information. Chat never deducts Work task credits. <a href="/privacy">Privacy</a></span>
+            <button type="button" aria-label="Dismiss AI notice" onClick={() => { setDisclosureOpen(false); try { window.sessionStorage.setItem(DISCLOSURE_KEY, '1'); } catch {} }}>Dismiss</button>
+          </div> : null}
+        </div>
       </div>
 
       {/* 3 — RIGHT: real files, artifacts and sandboxed preview */}
@@ -698,7 +765,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             : <p className={styles.hint}>No preview yet. A completed website artifact renders here in a sandboxed frame.</p>) : null}
         </div>
       </aside>
-      {railDrawer && railOpen ? <button className={styles.sessionScrim} type="button" aria-label="Close sessions" onClick={() => setRailOpen(false)} /> : null}
+      {(railDrawer && railOpen) || (panelOpen && railDrawer) ? <button className={styles.sessionScrim} type="button" aria-label="Close drawers" onClick={() => { setRailOpen(false); setPanelOpen(false); }} /> : null}
     </div>
   </AppShell>;
 
