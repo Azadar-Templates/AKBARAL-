@@ -102,7 +102,8 @@ describe('chat layout contract', () => {
     assert.match(workbench, /Chat never deducts Work task credits\./);
   });
 
-  it('offers only functional models in the chat model selector', () => {
-    assert.match(workbench, /\.filter\(\(item\) => item\.available/);
+  it('drives the chat model selector from the server catalog, not a client allow-list', () => {
+    assert.doesNotMatch(workbench, /item\.provider === 'google'/, 'the Gemini-only filter is gone');
+    assert.match(workbench, /disabled=\{!item\.available\}/, 'unavailable models are disabled, not hidden');
   });
 });

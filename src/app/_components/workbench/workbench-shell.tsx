@@ -9,10 +9,23 @@ type ChatRole = 'user' | 'assistant';
 type ChatMessage = { id: string; role: ChatRole; content: string };
 type StageStatus = 'complete' | 'active' | 'pending' | 'failed';
 type Stage = { label: string; status: StageStatus };
-type ModelChoice = { key: string; name: string; provider: string; available: boolean };
+type ModelChoice = {
+  key: string;
+  name: string;
+  provider: string;
+  available: boolean;
+  requiredEnvKey?: string | null;
+  costInputPerMillionCents?: number | null;
+  costOutputPerMillionCents?: number | null;
+  latencyMs?: number | null;
+};
 type UploadRecord = { id: string; name: string };
+type Conversation = { id: string; title: string; model: string; updatedAt: string };
+type AttachmentSupport = { key: string; supportsAttachments: boolean; reason: string | null; detail: string };
+type AttachmentDelivery = { id: string; name: string; mime: string; bytes: number; delivery: 'extracted_text' | 'metadata_only'; reason: string | null; characters: number };
+type ToolEvent = { id: string; tool: string; status: string; code: string | null; requiredEnvKey: string | null; message: string; at: string };
 
-type ChatEvent = { type?: string; token?: string; text?: string; conversationId?: string; message?: string };
+type ChatEvent = { type?: string; token?: string; text?: string; conversationId?: string; message?: string; code?: string; reason?: string; count?: number; attachments?: AttachmentDelivery[] };
 type MasterStart = { workflow?: { id?: string; status?: string } };
 type MasterEvent = { stages?: Stage[]; workflowStatus?: string };
 type MasterResult = { workflow?: unknown; finalResult?: unknown | null };
@@ -20,8 +33,21 @@ type MasterResult = { workflow?: unknown; finalResult?: unknown | null };
 type ProjectsPayload = { projects?: Array<{ id?: string }> };
 type ModelsPayload = { models?: ModelChoice[] };
 type UploadPayload = { file?: { fileId?: string; originalName?: string } };
+type ConversationsPayload = { conversations?: Conversation[] };
+type ConversationPayload = { conversation?: { id?: string; model?: string }; messages?: Array<{ id?: string; role?: string; content?: string }> };
+type AttachmentSupportPayload = { models?: AttachmentSupport[] };
+type MasterActivity = { activity?: ToolEvent[] };
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DISCLOSURE_KEY = 'ak_ai_disclosure_dismissed';
+/** AKBARAL!-authored starter prompts. Chips only prefill the composer. */
+const STARTER_PROMPTS = [
+  'Write a landing page',
+  'Explain my error',
+  'Plan a side-project',
+  'Summarize an article',
+  'Draft a proposal',
+];
 const STAGES: Stage[] = ['Understanding', 'Planning', 'Routing', 'Executing', 'Verifying', 'Complete'].map((label) => ({ label, status: 'pending' }));
 
 function authHeaders(json = true) {
@@ -68,7 +94,45 @@ function eventAsChat(value: unknown): ChatEvent {
     text: typeof row.text === 'string' ? row.text : undefined,
     conversationId: typeof row.conversationId === 'string' ? row.conversationId : undefined,
     message: typeof row.message === 'string' ? row.message : undefined,
+    code: typeof row.code === 'string' ? row.code : undefined,
+    reason: typeof row.reason === 'string' ? row.reason : undefined,
+    count: typeof row.count === 'number' ? row.count : undefined,
+    attachments: Array.isArray(row.attachments) ? row.attachments as AttachmentDelivery[] : undefined,
   };
+}
+
+/** Tool rows are rendered ONLY from persisted server events — never invented. */
+function eventAsTools(value: unknown): ToolEvent[] {
+  const row = asRecord(value);
+  if (!Array.isArray(row.tools)) return [];
+  return row.tools.map((item) => {
+    const entry = asRecord(item);
+    return {
+      id: String(entry.id ?? ''),
+      tool: typeof entry.tool === 'string' ? entry.tool : 'tool',
+      status: typeof entry.status === 'string' ? entry.status : 'ok',
+      code: typeof entry.code === 'string' ? entry.code : null,
+      requiredEnvKey: typeof entry.requiredEnvKey === 'string' ? entry.requiredEnvKey : null,
+      message: typeof entry.message === 'string' ? entry.message : '',
+      at: typeof entry.at === 'string' ? entry.at : '',
+    };
+  }).filter((entry) => entry.id !== '');
+}
+
+/** Catalog cost in cents per 1k tokens; `unknown` when the catalog omits it. */
+function costPer1k(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'unknown';
+  const cents = value / 1000;
+  return cents === 0 ? 'free' : `${cents >= 1 ? cents.toFixed(2) : cents.toFixed(3)}¢/1k`;
+}
+
+function latencyLabel(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? `~${value}ms` : 'unknown';
+}
+
+function modelOptionLabel(model: ModelChoice) {
+  if (!model.available) return `${model.name} — requires ${model.requiredEnvKey ?? 'provider credential'}`;
+  return `${model.name} · in ${costPer1k(model.costInputPerMillionCents)} · out ${costPer1k(model.costOutputPerMillionCents)} · ${latencyLabel(model.latencyMs)}`;
 }
 
 function eventAsMaster(value: unknown): MasterEvent {
@@ -101,7 +165,7 @@ function CopyButton({ value }: { value: string }) {
   }}>{copied ? 'Copied' : 'Copy'}</button>;
 }
 
-function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, buttonLabel, onAttach, attachments }: {
+function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, buttonLabel, onAttach, attachments, attachDisabledReason }: {
   value: string;
   setValue: (next: string) => void;
   onSubmit: () => void;
@@ -111,6 +175,7 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, button
   buttonLabel: string;
   onAttach?: (file: File) => void;
   attachments?: UploadRecord[];
+  attachDisabledReason?: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -128,10 +193,13 @@ function Composer({ value, setValue, onSubmit, busy, onStop, placeholder, button
           if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!busy) onSubmit(); }
         }} />
       <div className={styles.toolbar}>
-        {onAttach ? <label className={styles.uploadButton}>Upload image<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) onAttach(file); event.currentTarget.value = ''; }} /></label> : null}
+        {onAttach ? (attachDisabledReason
+          ? <button className={styles.uploadButton} type="button" disabled title={attachDisabledReason} aria-describedby="composer-attach-reason">Upload image</button>
+          : <label className={styles.uploadButton}>Upload image<input type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) onAttach(file); event.currentTarget.value = ''; }} /></label>) : null}
         {busy ? <button className={styles.stopButton} type="button" onClick={onStop}>Stop</button> : <button className={styles.sendButton} type="button" onClick={onSubmit} disabled={!value.trim()}>{buttonLabel}</button>}
       </div>
     </div>
+    {attachDisabledReason ? <p className={styles.attachReason} id="composer-attach-reason">{attachDisabledReason}</p> : null}
   </div>;
 }
 
@@ -151,21 +219,83 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [projectId, setProjectId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<UploadRecord[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyError, setHistoryError] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [attachmentSupport, setAttachmentSupport] = useState<AttachmentSupport[]>([]);
+  const [attachmentNote, setAttachmentNote] = useState('');
+  const [tools, setTools] = useState<ToolEvent[]>([]);
+  const [disclosureOpen, setDisclosureOpen] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const toolLogRef = useRef<HTMLOListElement>(null);
+
+  /** Conversations come only from the authenticated history endpoint. */
+  const loadConversations = useCallback(async (query: string) => {
+    setHistoryLoading(true);
+    try {
+      const payload = await apiJson<ConversationsPayload>(`/api/chat${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`);
+      setConversations(payload.conversations ?? []);
+      setHistoryError('');
+    } catch (cause) {
+      setConversations([]);
+      setHistoryError(cause instanceof Error ? cause.message : 'Chat history could not be loaded.');
+    } finally { setHistoryLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    try { if (window.sessionStorage.getItem(DISCLOSURE_KEY) === '1') setDisclosureOpen(false); } catch {}
+  }, []);
 
   useEffect(() => {
     let live = true;
     void Promise.allSettled([
       apiJson<ProjectsPayload>('/api/projects').then((payload) => { if (live) setProjectId(payload.projects?.[0]?.id ?? null); }),
+      // Catalog truth: every model the server returns, with its real
+      // availability, required credential, cost and latency. No client filter.
       apiJson<ModelsPayload>('/api/models').then((payload) => {
         if (!live) return;
-        const choices = (payload.models ?? []).filter((item) => item.available && item.provider === 'google' && /gemini/i.test(`${item.key} ${item.name}`));
+        const choices = (payload.models ?? []).filter((item) => item.key && item.name);
         setModels(choices);
-        setModel(choices[0]?.key ?? DEFAULT_MODEL);
+        const firstAvailable = choices.find((item) => item.available);
+        if (firstAvailable) setModel(firstAvailable.key);
       }),
+      apiJson<AttachmentSupportPayload>('/api/chat/attachment-support').then((payload) => { if (live) setAttachmentSupport(payload.models ?? []); }),
+      loadConversations('').then(() => undefined),
     ]).catch(() => undefined);
     return () => { live = false; };
-  }, []);
+  }, [loadConversations]);
+
+  const activeSupport = useMemo(() => attachmentSupport.find((item) => item.key === model) ?? null, [attachmentSupport, model]);
+  const attachDisabledReason = activeSupport && !activeSupport.supportsAttachments ? activeSupport.detail : undefined;
+
+  const resumeConversation = async (id: string) => {
+    try {
+      const payload = await apiJson<ConversationPayload>(`/api/chat/${encodeURIComponent(id)}`);
+      setMessages((payload.messages ?? []).map((message) => ({
+        id: String(message.id ?? crypto.randomUUID()),
+        role: message.role === 'user' ? 'user' : 'assistant',
+        content: String(message.content ?? ''),
+      })));
+      setConversationId(payload.conversation?.id ?? id);
+      if (payload.conversation?.model) setModel(payload.conversation.model);
+      setError('');
+    } catch (cause) { setHistoryError(cause instanceof Error ? cause.message : 'That conversation could not be opened.'); }
+  };
+
+  const deleteConversation = async (id: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this conversation? This cannot be undone.')) return;
+    const previous = conversations;
+    setConversations((current) => current.filter((item) => item.id !== id));
+    try {
+      await apiJson(`/api/chat/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (conversationId === id) { setConversationId(null); setMessages([]); }
+    } catch (cause) {
+      setConversations(previous);
+      setHistoryError(cause instanceof Error ? cause.message : 'That conversation could not be deleted.');
+    }
+  };
 
   const stop = useCallback(() => { abortRef.current?.abort(); abortRef.current = null; setBusy(false); }, []);
 
@@ -199,30 +329,43 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content };
     const assistantId = crypto.randomUUID();
     setMessages((current) => [...current, userMessage, { id: assistantId, role: 'assistant', content: '' }]);
-    setChatInput(''); setError(''); setBusy(true);
+    setChatInput(''); setError(''); setAttachmentNote(''); setBusy(true);
     const controller = new AbortController(); abortRef.current = controller;
+    const sentAttachmentIds = attachments.map((file) => file.id);
     try {
       const response = await fetch('/api/chat/stream', {
         method: 'POST', credentials: 'same-origin', signal: controller.signal,
         headers: authHeaders(true),
-        body: JSON.stringify({ conversationId, content, model }),
+        body: JSON.stringify({ conversationId, content, model, ...(sentAttachmentIds.length ? { attachment_file_ids: sentAttachmentIds } : {}) }),
       });
       await readSse(response, (raw) => {
         const event = eventAsChat(raw);
         if (event.conversationId) setConversationId(event.conversationId);
+        if (event.type === 'attachment') {
+          // Verbatim server account of what was actually included.
+          const detail = (event.attachments ?? []).map((file) => `${file.name} (${file.delivery}${file.reason ? `: ${file.reason}` : ''})`).join(', ');
+          setAttachmentNote(`${event.message ?? `attachment count: ${event.count ?? 0}`}${detail ? ` — ${detail}` : ''}`);
+          setAttachments([]);
+        }
         if (event.type === 'token' && event.token) setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: item.content + event.token } : item));
         if (event.type === 'done' && event.text) setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: event.text ?? item.content } : item));
-        if (event.type === 'error') { setMessages((current) => current.filter((item) => item.id !== assistantId)); setError(event.message ?? 'Chat is temporarily unavailable.'); }
+        if (event.type === 'error') {
+          setMessages((current) => current.filter((item) => item.id !== assistantId));
+          setError(event.reason ? `${event.code ?? 'error'} (${event.reason}): ${event.message ?? ''}`.trim() : (event.message ?? 'Chat is temporarily unavailable.'));
+        }
       });
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : 'Chat stopped unexpectedly.');
-    } finally { abortRef.current = null; setBusy(false); }
+    } finally {
+      abortRef.current = null; setBusy(false);
+      void loadConversations(historyQuery);
+    }
   };
 
   const runWork = async () => {
     const goal = workInput.trim();
     if (!goal || busy) return;
-    setBusy(true); setError(''); setArtifact(null);
+    setBusy(true); setError(''); setArtifact(null); setTools([]);
     setStages(STAGES.map((stage, index) => ({ ...stage, status: index === 0 ? 'active' : 'pending' })));
     const controller = new AbortController(); abortRef.current = controller;
     try {
@@ -235,7 +378,16 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
       await readSse(response, (raw) => {
         const event = eventAsMaster(raw);
         if (event.stages?.length) setStages(event.stages);
+        // Append-only: the server sends the full persisted tool list, so the
+        // UI only ever grows it — no placeholder rows are created locally.
+        const toolEvents = eventAsTools(raw);
+        if (toolEvents.length) setTools(toolEvents);
       });
+      // Final drain so a tool that logged in the last tick is never lost.
+      try {
+        const activity = await apiJson<MasterActivity>(`/api/master/${encodeURIComponent(id)}/activity`);
+        if (activity.activity?.length) setTools(activity.activity);
+      } catch { /* activity is advisory; the task result is authoritative */ }
       const result = await apiJson<MasterResult>(`/api/master/${encodeURIComponent(id)}`);
       setArtifact(result.finalResult ?? result.workflow ?? null);
     } catch (cause) {
@@ -252,6 +404,12 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
       setError('Work cancelled. Any reserved task credit was refunded.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Cancellation could not be confirmed.'); }
   };
+
+  // Autoscroll the append-only tool log to the newest real event.
+  useEffect(() => {
+    const list = toolLogRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [tools]);
 
   const artifactText = useMemo(() => artifact === null ? '' : typeof artifact === 'string' ? artifact : JSON.stringify(artifact, null, 2), [artifact]);
   const artifactIsHtml = /^\s*<(?:!doctype html|html[\s>])/i.test(artifactText);
@@ -279,22 +437,54 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
         </section>
         {/* Chat column: message thread renders BEFORE the composer in the DOM; the composer dock is the last child. */}
         <section className={styles.chatWrap}>
+          <div className={styles.historyPanel}>
+            <button className={styles.historyToggle} type="button" aria-expanded={historyOpen} aria-controls="chat-history-panel" onClick={() => { setHistoryOpen((open) => !open); if (!historyOpen) void loadConversations(historyQuery); }}>
+              <span>Your chats</span>
+              <span className={styles.navChevron} aria-hidden="true">{historyOpen ? '▾' : '▸'}</span>
+            </button>
+            <div className={styles.historyBody} id="chat-history-panel" hidden={!historyOpen}>
+              <form className={styles.historySearch} role="search" onSubmit={(event) => { event.preventDefault(); void loadConversations(historyQuery); }}>
+                <input type="search" value={historyQuery} aria-label="Search your chats" placeholder="Search your chats"
+                  onChange={(event) => setHistoryQuery(event.target.value)} />
+                <button className={styles.smallButton} type="submit">Search</button>
+              </form>
+              {historyError ? <p className={styles.error} role="alert">{historyError}</p> : null}
+              {historyLoading ? <p className={styles.hint}>Loading your chats…</p> : null}
+              {!historyLoading && conversations.length === 0 ? <p className={styles.hint}>{historyQuery.trim() ? 'No chats match that search.' : 'No chats yet.'}</p> : null}
+              <ul className={styles.historyList}>
+                {conversations.map((conversation) => <li key={conversation.id}>
+                  <button className={styles.historyOpenButton} type="button" aria-current={conversationId === conversation.id ? 'true' : undefined} onClick={() => void resumeConversation(conversation.id)}>
+                    <b>{conversation.title || 'Untitled chat'}</b><small>{conversation.updatedAt?.slice(0, 10) || ''}</small>
+                  </button>
+                  <button className={styles.historyDeleteButton} type="button" aria-label={`Delete chat ${conversation.title || 'Untitled chat'}`} onClick={() => void deleteConversation(conversation.id)}>Delete</button>
+                </li>)}
+              </ul>
+            </div>
+          </div>
           <div className={styles.messages} aria-live="polite" aria-label="Conversation">
             {messages.length === 0 ? <div className={styles.empty}><h3>No conversation yet.</h3><p>Your real chat will appear here after you send a message.</p></div> : null}
             {messages.map((message) => <article key={message.id} className={styles.message} data-role={message.role}><header><b>{message.role === 'user' ? 'You' : 'AKBARAL!'}</b>{message.content ? <CopyButton value={message.content} /> : null}</header><Markdown content={message.content || '…'} /></article>)}
           </div>
           <div className={styles.composerDock}>
+            {messages.length === 0 ? <div className={styles.starters}>
+              {STARTER_PROMPTS.map((prompt) => <button key={prompt} className={styles.starterChip} type="button" onClick={() => setChatInput(prompt)}>{prompt}</button>)}
+            </div> : null}
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
+            {attachmentNote ? <p className={styles.attachNote}>{attachmentNote}</p> : null}
             <div className={styles.composerMeta}>
               <label className={styles.modelLabel}>Model
                 <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="Chat model">
-                  {models.length ? models.map((item) => <option key={item.key} value={item.key}>{item.name}</option>) : <option value={DEFAULT_MODEL}>Gemini Flash</option>}
+                  {models.length ? models.map((item) => <option key={item.key} value={item.key} disabled={!item.available}>{modelOptionLabel(item)}</option>) : <option value={DEFAULT_MODEL}>Loading catalog…</option>}
                 </select>
               </label>
-              <button className={styles.smallButton} type="button" onClick={() => { stop(); setConversationId(null); setMessages([]); setChatInput(''); setError(''); }}>New chat</button>
+              <button className={styles.smallButton} type="button" onClick={() => { stop(); setConversationId(null); setMessages([]); setChatInput(''); setError(''); setAttachmentNote(''); }}>New chat</button>
             </div>
-            <Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" buttonLabel="Send" onAttach={attachImage} attachments={attachments} />
+            <Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" buttonLabel="Send" onAttach={attachImage} attachments={attachments} attachDisabledReason={attachDisabledReason} />
             <p className={styles.hint}>Chat never deducts Work task credits.</p>
+            {disclosureOpen ? <div className={styles.disclosure} role="note">
+              <span>AI can make mistakes. Verify important information. <a href="/privacy">Privacy</a></span>
+              <button type="button" aria-label="Dismiss AI notice" onClick={() => { setDisclosureOpen(false); try { window.sessionStorage.setItem(DISCLOSURE_KEY, '1'); } catch {} }}>Dismiss</button>
+            </div> : null}
           </div>
         </section>
       </> : <>
@@ -311,6 +501,20 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
               {stages.map((stage, index) => <li key={stage.label} data-status={stage.status}><span className={styles.stageNum}>{stage.status === 'complete' ? '✓' : index + 1}</span><b>{stage.label}</b><small>{stage.status}</small></li>)}
             </ol>
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
+            <section className={styles.toolLog} aria-label="Tool activity">
+              <h3>Tool activity</h3>
+              {tools.length === 0
+                ? <p className={styles.hint}>No tool has run yet. Rows appear only when a tool genuinely runs.</p>
+                : <ol className={styles.toolList} ref={toolLogRef}>
+                    {tools.map((event) => <li key={event.id} data-status={event.status}>
+                      <b>{event.tool}</b>
+                      <span className={styles.toolMessage}>{event.message}</span>
+                      {event.code ? <code>{event.code}</code> : null}
+                      {event.requiredEnvKey ? <small>set {event.requiredEnvKey}</small> : null}
+                      <time dateTime={event.at}>{event.at.slice(11, 19)}</time>
+                    </li>)}
+                  </ol>}
+            </section>
           </div>
           <aside className={styles.previewRail} aria-label="Work preview rail">
             <div className={styles.previewHead}><h3>Preview</h3><button className={styles.downloadButton} type="button" onClick={() => void downloadArtifact()} disabled={!artifact}>Export ZIP</button></div>

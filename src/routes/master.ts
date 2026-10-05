@@ -8,7 +8,7 @@ import { db, getWorkflow, listWorkflowSteps } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../server/middleware/auth';
 import { getBody, optionalString, requireString } from '../server/middleware/validation';
 import type { ExecutionStream } from '../realtime/execution-stream';
-import { publicErrorMessage, toPublicFailure, withPublicErrorMessage } from '../server/safe-errors';
+import { publicErrorMessage, publicLogLine, toPublicFailure, withPublicErrorMessage } from '../server/safe-errors';
 import { Buffer } from 'node:buffer';
 
 /**
@@ -104,6 +104,52 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
     }),
   );
 
+  /**
+   * Real tool activity for one workflow.
+   *
+   * Rows come only from `agent_execution_logs` entries the executor wrote with
+   * `type = 'tool'` while a tool GENUINELY ran. Nothing is synthesised: if no
+   * tool ran, the list is empty, and a tool that failed for a missing
+   * credential keeps its verbatim `provider_not_configured` code plus the exact
+   * environment variable name the operator must set.
+   */
+  const toolActivity = (workflowId: string) => {
+    const rows = db.all<{ id: string; level: string; message: string; data: string | null; created_at: string }>(
+      `SELECT l.id, l.level, l.message, l.data, l.created_at
+         FROM agent_execution_logs l
+         JOIN agent_executions e ON e.id = l.execution_id
+        WHERE l.type = 'tool'
+          AND e.task_id IN (SELECT task_id FROM workflow_steps WHERE workflow_id = ? AND task_id IS NOT NULL)
+        ORDER BY l.created_at ASC, l.id ASC
+        LIMIT 200`,
+      [workflowId],
+    );
+    return rows.map((row) => {
+      const parsed = row.data ? (JSON.parse(row.data) as Record<string, unknown>) : {};
+      const safe = publicLogLine({ message: row.message, data: parsed, level: row.level });
+      const data = (safe.data ?? {}) as Record<string, unknown>;
+      const code = typeof data.code === 'string' ? data.code : null;
+      return {
+        id: String(row.id),
+        tool: typeof data.tool === 'string' ? data.tool : 'tool',
+        level: String(row.level),
+        status: row.level === 'warn' || row.level === 'error' ? 'unavailable' : 'ok',
+        code,
+        requiredEnvKey: typeof data.requiredCredential === 'string' ? data.requiredCredential : null,
+        message: safe.message,
+        at: String(row.created_at),
+      };
+    });
+  };
+
+  router.get('/:id/activity', (req: AuthenticatedRequest, res) => {
+    const workflow = getWorkflow(req.params.id);
+    if (!workflow || String(workflow.user_id) !== req.auth!.userId) {
+      throw new HttpError(404, 'workflow not found', 'not_found');
+    }
+    res.status(200).json({ workflowId: req.params.id, activity: toolActivity(req.params.id) });
+  });
+
   // Six-stage SSE projection for the typed Work shell. Every status is derived
   // from persisted workflow/step state; no synthetic completion is emitted.
   router.get('/:id/events', (req: AuthenticatedRequest, res) => {
@@ -142,6 +188,9 @@ export function createMasterRouter(_stream: ExecutionStream): Router {
         completedSteps: completed,
         totalSteps: total,
         stages: ['Understanding', 'Planning', 'Routing', 'Executing', 'Verifying', 'Complete'].map((label, index) => ({ label, status: stageStatus(index) })),
+        // Live tool activity on the SAME stream the Work shell already holds —
+        // persisted rows only, never a synthetic "running …" placeholder.
+        tools: toolActivity(req.params.id),
       });
       if (payload !== lastPayload) {
         lastPayload = payload;
