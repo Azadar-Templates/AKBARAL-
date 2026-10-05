@@ -49,7 +49,9 @@ const nextConfig = {
   async redirects() {
     return [
       ...['/master', '/workspace'].map((source) => ({ source, destination: '/work', permanent: false })),
-      ...['/about', '/agent-factory', '/contact', '/documentation', '/faq', '/features', '/feedback', '/privacy', '/security', '/terms'].map((source) => ({ source, destination: '/', permanent: false })),
+      // Public information routes now render their own honest surfaces. Keep only
+      // the legacy workspace aliases above; Agent Factory is a real application page.
+
     ];
   },
   async rewrites() {

@@ -19,16 +19,16 @@
   --line: rgba(226,232,240,0.10);
   --line-strong: rgba(226,232,240,0.18);
   --line-faint: rgba(226,232,240,0.055);
-  --line-accent: rgba(14,165,233,0.44);
+  --line-accent: rgba(47,131,72,0.44);
   --text: #f8fafc;
   --text-2: #cbd5e1;
   --text-dim: #94a3b8;
   --text-faint: #94a3b8;
-  --accent: #0ea5e9;
-  --accent-2: #0284c7;
-  --accent-bright: #38bdf8;
-  --accent-soft: rgba(14,165,233,0.14);
-  --indigo-soft: rgba(14,165,233,0.16);
+  --accent: #2f8348;
+  --accent-2: #286f3d;
+  --accent-bright: #69ad7d;
+  --accent-soft: rgba(47,131,72,0.14);
+  --indigo-soft: rgba(47,131,72,0.16);
   --on-accent: #ffffff;
   --ivory: #f8fafc;
   --on-ivory: #020617;
@@ -46,8 +46,8 @@
 
 :root {
   /* Public primitive aliases — stable contract for React/CSS consumers. */
-  --color-primary-500: #0ea5e9;
-  --color-primary-600: #0284c7;
+  --color-primary-500: #2f8348;
+  --color-primary-600: #286f3d;
   --color-neutral-900: #0f172a;
   --color-neutral-800: #1e293b;
   --color-neutral-700: #334155;
@@ -58,8 +58,8 @@
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
-  --shadow-glow: 0 0 40px -10px rgb(14 165 233 / 0.4);
-  --gradient-hero: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e3a5f 100%);
+  --shadow-glow: 0 0 40px -10px rgb(47 131 72 / 0.4);
+  --gradient-hero: linear-gradient(135deg, #07100b 0%, #102318 50%, #1d4b2b 100%);
 
   /* Typography (families resolved per-platform; scale semantics in tokens.json) */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
@@ -82,8 +82,8 @@
   /* Shadows & glows */
   --shadow: 0 30px 80px rgba(0,0,0,0.5);
   --shadow-soft: 0 12px 36px rgba(0,0,0,0.32);
-  --glow-accent: 0 0 0 1px rgba(14,165,233,0.32), 0 10px 32px rgba(2,132,199,0.22);
-  --glow-telemetry: 0 0 0 1px rgba(125,211,252,0.24), 0 10px 28px rgba(14,165,233,0.14);
+  --glow-accent: 0 0 0 1px rgba(47,131,72,0.32), 0 10px 32px rgba(32,91,50,0.22);
+  --glow-telemetry: 0 0 0 1px rgba(105,173,125,0.24), 0 10px 28px rgba(47,131,72,0.14);
 
   /* Motion */
   --ease-out: cubic-bezier(0.22,0.61,0.36,1);

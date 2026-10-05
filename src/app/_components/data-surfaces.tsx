@@ -164,11 +164,39 @@ export function ProjectsSurface() {
 }
 
 export function AgentsSurface() {
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 24;
+  const debouncedQuery = useDebouncedValue(query, 250);
+  const registryPath = useMemo(() => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim());
+    if (category) params.set('category', category);
+    if (status) params.set('status', status);
+    return `/api/agents?${params.toString()}`;
+  }, [category, debouncedQuery, offset, status]);
   const { data: categories, loading: catLoading, error: catError, reload: reloadCats } = useData<CategoriesPayload>('/api/agents/categories');
-  const { data: agents, loading, error, reload } = useData<AgentsPayload>('/api/agents?limit=6');
+  const { data: agents, loading, error, reload } = useData<AgentsPayload>(registryPath);
   const rows = agents?.agents ?? agents?.results ?? [];
-  const total = categories?.total ?? agents?.total ?? 4001;
-  return <AppShell title="Agents"><div className={s.pageHead}><div><span className={s.eyebrow}>Registry</span><h2>{total.toLocaleString()} registered agent contracts</h2><p>Concise view of the real registry. Contracts are not described as active or earning unless execution proves it.</p></div><button className={s.secondaryButton} type="button" onClick={() => { void reload(); void reloadCats(); }}>Refresh</button></div><StateBlock loading={loading || catLoading} error={error || catError} onRetry={() => { void reload(); void reloadCats(); }} />{!loading && !error ? <div className={`${s.grid} ${s.grid2}`}><section className={s.panel}><h3>Sample contracts</h3><div className={s.list}>{rows.length ? rows.map((agent) => <div className={s.row} key={agent.id ?? agent.slug ?? agent.name}><span className={s.rowText}><b>{agent.name || agent.slug || 'Agent contract'}</b><small>{agent.description || 'No description provided.'}</small></span><span className={s.badge}>{agent.category || agent.categorySlug || agent.status || 'registered'}</span></div>) : <div className={s.empty}><h3>No agent contracts returned.</h3><p>The registry endpoint returned no rows for this account.</p></div>}</div></section><section className={s.panel}><h3>Categories</h3><div className={s.list}>{categories?.categories?.slice(0, 10).map((category) => <div className={s.row} key={category.slug ?? category.name}><span className={s.rowText}><b>{category.name || category.slug || 'Category'}</b><small>{category.slug}</small></span><span className={s.badge}>{category.count ?? 0}</span></div>) ?? <div className={s.empty}><h3>No category data.</h3><p>Category totals are unavailable right now.</p></div>}</div></section></div> : null}</AppShell>;
+  const total = agents?.total ?? categories?.total;
+  const canNext = typeof total === 'number' ? offset + rows.length < total : rows.length === limit;
+
+  const clearFilters = () => { setQuery(''); setCategory(''); setStatus(''); setOffset(0); };
+  const refresh = () => { void reload(); void reloadCats(); };
+
+  return <AppShell title="Agents"><div className={s.pageHead}><div><span className={s.eyebrow}>Capability registry</span><h2>{typeof total === 'number' ? `${total.toLocaleString()} registered agent contracts` : 'Agent registry'}</h2><p>Search and filter the configured registry. Contracts are not described as active or earning unless execution proves it.</p></div><button className={s.secondaryButton} type="button" onClick={refresh}>Refresh</button></div>
+    <section className={s.registryToolbar} aria-label="Agent registry filters"><label className={s.searchField}><span>Search contracts</span><input value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} placeholder="Name, capability, or description" type="search" /></label><label><span>Category</span><select value={category} onChange={(event) => { setCategory(event.target.value); setOffset(0); }}><option value="">All categories</option>{categories?.categories?.map((item) => <option value={item.slug ?? ''} key={item.slug ?? item.name}>{item.name ?? item.slug}</option>)}</select></label><label><span>Status</span><select value={status} onChange={(event) => { setStatus(event.target.value); setOffset(0); }}><option value="">All statuses</option><option value="active">Active</option><option value="draft">Draft</option><option value="paused">Paused</option></select></label><button className={s.ghostButton} type="button" onClick={clearFilters} disabled={!query && !category && !status}>Clear</button></section>
+    <StateBlock loading={loading || catLoading} error={error || catError} onRetry={refresh} />
+    {!loading && !error ? <section className={s.registryPanel}><div className={s.registryMeta}><span>{rows.length ? `${offset + 1}–${offset + rows.length}` : '0'}{typeof total === 'number' ? ` of ${total.toLocaleString()}` : ''} contracts</span><span>Server-side search · {limit} per page</span></div><div className={s.agentGrid}>{rows.length ? rows.map((agent) => <article className={s.agentCard} key={agent.id ?? agent.slug ?? agent.name}><div className={s.agentCardTop}><span className={s.agentGlyph}>{(agent.name || agent.slug || 'A').slice(0, 1).toUpperCase()}</span><span className={s.badge}>{agent.status || 'registered'}</span></div><h3>{agent.name || agent.slug || 'Agent contract'}</h3><p>{agent.description || 'No description provided.'}</p><div className={s.agentCardFoot}><span>{agent.category || agent.categorySlug || 'Uncategorised'}</span><span aria-label={`${agent.name || agent.slug || 'Agent'} is a registered contract`}>Registered</span></div></article>) : <div className={s.empty}><h3>No matching contracts.</h3><p>Try a broader search or clear the filters. This empty state is based on the registry response.</p></div>}</div><div className={s.pagination}><button className={s.ghostButton} type="button" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - limit))}>Previous</button><span>Page {Math.floor(offset / limit) + 1}</span><button className={s.secondaryButton} type="button" disabled={!canNext || loading} onClick={() => setOffset(offset + limit)}>Next</button></div></section> : null}
+  </AppShell>;
+}
+
+function useDebouncedValue(value: string, delay: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => { const timer = window.setTimeout(() => setDebounced(value), delay); return () => window.clearTimeout(timer); }, [delay, value]);
+  return debounced;
 }
 
 export function AutomationsSurface() {

@@ -94,7 +94,7 @@ export function FeedbackForm() {
           or use the <a href="/contact">contact form</a> if you prefer to stay anonymous.
         </p>
         <div className="ctc-gate-actions">
-          <a className="pk-btn pk-btn-primary" href="/#/login">Open the app and sign in</a>
+          <a className="pk-btn pk-btn-primary" href="/signin">Open the app and sign in</a>
           <a className="pk-btn pk-btn-ghost" href="/contact">Anonymous contact instead</a>
         </div>
       </div>
