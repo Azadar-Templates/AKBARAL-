@@ -277,21 +277,24 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
           <h2 id="chat-title">How can I help?</h2>
           <p>Ask for writing, analysis, planning, code help, or a next step. Chat never deducts Work task credits.</p>
         </section>
+        {/* Chat column: message thread renders BEFORE the composer in the DOM; the composer dock is the last child. */}
         <section className={styles.chatWrap}>
-          <div className={styles.composerMeta}>
-            <label className={styles.modelLabel}>Model
-              <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="Chat model">
-                {models.length ? models.map((item) => <option key={item.key} value={item.key}>{item.name}</option>) : <option value={DEFAULT_MODEL}>Gemini Flash</option>}
-              </select>
-            </label>
-            <button className={styles.smallButton} type="button" onClick={() => { stop(); setConversationId(null); setMessages([]); setChatInput(''); setError(''); }}>New chat</button>
-          </div>
-          <Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" buttonLabel="Send" onAttach={attachImage} attachments={attachments} />
-          <p className={styles.hint}>Chat never deducts Work task credits.</p>
-          {error ? <p className={styles.error} role="alert">{error}</p> : null}
-          <div className={styles.messages} aria-live="polite">
+          <div className={styles.messages} aria-live="polite" aria-label="Conversation">
             {messages.length === 0 ? <div className={styles.empty}><h3>No conversation yet.</h3><p>Your real chat will appear here after you send a message.</p></div> : null}
             {messages.map((message) => <article key={message.id} className={styles.message} data-role={message.role}><header><b>{message.role === 'user' ? 'You' : 'AKBARAL!'}</b>{message.content ? <CopyButton value={message.content} /> : null}</header><Markdown content={message.content || '…'} /></article>)}
+          </div>
+          <div className={styles.composerDock}>
+            {error ? <p className={styles.error} role="alert">{error}</p> : null}
+            <div className={styles.composerMeta}>
+              <label className={styles.modelLabel}>Model
+                <select value={model} onChange={(event) => setModel(event.target.value)} aria-label="Chat model">
+                  {models.length ? models.map((item) => <option key={item.key} value={item.key}>{item.name}</option>) : <option value={DEFAULT_MODEL}>Gemini Flash</option>}
+                </select>
+              </label>
+              <button className={styles.smallButton} type="button" onClick={() => { stop(); setConversationId(null); setMessages([]); setChatInput(''); setError(''); }}>New chat</button>
+            </div>
+            <Composer value={chatInput} setValue={setChatInput} onSubmit={() => void sendChat()} busy={busy} onStop={stop} placeholder="Message AKBARAL!" buttonLabel="Send" onAttach={attachImage} attachments={attachments} />
+            <p className={styles.hint}>Chat never deducts Work task credits.</p>
           </div>
         </section>
       </> : <>

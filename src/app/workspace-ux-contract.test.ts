@@ -12,7 +12,7 @@ const dataSurfaces = readFileSync(join(root, 'src/app/_components/data-surfaces.
 
 describe('one-product workspace UX contract', () => {
   it('left chrome mounts the exact requested top-level inventory', () => {
-    for (const label of ['+ New chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
+    for (const label of ['Chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
       assert.ok(shell.includes(`label: '${label}'`), `${label} lives in the shell nav`);
     }
     assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);

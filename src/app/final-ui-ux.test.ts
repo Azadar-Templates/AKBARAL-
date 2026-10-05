@@ -53,7 +53,7 @@ describe('AKBARAL! full UI/UX reset contract', () => {
   });
 
   it('signed-in chrome exposes exactly the requested navigation inventory', () => {
-    for (const label of ['+ New chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
+    for (const label of ['Chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
       assert.ok(appShell.includes(`label: '${label}'`), `${label} is in NAV_ITEMS`);
     }
     for (const old of ['Marketplace', 'Agent Factory', 'CRM', 'Start Building']) assert.doesNotMatch(appShell, new RegExp(old));

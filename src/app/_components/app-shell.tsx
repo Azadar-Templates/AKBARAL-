@@ -23,18 +23,21 @@ type MePayload = {
 };
 
 const NAV_ITEMS = [
-  { href: '/chat', label: '+ New chat', short: '+' },
+  { href: '/chat', label: 'Chat', short: 'C' },
   { href: '/work', label: 'Task', short: 'T' },
+  { href: '/pricing', label: 'See plans and pricing', short: '$' },
+] as const;
+
+const OTHER_NAV_ITEMS = [
   { href: '/files', label: 'Files & documents', short: 'F' },
   { href: '/images', label: 'Images', short: 'I' },
   { href: '/projects', label: 'Projects', short: 'P' },
   { href: '/agents', label: 'Agents', short: 'A' },
   { href: '/automations', label: 'Automations', short: 'Au' },
   { href: '/dashboard', label: 'Dashboard', short: 'D' },
-  { href: '/billing', label: 'Billing & credits', short: 'B' },
-  { href: '/pricing', label: 'See plans and pricing', short: '$' },
   { href: '/settings', label: 'Settings', short: 'S' },
   { href: '/help', label: 'Help', short: '?' },
+  { href: '/billing', label: 'Billing & credits', short: 'B' },
 ] as const;
 
 export function storedAccessToken() {
@@ -113,6 +116,7 @@ export function AppShell({ title, children, allowAnonymous = false }: { title: s
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [othersOpen, setOthersOpen] = useState(false);
   const { account, authenticated } = useAccount();
   const initials = useMemo(() => (account?.name || account?.email || 'A').slice(0, 1).toUpperCase(), [account]);
   const role = account?.role || '';
@@ -171,6 +175,27 @@ export function AppShell({ title, children, allowAnonymous = false }: { title: s
               <span className={styles.navText}>{item.label}</span>
             </Link>
           ))}
+          <div className={styles.navGroup}>
+            <button
+              className={styles.navGroupToggle}
+              type="button"
+              aria-expanded={othersOpen}
+              aria-controls="sidebar-others-group"
+              onClick={() => setOthersOpen((open) => !open)}
+            >
+              <span className={styles.navBullet} aria-hidden="true">…</span>
+              <span className={styles.navText}>Others</span>
+              <span className={styles.navChevron} aria-hidden="true">{othersOpen ? '▾' : '▸'}</span>
+            </button>
+            <div className={styles.navGroupItems} id="sidebar-others-group" hidden={!othersOpen}>
+              {OTHER_NAV_ITEMS.map((item) => (
+                <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
+                  <span className={styles.navBullet} aria-hidden="true">{item.short}</span>
+                  <span className={styles.navText}>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
         </nav>
       </aside>
 

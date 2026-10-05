@@ -25,7 +25,7 @@ describe('private economy surfaces are not part of the public UI reset', () => {
   });
 
   it('keeps canonical navigation focused on the one product inventory', () => {
-    for (const label of ['+ New chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
+    for (const label of ['Chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
       assert.ok(publicSources.includes(label), `${label} is in the canonical app shell`);
     }
   });
