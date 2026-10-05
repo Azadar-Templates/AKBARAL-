@@ -34,16 +34,16 @@ describe('feature 1 — chat history rail', () => {
     assert.match(ui, /setConversations\(previous\)/);
   });
 
-  it('is collapsed by default and keyboard operable', () => {
-    assert.match(ui, /const \[historyOpen, setHistoryOpen\] = useState\(false\)/);
-    assert.match(ui, /aria-expanded=\{historyOpen\}/);
-    assert.match(ui, /aria-controls="chat-history-panel"/);
-    assert.match(css, /\.historyToggle\{[^}]*min-height:44px/);
+  it('lives in a collapsible session rail that is keyboard operable', () => {
+    assert.match(ui, /aria-expanded=\{railOpen\}/);
+    assert.match(ui, /aria-controls="session-rail"/);
+    assert.match(css, /\.railCollapse\{[^}]*min-height:44px/);
+    assert.match(css, /\.newSessionButton\{[^}]*min-height:44px/);
   });
 
   it('shows an honest empty state and refreshes after a chat completes', () => {
-    assert.match(ui, /No chats yet\./);
-    assert.match(ui, /No chats match that search\./);
+    assert.match(ui, /No sessions yet\./);
+    assert.match(ui, /No sessions match that search\./);
     assert.match(ui, /void loadConversations\(historyQuery\);/);
   });
 

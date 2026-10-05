@@ -111,7 +111,13 @@ export function useAccount() {
   return { account, authenticated, error };
 }
 
-export function AppShell({ title, children, allowAnonymous = false }: { title: string; children: ReactNode; allowAnonymous?: boolean }) {
+/**
+ * `chrome='focus'` is used by the agent session page: it hides the global
+ * workspace nav so the page can own its own left rail, and lets the content
+ * area run full-bleed. Every other surface keeps the default chrome, so this
+ * prop changes nothing anywhere it is not passed.
+ */
+export function AppShell({ title, children, allowAnonymous = false, chrome = 'full' }: { title: string; children: ReactNode; allowAnonymous?: boolean; chrome?: 'full' | 'focus' }) {
   const pathname = usePathname() || '/';
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -157,10 +163,12 @@ export function AppShell({ title, children, allowAnonymous = false }: { title: s
     );
   }
 
+  const focus = chrome === 'focus';
+
   return (
-    <main className={`${styles.shell} ${collapsed ? styles.shellCollapsed : ''}`}>
-      {mobileOpen ? <button className={styles.scrim} type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
-      <aside className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Workspace navigation">
+    <main className={`${styles.shell} ${collapsed ? styles.shellCollapsed : ''} ${focus ? styles.shellFocus : ''}`}>
+      {mobileOpen && !focus ? <button className={styles.scrim} type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
+      {focus ? null : <aside className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Workspace navigation">
         <div className={styles.brandRow}>
           <Link className={styles.brand} href="/chat" aria-label="AKBARAL! workspace">
             <span className={styles.mark} aria-hidden="true">A!</span>
@@ -197,12 +205,12 @@ export function AppShell({ title, children, allowAnonymous = false }: { title: s
             </div>
           </div>
         </nav>
-      </aside>
+      </aside>}
 
       <section className={styles.main}>
         <header className={styles.topbar}>
           <div className={styles.title}>
-            <button className={styles.mobileMenu} type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>☰</button>
+            {focus ? null : <button className={styles.mobileMenu} type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>☰</button>}
             <h1>{title}</h1>
           </div>
           <div className={styles.account}>
@@ -227,8 +235,8 @@ export function AppShell({ title, children, allowAnonymous = false }: { title: s
             ) : null}
           </div>
         </header>
-        <div className={styles.content}>
-          <div className={styles.contentInner}>{children}</div>
+        <div className={`${styles.content} ${focus ? styles.contentFlush : ''}`}>
+          <div className={`${styles.contentInner} ${focus ? styles.contentInnerFlush : ''}`}>{children}</div>
         </div>
       </section>
     </main>
