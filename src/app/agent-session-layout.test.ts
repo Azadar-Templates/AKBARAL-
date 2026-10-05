@@ -21,7 +21,7 @@ const sessionBlock = ui.slice(ui.indexOf("if (mode === 'chat') return"), ui.inde
 
 describe('agent session layout — four panes', () => {
   it('mounts left rail, center column, docked composer and right panel in order', () => {
-    const order = ['styles.session}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.sessionBar}', 'styles.chatWrap}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
+    const order = ['styles.session}', 'styles.sessionBar}', 'styles.sessionRail}', 'styles.sessionMain}', 'styles.chatWrap}', 'styles.messages}', 'styles.composerDock}', 'styles.sessionPanel}'];
     let cursor = -1;
     for (const marker of order) {
       const index = sessionBlock.indexOf(marker);
@@ -35,7 +35,7 @@ describe('agent session layout — four panes', () => {
     assert.match(sessionBlock, /<AppShell title=\{title\} chrome="focus">/);
     assert.match(shell, /chrome = 'full'/);
     assert.match(shell, /const focus = chrome === 'focus'/);
-    assert.match(shellCss, /\.shellFocus\{grid-template-columns:minmax\(0,1fr\)\}/);
+    assert.match(shellCss, /\.shellFocus\{grid-template-columns:minmax\(0,1fr\);height:100dvh/);
   });
 
   it('left rail is collapsible with a real new-session action and grouped real rows', () => {
@@ -47,13 +47,35 @@ describe('agent session layout — four panes', () => {
     for (const label of ["'Today'", "'Yesterday'", "'Older'"]) assert.ok(ui.includes(label), `${label} group`);
   });
 
-  it('rail defaults to expanded from 768px and collapses below it', () => {
-    assert.match(ui, /window\.matchMedia\('\(min-width: 768px\)'\)/);
-    assert.match(ui, /setRailOpen\(query\.matches\)/);
+  it('rail is expanded from 1024px up and collapsed below it', () => {
+    assert.match(ui, /const wide = window\.matchMedia\('\(min-width: 1024px\)'\)/);
+    assert.match(ui, /setRailOpen\(wide\.matches\); setRailDrawer\(!wide\.matches\)/);
+  });
+
+  it('collapses the rail to a 56px icon strip that keeps every action reachable', () => {
+    assert.match(sessionBlock, /data-collapsed=\{railOpen \? undefined : 'true'\}/);
+    assert.match(sessionBlock, /className=\{styles\.railIcons\}/);
+    assert.match(sessionBlock, /aria-label="Expand sessions"/);
+    assert.match(sessionBlock, /aria-label="New session"/);
+    assert.match(css, /\.session\[data-rail='collapsed'\]\{grid-template-columns:56px/);
+    assert.match(css, /\.railIconButton\{width:44px;height:44px/);
+  });
+
+  it('filters sessions client-side with a debounce', () => {
+    assert.match(ui, /setTimeout\(\(\) => setDebouncedQuery\(historyQuery\.trim\(\)\.toLowerCase\(\)\), 250\)/);
+    assert.match(ui, /const visibleConversations = debouncedQuery/);
+    assert.match(ui, /const sessionGroups = groupSessions\(visibleConversations\)/);
+  });
+
+  it('traps focus in the rail while it is an overlay drawer', () => {
+    assert.match(ui, /if \(!railDrawer \|\| !railOpen\) return/);
+    assert.match(ui, /if \(event\.key === 'Escape'\) \{ setRailOpen\(false\); return; \}/);
+    assert.match(ui, /event\.preventDefault\(\); last\.focus\(\)/);
+    assert.match(sessionBlock, /className=\{styles\.sessionScrim\}/);
   });
 
   it('center top bar carries back link, title and a live status dot only', () => {
-    assert.match(sessionBlock, /className=\{styles\.backLink\} href="\/"/);
+    assert.match(sessionBlock, /className=\{styles\.backLink\} href="\/chat"/);
     assert.match(sessionBlock, /className=\{styles\.sessionTitle\}/);
     assert.match(sessionBlock, /data-state=\{sessionStatus\}/);
     assert.match(ui, /const sessionStatus = error \? 'error' : busy \? 'streaming' : 'idle'/);
@@ -140,5 +162,61 @@ describe('agent session honesty', () => {
   it('keeps the credit and AI-accuracy disclosure at the point of input', () => {
     assert.match(sessionBlock, /AI can make mistakes\. Verify important information\. Chat never deducts Work task credits\./);
     assert.match(sessionBlock, /<a href="\/privacy">Privacy<\/a>/);
+  });
+});
+
+describe('agent session grid and responsive contract', () => {
+  it('uses one CSS grid with a top bar spanning all three columns', () => {
+    assert.match(css, /\.session\{[^}]*display:grid/);
+    assert.match(css, /grid-template-areas:"topbar topbar topbar" "leftrail center rightpanel"/);
+    assert.match(css, /grid-template-columns:280px minmax\(0,1fr\) 320px/);
+    assert.match(css, /\.sessionBar\{grid-area:topbar[^}]*height:56px/);
+    assert.match(css, /\.sessionRail\{grid-area:leftrail/);
+    assert.match(css, /\.sessionMain\{grid-area:center/);
+    assert.match(css, /\.sessionPanel\{grid-area:rightpanel/);
+  });
+
+  it('closes the right panel below 1280px and keeps it an overlay there', () => {
+    assert.match(css, /@media\(max-width:1279px\)\{[^@]*\.sessionPanel\{position:absolute/);
+    assert.match(ui, /const query = window\.matchMedia\('\(min-width: 1280px\)'\);\n\s*const apply = \(\) => \{ if \(!query\.matches\) setPanelOpen\(false\); \}/);
+  });
+
+  it('turns both side panes into drawers below 640px', () => {
+    assert.match(css, /@media\(max-width:639px\)\{[^@]*grid-template-areas:"topbar" "center"/);
+    assert.match(css, /@media\(max-width:639px\)\{[^@]*\.sessionRail,\.sessionRail\[data-collapsed\]\{position:absolute/);
+    assert.match(css, /@media\(max-width:1023px\)\{/);
+  });
+
+  it('cannot scroll horizontally: every session container is width-contained', () => {
+    assert.match(css, /\.session\{[^}]*max-width:100%[^}]*overflow:hidden/);
+    assert.match(css, /\.session>\*\{min-width:0;max-width:100%\}/);
+    assert.match(css, /\.messages\{[^}]*overflow-x:hidden/);
+    assert.match(css, /\.sessionMain\{[^}]*min-width:0[^}]*overflow:hidden/);
+    assert.match(css, /\.panelPreview\{width:100%;max-width:100%/);
+  });
+
+  it('keeps focus-visible rings on every session control', () => {
+    assert.match(css, /\.session :where\(button,textarea,select,a,input\):focus-visible\{outline:2px solid var\(--accent-bright\)/);
+  });
+});
+
+describe('agent session scroll behaviour', () => {
+  it('respects a reader who scrolled up by more than 100px', () => {
+    assert.match(ui, /const distance = thread\.scrollHeight - thread\.scrollTop - thread\.clientHeight/);
+    assert.match(ui, /const pinned = distance <= 100/);
+    assert.match(ui, /if \(threadPinned\) thread\.scrollTo\(\{ top: thread\.scrollHeight, behavior: 'smooth' \}\)/);
+    assert.match(ui, /else if \(messages\.length > 0\) setHasNewBelow\(true\)/);
+  });
+
+  it('offers a New toast that jumps back to the newest message', () => {
+    assert.match(sessionBlock, /\{hasNewBelow \? <button className=\{styles\.newBelowToast\}[^>]*onClick=\{scrollThreadToEnd\}/);
+    assert.match(css, /\.newBelowToast\{position:absolute[^}]*min-height:44px/);
+    assert.match(sessionBlock, /onScroll=\{onThreadScroll\}/);
+  });
+
+  it('right-aligns the user bubble and keeps the assistant plain', () => {
+    assert.match(css, /\.message\[data-role="user"\]\{[^}]*margin-left:auto/);
+    assert.match(css, /\.message\{[^}]*width:min\(760px,100%\);margin:0 auto/);
+    assert.match(sessionBlock, /message\.content \? <CopyButton value=\{message\.content\} \/> : null/);
   });
 });

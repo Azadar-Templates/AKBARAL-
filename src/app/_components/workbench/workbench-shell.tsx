@@ -260,6 +260,10 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const [tools, setTools] = useState<ToolEvent[]>([]);
   const [disclosureOpen, setDisclosureOpen] = useState(true);
   const [railOpen, setRailOpen] = useState(true);
+  const [railDrawer, setRailDrawer] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [threadPinned, setThreadPinned] = useState(true);
+  const [hasNewBelow, setHasNewBelow] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>('files');
   const [panelFiles, setPanelFiles] = useState<Array<{ id?: string; original_name?: string; originalName?: string; mime_type?: string; size_bytes?: number }>>([]);
@@ -269,6 +273,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const abortRef = useRef<AbortController | null>(null);
   const toolLogRef = useRef<HTMLOListElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLElement>(null);
 
   /** Conversations come only from the authenticated history endpoint. */
   const loadConversations = useCallback(async (query: string) => {
@@ -287,14 +292,49 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     try { if (window.sessionStorage.getItem(DISCLOSURE_KEY) === '1') setDisclosureOpen(false); } catch {}
   }, []);
 
-  // Session rail: expanded from 768px up, collapsed below it.
+  // Breakpoint contract: the rail is expanded from 1024px up, icon-only
+  // between 640px and 1023px, and an overlay drawer below 640px.
   useEffect(() => {
-    const query = window.matchMedia('(min-width: 768px)');
-    const apply = () => setRailOpen(query.matches);
+    const wide = window.matchMedia('(min-width: 1024px)');
+    const apply = () => { setRailOpen(wide.matches); setRailDrawer(!wide.matches); };
+    apply();
+    wide.addEventListener('change', apply);
+    return () => wide.removeEventListener('change', apply);
+  }, []);
+
+  // Right panel never steals width below 1280px.
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 1280px)');
+    const apply = () => { if (!query.matches) setPanelOpen(false); };
     apply();
     query.addEventListener('change', apply);
     return () => query.removeEventListener('change', apply);
   }, []);
+
+  // Debounced client-side filter over the sessions already loaded.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(historyQuery.trim().toLowerCase()), 250);
+    return () => window.clearTimeout(timer);
+  }, [historyQuery]);
+
+  // Drawer focus trap: while the rail is an overlay it keeps Tab inside it.
+  useEffect(() => {
+    if (!railDrawer || !railOpen) return;
+    const rail = railRef.current;
+    if (!rail) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setRailOpen(false); return; }
+      if (event.key !== 'Tab') return;
+      const focusable = rail.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input,select,textarea');
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    rail.addEventListener('keydown', onKeyDown);
+    return () => rail.removeEventListener('keydown', onKeyDown);
+  }, [railDrawer, railOpen]);
 
   /** Right panel content: real project files and artifacts only. */
   const loadPanel = useCallback(async (id: string) => {
@@ -318,12 +358,31 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
 
   useEffect(() => { if (projectId) void loadPanel(projectId); }, [projectId, loadPanel]);
 
+  // Track whether the reader is parked at the bottom of the thread. Once they
+  // scroll up more than 100px we stop yanking the view and offer a toast.
+  const onThreadScroll = useCallback(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    const distance = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+    const pinned = distance <= 100;
+    setThreadPinned(pinned);
+    if (pinned) setHasNewBelow(false);
+  }, []);
+
+  const scrollThreadToEnd = useCallback(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+    setThreadPinned(true); setHasNewBelow(false);
+  }, []);
+
   // Keep the newest content visible; the thread scrolls, never the page.
   useEffect(() => {
     const thread = threadRef.current;
     if (!thread) return;
-    thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
-  }, [messages]);
+    if (threadPinned) thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+    else if (messages.length > 0) setHasNewBelow(true);
+  }, [messages, threadPinned]);
 
   useEffect(() => {
     let live = true;
@@ -515,7 +574,10 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const title = mode === 'chat' ? 'Session' : 'Task';
   const sessionStatus = error ? 'error' : busy ? 'streaming' : 'idle';
   const sessionTitle = conversations.find((item) => item.id === conversationId)?.title || 'New session';
-  const sessionGroups = groupSessions(conversations);
+  const visibleConversations = debouncedQuery
+    ? conversations.filter((item) => (item.title || 'Untitled session').toLowerCase().includes(debouncedQuery))
+    : conversations;
+  const sessionGroups = groupSessions(visibleConversations);
 
   const startNewSession = () => {
     stop();
@@ -523,61 +585,73 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   };
 
   if (mode === 'chat') return <AppShell title={title} chrome="focus">
-    <div className={styles.session}>
+    {/* Grid areas: "topbar topbar topbar" / "leftrail center rightpanel" */}
+    <div className={styles.session} data-rail={railOpen ? 'expanded' : 'collapsed'} data-panel={panelOpen ? 'open' : 'closed'}>
+      {/* 0 — TOP BAR spans all three columns */}
+      <header className={styles.sessionBar}>
+        <a className={styles.backLink} href="/chat" aria-label="Back to sessions">‹</a>
+        <button className={styles.railOpenButton} type="button" aria-expanded={railOpen} aria-controls="session-rail" aria-label={railOpen ? 'Collapse sessions' : 'Expand sessions'} onClick={() => setRailOpen((open) => !open)}>≡</button>
+        <h2 className={styles.sessionTitle}>{sessionTitle}</h2>
+        <span className={styles.statusDot} data-state={sessionStatus} aria-hidden="true" />
+        <span className={styles.statusText} role="status">{sessionStatus}</span>
+        <button className={styles.panelToggle} type="button" aria-expanded={panelOpen} aria-controls="session-panel" onClick={() => setPanelOpen((open) => !open)}>Files</button>
+      </header>
+
       {/* 1 — LEFT: real sessions for this account */}
-      <aside className={styles.sessionRail} id="session-rail" aria-label="Sessions" hidden={!railOpen}>
-        <div className={styles.railBrand}>
-          <span className={styles.railMark} aria-hidden="true">A!</span>
-          <b>AKBARAL!</b>
-          <button className={styles.railCollapse} type="button" aria-expanded={railOpen} aria-controls="session-rail" aria-label="Collapse sessions" onClick={() => setRailOpen(false)}>‹</button>
-        </div>
-        <button className={styles.newSessionButton} type="button" onClick={startNewSession}>+ New session</button>
-        <form className={styles.historySearch} role="search" onSubmit={(event) => { event.preventDefault(); void loadConversations(historyQuery); }}>
-          <input type="search" value={historyQuery} aria-label="Search your sessions" placeholder="Search sessions"
-            onChange={(event) => setHistoryQuery(event.target.value)} />
-          <button className={styles.smallButton} type="submit">Search</button>
-        </form>
-        <div className={styles.railList}>
-          {historyError ? <p className={styles.error} role="alert">{historyError}</p> : null}
-          {historyLoading ? <p className={styles.hint}>Loading your sessions…</p> : null}
-          {!historyLoading && conversations.length === 0 ? <p className={styles.hint}>{historyQuery.trim() ? 'No sessions match that search.' : 'No sessions yet.'}</p> : null}
-          {sessionGroups.map((group) => <section key={group.label} className={styles.railGroup}>
-            <h3>{group.label}</h3>
-            <ul>
-              {group.rows.map((conversation) => <li key={conversation.id}>
-                <button className={styles.historyOpenButton} type="button" aria-current={conversationId === conversation.id ? 'true' : undefined} onClick={() => void resumeConversation(conversation.id)}>
-                  <b>{conversation.title || 'Untitled session'}</b><small>{conversation.updatedAt?.slice(0, 10) || ''}</small>
-                </button>
-                <button className={styles.historyDeleteButton} type="button" aria-label={`Delete session ${conversation.title || 'Untitled session'}`} onClick={() => void deleteConversation(conversation.id)}>Delete</button>
-              </li>)}
-            </ul>
-          </section>)}
-        </div>
-        <nav className={styles.railFooter} aria-label="Workspace links">
-          <a href="/work">Task</a>
-          <a href="/dashboard">Dashboard</a>
-        </nav>
+      <aside className={styles.sessionRail} id="session-rail" ref={railRef} aria-label="Sessions" data-collapsed={railOpen ? undefined : 'true'}>
+        {railOpen ? <>
+          <div className={styles.railBrand}>
+            <span className={styles.railMark} aria-hidden="true">A!</span>
+            <b>AKBARAL!</b>
+            <button className={styles.railCollapse} type="button" aria-expanded={railOpen} aria-controls="session-rail" aria-label="Collapse sessions" onClick={() => setRailOpen(false)}>‹</button>
+          </div>
+          <button className={styles.newSessionButton} type="button" onClick={startNewSession}>+ New session</button>
+          <form className={styles.historySearch} role="search" onSubmit={(event) => { event.preventDefault(); void loadConversations(historyQuery); }}>
+            <input type="search" value={historyQuery} aria-label="Search your sessions" placeholder="Search sessions"
+              onChange={(event) => setHistoryQuery(event.target.value)} />
+            <button className={styles.smallButton} type="submit">Search</button>
+          </form>
+          <div className={styles.railList}>
+            {historyError ? <p className={styles.error} role="alert">{historyError}</p> : null}
+            {historyLoading ? <p className={styles.hint}>Loading your sessions…</p> : null}
+            {!historyLoading && sessionGroups.length === 0 ? <p className={styles.hint}>{historyQuery.trim() ? 'No sessions match that search.' : 'No sessions yet.'}</p> : null}
+            {sessionGroups.map((group) => <section key={group.label} className={styles.railGroup}>
+              <h3>{group.label}</h3>
+              <ul>
+                {group.rows.map((conversation) => <li key={conversation.id}>
+                  <button className={styles.historyOpenButton} type="button" aria-current={conversationId === conversation.id ? 'true' : undefined} onClick={() => { void resumeConversation(conversation.id); if (railDrawer) setRailOpen(false); }}>
+                    <b>{conversation.title || 'Untitled session'}</b><small>{conversation.updatedAt?.slice(0, 10) || ''}</small>
+                  </button>
+                  <button className={styles.historyDeleteButton} type="button" aria-label={`Delete session ${conversation.title || 'Untitled session'}`} onClick={() => void deleteConversation(conversation.id)}>Delete</button>
+                </li>)}
+              </ul>
+            </section>)}
+          </div>
+          <nav className={styles.railFooter} aria-label="Workspace links">
+            <a href="/work">Task</a>
+            <a href="/dashboard">Dashboard</a>
+          </nav>
+        </> : <div className={styles.railIcons}>
+          {/* Collapsed to 56px: icon-only, every control still reachable. */}
+          <button className={styles.railIconButton} type="button" aria-expanded={railOpen} aria-controls="session-rail" aria-label="Expand sessions" onClick={() => setRailOpen(true)}>≡</button>
+          <button className={styles.railIconButton} type="button" aria-label="New session" onClick={startNewSession}>+</button>
+          <a className={styles.railIconButton} href="/work" aria-label="Task">T</a>
+          <a className={styles.railIconButton} href="/dashboard" aria-label="Dashboard">D</a>
+        </div>}
       </aside>
 
-      {/* 2 — CENTER: top bar, thread, docked composer */}
+      {/* 2 — CENTER: chronological thread, then the docked composer */}
       <div className={styles.sessionMain}>
-        <header className={styles.sessionBar}>
-          <a className={styles.backLink} href="/" aria-label="Back to home">‹</a>
-          {railOpen ? null : <button className={styles.railOpenButton} type="button" aria-expanded={railOpen} aria-controls="session-rail" onClick={() => setRailOpen(true)}>Sessions</button>}
-          <h2 className={styles.sessionTitle}>{sessionTitle}</h2>
-          <span className={styles.statusDot} data-state={sessionStatus} aria-hidden="true" />
-          <span className={styles.statusText} role="status">{sessionStatus}</span>
-          <button className={styles.panelToggle} type="button" aria-expanded={panelOpen} aria-controls="session-panel" onClick={() => setPanelOpen((open) => !open)}>Files</button>
-        </header>
         {/* Thread renders BEFORE the composer; the composer dock is the last child. */}
         <section className={styles.chatWrap}>
-          <div className={styles.messages} ref={threadRef} aria-live="polite" aria-label="Conversation">
+          <div className={styles.messages} ref={threadRef} onScroll={onThreadScroll} aria-live="polite" aria-label="Conversation">
             {messages.length === 0 ? <div className={styles.empty}><h3>How can I help?</h3><p>No conversation yet. Your real chat will appear here after you send a message.</p></div> : null}
             {messages.map((message) => <article key={message.id} className={styles.message} data-role={message.role}><header><b>{message.role === 'user' ? 'You' : 'AKBARAL!'}</b>{message.content ? <CopyButton value={message.content} /> : null}</header><Markdown content={message.content || '…'} />{busy && message.role === 'assistant' && !message.content ? <span className={styles.streamCursor} aria-hidden="true" /> : null}</article>)}
             {tools.length > 0 ? <ol className={styles.inlineTools} aria-label="Tool activity">
               {tools.map((event) => <li key={event.id} data-status={event.status}><b>{event.tool}</b><span>{event.message}</span>{event.code ? <code>{event.code}</code> : null}{event.requiredEnvKey ? <small>set {event.requiredEnvKey}</small> : null}</li>)}
             </ol> : null}
           </div>
+          {hasNewBelow ? <button className={styles.newBelowToast} type="button" onClick={scrollThreadToEnd}>↓ New</button> : null}
           <div className={styles.composerDock}>
             {messages.length === 0 ? <div className={styles.starters}>
               {STARTER_PROMPTS.map((prompt) => <button key={prompt} className={styles.starterChip} type="button" onClick={() => setChatInput(prompt)}>{prompt}</button>)}
@@ -624,6 +698,7 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
             : <p className={styles.hint}>No preview yet. A completed website artifact renders here in a sandboxed frame.</p>) : null}
         </div>
       </aside>
+      {railDrawer && railOpen ? <button className={styles.sessionScrim} type="button" aria-label="Close sessions" onClick={() => setRailOpen(false)} /> : null}
     </div>
   </AppShell>;
 
