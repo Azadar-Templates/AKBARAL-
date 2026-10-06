@@ -67,3 +67,24 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* Account-menu and collapsed-rail contract. The menu is portaled to body, so
+   it is intentionally fixed rather than a child of a viewport-locked shell. */
+.menu{position:fixed;min-width:220px;width:min(290px,calc(100vw - 24px));max-width:calc(100vw - 24px);box-sizing:border-box;z-index:100}
+.menu :is(.menuHead b,.menuHead small,a,button){white-space:nowrap;overflow-wrap:normal;word-break:normal}
+.menu a,.menu button{min-height:44px}
+
+@media(min-width:1024px){
+  .shellCollapsed{grid-template-columns:56px minmax(0,1fr)}
+  .shellCollapsed .sidebar{gap:16px;padding:10px 7px}
+  .shellCollapsed .brandRow{display:grid;justify-items:center;gap:8px}
+  .shellCollapsed .brand{width:42px;flex:0 0 42px;justify-content:center;gap:0}
+  .shellCollapsed .mark{width:38px;height:38px;overflow:visible}
+  .shellCollapsed .collapse{width:42px;min-width:42px;height:42px}
+  .shellCollapsed .nav{justify-items:center;padding:0}
+  .shellCollapsed .navGroup,.shellCollapsed .navGroupItems,.shellCollapsed .navGroupOptional{width:100%}
+  .shellCollapsed .nav a{position:relative;justify-content:center;gap:0;width:42px;min-width:42px;padding:0;margin-inline:auto}
+  .shellCollapsed .navBullet{width:24px;height:24px}
+  .shellCollapsed .nav a[aria-current=page]::before{content:"";position:absolute;left:-7px;width:3px;height:28px;border-radius:0 3px 3px 0;background:var(--accent-bright);box-shadow:var(--glow-accent)}
+}
+.navText{white-space:nowrap;overflow-wrap:normal;word-break:normal}
