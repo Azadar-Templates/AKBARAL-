@@ -127,6 +127,8 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const accountRef = useRef<HTMLDivElement>(null);
+  const avatarButtonRef = useRef<HTMLButtonElement>(null);
   const { account, authenticated } = useAccount();
   const initials = useMemo(() => (account?.name || account?.email || 'A').slice(0, 1).toUpperCase(), [account]);
   const role = account?.role || '';
@@ -152,6 +154,28 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
     sidebar.addEventListener('keydown', onKeyDown);
     return () => sidebar.removeEventListener('keydown', onKeyDown);
   }, [mobileOpen]);
+
+  // Account menu dismissal contract: Escape closes the menu and returns focus
+  // to the avatar button that opened it; pointer interaction anywhere outside
+  // the account region closes it without stealing that interaction.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false);
+      avatarButtonRef.current?.focus();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const region = accountRef.current;
+      if (region && event.target instanceof Node && !region.contains(event.target)) setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [menuOpen]);
 
   const signOut = async () => {
     const refreshToken = storedRefreshToken();
@@ -227,11 +251,11 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
             {focus ? null : <button className={styles.mobileMenu} type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>☰</button>}
             <h1>{title}</h1>
           </div>
-          <div className={styles.account}>
+          <div className={styles.account} ref={accountRef}>
             {authenticated === false && allowAnonymous ? (
               <Link className={styles.primaryLink} href="/signin">Sign in</Link>
             ) : (
-              <button className={styles.avatarButton} type="button" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              <button className={styles.avatarButton} type="button" aria-expanded={menuOpen} aria-haspopup="menu" ref={avatarButtonRef} onClick={() => setMenuOpen((open) => !open)}>
                 <span className={styles.avatar} aria-hidden="true">{initials}</span>
                 <span className={styles.avatarName}>{account?.name || account?.email || 'Account'}</span>
               </button>
@@ -239,9 +263,9 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
             {menuOpen ? (
               <nav className={styles.menu} aria-label="Account menu">
                 <div className={styles.menuHead}><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email || 'Signed in'}</small></div>
-                <Link href="/settings">Settings</Link>
-                <Link href="/billing">Billing &amp; credits</Link>
-                <Link href="/help">Help</Link>
+                <Link href="/settings" onClick={() => setMenuOpen(false)}>Settings</Link>
+                <Link href="/billing" onClick={() => setMenuOpen(false)}>Billing &amp; credits</Link>
+                <Link href="/help" onClick={() => setMenuOpen(false)}>Help</Link>
                 {canOwner ? <Link href="/owner">Owner</Link> : null}
                 {canAdmin ? <Link href="/admin">Admin</Link> : null}
                 <button type="button" onClick={() => void signOut()}>Log out</button>

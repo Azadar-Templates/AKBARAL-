@@ -298,6 +298,8 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
   const toolLogRef = useRef<HTMLOListElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLElement>(null);
+  const sessionAccountRef = useRef<HTMLDivElement>(null);
+  const sessionAvatarButtonRef = useRef<HTMLButtonElement>(null);
 
   /** Conversations come only from the authenticated history endpoint. */
   const loadConversations = useCallback(async (query: string) => {
@@ -375,6 +377,28 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [panelOpen]);
+
+  // Session account menu dismissal contract: Escape closes it and restores
+  // focus to the avatar button; pointer interaction outside the account
+  // region closes it without stealing the interaction.
+  useEffect(() => {
+    if (!sessionMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSessionMenuOpen(false);
+      sessionAvatarButtonRef.current?.focus();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const region = sessionAccountRef.current;
+      if (region && event.target instanceof Node && !region.contains(event.target)) setSessionMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [sessionMenuOpen]);
 
   /** Right panel content: real project files and artifacts only. */
   const loadPanel = useCallback(async (id: string) => {
@@ -652,14 +676,14 @@ export function WorkbenchShell({ initialMode = 'chat' }: { initialMode?: Mode })
         <div className={styles.sessionBarRight}>
           <button className={styles.panelToggle} type="button" aria-expanded={panelOpen} aria-controls="session-panel" aria-label={panelOpen ? 'Close session output' : 'Open session output'} onClick={() => setPanelOpen((open) => !open)}>Output</button>
           <span className={styles.sessionStatus} role="status" aria-label={`Session status: ${sessionStatus}`}><span className={styles.statusDot} data-state={sessionStatus} aria-hidden="true" /><span className={styles.statusText}>{sessionStatus}</span></span>
-          <div className={styles.sessionAccount}>
-            <button className={styles.sessionAvatarButton} type="button" aria-expanded={sessionMenuOpen} aria-haspopup="menu" aria-label="Open account menu" onClick={() => setSessionMenuOpen((open) => !open)}>
+          <div className={styles.sessionAccount} ref={sessionAccountRef}>
+            <button className={styles.sessionAvatarButton} type="button" aria-expanded={sessionMenuOpen} aria-haspopup="menu" aria-label="Open account menu" ref={sessionAvatarButtonRef} onClick={() => setSessionMenuOpen((open) => !open)}>
               <span className={styles.sessionAvatar} aria-hidden="true">{(account?.name || account?.email || 'A').slice(0, 1).toUpperCase()}</span><span className={styles.sessionAvatarName}>{account?.name || account?.email || 'Account'}</span>
             </button>
             {sessionMenuOpen ? <nav className={styles.sessionMenu} aria-label="Account menu" role="menu">
-              <Link href="/settings" role="menuitem">Settings</Link>
-              <Link href="/billing" role="menuitem">Billing &amp; credits</Link>
-              <Link href="/help" role="menuitem">Help</Link>
+              <Link href="/settings" role="menuitem" onClick={() => setSessionMenuOpen(false)}>Settings</Link>
+              <Link href="/billing" role="menuitem" onClick={() => setSessionMenuOpen(false)}>Billing &amp; credits</Link>
+              <Link href="/help" role="menuitem" onClick={() => setSessionMenuOpen(false)}>Help</Link>
               {canOwner ? <Link href="/owner" role="menuitem">Owner</Link> : null}
               {canAdmin ? <Link href="/admin" role="menuitem">Admin</Link> : null}
               <button type="button" role="menuitem" onClick={() => void signOut()}>Log out</button>
