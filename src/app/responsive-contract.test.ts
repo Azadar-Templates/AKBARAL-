@@ -13,7 +13,9 @@ const dataSurfaces = readFileSync(join(root, 'src/app/_components/data-surfaces.
 describe('responsive + honest empty-state contract for UI reset', () => {
   it('app shell uses sidebar + main grid and collapses to a drawer under 1024px', () => {
     assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
-    assert.match(shellCss, /shellCollapsed\{grid-template-columns:86px minmax\(0,1fr\)/);
+    // Menu/rail fix: the collapsed rail is a true 56px icon strip (the A!
+    // mark and 44px toggle stay unclipped inside it — see menu-rail-fix tests).
+    assert.match(shellCss, /shellCollapsed\{grid-template-columns:56px minmax\(0,1fr\)/);
     assert.match(shellCss, /@media\(max-width:1023px\)/);
     assert.match(shellCss, /transform:translateX\(-105%\)/);
     assert.match(shellCss, /width:min\(310px,86vw\)/);

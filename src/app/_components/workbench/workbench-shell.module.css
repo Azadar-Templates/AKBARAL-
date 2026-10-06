@@ -190,7 +190,11 @@
    composer is the final, non-shrinking child of the center column. */
 .sessionBar {
   justify-content: space-between;
-  overflow: hidden;
+  /* The account dropdown hangs below the 56px bar: vertical overflow must be
+     visible or this ancestor clips the menu. Horizontal containment is
+     preserved with clip. */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 .sessionBarLeft,
 .sessionBarRight,
@@ -448,3 +452,10 @@
   flex-shrink: 0;
   min-height: 0;
 }
+
+/* ── Session account menu contract: labels never break mid-word, the menu
+   reserves a min-width that fits "Billing & credits", and nothing above
+   clips it (see .sessionBar overflow-y). ── */
+.sessionMenu { min-width: 220px; width: max-content; max-width: min(320px, calc(100vw - 16px)); }
+.session .sessionMenu a,
+.session .sessionMenu button { white-space: nowrap; overflow-wrap: normal; word-break: keep-all; overflow: hidden; text-overflow: ellipsis; }

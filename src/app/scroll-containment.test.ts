@@ -43,8 +43,12 @@ describe('authenticated Chat/Work scroll containment', () => {
       assert.match(css, /min-height:\s*0/);
       assert.match(css, /overflow:\s*hidden/);
     }
+    // The topbar clips horizontally only: vertical overflow stays visible so
+    // the account dropdown is never clipped by this ancestor (menu/rail fix).
     const topbar = block(shellCss, '.shellViewportLocked .topbar');
-    assert.match(topbar, /overflow:\s*hidden/);
+    assert.match(topbar, /overflow-x:\s*clip/);
+    assert.match(topbar, /overflow-y:\s*visible/);
+    assert.doesNotMatch(topbar, /overflow:\s*hidden/);
     const containment = workbenchCss.slice(workbenchCss.lastIndexOf('/* Scroll containment release'));
     for (const selector of ['.session', '.sessionMain', '.sessionRail', '.sessionPanel']) {
       assert.match(containment, new RegExp(`${selector.replace('.', '\\.')},?[\\s\\S]*?min-height:\\s*0`), `${selector} has a bounded height`);

@@ -89,7 +89,11 @@ describe('AKBARAL! green chat layout release fixes', () => {
     assert.match(topbar, /className=\{styles\.sessionMenu\}/);
     for (const label of ['Settings', 'Billing &amp; credits', 'Help', 'Log out']) assert.ok(topbar.includes(label), `${label} menu action`);
     assert.match(css, /\.sessionBar\s*\{[^}]*height:\s*56px/s);
-    assert.match(css, /\.sessionBar\s*\{[^}]*overflow:\s*hidden/s);
+    // Horizontal clip only: the account dropdown hangs below the bar and must
+    // not be clipped by an ancestor overflow:hidden (menu/rail fix).
+    assert.match(css, /\.sessionBar\s*\{[^}]*overflow-x:\s*clip/s);
+    assert.match(css, /\.sessionBar\s*\{[^}]*overflow-y:\s*visible/s);
+    assert.doesNotMatch(css, /\.sessionBar\s*\{[^}]*overflow:\s*hidden/s);
     assert.match(css, /\.sessionAvatarButton\s*\{\s*width:\s*44px/s);
   });
 });
