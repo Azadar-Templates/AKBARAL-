@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './app-shell.module.css';
 
 type Account = {
@@ -126,7 +127,10 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 12 });
   const sidebarRef = useRef<HTMLElement>(null);
+  const avatarButtonRef = useRef<HTMLButtonElement>(null);
+  const accountMenuRef = useRef<HTMLElement>(null);
   const { account, authenticated } = useAccount();
   const initials = useMemo(() => (account?.name || account?.email || 'A').slice(0, 1).toUpperCase(), [account]);
   const role = account?.role || '';
@@ -152,6 +156,68 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
     sidebar.addEventListener('keydown', onKeyDown);
     return () => sidebar.removeEventListener('keydown', onKeyDown);
   }, [mobileOpen]);
+
+  // The account menu is portaled to document.body. Chat/Task deliberately lock
+  // their viewport scroll regions with overflow:hidden, so keeping this menu in
+  // the app shell would clip it. Both Escape and an outside press return focus
+  // to the trigger so keyboard users always have a stable next focus target.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const restoreFocus = () => {
+      setMenuOpen(false);
+      window.requestAnimationFrame(() => avatarButtonRef.current?.focus());
+    };
+    const positionMenu = () => {
+      const trigger = avatarButtonRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      setMenuPosition({ top: rect.bottom + 8, right: Math.max(12, window.innerWidth - rect.right) });
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        restoreFocus();
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!accountMenuRef.current?.contains(target) && !avatarButtonRef.current?.contains(target)) restoreFocus();
+    };
+    positionMenu();
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
+    const focusFirstItem = window.requestAnimationFrame(() => {
+      accountMenuRef.current?.querySelector<HTMLElement>('a[href],button:not([disabled])')?.focus();
+    });
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
+      window.cancelAnimationFrame(focusFirstItem);
+    };
+  }, [menuOpen]);
+
+  const closeAccountMenu = () => {
+    setMenuOpen(false);
+    window.requestAnimationFrame(() => avatarButtonRef.current?.focus());
+  };
+
+  const toggleAccountMenu = () => {
+    if (menuOpen) {
+      closeAccountMenu();
+      return;
+    }
+    const trigger = avatarButtonRef.current;
+    if (trigger) {
+      const rect = trigger.getBoundingClientRect();
+      setMenuPosition({ top: rect.bottom + 8, right: Math.max(12, window.innerWidth - rect.right) });
+    }
+    setMenuOpen(true);
+  };
 
   const signOut = async () => {
     const refreshToken = storedRefreshToken();
@@ -206,7 +272,7 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
               <span className={styles.navSectionTitle}>{group.title}</span>
               <div className={styles.navGroupItems}>
                 {group.items.map((item) => (
-                  <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
+                  <Link key={item.href} href={item.href} aria-label={collapsed ? item.label : undefined} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
                     <span className={styles.navBullet} aria-hidden="true">{item.short}</span>
                     <span className={styles.navText}>{item.label}</span>
                   </Link>
@@ -215,8 +281,8 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
             </div>
           ))}
           <div className={styles.navGroupOptional}>
-            {canOwner ? <Link href="/owner" aria-current={pathname === '/owner' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">O</span><span className={styles.navText}>Owner Console</span></Link> : null}
-            {canAdmin ? <Link href="/admin" aria-current={pathname === '/admin' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">Ad</span><span className={styles.navText}>Admin</span></Link> : null}
+            {canOwner ? <Link href="/owner" aria-label={collapsed ? 'Owner Console' : undefined} aria-current={pathname === '/owner' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">O</span><span className={styles.navText}>Owner Console</span></Link> : null}
+            {canAdmin ? <Link href="/admin" aria-label={collapsed ? 'Admin' : undefined} aria-current={pathname === '/admin' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">Ad</span><span className={styles.navText}>Admin</span></Link> : null}
           </div>
         </nav>
       </aside>}
@@ -231,21 +297,22 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
             {authenticated === false && allowAnonymous ? (
               <Link className={styles.primaryLink} href="/signin">Sign in</Link>
             ) : (
-              <button className={styles.avatarButton} type="button" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              <button ref={avatarButtonRef} className={styles.avatarButton} type="button" aria-controls="account-menu" aria-expanded={menuOpen} onClick={toggleAccountMenu}>
                 <span className={styles.avatar} aria-hidden="true">{initials}</span>
                 <span className={styles.avatarName}>{account?.name || account?.email || 'Account'}</span>
               </button>
             )}
-            {menuOpen ? (
-              <nav className={styles.menu} aria-label="Account menu">
+            {menuOpen && typeof document !== 'undefined' ? createPortal(
+              <nav ref={accountMenuRef} id="account-menu" className={styles.menu} style={{ top: menuPosition.top, right: menuPosition.right }} aria-label="Account menu">
                 <div className={styles.menuHead}><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email || 'Signed in'}</small></div>
-                <Link href="/settings">Settings</Link>
-                <Link href="/billing">Billing &amp; credits</Link>
-                <Link href="/help">Help</Link>
-                {canOwner ? <Link href="/owner">Owner</Link> : null}
-                {canAdmin ? <Link href="/admin">Admin</Link> : null}
-                <button type="button" onClick={() => void signOut()}>Log out</button>
-              </nav>
+                <Link href="/settings" onClick={closeAccountMenu}>Settings</Link>
+                <Link href="/billing" onClick={closeAccountMenu}>Billing &amp; credits</Link>
+                <Link href="/help" onClick={closeAccountMenu}>Help</Link>
+                {canOwner ? <Link href="/owner" onClick={closeAccountMenu}>Owner</Link> : null}
+                {canAdmin ? <Link href="/admin" onClick={closeAccountMenu}>Admin</Link> : null}
+                <button type="button" onClick={() => { closeAccountMenu(); void signOut(); }}>Log out</button>
+              </nav>,
+              document.body,
             ) : null}
           </div>
         </header>
