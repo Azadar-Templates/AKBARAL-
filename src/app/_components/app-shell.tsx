@@ -308,8 +308,8 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
                 <Link href="/settings" onClick={closeAccountMenu}>Settings</Link>
                 <Link href="/billing" onClick={closeAccountMenu}>Billing &amp; credits</Link>
                 <Link href="/help" onClick={closeAccountMenu}>Help</Link>
-                {canOwner ? <Link href="/owner" onClick={closeAccountMenu}>Owner</Link> : null}
-                {canAdmin ? <Link href="/admin" onClick={closeAccountMenu}>Admin</Link> : null}
+                {canOwner ? <Link href="/owner">Owner</Link> : null}
+                {canAdmin ? <Link href="/admin">Admin</Link> : null}
                 <button type="button" onClick={() => { closeAccountMenu(); void signOut(); }}>Log out</button>
               </nav>,
               document.body,
