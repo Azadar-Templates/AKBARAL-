@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './app-shell.module.css';
@@ -23,25 +23,26 @@ type MePayload = {
   subscription?: unknown;
 };
 
+/** The one product inventory. Owner/Admin deliberately stay account-menu-only. */
 const NAV_GROUPS = [
   { title: 'PRIMARY MODES', items: [
-    { href: '/chat', label: 'Chat', short: 'C' },
-    { href: '/work', label: 'Task', short: 'T' },
+    { href: '/chat', label: 'Chat' },
+    { href: '/work', label: 'Task' },
   ] },
   { title: 'WORKSPACE', items: [
-    { href: '/dashboard', label: 'Dashboard', short: 'D' },
-    { href: '/files', label: 'Files & documents', short: 'F' },
-    { href: '/images', label: 'Images', short: 'I' },
-    { href: '/projects', label: 'Projects', short: 'P' },
-    { href: '/agents', label: 'Agents', short: 'A' },
-    { href: '/agent-factory', label: 'Agent Factory', short: 'F+' },
-    { href: '/automations', label: 'Automations', short: 'Au' },
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/files', label: 'Files & documents' },
+    { href: '/images', label: 'Images' },
+    { href: '/projects', label: 'Projects' },
+    { href: '/agents', label: 'Agents' },
+    { href: '/agent-factory', label: 'Agent Factory' },
+    { href: '/automations', label: 'Automations' },
   ] },
   { title: 'ACCOUNT', items: [
-    { href: '/billing', label: 'Billing & credits', short: 'B' },
-    { href: '/pricing', label: 'See plans and pricing', short: '$' },
-    { href: '/settings', label: 'Settings', short: 'S' },
-    { href: '/help', label: 'Help', short: '?' },
+    { href: '/billing', label: 'Billing & credits' },
+    { href: '/pricing', label: 'See plans and pricing' },
+    { href: '/settings', label: 'Settings' },
+    { href: '/help', label: 'Help' },
   ] },
 ] as const;
 
@@ -116,19 +117,48 @@ export function useAccount() {
   return { account, authenticated, error };
 }
 
+function WorkspaceNavigation({ pathname, close, navRef, open }: {
+  pathname: string;
+  close: () => void;
+  navRef: RefObject<HTMLElement | null>;
+  open: boolean;
+}) {
+  return (
+    <nav ref={navRef} id="workspace-navigation" className={styles.nav} data-open={open ? 'true' : undefined} aria-label="Workspace navigation">
+      {NAV_GROUPS.map((group) => (
+        <div className={styles.navGroup} key={group.title}>
+          <span className={styles.navSectionTitle}>{group.title}</span>
+          <div className={styles.navGroupItems}>
+            {group.items.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={pathname === item.href ? 'page' : undefined}
+                onClick={close}
+              >
+                <span className={styles.navText}>{item.label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
+    </nav>
+  );
+}
+
 /**
- * `chrome='focus'` is used by the agent session page: it hides the global
- * workspace nav so the page can own its own left rail, and lets the content
- * area run full-bleed. Every other surface keeps the default chrome, so this
- * prop changes nothing anywhere it is not passed.
+ * Authenticated application chrome. The header is intentionally the only
+ * shared navigation surface: it is a desktop row, a horizontally scrollable
+ * tablet strip, or a focus-trapped mobile drawer at the three release bands.
  */
-export function AppShell({ title, children, allowAnonymous = false, chrome = 'full', viewportLocked = false }: { title: string; children: ReactNode; allowAnonymous?: boolean; chrome?: 'full' | 'focus'; viewportLocked?: boolean }) {
+export function AppShell({ title, children, allowAnonymous = false, viewportLocked = false }: { title: string; children: ReactNode; allowAnonymous?: boolean; viewportLocked?: boolean }) {
   const pathname = usePathname() || '/';
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, right: 12 });
-  const sidebarRef = useRef<HTMLElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileNavRef = useRef<HTMLElement>(null);
+  const mobileRestoreRef = useRef<HTMLElement | null>(null);
   const avatarButtonRef = useRef<HTMLButtonElement>(null);
   const accountMenuRef = useRef<HTMLElement>(null);
   const { account, authenticated } = useAccount();
@@ -137,30 +167,55 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
   const canOwner = ['owner', 'super_admin'].includes(role);
   const canAdmin = ['admin', 'super_admin'].includes(role);
 
-  // Workspace navigation is a real drawer below the desktop breakpoint: Escape
-  // closes it and Tab stays inside while it is open.
+  const closeMobileNavigation = () => {
+    const wasOpen = mobileOpen;
+    setMobileOpen(false);
+    if (!wasOpen) return;
+    window.requestAnimationFrame(() => {
+      const target = mobileRestoreRef.current;
+      mobileRestoreRef.current = null;
+      if (target && document.contains(target)) target.focus();
+      else mobileMenuButtonRef.current?.focus();
+    });
+  };
+
+  const openMobileNavigation = () => {
+    mobileRestoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : mobileMenuButtonRef.current;
+    setMobileOpen(true);
+  };
+
+  // The mobile navigation is a real drawer: focus moves into it, Escape and
+  // the scrim close it, Tab wraps, and focus returns to the menu trigger.
   useEffect(() => {
     if (!mobileOpen) return;
-    const sidebar = sidebarRef.current;
-    if (!sidebar) return;
+    const nav = mobileNavRef.current;
+    if (!nav) return;
+    const focusable = () => [...nav.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input,select,textarea')];
+    const focusFirst = window.requestAnimationFrame(() => focusable()[0]?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setMobileOpen(false); return; }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMobileNavigation();
+        return;
+      }
       if (event.key !== 'Tab') return;
-      const focusable = sidebar.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input,select,textarea');
-      if (!focusable.length) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
-    sidebar.addEventListener('keydown', onKeyDown);
-    return () => sidebar.removeEventListener('keydown', onKeyDown);
+    nav.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFirst);
+      nav.removeEventListener('keydown', onKeyDown);
+    };
   }, [mobileOpen]);
 
-  // The account menu is portaled to document.body. Chat/Task deliberately lock
-  // their viewport scroll regions with overflow:hidden, so keeping this menu in
-  // the app shell would clip it. Both Escape and an outside press return focus
-  // to the trigger so keyboard users always have a stable next focus target.
+  // The account menu remains portaled so viewport-locked Chat/Task content
+  // cannot clip it. Its labels are deliberately nowrap and its minimum width
+  // is enforced in CSS for the same reason.
   useEffect(() => {
     if (!menuOpen) return;
     const restoreFocus = () => {
@@ -253,71 +308,47 @@ export function AppShell({ title, children, allowAnonymous = false, chrome = 'fu
     );
   }
 
-  const focus = chrome === 'focus';
-
   return (
-    <main className={`${styles.shell} ${collapsed ? styles.shellCollapsed : ''} ${focus ? styles.shellFocus : ''} ${viewportLocked ? `${styles.shellViewportLocked} akbaral-viewport-locked` : ''}`}>
-      {mobileOpen && !focus ? <button className={styles.scrim} type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
-      {focus ? null : <aside ref={sidebarRef} className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Workspace navigation">
-        <div className={styles.brandRow}>
-          <Link className={styles.brand} href="/chat" aria-label="AKBARAL! workspace">
-            <span className={styles.mark} aria-hidden="true">A!</span>
-            <span className={styles.brandText}><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span>
-          </Link>
-          <button className={styles.collapse} type="button" aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} onClick={() => setCollapsed((value) => !value)}>{collapsed ? '›' : '‹'}</button>
-        </div>
-        <nav className={styles.nav} aria-label="Primary workspace navigation">
-          {NAV_GROUPS.map((group) => (
-            <div className={styles.navGroup} key={group.title}>
-              <span className={styles.navSectionTitle}>{group.title}</span>
-              <div className={styles.navGroupItems}>
-                {group.items.map((item) => (
-                  <Link key={item.href} href={item.href} aria-label={collapsed ? item.label : undefined} aria-current={pathname === item.href ? 'page' : undefined} onClick={() => setMobileOpen(false)}>
-                    <span className={styles.navBullet} aria-hidden="true">{item.short}</span>
-                    <span className={styles.navText}>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ))}
-          <div className={styles.navGroupOptional}>
-            {canOwner ? <Link href="/owner" aria-label={collapsed ? 'Owner Console' : undefined} aria-current={pathname === '/owner' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">O</span><span className={styles.navText}>Owner Console</span></Link> : null}
-            {canAdmin ? <Link href="/admin" aria-label={collapsed ? 'Admin' : undefined} aria-current={pathname === '/admin' ? 'page' : undefined} onClick={() => setMobileOpen(false)}><span className={styles.navBullet} aria-hidden="true">Ad</span><span className={styles.navText}>Admin</span></Link> : null}
-          </div>
-        </nav>
-      </aside>}
-
+    <main className={`${styles.shell} ${viewportLocked ? `${styles.shellViewportLocked} akbaral-viewport-locked` : ''}`}>
+      {mobileOpen ? <button className={styles.scrim} type="button" aria-label="Close navigation" onClick={closeMobileNavigation} /> : null}
       <section className={styles.main}>
         <header className={styles.topbar}>
-          <div className={styles.title}>
-            {focus ? null : <button className={styles.mobileMenu} type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>☰</button>}
-            <h1>{title}</h1>
+          <div className={styles.headerPrimary}>
+            <div className={styles.title}>
+              <Link className={styles.brand} href="/chat" aria-label="AKBARAL! workspace">
+                <span className={styles.mark} aria-hidden="true">A!</span>
+                <span className={styles.brandText}><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span>
+              </Link>
+              <h1>{title}</h1>
+            </div>
+            <button ref={mobileMenuButtonRef} className={styles.mobileMenu} type="button" aria-label="Open navigation" aria-controls="workspace-navigation" aria-expanded={mobileOpen} onClick={openMobileNavigation}>☰</button>
+            <div className={styles.account}>
+              {authenticated === false && allowAnonymous ? (
+                <Link className={styles.primaryLink} href="/signin">Sign in</Link>
+              ) : (
+                <button ref={avatarButtonRef} className={styles.avatarButton} type="button" aria-controls="account-menu" aria-expanded={menuOpen} onClick={toggleAccountMenu}>
+                  <span className={styles.avatar} aria-hidden="true">{initials}</span>
+                  <span className={styles.avatarName}>{account?.name || account?.email || 'Account'}</span>
+                </button>
+              )}
+              {menuOpen && typeof document !== 'undefined' ? createPortal(
+                <nav ref={accountMenuRef} id="account-menu" className={styles.menu} style={{ top: menuPosition.top, right: menuPosition.right }} aria-label="Account menu">
+                  <div className={styles.menuHead}><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email || 'Signed in'}</small></div>
+                  <Link href="/settings" onClick={closeAccountMenu}>Settings</Link>
+                  <Link href="/billing" onClick={closeAccountMenu}>Billing &amp; credits</Link>
+                  <Link href="/help" onClick={closeAccountMenu}>Help</Link>
+                  {canOwner ? <Link href="/owner" onClick={closeAccountMenu}>Owner</Link> : null}
+                  {canAdmin ? <Link href="/admin" onClick={closeAccountMenu}>Admin</Link> : null}
+                  <button type="button" onClick={() => { closeAccountMenu(); void signOut(); }}>Log out</button>
+                </nav>,
+                document.body,
+              ) : null}
+            </div>
           </div>
-          <div className={styles.account}>
-            {authenticated === false && allowAnonymous ? (
-              <Link className={styles.primaryLink} href="/signin">Sign in</Link>
-            ) : (
-              <button ref={avatarButtonRef} className={styles.avatarButton} type="button" aria-controls="account-menu" aria-expanded={menuOpen} onClick={toggleAccountMenu}>
-                <span className={styles.avatar} aria-hidden="true">{initials}</span>
-                <span className={styles.avatarName}>{account?.name || account?.email || 'Account'}</span>
-              </button>
-            )}
-            {menuOpen && typeof document !== 'undefined' ? createPortal(
-              <nav ref={accountMenuRef} id="account-menu" className={styles.menu} style={{ top: menuPosition.top, right: menuPosition.right }} aria-label="Account menu">
-                <div className={styles.menuHead}><b>{account?.name || 'AKBARAL! account'}</b><small>{account?.email || 'Signed in'}</small></div>
-                <Link href="/settings" onClick={closeAccountMenu}>Settings</Link>
-                <Link href="/billing" onClick={closeAccountMenu}>Billing &amp; credits</Link>
-                <Link href="/help" onClick={closeAccountMenu}>Help</Link>
-                {canOwner ? <Link href="/owner">Owner</Link> : null}
-                {canAdmin ? <Link href="/admin">Admin</Link> : null}
-                <button type="button" onClick={() => { closeAccountMenu(); void signOut(); }}>Log out</button>
-              </nav>,
-              document.body,
-            ) : null}
-          </div>
+          <WorkspaceNavigation pathname={pathname} close={closeMobileNavigation} navRef={mobileNavRef} open={mobileOpen} />
         </header>
-        <div className={`${styles.content} ${focus ? styles.contentFlush : ''}`}>
-          <div className={`${styles.contentInner} ${focus ? styles.contentInnerFlush : ''}`}>{children}</div>
+        <div className={styles.content}>
+          <div className={styles.contentInner}>{children}</div>
         </div>
       </section>
     </main>

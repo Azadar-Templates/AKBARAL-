@@ -11,12 +11,13 @@ const workCss = readFileSync(join(root, 'src/app/_components/workbench/workbench
 const dataSurfaces = readFileSync(join(root, 'src/app/_components/data-surfaces.tsx'), 'utf8');
 
 describe('one-product workspace UX contract', () => {
-  it('left chrome mounts the exact requested top-level inventory', () => {
+  it('header chrome mounts the exact requested top-level inventory', () => {
     for (const label of ['Chat', 'Task', 'Files & documents', 'Images', 'Projects', 'Agents', 'Automations', 'Dashboard', 'Billing & credits', 'See plans and pricing', 'Settings', 'Help']) {
       assert.ok(shell.includes(`label: '${label}'`), `${label} lives in the shell nav`);
     }
-    assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
-    assert.match(shell, /Collapse navigation/);
+    assert.match(shellCss, /\.topbar\{position:sticky/);
+    assert.match(shell, /<WorkspaceNavigation/);
+    assert.doesNotMatch(shell, /Collapse navigation|shellCollapsed|className=\{styles\.sidebar\}/);
   });
 
   it('top bar contains page title and avatar menu with role-gated Owner/Admin', () => {
@@ -24,8 +25,8 @@ describe('one-product workspace UX contract', () => {
     assert.match(shell, /Settings<\/Link>/);
     assert.match(shell, /Billing &amp; credits/);
     assert.match(shell, /Help<\/Link>/);
-    assert.match(shell, /canOwner \? <Link href="\/owner">Owner<\/Link>/);
-    assert.match(shell, /canAdmin \? <Link href="\/admin">Admin<\/Link>/);
+    assert.match(shell, /canOwner \? <Link href="\/owner" onClick=\{closeAccountMenu\}>Owner<\/Link>/);
+    assert.match(shell, /canAdmin \? <Link href="\/admin" onClick=\{closeAccountMenu\}>Admin<\/Link>/);
     assert.match(shell, /Log out/);
   });
 

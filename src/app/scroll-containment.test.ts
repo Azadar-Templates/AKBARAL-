@@ -36,9 +36,9 @@ describe('authenticated Chat/Work scroll containment', () => {
     assert.doesNotMatch(shell, /viewportLocked\s*=\{true\}/);
   });
 
-  it('bounds the full topbar, body row, sidebar, content and session chain', () => {
+  it('bounds the full header, body row, content and session chain', () => {
     assert.match(shellCss, /\.shellViewportLocked\s*\{[\s\S]*?height:\s*100dvh[\s\S]*?min-height:\s*0[\s\S]*?overflow:\s*hidden/);
-    for (const selector of ['.shellViewportLocked .sidebar', '.shellViewportLocked .main', '.shellViewportLocked .content', '.shellViewportLocked .contentInner']) {
+    for (const selector of ['.shellViewportLocked .main', '.shellViewportLocked .content', '.shellViewportLocked .contentInner']) {
       const css = block(shellCss, selector);
       assert.match(css, /min-height:\s*0/);
       assert.match(css, /overflow:\s*hidden/);
