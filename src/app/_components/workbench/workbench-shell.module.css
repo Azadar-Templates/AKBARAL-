@@ -13,8 +13,15 @@
 .session :where(h1,h2,h3,p,span,b,small,a,button,li,dd,dt,pre,code,label) {
   max-width: 100%;
   min-width: 0;
+}
+.session :where(.message,.markdown,.inlineTools,.toolMessage,.previewBox,.previewBox pre) {
   overflow-wrap: anywhere;
-  white-space: normal;
+  word-break: break-word;
+}
+.session :where(.sessionBar,.sessionTitle,.statusText,.sessionAccount,.sessionMenu,.sessionRail,.sessionPanel,.panelTabs,.panelTab,.railFooter,.historySearch,.starterChip,.disclosure) :where(a,button,span,b,small,label) {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .sessionTitle {
   white-space: nowrap !important;

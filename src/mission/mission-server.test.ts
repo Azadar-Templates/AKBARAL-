@@ -324,7 +324,9 @@ test('the private dashboard is served by the mission server only', async () => {
   const html = await asset.text();
   assert.match(asset.headers.get('content-security-policy') ?? '', /default-src 'self'/);
   assert.equal(asset.headers.get('x-frame-options'), 'DENY');
-  assert.match(html, /ZA141251SA/);
+  assert.doesNotMatch(html, /ZA141251SA/, 'the private mission identifier is not present in the unauthenticated shell');
+  const app = await (await fetch(`${baseUrl}/app.js`)).text();
+  assert.doesNotMatch(app, /ZA141251SA/, 'the private mission identifier is not present in a public static asset');
   assert.equal((html.match(/AKBARAL! Payments/g) ?? []).length, 1, 'the one customer-ledger section is explicitly labelled');
   assert.ok(!html.replace('AKBARAL! Payments', '').includes('AKBARAL!'), 'the private mission identity remains separate from public product branding');
   assert.equal((html.match(/name="slot"[^>]*max="5"/g) ?? []).length, 4, 'all five payout slots are selectable in every slot input');

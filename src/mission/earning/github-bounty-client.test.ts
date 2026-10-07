@@ -6,7 +6,7 @@ import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLead
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
-function fixture(responses: Array<Response | Error>, token: string | null = 'fixture-only-token') {
+function fixture(responses: Array<Response | Error>, token: string | null = `fixture-only-token-${Math.random().toString(36).slice(2)}`) {
   const calls: Array<{ url: URL; init: RequestInit }> = [];
   const transport: typeof fetch = async (url, init) => {
     calls.push({ url: new URL(String(url)), init: init! });
@@ -26,13 +26,15 @@ it('is opt-in and works unauthenticated for discovery, never falls back to unrel
 });
 
 it('discovers open bounty-labeled issues only, excludes pull requests and closed issues, dedupes across queries', async () => {
-  const issue = { number: 42, html_url: 'https://github.com/acme/widget/issues/42', title: 'Fix the widget bounty $250',
-    state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/acme/widget' };
+  const issue = { number: 42, html_url: 'https://github.com/acme/widget/issues/42', title: 'Fix the widget bounty',
+    body: 'Bounty: $250 USD for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/acme/widget' };
   const pr = { number: 43, html_url: 'https://github.com/acme/widget/pull/43', title: 'A PR not an issue', state: 'open',
     labels: [{ name: 'bounty' }], pull_request: {}, repository_url: 'https://api.github.com/repos/acme/widget' };
   const closed = { number: 44, html_url: 'https://github.com/acme/widget/issues/44', title: 'Closed bounty', state: 'closed',
     labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/acme/widget' };
-  const { client, calls } = fixture([json({ items: [issue, pr, closed] }), json({ items: [issue] }), json({ items: [] })], null);
+  const titleOnly = { number: 45, html_url: 'https://github.com/acme/widget/issues/45', title: 'Bounty $900 in title only', body: 'Please fix this bug.', state: 'open',
+    labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/acme/widget' };
+  const { client, calls } = fixture([json({ items: [issue, pr, closed, titleOnly] }), json({ items: [issue] }), json({ items: [] })], null);
   const leads = await client.searchBountyIssues(10);
   assert.equal(leads.length, 1);
   assert.equal(leads[0].repoFullName, 'acme/widget');
@@ -138,6 +140,18 @@ it('never leaks the token into thrown errors or serialized state, and surfaces r
     assert.equal(JSON.stringify(error).includes('fixture-only-token'), false);
     return true;
   });
+});
+
+it('backs off once on a 429 and records a cooldown instead of retrying the request storm', async () => {
+  let calls = 0;
+  let cooldown = 0;
+  const client = new GithubBountyClient({ accessToken: `fixture-429-${Math.random().toString(36).slice(2)}` }, {
+    fetch: async () => { calls += 1; return new Response('', { status: 429, headers: { 'retry-after': '2' } }); },
+    onRateLimit: delay => { cooldown = delay; },
+  });
+  await assert.rejects(client.searchBountyIssues(1), (error: unknown) => error instanceof GithubBountyError && error.code === 'github_rate_limited');
+  assert.equal(calls, 1);
+  assert.equal(cooldown >= 60000, true);
 });
 
 it('reads review and check evidence without treating an approval or passing run as a merge or payment', async () => {

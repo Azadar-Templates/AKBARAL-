@@ -1,5 +1,5 @@
 /**
- * ZA141251SA — private mission console.
+ * Private mission console.
  *
  * Design rules this client follows:
  *   · Every number shown comes from the mission API. Nothing is estimated,
@@ -13,6 +13,10 @@
  */
 'use strict';
 
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js').catch(() => { /* offline shell is optional */ });
+}
+
 const TOKEN_KEY = 'za_mission_token';
 const LINK_KEY = 'za_mission_link';
 
@@ -21,6 +25,8 @@ const state = {
   link: sessionStorage.getItem(LINK_KEY) || '',
   owner: null,
   overview: null,
+  headAgent: null,
+  headAgentPoller: null,
   activeTab: 'overview',
   verifyingSlot: null,
 };
@@ -125,6 +131,10 @@ function canMutate() {
   return Boolean(state.token);
 }
 
+function isOwnerSession() {
+  return Boolean(state.token && state.owner && state.owner.role === 'owner');
+}
+
 function guardMutation() {
   if (canMutate()) return true;
   banner('This access link is read-only. Sign in as the mission owner to make changes.', 'error');
@@ -147,8 +157,13 @@ function readLinkFromUrl() {
 }
 
 function signOut(notify = true) {
+  if (state.headAgentPoller) {
+    clearInterval(state.headAgentPoller);
+    state.headAgentPoller = null;
+  }
   state.token = '';
   state.owner = null;
+  state.headAgent = null;
   sessionStorage.removeItem(TOKEN_KEY);
   $('#app').hidden = true;
   $('#login-panel').hidden = false;
@@ -172,6 +187,8 @@ async function start() {
   $('#login-panel').hidden = true;
   $('#app').hidden = false;
   $('#signout').hidden = !canMutate();
+  $$('[data-head-agent="true"]').forEach((tab) => { tab.hidden = !canMutate(); });
+  $$('[data-owner-only="true"]').forEach((tab) => { tab.hidden = !isOwnerSession(); });
   // Identify the operator from the session state we already hold, before any
   // network round-trip: a signed-in person must never see "not signed in".
   showIdentity();
@@ -184,6 +201,11 @@ async function start() {
     if (error.status !== 401) banner(error.message, 'error');
   }
   await loadTab(state.activeTab);
+  if (canMutate()) {
+    try { await loadHeadAgentOverview(); } catch (error) { if (error.status !== 401) banner(error.message, 'error'); }
+    await loadHeadAgentNotifications();
+    if (!state.headAgentPoller) state.headAgentPoller = setInterval(() => { void loadHeadAgentNotifications(); }, 30000);
+  }
   await loadActivityOptions();
 }
 
@@ -563,20 +585,246 @@ async function renderAgentMessages(host, slug) {
   await load();
 }
 
+function headAmount(value) {
+  if (!value) return '—';
+  const status = String(value.status || 'unverified');
+  if (value.cents === null || value.cents === undefined) return status;
+  return `${money(value.cents, value.currency || 'USD')} · ${status}`;
+}
+
+function citationLabel(row) {
+  const source = row && row.citation;
+  return source ? `${source.label} · cite ${source.recordId}` : '—';
+}
+
+function renderHeadAgent(data) {
+  state.headAgent = data;
+  const status = data.missionStatus || {};
+  const agentStatus = status.agents || { total: 0, byStatus: {} };
+  replace('#head-overview-cards', el('div', { class: 'cards' }, [
+    card('Agents', agentStatus.total, JSON.stringify(agentStatus.byStatus || {})),
+    card('Pending approvals', status.pendingApprovals ?? 0, 'human owner decision required'),
+    card('Open alerts', status.openAlerts ?? 0, 'read-only notifications'),
+    card('Tracked resources', status.trackedResources ?? 0, 'owner inventory'),
+    card('Provider records', status.providerReadinessRecords ?? 0, 'readiness evidence'),
+    card('Discovery records', status.discoveredOpportunities ?? 0, 'not revenue'),
+  ]));
+  const alerts = (data.alerts || []).slice(0, 8);
+  replace('#head-overview-alerts', alerts.length
+    ? el('div', { class: 'alert-list' }, alerts.map((alert) => el('div', { class: `notification-row ${alert.severity || 'info'}` }, [
+      pill(String(alert.kind || 'alert'), alert.severity === 'critical' ? 'bad' : alert.severity === 'warning' ? 'warn' : 'info'),
+      el('strong', { text: String(alert.title) }),
+      el('span', { class: 'muted small', text: `${String(alert.message)} · ${citationLabel(alert)}` }),
+    ])))
+    : el('p', { class: 'muted small', text: 'No open head-agent alerts. No action was taken.' }));
+  const realized = data.earnings?.realized;
+  const expected = data.earnings?.contractedExpected;
+  replace('#head-earnings-summary', el('div', { class: 'cards' }, [
+    card('Verified received', headAmount(realized?.amount), `${realized?.count ?? 0} record(s)`),
+    card('Contracted / expected', headAmount(expected?.amount), 'unverified · not earned'),
+    card('Payout queue', status.payoutQueueRecords ?? 0, 'awaiting owner review'),
+  ]));
+  replace('#head-earnings-realized', table([
+    { label: 'Receipt', render: (row) => row.id },
+    { label: 'Amount', render: (row) => headAmount(row.amount) },
+    { label: 'Source', key: 'source' },
+    { label: 'Verifier', key: 'verifier' },
+    { label: 'Citation', render: citationLabel },
+  ], realized?.records || [], 'No verified received revenue records.'));
+  replace('#head-earnings-expected', table([
+    { label: 'Record', key: 'id' },
+    { label: 'Amount', render: (row) => headAmount(row.amount) },
+    { label: 'Status', key: 'status' },
+    { label: 'Source', key: 'source' },
+    { label: 'Citation', render: citationLabel },
+  ], expected?.records || [], 'No contracted or expected records.'));
+  replace('#head-resources', table([
+    { label: 'Label', key: 'label' },
+    { label: 'Category', key: 'category' },
+    { label: 'Provider', key: 'provider' },
+    { label: 'Expiry', render: (row) => row.expiresAt ? `${when(row.expiresAt)}${row.daysUntilExpiry === null ? '' : ` (${row.daysUntilExpiry}d)`}` : '—' },
+    { label: 'Cost', render: (row) => headAmount(row.cost) },
+    { label: 'Status', render: (row) => pill(row.status, row.status === 'expired' ? 'bad' : row.status === 'expiring' ? 'warn' : 'info') },
+    { label: 'Citation', render: citationLabel },
+  ], data.resources || [], 'No owner-tracked resources. Agent-bound resources remain in the existing resource surface.'));
+  replace('#head-alerts', table([
+    { label: 'Severity', render: (row) => pill(row.severity, row.severity === 'critical' ? 'bad' : row.severity === 'warning' ? 'warn' : 'info') },
+    { label: 'Kind', key: 'kind' },
+    { label: 'Message', render: (row) => `${row.title}: ${row.message}`, wrap: true },
+    { label: 'State', key: 'status' },
+    { label: 'Citation', render: citationLabel },
+  ], data.alerts || [], 'No open alerts.'));
+  replace('#head-provider-readiness', table([
+    { label: 'Provider', key: 'label' },
+    { label: 'Kind', key: 'kind' },
+    { label: 'Status', render: (row) => pill(row.status, row.status === 'ready' ? 'ok' : row.status === 'blocked' ? 'bad' : 'warn') },
+    { label: 'Credential env', key: 'credentialEnv' },
+    { label: 'Payout verifiable', render: (row) => row.payoutVerifiable ? 'yes' : 'no' },
+    { label: 'Latest failure', render: (row) => row.latestFailure ? `${row.latestFailure.code} (${row.latestFailure.category})` : '—', wrap: true },
+    { label: 'Citation', render: citationLabel },
+  ], data.providers || [], 'No provider readiness records.'));
+  replace('#head-payout-queue', table([
+    { label: 'Payout', key: 'id' },
+    { label: 'State', key: 'status' },
+    { label: 'Amount', render: (row) => headAmount(row.amount) },
+    { label: 'Slot verification', render: (row) => row.slotVerification?.status || '—' },
+    { label: 'Settlement', key: 'settlement' },
+    { label: 'Citation', render: citationLabel },
+  ], data.payouts || [], 'No payout queue records.'));
+  replace('#head-opportunities', table([
+    { label: 'Opportunity', key: 'id' },
+    { label: 'Source', key: 'source' },
+    { label: 'Provider', key: 'provider' },
+    { label: 'State', key: 'state' },
+    { label: 'Quote', render: (row) => headAmount(row.quote) },
+    { label: 'Evidence', key: 'evidenceHash' },
+    { label: 'Consent expires', render: (row) => when(row.consentExpiresAt) },
+    { label: 'Citation', render: citationLabel },
+  ], data.opportunities || [], 'No discovery opportunity records. No demand or earnings is inferred.'));
+  replace('#head-approvals', table([
+    { label: 'Approval', key: 'id' },
+    { label: 'Subject', render: (row) => `${row.subjectType}:${row.subjectId}` },
+    { label: 'Action', key: 'action' },
+    { label: 'Amount', render: (row) => headAmount(row.amount) },
+    { label: 'State', key: 'status' },
+    { label: 'Citation', render: citationLabel },
+  ], data.approvals || [], 'No approval records.'));
+  const infoRows = (data.info || []).map((row) => ({ ...row, sourceText: row.source?.endpoint || '—' }));
+  replace('#head-info-records', table([
+    { label: 'Topic', key: 'topic' },
+    { label: 'Title', key: 'title' },
+    { label: 'Information', key: 'body', wrap: true },
+    { label: 'Source', key: 'sourceText', wrap: true },
+  ], infoRows, 'No durable owner info records have been entered. The guide above is the built-in boundary.'));
+  const note = $('#head-overview-note');
+  if (note) note.textContent = `Updated ${when(data.generatedAt)}. Read-only and notify-only; email/WhatsApp delivery is ${data.notificationDelivery || 'UNKNOWN / VERIFY REQUIRED'}.`;
+}
+
+async function loadHeadAgentOverview() {
+  if (!canMutate()) return;
+  const data = await api('/mission/head-agent/overview');
+  renderHeadAgent(data);
+}
+
+async function loadHeadAgentNotifications() {
+  if (!canMutate()) return;
+  try {
+    const data = await api('/mission/head-agent/notifications?limit=50');
+    const badge = $('#head-agent-notification');
+    if (badge) {
+      badge.hidden = !data.unreadCount;
+      badge.textContent = data.unreadCount ? `${data.unreadCount} alert${data.unreadCount === 1 ? '' : 's'}` : '';
+    }
+    if (state.headAgent && Array.isArray(data.alerts)) {
+      state.headAgent.alerts = data.alerts;
+      state.headAgent.missionStatus.openAlerts = data.unreadCount;
+      const alertsHost = $('#head-overview-alerts');
+      if (alertsHost) replace('#head-overview-alerts', data.alerts.length
+        ? el('div', { class: 'alert-list' }, data.alerts.slice(0, 8).map((alert) => el('div', { class: `notification-row ${alert.severity || 'info'}` }, [
+          pill(String(alert.kind || 'alert'), alert.severity === 'critical' ? 'bad' : alert.severity === 'warning' ? 'warn' : 'info'),
+          el('strong', { text: String(alert.title) }),
+          el('span', { class: 'muted small', text: `${String(alert.message)} · ${citationLabel(alert)}` }),
+        ])))
+        : el('p', { class: 'muted small', text: 'No open head-agent alerts. No action was taken.' }));
+    }
+  } catch (error) {
+    if (error.status !== 401) console.warn('head-agent notification poll failed', error);
+  }
+}
+
+async function loadHeadAgentChat(question) {
+  const status = $('#head-chat-status');
+  const answerHost = $('#head-chat-answer');
+  if (status) status.textContent = 'Reading mission evidence…';
+  try {
+    const result = await api('/mission/head-agent/chat', { method: 'POST', body: { question } });
+    answerHost.replaceChildren(
+      el('p', { class: 'chat-answer-text', text: result.answer }),
+      el('h3', { text: 'Citations' }),
+      table([
+        { label: 'Source', render: (row) => `${row.label} (${row.recordId})` },
+        { label: 'Fact', key: 'fact', wrap: true },
+        { label: 'Read-only endpoint', key: 'endpoint', wrap: true },
+      ], result.citations || [], 'No matching record citation. The answer is an empty-state explanation, not an estimate.'),
+    );
+    answerHost.hidden = false;
+    if (status) status.textContent = `Read-only answer · ${result.notificationDelivery || 'UNKNOWN / VERIFY REQUIRED'}`;
+  } catch (error) {
+    if (status) status.textContent = error.message;
+    answerHost.hidden = true;
+  }
+}
+
+async function loadBountyControl() {
+  if (!isOwnerSession()) return;
+  const [programs, agents, findings, events, providers, platforms, reputation, lessons] = await Promise.all([
+    api('/bounty/programs'), api('/bounty/agents'), api('/bounty/findings'), api('/bounty/scope-events'),
+    api('/mission/model-providers'), api('/bounty/platforms'), api('/bounty/reputation'), api('/bounty/lessons'),
+  ]);
+  replace('#bounty-programs', table([
+    { label: 'ID', key: 'id' }, { label: 'Platform', key: 'platform' }, { label: 'Handle', key: 'programHandle' },
+    { label: 'Active', render: (row) => row.active ? pill('active', 'ok') : pill('inactive', 'warn') },
+    { label: 'Scope entries', render: (row) => row.inScopeAssets?.length || 0 }, { label: 'Terms hash', key: 'programTermsHash', wrap: true },
+  ], programs.programs || [], 'No bounty programs configured. No targets or earnings are inferred.'));
+  replace('#bounty-agent-registry', table([
+    { label: 'Agent type', key: 'type' }, { label: 'Capability', key: 'capabilityDescription', wrap: true },
+    { label: 'Required tools', render: (row) => (row.requiredTools || []).join(', ') }, { label: 'Concurrency', key: 'maxConcurrency' },
+    { label: 'Quality gate', render: (row) => row.qualityGateRequired ? 'required' : 'not required' },
+  ], agents.agents || [], 'No agent capability definitions loaded.'));
+  replace('#bounty-findings', table([
+    { label: 'Finding', key: 'id' }, { label: 'Target', key: 'target' }, { label: 'Class', key: 'vulnerability_class' },
+    { label: 'State', key: 'state' }, { label: 'Fingerprint', key: 'finding_fingerprint', wrap: true },
+    { label: 'CVSS', render: (row) => row.cvss_score === null || row.cvss_score === undefined ? 'unverified' : `${row.cvss_score} ${row.cvss_vector || ''}` },
+    { label: 'Approved', render: (row) => row.approved_by ? `owner ${row.approved_by}` : 'no' },
+  ], findings.findings || [], 'No findings. Weak, duplicate or out-of-scope records never reach submission.'));
+  replace('#bounty-scope-events', table([
+    { label: 'When', render: (row) => when(row.created_at) }, { label: 'Target', key: 'target' }, { label: 'Decision', render: (row) => pill(row.decision, row.decision === 'allowed' ? 'ok' : 'bad') },
+    { label: 'Reason', key: 'reason', wrap: true }, { label: 'Agent', key: 'agent_type' },
+  ], events.events || [], 'No scope-gate events.'));
+  replace('#bounty-providers', table([
+    { label: 'Provider', key: 'displayName' }, { label: 'Priority', key: 'priority' },
+    { label: 'Enabled', render: (row) => row.enabled ? pill('enabled', 'ok') : pill('disabled', 'warn') },
+    { label: 'Health', render: (row) => pill(row.healthStatus || 'unknown', row.healthStatus === 'ok' ? 'ok' : 'warn') },
+    { label: 'Vault key', key: 'credentialVaultKey' }, { label: 'Fallback events', render: (row) => row.fallbackEvents || 'visible in logs' },
+  ], providers.providers || [], 'No model provider metadata. No credentials are displayed.'));
+  replace('#bounty-platforms', table([
+    { label: 'Platform', key: 'displayName' }, { label: 'Category', key: 'category' }, { label: 'Adapter', render: (row) => pill(row.adapterStatus, row.adapterStatus === 'ready_public_source' ? 'ok' : 'warn') },
+    { label: 'Last sync', render: (row) => row.lastSyncAt ? when(row.lastSyncAt) : 'never' }, { label: 'Reads', render: (row) => row.authRequiredForReads ? 'owner credential later' : 'public only' },
+  ], platforms.adapters || [], 'No adapter metadata.'));
+  replace('#bounty-reputation', table([
+    { label: 'Program', key: 'programHandle' }, { label: 'Submitted', key: 'findingsSubmitted' }, { label: 'Accepted', key: 'accepted' }, { label: 'Rejected', key: 'rejected' },
+    { label: 'Duplicate rate', render: (row) => `${Math.round((row.duplicateRate || 0) * 100)}%` }, { label: 'Risk', render: (row) => pill(row.riskLevel, row.riskLevel === 'healthy' ? 'ok' : 'warn') },
+  ], reputation.reputation || [], 'No program reputation data. No outcomes are inferred.'));
+  replace('#bounty-lessons', table([
+    { label: 'Reason', key: 'reasonCode' }, { label: 'Count', key: 'count' }, { label: 'Last seen', render: (row) => when(row.lastSeen) },
+  ], lessons.summary || [], 'No rejection lessons recorded.'));
+}
+
 async function loadTab(tab) {
   try {
     if (tab === 'overview') {
       const overview = await api('/overview');
       state.overview = overview;
       renderOverview(overview);
+      if (canMutate()) await loadHeadAgentOverview();
     }
-    if (tab === 'agents') await loadAgents();
+    if (tab === 'agents') {
+      if (canMutate()) await loadHeadAgentOverview();
+      await loadAgents();
+    }
+    if (tab === 'bounties') await loadBountyControl();
     if (tab === 'customer-work') await loadCustomerWork();
     if (tab === 'money') await loadVerifiedCash();
+    if (tab === 'earnings' || tab === 'resources-expiry' || tab === 'guide' || tab === 'head-chat') {
+      if (canMutate()) await loadHeadAgentOverview();
+    }
     if (tab === 'treasury') await loadTreasury();
     if (tab === 'withdraw') await loadWithdraw();
     if (tab === 'publishing') await loadPublishing();
-    if (tab === 'approvals') await loadApprovals();
+    if (tab === 'approvals') {
+      if (canMutate()) await loadHeadAgentOverview();
+      await loadApprovals();
+    }
     if (tab === 'tools') await loadTools();
     if (tab === 'policy') await loadPolicy();
     if (tab === 'audit') await loadAudit();
@@ -1660,6 +1908,41 @@ function wire() {
   $('#signout').addEventListener('click', async () => {
     try { await api('/session/logout', { method: 'POST' }); } catch { /* session may already be gone */ }
     signOut();
+  });
+
+  $('#bounty-program-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isOwnerSession()) { banner('Bug bounty program configuration requires the mission owner session.', 'error'); return; }
+    const form = event.target;
+    const body = Object.fromEntries(new FormData(form));
+    try {
+      await api('/bounty/programs', { method: 'POST', body: { ...body, active: false } });
+      form.reset();
+      await loadBountyControl();
+      banner('Program metadata saved. No target is authorized until an explicit scope entry is added.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+  });
+
+  $('#bounty-scope-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isOwnerSession()) { banner('Scope configuration requires the mission owner session.', 'error'); return; }
+    const form = event.target;
+    const data = new FormData(form);
+    try {
+      await api(`/bounty/programs/${encodeURIComponent(data.get('programId'))}/scope`, { method: 'POST', body: { target: data.get('target'), targetType: data.get('targetType'), inScope: data.has('inScope'), authRequired: data.has('authRequired') } });
+      form.reset();
+      await loadBountyControl();
+      banner('Scope entry saved. Only explicit in-scope entries can pass the hard gate.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+  });
+
+  $('#head-chat-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!canMutate()) { banner('Head-agent chat requires the mission owner session.', 'error'); return; }
+    const input = $('#head-chat-question');
+    const button = event.target.querySelector('button');
+    button.disabled = true;
+    try { await loadHeadAgentChat(input.value.trim()); } finally { button.disabled = false; }
   });
 
   $('#tabs').addEventListener('click', async (event) => {

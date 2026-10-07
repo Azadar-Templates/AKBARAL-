@@ -129,9 +129,9 @@ function fixture(route, width) {
   const root = document.createElement('main'); root.dataset.auditSurface = route; document.body.append(root);
   if (route === '/chat' || route === '/work') {
     root.className = 'shell akbaral-viewport-locked';
-    const sidebar = document.createElement('aside'); sidebar.className = 'sidebar';
-    sidebar.innerHTML = '<nav class="nav"><a href="/chat">Chat</a><a href="/work">Task</a></nav>';
     const main = document.createElement('section'); main.className = 'main';
+    const topbar = document.createElement('header'); topbar.className = 'topbar';
+    topbar.innerHTML = '<div class="headerPrimary"><a class="brand" href="/chat">AKBARAL!</a><button class="mobileMenu">☰</button></div><nav class="nav"><a href="/chat">Chat</a><a href="/work">Task</a><a href="/dashboard">Dashboard</a><a href="/files">Files &amp; documents</a><a href="/images">Images</a><a href="/projects">Projects</a><a href="/agents">Agents</a><a href="/agent-factory">Agent Factory</a><a href="/automations">Automations</a><a href="/billing">Billing &amp; credits</a><a href="/pricing">See plans and pricing</a><a href="/settings">Settings</a><a href="/help">Help</a></nav>';
     const content = document.createElement('div'); content.className = 'content';
     const contentInner = document.createElement('div'); contentInner.className = 'contentInner';
     const session = document.createElement('div'); session.className = 'session';
@@ -144,7 +144,7 @@ function fixture(route, width) {
       <aside class="sessionPanel" hidden></aside>`;
     if (phone) session.querySelector('.sessionRail').setAttribute('data-collapsed', 'true');
     if (iconRail) session.querySelector('.sessionRail').setAttribute('data-collapsed', 'true');
-    contentInner.append(session); content.append(contentInner); main.append(content); root.append(sidebar, main);
+    contentInner.append(session); content.append(contentInner); main.append(topbar, content); root.append(main);
   } else if (route === '/') {
     root.className = 'page'; root.innerHTML = `<header class="topbar"><div class="topbarInner"><a class="brand" href="#">AKBARAL!</a></div></header><section class="hero"><h1>${'Long hero title '.repeat(20)}</h1></section><section class="section"><div class="chips"><span class="chip">one</span><span class="chip">two</span></div><div class="grid3"><article class="card"><p>${'token'.repeat(100)}</p></article></div></section>`;
   } else if (route === '/settings') {
@@ -199,15 +199,14 @@ function expectedChatState(route, width, session) {
 
 function assertAuthenticatedSurfaceFill(width) {
   if (width !== 1440 && width !== 1920) return;
-  // The global sidebar is expanded at desktop widths. The model uses the
-  // shipped AppShell padding and its only permitted wide-screen cap, then
-  // asserts that Chat and Task consume the entire resulting content box.
-  const sidebar = 280;
+  // The shared header is full bleed. The model uses the shipped AppShell
+  // padding and its only permitted wide-screen cap, then asserts that Chat
+  // and Task consume the entire resulting content box.
   const padding = width >= 1600 ? 24 : Math.min(Math.max(width * 0.03, 18), 32);
-  const available = width - sidebar - (padding * 2);
-  const contentWidth = Math.min(1600, available);
+  const available = width - (padding * 2);
+  const contentWidth = available;
   assert.equal(contentWidth, available, `authenticated content must fill ${width}px available width`);
-  assert.ok((available - contentWidth) / 2 <= 120, `wide-screen gutter exceeds 120px at ${width}px`);
+  assert.equal(available - contentWidth, 0, `no reserved authenticated gutter at ${width}px`);
 }
 
 
@@ -242,7 +241,7 @@ for (const route of ROUTES) {
 assert.match(css, /html:has\(body \.akbaral-viewport-locked\)[\s\S]*?height:\s*100%[\s\S]*?overflow:\s*hidden/);
 assert.match(css, /\.shellViewportLocked[\s\S]*?height:\s*100dvh[\s\S]*?overflow:\s*hidden/);
 assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.sessionRail/);
-assert.match(css, /@media\s*\(min-width:\s*1600px\)[\s\S]*?width:\s*min\(1600px/);
+assert.match(css, /@media\s*\(min-width:\s*1280px\)[\s\S]*?\.nav/);
 assert.match(css, /safe-area-inset-bottom/);
 assert.match(css, /aspect-ratio:\s*16\s*\/\s*9/);
 console.log(`RESPONSIVE MATRIX — ${checks} route/width checks passed (${ROUTES.length} routes × ${WIDTHS.length} widths)`);
