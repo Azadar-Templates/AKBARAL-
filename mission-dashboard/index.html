@@ -46,6 +46,7 @@
         <nav class="tabs" id="tabs" aria-label="Mission sections">
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
+          <button data-tab="bounties" data-owner-only="true" class="tab">Bug bounty</button>
           <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="earnings" data-head-agent="true" class="tab">Earnings</button>
           <button data-tab="resources-expiry" data-head-agent="true" class="tab">Resources &amp; expiry</button>
@@ -220,6 +221,40 @@
 
           <div id="agent-list" class="table-wrap"></div>
           <div id="agent-report"></div>
+        </section>
+
+        <section data-panel="bounties" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div><span class="eyebrow">Authorized security testing only</span><h2>Bug bounty control plane</h2></div>
+            <span class="pill warn">Owner approval required</span>
+          </div>
+          <p class="muted">The configured program scope file and allowlist are the only source of truth. No program or target is seeded. Unlisted targets hard-block before any external call; submissions are never automatic.</p>
+          <h3>Programs</h3>
+          <div id="bounty-programs" class="table-wrap"></div>
+          <form id="bounty-program-form" class="stack-form">
+            <h3>Configure a program — owner</h3>
+            <label>Platform <input name="platform" placeholder="HackerOne / Bugcrowd / YesWeHack" required /></label>
+            <label>Program handle <input name="programHandle" required /></label>
+            <label>Scope URL <input name="scopeUrl" type="url" required /></label>
+            <label>Program terms SHA-256 <input name="programTermsHash" pattern="[a-fA-F0-9]{64}" minlength="64" maxlength="64" required /></label>
+            <button type="submit">Save program</button>
+            <p class="muted small">Saving metadata does not authorize a target. Add explicit scope entries separately.</p>
+          </form>
+          <form id="bounty-scope-form" class="stack-form">
+            <h3>Explicit scope allowlist / denylist — owner</h3>
+            <label>Program ID <input name="programId" required /></label>
+            <label>Target <input name="target" placeholder="example.com or org/repo" required /></label>
+            <label>Target type <select name="targetType"><option value="domain">domain</option><option value="repo">repo</option><option value="package">package</option><option value="API">API</option></select></label>
+            <label class="checkbox-label"><input name="inScope" type="checkbox" /> Explicitly in scope</label>
+            <label class="checkbox-label"><input name="authRequired" type="checkbox" /> Requires owner-provided authorization</label>
+            <button type="submit">Save scope entry</button>
+          </form>
+          <h3>Registered capability agents</h3>
+          <div id="bounty-agent-registry" class="table-wrap"></div>
+          <h3>Findings and quality-gate state</h3>
+          <div id="bounty-findings" class="table-wrap"></div>
+          <h3>Scope-gate events</h3>
+          <div id="bounty-scope-events" class="table-wrap"></div>
         </section>
 
         <section data-panel="money" class="panel" hidden>

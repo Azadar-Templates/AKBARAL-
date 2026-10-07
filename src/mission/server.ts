@@ -27,6 +27,29 @@ import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { GithubBountyError } from './earning/github-bounty-client';
 import { configuredGithubBountyWorkflow } from './earning/github-bounty-workflow';
 import { bountyRunsSnapshot } from './earning/github-bounty-parallel-executor';
+import {
+  BountyScopeError,
+  BountySystemError,
+  qualityGateFinding,
+  bountyFindingSnapshot,
+  bountyStageSnapshot,
+  bountySubmissionSnapshot,
+  createBountyFinding,
+  createBountyProgram,
+  deleteBountyProgram,
+  getBountyProgram,
+  listAgentRegistry,
+  listBountyPrograms,
+  listScopeAllowlist,
+  scopeEventSnapshot,
+  runBountyAgent,
+  rejectFinding,
+  approveFindingForSubmission,
+  removeScopeAllowlist,
+  updateBountyProgram,
+  upsertScopeAllowlist,
+  type ProgramInput,
+} from './earning/bug-bounty-system';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
@@ -1201,6 +1224,72 @@ async function handleApi(
   }
 
   if (head === 'bounty') {
+    // New scope-first control plane. These routes are deliberately evaluated
+    // before the legacy GitHub issue workflow so a configured program and its
+    // explicit allowlist are never bypassed by an older command name.
+    if (rest[0] === 'programs') {
+      const session = requireHeadAgentOwner(context);
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { programs: listBountyPrograms(), empty: listBountyPrograms().length === 0 }); return true; }
+      if (method === 'POST' && rest.length === 1) {
+        const result = createBountyProgram(body as unknown as ProgramInput);
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'bounty.program_created', subjectType: 'bounty_program', subjectId: String(result.id), detail: { platform: result.platform, programHandle: result.programHandle } });
+        json(res, 201, { program: result }); return true;
+      }
+      if (rest.length >= 2) {
+        const programId = String(rest[1]);
+        if (rest[2] === 'scope') {
+          if (method === 'GET' && rest.length === 3) { json(res, 200, { programId, scope: listScopeAllowlist(programId), empty: listScopeAllowlist(programId).length === 0 }); return true; }
+          if (method === 'POST' && rest.length === 3) { json(res, 201, { scope: upsertScopeAllowlist(programId, { target: String(body.target ?? ''), targetType: body.targetType as any, inScope: body.inScope === true, authRequired: body.authRequired === true, rateLimitPerMin: body.rateLimitPerMin === null || body.rateLimitPerMin === undefined ? null : Number(body.rateLimitPerMin), lastVerifiedAt: body.lastVerifiedAt ? String(body.lastVerifiedAt) : null }) }); return true; }
+          if (method === 'DELETE' && rest.length === 4) { removeScopeAllowlist(programId, rest[3]); json(res, 200, { removed: true }); return true; }
+        }
+        if (method === 'GET' && rest.length === 2) { const program = getBountyProgram(programId); if (!program) throw new HttpProblem(404, 'bounty program not found', 'not_found'); json(res, 200, { program }); return true; }
+        if ((method === 'PATCH' || method === 'PUT') && rest.length === 2) { json(res, 200, { program: updateBountyProgram(programId, body as any) }); return true; }
+        if (method === 'DELETE' && rest.length === 2) { deleteBountyProgram(programId); json(res, 200, { deleted: true }); return true; }
+      }
+      throw new HttpProblem(404, 'unknown bounty program route', 'not_found');
+    }
+    if (rest[0] === 'scope-events' && method === 'GET') {
+      requireHeadAgentOwner(context);
+      json(res, 200, { events: scopeEventSnapshot(url.searchParams.get('programId') ?? undefined) }); return true;
+    }
+    if (rest[0] === 'agents' && method === 'GET' && rest.length === 1) {
+      requireHeadAgentOwner(context);
+      json(res, 200, { agents: listAgentRegistry(), count: listAgentRegistry().length }); return true;
+    }
+    if (rest[0] === 'agents' && method === 'POST' && rest.length === 3 && rest[2] === 'run') {
+      requireHeadAgentOwner(context);
+      const result = runBountyAgent({ agentType: rest[1], programId: String(body.programId ?? ''), target: String(body.target ?? ''), input: (body.input && typeof body.input === 'object' ? body.input : {}) as Record<string, unknown>, ownerId: context.session?.owner.id, findingId: body.findingId ? String(body.findingId) : undefined, requestedCostCents: body.requestedCostCents === undefined ? 0 : Number(body.requestedCostCents), availableTools: Array.isArray(body.availableTools) ? body.availableTools.map(String) : undefined });
+      json(res, 200, { result }); return true;
+    }
+    if (rest[0] === 'findings') {
+      const session = requireHeadAgentOwner(context);
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { findings: bountyFindingSnapshot() }); return true; }
+      if (method === 'POST' && rest.length === 1) { json(res, 201, { finding: createBountyFinding({ programId: String(body.programId ?? ''), target: String(body.target ?? ''), finding: (body.finding && typeof body.finding === 'object' ? body.finding : {}) as Record<string, any> }) }); return true; }
+      if (rest.length >= 2) {
+        const findingId = rest[1];
+        if (method === 'GET' && rest.length === 3 && rest[2] === 'stages') { json(res, 200, { findingId, stages: bountyStageSnapshot(findingId) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'quality-gate') {
+          const finding = bountyFindingSnapshot(findingId)[0];
+          if (!finding) throw new HttpProblem(404, 'finding not found', 'not_found');
+          const gate = qualityGateFinding({ programId: String(finding.program_id), target: String(finding.target), finding: { ...finding, vulnerabilityClass: finding.vulnerability_class, codeLocationPattern: finding.code_location_pattern, cvssVector: finding.cvss_vector } });
+          missionDb.run('INSERT INTO quality_gate_reviews (id,finding_id,decision,reasons_json,checks_json,reviewer,created_at) VALUES (?,?,?,?,?,?,?)', [missionId('qgr'), findingId, gate.decision === 'pass' ? 'pass' : 'reject', JSON.stringify(gate.reasons), JSON.stringify(gate.checks), session.owner.id, nowIso()]);
+          missionDb.run('UPDATE bounty_findings SET state=?,updated_at=? WHERE id=?', [gate.decision === 'pass' ? 'gated' : 'rejected', nowIso(), findingId]);
+          json(res, 200, { gate }); return true;
+        }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'approve-submit') { json(res, 200, { result: approveFindingForSubmission(session.owner.id, findingId, (body.report && typeof body.report === 'object' ? body.report : {}) as Record<string, unknown>) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'reject') { json(res, 200, { result: rejectFinding(session.owner.id, findingId, String(body.reason ?? 'owner_rejected')) }); return true; }
+        if (method === 'GET' && rest.length === 2) { const finding = bountyFindingSnapshot(findingId)[0]; if (!finding) throw new HttpProblem(404, 'finding not found', 'not_found'); json(res, 200, { finding }); return true; }
+      }
+      throw new HttpProblem(404, 'unknown bounty finding route', 'not_found');
+    }
+    if (rest[0] === 'submissions' && method === 'GET') { requireHeadAgentOwner(context); json(res, 200, { submissions: bountySubmissionSnapshot() }); return true; }
+    const legacyExternalCommands = new Set(['discover', 'check-policy', 'refresh-assignment', 'queue-execution', 'run-execution', 'draft', 'submit', 'track-pull-request']);
+    if (method === 'POST' && legacyExternalCommands.has(String(rest[0]))) {
+      // The older GitHub workflow has no per-request program/target argument.
+      // Refuse it rather than allowing a legacy route to bypass the new scope
+      // authority. Use the scope-first agent pipeline above instead.
+      throw new HttpProblem(409, 'scope_control_plane_required: configure a bounty program and run a scope-gated agent before any external action', 'scope_control_plane_required');
+    }
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
     assertMoneyOwner(actor);
     const workflow = configuredGithubBountyWorkflow();
@@ -2931,6 +3020,8 @@ export function createMissionServer(): http.Server {
               : error instanceof FreelancerError ? (error.code === 'freelancer_rate_limited' ? 429 : 409)
               : error instanceof AwinError ? (error.code === 'awin_rate_limited' ? 429 : 409)
               : error instanceof GithubBountyError ? (error.code === 'github_rate_limited' ? 429 : 409)
+              : error instanceof BountyScopeError ? error.statusCode
+              : error instanceof BountySystemError ? error.statusCode
               : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
                 : error instanceof MissionSelfServiceError ? error.statusCode
@@ -2941,6 +3032,8 @@ export function createMissionServer(): http.Server {
               : error instanceof FreelancerError ? error.code
               : error instanceof AwinError ? error.code
               : error instanceof GithubBountyError ? error.code
+              : error instanceof BountyScopeError ? error.code
+              : error instanceof BountySystemError ? error.code
               : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code
                 : error instanceof MissionSelfServiceError ? error.code

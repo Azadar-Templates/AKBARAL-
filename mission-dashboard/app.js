@@ -131,6 +131,10 @@ function canMutate() {
   return Boolean(state.token);
 }
 
+function isOwnerSession() {
+  return Boolean(state.token && state.owner && state.owner.role === 'owner');
+}
+
 function guardMutation() {
   if (canMutate()) return true;
   banner('This access link is read-only. Sign in as the mission owner to make changes.', 'error');
@@ -184,6 +188,7 @@ async function start() {
   $('#app').hidden = false;
   $('#signout').hidden = !canMutate();
   $$('[data-head-agent="true"]').forEach((tab) => { tab.hidden = !canMutate(); });
+  $$('[data-owner-only="true"]').forEach((tab) => { tab.hidden = !isOwnerSession(); });
   // Identify the operator from the session state we already hold, before any
   // network round-trip: a signed-in person must never see "not signed in".
   showIdentity();
@@ -750,6 +755,33 @@ async function loadHeadAgentChat(question) {
   }
 }
 
+async function loadBountyControl() {
+  if (!isOwnerSession()) return;
+  const [programs, agents, findings, events] = await Promise.all([
+    api('/bounty/programs'), api('/bounty/agents'), api('/bounty/findings'), api('/bounty/scope-events'),
+  ]);
+  replace('#bounty-programs', table([
+    { label: 'ID', key: 'id' }, { label: 'Platform', key: 'platform' }, { label: 'Handle', key: 'programHandle' },
+    { label: 'Active', render: (row) => row.active ? pill('active', 'ok') : pill('inactive', 'warn') },
+    { label: 'Scope entries', render: (row) => row.inScopeAssets?.length || 0 }, { label: 'Terms hash', key: 'programTermsHash', wrap: true },
+  ], programs.programs || [], 'No bounty programs configured. No targets or earnings are inferred.'));
+  replace('#bounty-agent-registry', table([
+    { label: 'Agent type', key: 'type' }, { label: 'Capability', key: 'capabilityDescription', wrap: true },
+    { label: 'Required tools', render: (row) => (row.requiredTools || []).join(', ') }, { label: 'Concurrency', key: 'maxConcurrency' },
+    { label: 'Quality gate', render: (row) => row.qualityGateRequired ? 'required' : 'not required' },
+  ], agents.agents || [], 'No agent capability definitions loaded.'));
+  replace('#bounty-findings', table([
+    { label: 'Finding', key: 'id' }, { label: 'Target', key: 'target' }, { label: 'Class', key: 'vulnerability_class' },
+    { label: 'State', key: 'state' }, { label: 'Fingerprint', key: 'finding_fingerprint', wrap: true },
+    { label: 'CVSS', render: (row) => row.cvss_score === null || row.cvss_score === undefined ? 'unverified' : `${row.cvss_score} ${row.cvss_vector || ''}` },
+    { label: 'Approved', render: (row) => row.approved_by ? `owner ${row.approved_by}` : 'no' },
+  ], findings.findings || [], 'No findings. Weak, duplicate or out-of-scope records never reach submission.'));
+  replace('#bounty-scope-events', table([
+    { label: 'When', render: (row) => when(row.created_at) }, { label: 'Target', key: 'target' }, { label: 'Decision', render: (row) => pill(row.decision, row.decision === 'allowed' ? 'ok' : 'bad') },
+    { label: 'Reason', key: 'reason', wrap: true }, { label: 'Agent', key: 'agent_type' },
+  ], events.events || [], 'No scope-gate events.'));
+}
+
 async function loadTab(tab) {
   try {
     if (tab === 'overview') {
@@ -762,6 +794,7 @@ async function loadTab(tab) {
       if (canMutate()) await loadHeadAgentOverview();
       await loadAgents();
     }
+    if (tab === 'bounties') await loadBountyControl();
     if (tab === 'customer-work') await loadCustomerWork();
     if (tab === 'money') await loadVerifiedCash();
     if (tab === 'earnings' || tab === 'resources-expiry' || tab === 'guide' || tab === 'head-chat') {
@@ -1857,6 +1890,32 @@ function wire() {
   $('#signout').addEventListener('click', async () => {
     try { await api('/session/logout', { method: 'POST' }); } catch { /* session may already be gone */ }
     signOut();
+  });
+
+  $('#bounty-program-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isOwnerSession()) { banner('Bug bounty program configuration requires the mission owner session.', 'error'); return; }
+    const form = event.target;
+    const body = Object.fromEntries(new FormData(form));
+    try {
+      await api('/bounty/programs', { method: 'POST', body: { ...body, active: false } });
+      form.reset();
+      await loadBountyControl();
+      banner('Program metadata saved. No target is authorized until an explicit scope entry is added.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
+  });
+
+  $('#bounty-scope-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isOwnerSession()) { banner('Scope configuration requires the mission owner session.', 'error'); return; }
+    const form = event.target;
+    const data = new FormData(form);
+    try {
+      await api(`/bounty/programs/${encodeURIComponent(data.get('programId'))}/scope`, { method: 'POST', body: { target: data.get('target'), targetType: data.get('targetType'), inScope: data.has('inScope'), authRequired: data.has('authRequired') } });
+      form.reset();
+      await loadBountyControl();
+      banner('Scope entry saved. Only explicit in-scope entries can pass the hard gate.', 'ok');
+    } catch (error) { banner(error.message, 'error'); }
   });
 
   $('#head-chat-form').addEventListener('submit', async (event) => {
