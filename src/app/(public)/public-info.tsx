@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Atmosphere, heroVideoEnabled } from '../_components/atmosphere';
 import { ContactForm } from '../_components/contact-form';
 import { FeedbackForm } from '../_components/feedback-form';
 import { PublicSiteFooter, PublicSiteHeader } from '../_components/public-site-chrome';
@@ -22,7 +23,17 @@ const pageCopy: Record<PublicKind, { eyebrow: string; title: string; intro: stri
 
 export function PublicFrame({ kind, children }: { kind: PublicKind; children: ReactNode }) {
   const copy = pageCopy[kind];
-  return <main className={styles.page}><PublicSiteHeader /><div className={styles.pageBody}><div className={styles.heading}><span>{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.intro}</p></div>{children}</div><PublicSiteFooter /></main>;
+  // Server-rendered: the owner video flag never reaches the client bundle,
+  // and without it the atmosphere is pure CSS (no media request at all).
+  return <main className={styles.page}>
+    <Atmosphere variant="page" enableVideo={heroVideoEnabled()} className={styles.pageAtmosphere} />
+    <PublicSiteHeader />
+    <div className={styles.pageBody}>
+      <div className={styles.heading}><span>{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.intro}</p></div>
+      {children}
+    </div>
+    <PublicSiteFooter />
+  </main>;
 }
 
 export function PublicInfoPage({ kind }: { kind: PublicKind }) {

@@ -27,7 +27,9 @@ function collectFiles(dir: string): string[] {
 
 describe('AKBARAL! full UI/UX reset contract', () => {
   it('root is always the landing page and not the sign-in view', () => {
-    assert.match(page, /<LandingReset \/>/);
+    // The landing reset takes one optional presentation prop (owner hero
+    // video opt-in); the assertion still means "root is the landing page".
+    assert.match(page, /<LandingReset\b[^>]*\/>/);
     assert.match(landing + publicChrome, /One Intelligence\. Every Solution\./);
     assert.match(landing, /Go to your workspace/);
     assert.match(landing, /One simple product/);

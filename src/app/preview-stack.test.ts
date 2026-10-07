@@ -162,7 +162,9 @@ describe('preview stack contract', () => {
     const page = readRepo('src/app/page.tsx');
     const layout = readRepo('src/app/layout.tsx');
     const loader = readRepo('src/app/_components/legacy-app-loader.tsx');
-    assert.ok(page.includes('<LandingReset />'), 'root renders the typed landing reset');
+    // The landing reset takes one optional presentation prop (the owner hero
+    // video opt-in); the assertion still means "root renders the landing reset".
+    assert.ok(/<LandingReset\b[^>]*\/>/.test(page), 'root renders the typed landing reset');
     assert.ok(layout.includes('/assets/tokens.css?v=akbaral-ui-reset-1'), 'layout references the versioned token stylesheet');
     assert.ok(loader.includes('/assets/app.js?v=akbaral-ui-reset-1'), 'archived app asset remains referenced for audits');
     assert.ok(loader.includes('not mounted over the new UI'), 'legacy overlay is explicitly retired');

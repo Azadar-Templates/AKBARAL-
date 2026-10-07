@@ -132,10 +132,16 @@ type RevealProps = {
   threshold?: number;
   className?: string;
   style?: CSSProperties;
-  /** Element to render — keep the semantic tag, change only the motion. */
+  /**
+   * Element to render — keep the semantic tag, change only the motion.
+   * Pass `as={Link}` to animate a card that is itself the link, so the
+   * grid keeps equal heights instead of gaining a wrapper div.
+   */
   as?: ElementType;
   /** Skip the observer and reveal as soon as the client mounts. */
   immediate?: boolean;
+  /** Forwarded to the rendered element (href, onClick, aria-*, …). */
+  [key: string]: unknown;
 };
 
 /**
@@ -150,6 +156,7 @@ export function Reveal({
   style,
   as: Tag = 'div',
   immediate = false,
+  ...rest
 }: RevealProps) {
   const { ref, state } = useRevealState({ threshold, disabled: immediate });
 
@@ -167,6 +174,7 @@ export function Reveal({
       data-state={immediate ? undefined : state}
       className={className ? `${styles.reveal} ${className}` : styles.reveal}
       style={{ ...style, ['--ak-reveal-delay' as string]: `${delay}ms` }}
+      {...(rest as object)}
     >
       {children}
     </Tag>

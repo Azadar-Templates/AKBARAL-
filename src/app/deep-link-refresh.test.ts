@@ -30,7 +30,9 @@ test('all one-product canonical routes have real App Router pages', () => {
   for (const route of canonical) {
     assert.ok(routes.has(route), `${route} route file missing`);
   }
-  assert.match(readFileSync(join(appDir, 'page.tsx'), 'utf8'), /<LandingReset \/>/, 'root renders the landing reset');
+  // The landing reset accepts one optional presentation prop (the owner hero
+  // video opt-in); the assertion still means "root renders the landing reset".
+  assert.match(readFileSync(join(appDir, 'page.tsx'), 'utf8'), /<LandingReset\b[^>]*\/>/, 'root renders the landing reset');
   assert.match(readFileSync(join(appDir, 'signin', 'page.tsx'), 'utf8'), /<AuthCard mode="signin" \/>/, 'signin renders typed auth');
   assert.match(readFileSync(join(appDir, 'settings', 'page.tsx'), 'utf8'), /<SettingsSurface \/>/, 'settings renders real options');
 });

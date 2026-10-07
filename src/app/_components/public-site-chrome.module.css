@@ -1,4 +1,342 @@
-.header{position:sticky;top:0;z-index:40;min-height:76px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg-deep) 92%,transparent);backdrop-filter:blur(18px)}.headerInner{width:min(1180px,calc(100% - 40px));min-height:76px;margin:0 auto;display:flex;align-items:center;gap:24px}.brand{display:flex;align-items:center;gap:10px;min-width:max-content;color:var(--text);text-decoration:none}.mark{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line-accent);border-radius:10px;background:var(--accent-soft);color:var(--accent-bright);font-weight:800}.brandText b,.brandText small{display:block}.brandText b{font-size:.8rem;letter-spacing:.12em}.brandText small{margin-top:3px;color:var(--text-faint);font-size:9px;white-space:nowrap}.desktopNav{display:flex;align-items:center;justify-content:center;gap:4px;flex:1;min-width:0}.navLink,.signIn,.trial{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:var(--radius);padding:0 12px;color:var(--text-dim);font-size:.76rem;text-decoration:none;white-space:nowrap}.navLink:hover,.navLink[data-active="true"],.signIn:hover{color:var(--text);background:var(--accent-soft)}.navLink[data-active="true"]{box-shadow:inset 0 -2px 0 var(--accent)}.actions{display:flex;align-items:center;gap:6px;min-width:max-content}.trial{background:var(--accent);color:var(--on-accent);font-weight:700;border:1px solid var(--line-accent)}.trial:hover{background:var(--accent-bright);color:var(--on-accent)}.menuButton{display:none;width:46px;height:46px;place-items:center;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);cursor:pointer}.menuButton span{display:block;width:19px;height:2px;background:currentColor;margin:2px auto}.mobileLayer{position:fixed;inset:0;z-index:50}.scrim{position:absolute;inset:0;width:100%;height:100%;border:0;background:color-mix(in srgb,var(--bg-deep) 70%,transparent);cursor:pointer}.drawer{position:absolute;top:0;right:0;width:min(360px,calc(100% - 24px));height:100%;padding:18px;display:flex;flex-direction:column;gap:20px;background:var(--bg-deep);border-left:1px solid var(--line);box-shadow:var(--shadow-soft);overflow-y:auto}.drawerHead{display:flex;align-items:center;justify-content:space-between;color:var(--text-2);font:var(--fs-micro) var(--font-mono);letter-spacing:.12em;text-transform:uppercase}.closeButton{width:46px;height:46px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:1.5rem;cursor:pointer}.mobileNav,.mobileActions{display:grid;gap:6px}.mobileNav .navLink,.mobileActions .signIn,.mobileActions .trial{justify-content:flex-start;width:100%;padding:0 14px}.mobileActions{margin-top:auto}.footer{border-top:1px solid var(--line);background:var(--bg-deep);color:var(--text-faint)}.footerInner{width:min(1180px,calc(100% - 40px));min-height:150px;margin:0 auto;padding:28px 0;display:grid;grid-template-columns:1.1fr 2fr 1fr;align-items:start;gap:24px}.footerBrand{display:grid;gap:7px}.footerBrand b{color:var(--text);font-size:.8rem;letter-spacing:.12em}.footerBrand span,.copyright,.footer a{font-size:.72rem;color:var(--text-faint)}.footerNav,.legalNav{display:flex;flex-wrap:wrap;gap:8px 14px}.footer a{min-height:44px;display:inline-flex;align-items:center;color:var(--text-dim);text-decoration:none}.footer a:hover{color:var(--text)}.legalNav{justify-content:flex-end}.copyright{grid-column:1 / -1;margin:0;padding-top:16px;border-top:1px solid var(--line)}
-@media(max-width:1040px){.desktopNav{gap:0}.navLink{padding-inline:8px;font-size:.7rem}.headerInner{gap:10px}}
-@media(max-width:860px){.desktopNav,.actions{display:none}.headerInner{justify-content:space-between}.menuButton{display:grid;margin-left:auto}}
-@media(max-width:620px){.headerInner{width:calc(100% - 24px)}.brandText small{display:none}.footerInner{width:calc(100% - 32px);grid-template-columns:1fr;gap:13px}.legalNav{justify-content:flex-start}.copyright{grid-column:auto}.footerNav,.legalNav{gap:4px 8px}}
+/* AKBARAL! public chrome — liquid glass.
+   Material comes from the shared global layer (src/app/glass.css) via
+   `composes ... from global`, so both @supports fallbacks apply here
+   automatically. Nothing in this file changes behaviour, nav order,
+   ARIA or hit-target sizes. */
+
+.header {
+  composes: ak-glass-strong from global;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  min-height: 76px;
+  /* Full-bleed bar: no corner radius, the stroke reads as a hairline. */
+  border-radius: 0;
+  max-width: 100%;
+}
+
+.headerInner {
+  width: min(1180px, calc(100% - 40px));
+  min-height: 76px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: min(1180px, calc(100% - 40px));
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.mark {
+  composes: ak-glass-subtle from global;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.brandText b,
+.brandText small {
+  display: block;
+}
+
+.brandText b {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+}
+
+.brandText small {
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.desktopNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- glass pills -------------------------------------------------- */
+
+.navLink,
+.signIn,
+.trial {background:var(--glass-surface);-webkit-backdrop-filter:blur(var(--glass-blur-subtle)) saturate(1.15);backdrop-filter:blur(var(--glass-blur-subtle)) saturate(1.15);box-shadow:inset 0 1px 0 var(--glass-inset-highlight);min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  padding: 0 14px;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.navLink:before,.signIn:before,.trial:before{content:"";position:absolute;inset:0;z-index:0;border-radius:inherit;padding:var(--glass-stroke-width);background:var(--glass-stroke-gradient);-webkit-mask:linear-gradient(rgb(0,0,0) 0 0) content-box,linear-gradient(rgb(0,0,0) 0 0);-webkit-mask-composite:xor;mask:linear-gradient(rgb(0,0,0) 0 0) content-box,linear-gradient(rgb(0,0,0) 0 0);mask-composite:exclude;pointer-events:none}
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)){.navLink:before,.signIn:before,.trial:before{display:none}}
+
+.navLink:hover,
+.navLink[data-active='true'],
+.signIn:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.navLink[data-active='true'] {
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset-highlight),
+    0 0 0 1px var(--line-accent);
+}
+
+.navLink:focus-visible,
+.signIn:focus-visible,
+.trial:focus-visible,
+.menuButton:focus-visible,
+.closeButton:focus-visible,
+.scrim:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 3px;
+}
+
+/* The primary CTA keeps the solid brand signal — glass is for surfaces,
+   not for the one action we want the eye to land on. */
+.trial {
+  composes: ak-glass-strong from global;
+  background: linear-gradient(180deg, var(--accent-bright) 0%, var(--accent) 52%, var(--accent-2) 100%);
+  color: var(--on-accent);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset-highlight-strong),
+    var(--glow-accent);
+}
+
+.trial:hover {
+  background: linear-gradient(180deg, var(--accent-bright) 0%, var(--accent-bright) 60%, var(--accent) 100%);
+  color: var(--on-accent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.menuButton {
+  display: none;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menuButton span {
+  display: block;
+  width: 19px;
+  height: 2px;
+  background: currentColor;
+  margin: 2px auto;
+}
+
+/* ---------- mobile drawer ------------------------------------------------ */
+
+.mobileLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.scrim {
+  composes: ak-glass-scrim from global;
+}
+
+.drawer {
+  composes: ak-glass-strong from global;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(360px, calc(100% - 24px));
+  height: 100%;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  box-shadow: var(--glass-shadow-strong);
+  overflow-y: auto;
+}
+
+.drawerHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-2);
+  font: var(--micro-label);
+  letter-spacing: var(--micro-label-tracking);
+  text-transform: uppercase;
+}
+
+.closeButton {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.mobileNav,
+.mobileActions {
+  display: grid;
+  gap: 6px;
+}
+
+.mobileNav .navLink,
+.mobileActions .signIn,
+.mobileActions .trial {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0 14px;
+}
+
+.mobileActions {
+  margin-top: auto;
+}
+
+/* ---------- footer ------------------------------------------------------- */
+
+.footer {
+  composes: ak-glass-subtle from global;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--glass-surface);
+  color: var(--text-faint);
+  max-width: 100%;
+}
+
+.footerInner {
+  width: min(1180px, calc(100% - 40px));
+  min-height: 150px;
+  margin: 0 auto;
+  padding: 28px 0;
+  display: grid;
+  grid-template-columns: 1.1fr 2fr 1fr;
+  align-items: start;
+  gap: 24px;
+}
+
+.footerBrand {
+  display: grid;
+  gap: 7px;
+}
+
+.footerBrand b {
+  color: var(--text);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+}
+
+.footerBrand span,
+.copyright,
+.footer a {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.footerNav,
+.legalNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.footer a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--text);
+}
+
+.legalNav {
+  justify-content: flex-end;
+}
+
+.copyright {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- responsive --------------------------------------------------- */
+
+@media (max-width: 1023px) {
+  .desktopNav {
+    display: none;
+  }
+
+  .menuButton {
+    display: grid;
+  }
+
+  .headerInner {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 767px) {
+  .actions {
+    display: none;
+  }
+
+  .footerInner {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .legalNav {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 479px) {
+  .headerInner {
+    width: min(1180px, calc(100% - 24px));
+    gap: 8px;
+  }
+
+  .brandText small {
+    display: none;
+  }
+}

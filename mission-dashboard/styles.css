@@ -199,3 +199,164 @@ pre, code { white-space: pre-wrap; word-break: break-word; }
   table { min-width: 560px; }
   .table-wrap, .table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — mission dashboard
+   ==========================================================================
+   Presentation only. The dashboard stays READ-ONLY: no control, endpoint,
+   table column or value changes. The accent is the AKBARAL! green
+   (--accent: #2f8348), matching the web tokens exactly.
+
+   The material is self-contained because this dashboard serves its own
+   stylesheet (it does not load the Next.js global src/app/glass.css), but
+   the values are the same tokens, so the dashboards read as one product.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --glass-surface: rgba(226, 240, 232, 0.045);
+  --glass-surface-strong: rgba(14, 22, 18, 0.60);
+  --glass-border: rgba(226, 240, 232, 0.10);
+  --glass-stroke-gradient: linear-gradient(180deg, rgba(226, 240, 232, 0.34) 0%, rgba(226, 240, 232, 0.10) 46%, rgba(226, 240, 232, 0.03) 100%);
+  --glass-stroke-width: 1.4px;
+  --glass-blur-subtle: 14px;
+  --glass-blur-strong: 22px;
+  --glass-inset-highlight: rgba(255, 255, 255, 0.06);
+  --glass-inset-highlight-strong: rgba(255, 255, 255, 0.09);
+  --glass-solid-fallback: #0d1310;
+  --glass-solid-fallback-strong: #16201a;
+  --glass-shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.22);
+  --glass-shadow-strong: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --micro-label: 700 11.5px/1 ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+  --micro-label-tracking: 0.15em;
+}
+
+/* Material: two depths, painted with a masked gradient stroke. */
+.ak-glass-subtle,
+.ak-glass-strong { position: relative; border-radius: var(--radius); }
+
+.ak-glass-subtle::before,
+.ak-glass-strong::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: var(--glass-stroke-width);
+  background: var(--glass-stroke-gradient);
+  -webkit-mask: linear-gradient(rgb(0,0,0) 0 0) content-box, linear-gradient(rgb(0,0,0) 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(rgb(0,0,0) 0 0) content-box, linear-gradient(rgb(0,0,0) 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.ak-glass-subtle {
+  background: var(--glass-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight), var(--glass-shadow-soft);
+}
+
+.ak-glass-strong {
+  background: var(--glass-surface-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.25);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.25);
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight-strong), var(--glass-shadow-strong);
+}
+
+/* FALLBACK 1 — no mask compositing: plain low-alpha border. */
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .ak-glass-subtle,
+  .ak-glass-strong { border: 1px solid var(--glass-border); }
+  .ak-glass-subtle::before,
+  .ak-glass-strong::before { display: none; }
+}
+
+/* FALLBACK 2 — no backdrop-filter: opaque high-contrast fill. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ak-glass-subtle { background: var(--glass-solid-fallback); }
+  .ak-glass-strong { background: var(--glass-solid-fallback-strong); }
+}
+
+/* ── Applied surfaces ─────────────────────────────────────────────────────
+   Chrome and chrome-like panels take the glass material. Table CELLS and
+   inputs keep an opaque base under the tint so numbers and typed text can
+   never lose contrast. */
+
+.topbar {
+  background: var(--glass-surface-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.25);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.25);
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight-strong), var(--glass-shadow-soft);
+}
+
+.card,
+.control-block,
+.head-agent-overview,
+.chat-answer,
+.notification-row,
+.stack-form { border-color: var(--glass-border); }
+
+/* The glass tint is a background IMAGE over the existing opaque panel
+   colour, so every value, label and number keeps its contrast. */
+.card,
+.control-block,
+.head-agent-overview,
+.chat-answer,
+.notification-row,
+.stack-form {
+  background-image: linear-gradient(var(--glass-surface), var(--glass-surface));
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight), var(--glass-shadow-soft);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card,
+  .control-block,
+  .head-agent-overview,
+  .chat-answer,
+  .notification-row,
+  .stack-form,
+  .topbar {
+    -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
+    backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
+  }
+}
+
+/* Table headers: glass band with the mono micro-label contract. */
+.table-wrap { border-color: var(--glass-border); box-shadow: inset 0 1px 0 var(--glass-inset-highlight), var(--glass-shadow-soft); }
+th {
+  background-image: linear-gradient(var(--glass-surface-strong), var(--glass-surface-strong));
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight);
+  text-transform: uppercase;
+  letter-spacing: var(--micro-label-tracking);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* Badges read as glass pills. */
+.pill { border-radius: 999px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.pill.ok { background: rgba(56, 211, 159, 0.10); }
+.pill.warn { background: rgba(255, 180, 84, 0.10); }
+.pill.bad { background: rgba(255, 107, 107, 0.10); }
+.pill.info { background: var(--accent-soft); }
+
+/* Login panel is the hero surface of the dashboard. */
+.login {
+  background-image: linear-gradient(var(--glass-surface-strong), var(--glass-surface-strong));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight-strong), var(--glass-shadow-strong);
+}
+
+/* Inputs: opaque base under the glass tint, always. */
+.login input, .inline-form input, .inline-form select, .stack-form input, .stack-form select {
+  border-color: var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight);
+}
+
+/* Micro-label contract for the dashboard's technical labels. */
+.card .label, .control-block .label, .eyebrow {
+  font: var(--micro-label);
+  letter-spacing: var(--micro-label-tracking);
+}

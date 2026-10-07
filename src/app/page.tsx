@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { heroVideoEnabled } from './_components/atmosphere';
 import { LandingReset } from './_components/landing-reset';
 
 export const metadata: Metadata = {
@@ -7,5 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <LandingReset />;
+  // Read on the server so the flag never has to be inlined into the client
+  // bundle. Default is false -> CSS-only atmosphere, no media request.
+  return <LandingReset heroVideo={heroVideoEnabled()} />;
 }
