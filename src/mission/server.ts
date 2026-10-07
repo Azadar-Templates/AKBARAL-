@@ -26,6 +26,7 @@ import { AwinError } from './earning/awin';
 import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { GithubBountyError } from './earning/github-bounty-client';
 import { configuredGithubBountyWorkflow } from './earning/github-bounty-workflow';
+import { bountyRunsSnapshot } from './earning/github-bounty-parallel-executor';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
@@ -1111,6 +1112,11 @@ async function handleApi(
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
     assertMoneyOwner(actor);
     const workflow = configuredGithubBountyWorkflow();
+    if (method === 'GET' && rest.length === 1 && rest[0] === 'runs') {
+      // Owner-only operational observability: these are durable run/job rows,
+      // not an optimistic worker status or a synthetic issue list.
+      json(res, 200, bountyRunsSnapshot()); return true;
+    }
     if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
     if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
     let result: unknown;

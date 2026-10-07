@@ -72,12 +72,16 @@ function event(subject: string, state: string, ref: string) {
 }
 const MANDATORY_DISCLOSURE = '\n\n---\n_Disclosure: this change was researched and drafted with AI assistance and reviewed/approved by the repository-authorized submitter before being opened._';
 
+export interface GithubBountyWorkflowOptions { dryRun?: boolean }
+
 export class GithubBountyWorkflow {
+  private readonly dryRun: boolean;
   constructor(
     private readonly github: GithubBountyClient,
     private readonly sandbox: BountySandboxRunner = new OciBountySandboxRunner(),
     private readonly solutions: BountySolutionProvider = new GoogleBountySolutionProvider(),
-  ) {}
+    options: GithubBountyWorkflowOptions = {},
+  ) { this.dryRun = options.dryRun === true; }
   private live(actor: MoneyActor, assignment?: Row) {
     assertMoneyOwner(actor);
     const policy = currentPolicy();
@@ -121,18 +125,12 @@ export class GithubBountyWorkflow {
       const id = `bty_${sha256(`${lead.repoFullName}#${lead.issueNumber}`).slice(0, 24)}`;
       if (db.get('SELECT id FROM mission_bounty_opportunities WHERE id=?', [id])) continue;
       let metadata = null as Awaited<ReturnType<GithubBountyClient['fetchRepoMetadata']>> | null;
-      // Bounded retry on the client's own self-imposed rate window (never on real GitHub outages/404s)
-      // — metadata is advisory only; a lookup that still fails after retrying never silently grants trust.
-      for (let attempt = 0; attempt < 3 && metadata === null; attempt++) {
-        try { metadata = await this.github.fetchRepoMetadata(lead.repoFullName); }
-        catch (error) {
-          if (attempt < 2 && error instanceof GithubBountyError && error.code === 'github_rate_limited') {
-            await new Promise(r => setTimeout(r, Math.min(5000, error.retryAfterMs ?? 5000)));
-            continue;
-          }
-          metadata = null; break;
-        }
-      }
+      // Metadata is advisory only. A single failed/rate-limited lookup never
+      // silently grants trust, and deliberately is not retried here: the
+      // client-wide token bucket/cooldown owns backoff so parallel workers do
+      // not create a retry storm.
+      try { metadata = await this.github.fetchRepoMetadata(lead.repoFullName); }
+      catch { metadata = null; }
       const decision = classifyLeadRisk(lead, metadata, duplicateTitles.has(`${lead.repoFullName}#${lead.issueNumber}`));
       risk.set(id, { state: decision.accepted ? 'accepted' : 'rejected', reason: decision.reason, stars: metadata?.stargazersCount ?? null, createdAt: metadata?.createdAt ?? null });
     }
@@ -142,8 +140,8 @@ export class GithubBountyWorkflow {
         const id = `bty_${sha256(`${lead.repoFullName}#${lead.issueNumber}`).slice(0, 24)}`;
         if (!db.get('SELECT id FROM mission_bounty_opportunities WHERE id=?', [id])) {
           const r = risk.get(id) ?? { state: 'accepted' as const, reason: null, stars: null, createdAt: null };
-          db.run('INSERT INTO mission_bounty_opportunities (id,repo_full_name,issue_number,issue_url,title,labels_json,hinted_amount_cents,state,observed_at,risk_state,risk_reason,repo_stars,repo_created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            [id, lead.repoFullName, lead.issueNumber, lead.issueUrl, lead.title, JSON.stringify(lead.labels), lead.hintedAmountCents, 'discovered', nowIso(), r.state, r.reason, r.stars, r.createdAt]);
+          db.run('INSERT INTO mission_bounty_opportunities (id,repo_full_name,issue_number,issue_url,title,issue_body,labels_json,hinted_amount_cents,state,observed_at,risk_state,risk_reason,repo_stars,repo_created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            [id, lead.repoFullName, lead.issueNumber, lead.issueUrl, lead.title, lead.issueBody ?? '', JSON.stringify(lead.labels), lead.hintedAmountCents, 'discovered', nowIso(), r.state, r.reason, r.stars, r.createdAt]);
           event(id, r.state === 'rejected' ? 'risk_rejected' : 'discovered', r.reason ?? lead.issueUrl);
         }
       }
@@ -186,7 +184,12 @@ export class GithubBountyWorkflow {
     if (Date.now() - Date.parse(String(policyRow.checked_at)) > 7 * 86400000) deny('policy_check_stale');
     return db.transaction(() => {
       this.live(actor); grant(input.agentId);
-      if (db.get('SELECT id FROM mission_bounty_assignments WHERE agent_id=? OR opportunity_id=?', [input.agentId, op.id])) deny('exclusive_assignment_conflict');
+      // A prior completed/released assignment is historical and may not block
+      // the agent forever. The executor's active-run partial index is the
+      // durable second line of defence for concurrent assignment attempts.
+      if (db.get(`SELECT a.id FROM mission_bounty_assignments a
+        LEFT JOIN mission_bounty_runs r ON r.assignment_id=a.id
+        WHERE a.opportunity_id=? OR (a.agent_id=? AND a.state='eligible' AND (r.id IS NULL OR r.state IN ('assigned','running')))` , [op.id, input.agentId])) deny('exclusive_assignment_conflict');
       const money = approveOpportunity(actor, { title: String(op.title), evidenceUrl: String(op.issue_url), activity: 'software_development', provider: LEDGER_PROVIDER });
       const id = missionId('bta');
       db.run(`INSERT INTO mission_bounty_assignments (id,agent_id,opportunity_id,money_opportunity_id,state,approved_by,created_at) VALUES (?,?,?,?,'eligible',?,?)`,
@@ -334,6 +337,17 @@ export class GithubBountyWorkflow {
     });
   }
 
+  /** Readiness check used by the parallel executor. It is deliberately public
+   * so a blocked worker does not fetch an archive or call a model merely to
+   * discover that the pinned sandbox/resource is absent. */
+  async executionReadiness(actor: MoneyActor, assignmentId: string): Promise<{ ready: boolean; reason: string | null }> {
+    const assignment = this.assignment(assignmentId);
+    this.live(actor, assignment);
+    if (!(await this.sandbox.available())) return { ready: false, reason: 'sandbox_unavailable' };
+    if (!this.solutions.available(String(assignment.agent_id))) return { ready: false, reason: 'model_resource_not_ready' };
+    return { ready: true, reason: null };
+  }
+
   /** Scheduler-facing, fail-closed autonomous execution pass. If the
    * deployment has not provisioned a digest-pinned OCI image or a legitimately
    * billed/configured model resource, it performs no model call, archive fetch,
@@ -399,6 +413,10 @@ export class GithubBountyWorkflow {
    * PR. Every mutation is gated by a fresh live()+state check immediately
    * before it fires, matching the Awin publish() discipline. */
   async submit(actor: MoneyActor, candidateId: string) {
+    // Hard boundary: dry-run never reaches even the first GitHub mutation.
+    // Keep this check before loading candidate state so no caller can bypass
+    // the guard by constructing a malformed or pre-approved candidate.
+    if (this.dryRun) deny('dry_run_submission_blocked');
     const c = this.candidate(candidateId), a = this.assignment(String(c.assignment_id)); this.live(actor, a);
     if (c.state !== 'eligible' || c.approved_hash !== c.content_hash || !c.approved_by) deny('owner_approval_required');
     db.transaction(() => { this.live(actor, this.assignment(String(c.assignment_id))); db.run("UPDATE mission_bounty_candidates SET state='submitting',updated_at=? WHERE id=? AND state='eligible'", [nowIso(), candidateId]); });
@@ -562,5 +580,10 @@ export function recordGithubBountyCooldown(delayMs: number) {
   });
 }
 export function configuredGithubBountyWorkflow() {
-  return new GithubBountyWorkflow(configuredGithubBountyClient(process.env, { beforeRequest: reserveGithubBountyRequest, onRateLimit: recordGithubBountyCooldown }));
+  return new GithubBountyWorkflow(
+    configuredGithubBountyClient(process.env, { beforeRequest: reserveGithubBountyRequest, onRateLimit: recordGithubBountyCooldown }),
+    new OciBountySandboxRunner(),
+    new GoogleBountySolutionProvider(),
+    { dryRun: process.env.DRY_RUN === 'true' },
+  );
 }
