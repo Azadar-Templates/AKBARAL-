@@ -1,0 +1,159 @@
+/* ============================================================
+   AKBARAL! — LIQUID GLASS MATERIAL
+   ============================================================
+   Presentation-only layer. It changes how surfaces LOOK; it never
+   changes what a surface does, what data it shows, or what a route
+   returns.
+
+   CONTRACT
+   - Two depths: `subtle` (quiet panels, cards, inputs) and `strong`
+     (hero panels, nav bars, drawers, modals, pricing cards).
+   - A gradient-stroke border is painted by a masked `::before`, so the
+     edge is a lit 1.4px hairline top-down rather than a flat line.
+   - Two `@supports` fallbacks ship with it:
+       1. no mask compositing  -> plain low-alpha border
+       2. no backdrop-filter   -> opaque high-contrast solid fill
+   - Decorative layers are `pointer-events: none`, `inset: 0`, and use
+     no transform, so they can never create horizontal overflow.
+   - Every colour, blur, radius and shadow resolves to a token from
+     public/tokens.css (generated from design-system/tokens.json).
+   ============================================================ */
+
+/* ---------- base material ------------------------------------------------ */
+
+.ak-glass-subtle,
+.ak-glass-strong,
+.ak-glass-stroke {
+  position: relative;
+  border-radius: var(--radius-xl);
+}
+
+.ak-glass-subtle,
+.ak-glass-strong {
+  isolation: isolate;
+  /* No `border` here: the lit edge is the masked ::below stroke. The
+     no-mask fallback at the bottom of this file restores a real border. */
+  border: 0;
+}
+
+/* The gradient stroke. One rule serves both depths so the edge reads as a
+   single material across the whole product. */
+.ak-glass-subtle::before,
+.ak-glass-strong::before,
+.ak-glass-stroke::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: var(--glass-stroke-width);
+  background: var(--glass-stroke-gradient);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ---------- SUBTLE — quiet depth ---------------------------------------- */
+
+.ak-glass-subtle {
+  background: var(--glass-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
+  box-shadow: inset 0 1px 0 var(--glass-inset-highlight);
+}
+
+/* ---------- STRONG — cinematic depth ------------------------------------ */
+
+.ak-glass-strong {
+  background: var(--glass-surface-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.25);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.25);
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset-highlight-strong),
+    var(--glass-shadow-strong);
+}
+
+/* ---------- helpers ------------------------------------------------------ */
+
+/* Scrim behind a modal / drawer: darkens and seals the page underneath. */
+.ak-glass-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--glass-scrim);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+/* WCAG AA guard: put this behind text that sits directly on photography,
+   video or a bright atmosphere field. It is a flat dark scrim, not glass. */
+.ak-glass-text-scrim {
+  position: relative;
+  isolation: isolate;
+}
+
+.ak-glass-text-scrim::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(2, 6, 23, 0.72) 0%,
+    rgba(2, 6, 23, 0.62) 100%
+  );
+  pointer-events: none;
+}
+
+/* ---------- FALLBACK 1 — no mask compositing ---------------------------- */
+/* Older Safari / Firefox builds that cannot punch the ring out of the mask
+   would otherwise paint a SOLID gradient rectangle over the whole panel.
+   Drop the ::before and use a plain low-alpha border instead. */
+
+@supports not (
+  (mask-composite: exclude) or (-webkit-mask-composite: xor)
+) {
+  .ak-glass-subtle,
+  .ak-glass-strong,
+  .ak-glass-stroke {
+    border: 1px solid var(--glass-border);
+  }
+
+  .ak-glass-subtle::before,
+  .ak-glass-strong::before,
+  .ak-glass-stroke::before {
+    display: none;
+  }
+}
+
+/* ---------- FALLBACK 2 — no backdrop-filter ----------------------------- */
+/* Without a real blur the translucent fill would sit on an unpredictable
+   background and can fall below AA. Swap to the opaque solid fallback so
+   text contrast is always guaranteed. */
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .ak-glass-subtle {
+    background: var(--glass-solid-fallback);
+  }
+
+  .ak-glass-strong {
+    background: var(--glass-solid-fallback-strong);
+  }
+
+  .ak-glass-scrim {
+    background: var(--glass-solid-fallback-strong);
+  }
+}

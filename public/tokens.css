@@ -135,4 +135,50 @@
   --atmo-violet: rgba(87,179,120,0.09);
   --atmo-cyan: rgba(111,181,154,0.05);
   --atmo-charcoal: rgba(30,42,36,0.30);
+
+  /* ---- Liquid-glass semantic layer -------------------------------------
+     Every value below is DERIVED from a primitive already declared above
+     (glass.level1/level3, color.dark, shadow.dark). No new hue is
+     introduced — see src/app/glass-design-system.test.ts.               */
+  --glass-surface: rgba(226,240,232,0.045);
+  --glass-surface-strong: rgba(14,22,18,0.74);
+  --glass-border: rgba(226,240,232,0.10);
+  --glass-stroke-gradient: linear-gradient(180deg, rgba(226,240,232,0.38) 0%, rgba(226,240,232,0.10) 46%, rgba(226,240,232,0.03) 100%);
+  --glass-stroke-width: 1.4px;
+  --glass-blur-subtle: 14px;
+  --glass-blur-strong: 30px;
+  --glass-inset-highlight: rgba(255,255,255,0.06);
+  --glass-inset-highlight-strong: rgba(255,255,255,0.09);
+  --glass-solid-fallback: #0d1310;
+  --glass-solid-fallback-strong: #16201a;
+  --glass-shadow-soft: 0 10px 30px rgba(0,0,0,0.22);
+  --glass-shadow-strong: 0 30px 80px rgba(0,0,0,0.5);
+  --glass-scrim: rgba(2,6,23,0.72);
+
+  /* Semantic text ramp (aliases over color.dark) */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+
+  /* Micro-label: mono · uppercase · ~0.15em */
+  --micro-label-font: "JetBrains Mono", "Fira Code", monospace;
+  --micro-label-size: 0.71875rem;
+  --micro-label-weight: 700;
+  --micro-label-tracking: 0.15em;
+  --micro-label-leading: 1;
+  --micro-label: 700 0.71875rem/1 "JetBrains Mono", "Fira Code", monospace;
+
+  /* Space scale (derived from spacing) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 22px;
+  --space-xxl: 30px;
+  --space-xxxl: 44px;
+  --space-section: 96px;
+  --space-hero: 128px;
+
+  /* Radii (semantic completion) */
+  --radius-pill: 999px;
 }

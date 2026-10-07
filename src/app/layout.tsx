@@ -4,6 +4,10 @@ import { existsSync } from 'node:fs';
 import { LegacyAppLoader } from './_components/legacy-app-loader';
 import path from 'node:path';
 import './app-reset.css';
+// Liquid-glass material (presentation only): two depths, a masked gradient
+// stroke, and both @supports fallbacks. Loads before every route's CSS module
+// so component styles can override it predictably.
+import './glass.css';
 
 export const metadata: Metadata = {
   title: 'AKBARAL! — One Intelligence. Every Solution.',

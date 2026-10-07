@@ -1,0 +1,89 @@
+/* ============================================================
+   AKBARAL! motion primitives — Reveal + BlurReveal.
+   ============================================================
+   INVARIANT: only `opacity`, `transform` and `filter` ever change.
+   Nothing here touches width, height, margin, padding or position, so an
+   entrance can never reflow the page (no layout shift).
+
+   STATE MACHINE
+     no attribute (idle) -> visible, as the server rendered it
+     data-state="armed"  -> hidden, waiting for the viewport
+     data-state="in"     -> visible, entrance transition running/done
+   ============================================================ */
+
+.reveal {
+  /* Idle is the SSR state: fully visible, no hiding style at all. */
+  opacity: 1;
+  transform: none;
+}
+
+.reveal[data-state='armed'] {
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+.reveal[data-state='in'] {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+  transition-delay: var(--ak-reveal-delay, 0ms);
+}
+
+/* ---------- BlurReveal --------------------------------------------------- */
+
+.words {
+  display: flex;
+  flex-wrap: wrap;
+  /* The visual word gap. Real space text nodes live between the spans for
+     textContent / assistive tech, but flexbox does not render
+     whitespace-only children, so this gap is the visible spacing. */
+  column-gap: 0.26em;
+  row-gap: 0.1em;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.word {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.word[data-state='armed'] {
+  opacity: 0;
+  transform: translateY(20px);
+  filter: blur(10px);
+}
+
+.word[data-state='in'] {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0px);
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out),
+    filter var(--dur-slow) var(--ease-out);
+  transition-delay: calc(var(--ak-word-index, 0) * var(--ak-word-stagger, 100ms));
+}
+
+/* ---------- REDUCED MOTION — content is visible, always ----------------- */
+/* Belt and braces: the component also refuses to arm when the media query
+   matches, but this guard holds even if that check could not run. */
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal[data-state='armed'],
+  .reveal[data-state='in'],
+  .words,
+  .word,
+  .word[data-state='armed'],
+  .word[data-state='in'] {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+    transition-delay: 0ms !important;
+  }
+}

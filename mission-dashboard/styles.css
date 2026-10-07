@@ -5,7 +5,13 @@
   --line: #26313f;
   --text: #e6edf3;
   --muted: #8b98a8;
-  --accent: #4da3ff;
+  /* AKBARAL! brand signal. --accent is the fill/border green; --accent-bright
+     is the companion used for TEXT on the dark panels, because the base green
+     only reaches ~3.5:1 on --panel while --accent-bright clears AA at ~6.2:1. */
+  --accent: #2f8348;
+  --accent-bright: #69ad7d;
+  --accent-soft: rgba(47, 131, 72, 0.14);
+  --accent-line: #194726;
   --good: #38d39f;
   --warn: #ffb454;
   --bad: #ff6b6b;
@@ -29,7 +35,7 @@ code { background: #1d2531; padding: 1px 5px; border-radius: 4px; }
   position: sticky; top: 0; z-index: 5;
 }
 .brand { display: flex; align-items: baseline; gap: 10px; }
-.mark { font-weight: 700; letter-spacing: 0.08em; color: var(--accent); }
+.mark { font-weight: 700; letter-spacing: 0.08em; color: var(--accent-bright); }
 .sub { color: var(--muted); font-size: 13px; }
 .identity { color: var(--muted); font-size: 13px; margin-right: 10px; }
 .notification-badge { color: var(--warn); border: 1px solid #5c4620; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
@@ -46,7 +52,7 @@ code { background: #1d2531; padding: 1px 5px; border-radius: 4px; }
 label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; }
 
 button {
-  background: var(--accent); color: #04121f; border: 0; padding: 9px 14px;
+  background: var(--accent); color: #ffffff; border: 0; padding: 9px 14px;
   border-radius: 8px; font-weight: 600; cursor: pointer;
 }
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
@@ -91,7 +97,7 @@ td.wrap { white-space: normal; max-width: 460px; }
 .pill.ok { color: var(--good); border-color: #1e5c46; }
 .pill.warn { color: var(--warn); border-color: #5c4620; }
 .pill.bad { color: var(--bad); border-color: #5c2020; }
-.pill.info { color: var(--accent); border-color: #1d4265; }
+.pill.info { color: var(--accent-bright); border-color: var(--accent-line); }
 
 .inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
 .inline-form input, .inline-form select { width: auto; min-width: 130px; }
@@ -111,7 +117,7 @@ td.wrap { white-space: normal; max-width: 460px; }
 .control-block > summary {
   cursor: pointer;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-bright);
   list-style: none;
 }
 .control-block > summary::-webkit-details-marker { display: none; }
@@ -130,7 +136,7 @@ td.wrap { white-space: normal; max-width: 460px; }
 .head-agent-overview { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 18px; }
 .head-agent-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .head-agent-heading h2 { margin-top: 4px; }
-.eyebrow { color: var(--accent); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
+.eyebrow { color: var(--accent-bright); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
 .alert-list { display: grid; gap: 8px; margin: 10px 0; }
 .notification-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
 .notification-row.warning { border-color: #5c4620; }

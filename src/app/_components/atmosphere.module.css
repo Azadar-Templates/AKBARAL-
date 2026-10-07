@@ -1,0 +1,169 @@
+/* ============================================================
+   AKBARAL! atmosphere — layered CSS-only cinematic depth.
+
+   Every colour resolves to a token from public/tokens.css:
+   --atmo-indigo / --atmo-violet / --atmo-cyan / --atmo-charcoal /
+   --bg-deep / --accent-soft. No image, no video, no network request.
+
+   OVERFLOW CONTRACT: the stage clips (`overflow: hidden`) and every layer
+   is `position: absolute` with `inset` only — no transform, no width
+   beyond 100%. Decorative layers can therefore never produce horizontal
+   scroll at any viewport width.
+   ============================================================ */
+
+.stage {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* The stage owns the clip; nothing here can bleed outside it. */
+  contain: paint;
+  background:
+    radial-gradient(120% 90% at 18% 8%, var(--atmo-indigo) 0%, transparent 68%),
+    radial-gradient(100% 80% at 88% 4%, var(--atmo-violet) 0%, transparent 62%),
+    linear-gradient(180deg, var(--bg-deep) 0%, var(--atmo-base) 55%, var(--bg-deep) 100%);
+}
+
+.atmosphere[data-variant='hero'] {
+  background:
+    radial-gradient(120% 90% at 18% 8%, var(--atmo-indigo) 0%, transparent 68%),
+    radial-gradient(110% 85% at 84% 2%, var(--atmo-violet) 0%, transparent 60%),
+    radial-gradient(90% 70% at 50% 108%, var(--atmo-cyan) 0%, transparent 66%),
+    linear-gradient(180deg, var(--bg-deep) 0%, var(--atmo-base) 52%, var(--bg-deep) 100%);
+}
+
+/* ---------- individual fields -------------------------------------------- */
+/* Kept as separate elements so each can carry its own blend mode without
+   forcing one giant unreadable gradient stack. */
+
+.fieldIndigo,
+.fieldViolet,
+.fieldCyan,
+.conicSweep,
+.vignette,
+.grain {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.fieldIndigo {
+  inset: -18% -10% auto -12%;
+  height: 78%;
+  background: radial-gradient(
+    52% 58% at 22% 22%,
+    var(--atmo-indigo) 0%,
+    transparent 72%
+  );
+  filter: blur(6px);
+}
+
+.fieldViolet {
+  inset: -22% -14% auto auto;
+  width: 72%;
+  height: 70%;
+  background: radial-gradient(
+    54% 60% at 76% 16%,
+    var(--atmo-violet) 0%,
+    transparent 74%
+  );
+  filter: blur(10px);
+}
+
+.fieldCyan {
+  inset: auto -8% -26% -8%;
+  height: 62%;
+  background: radial-gradient(
+    60% 64% at 50% 100%,
+    var(--atmo-cyan) 0%,
+    transparent 70%
+  );
+  filter: blur(14px);
+  opacity: 0.9;
+}
+
+/* A very slow conic sweep reads as brushed light on the obsidian base. */
+.conicSweep {
+  inset: -30%;
+  background: conic-gradient(
+    from 210deg at 62% 18%,
+    transparent 0deg,
+    var(--accent-soft) 62deg,
+    transparent 150deg,
+    var(--atmo-charcoal) 244deg,
+    transparent 340deg
+  );
+  opacity: 0.5;
+  filter: blur(30px);
+}
+
+/* Deepens the edges so foreground glass panels keep their contrast. */
+.vignette {
+  inset: 0;
+  background:
+    radial-gradient(120% 100% at 50% 40%, transparent 46%, rgba(2, 6, 23, 0.55) 100%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.42) 0%, transparent 22%, transparent 78%, rgba(2, 6, 23, 0.5) 100%);
+}
+
+/* A barely-there texture stops the large gradients from banding. */
+.grain {
+  inset: 0;
+  opacity: 0.05;
+  background-image: repeating-linear-gradient(
+      0deg,
+      rgba(248, 250, 252, 0.5) 0px,
+      rgba(248, 250, 252, 0.5) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(248, 250, 252, 0.35) 0px,
+      rgba(248, 250, 252, 0.35) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+  mix-blend-mode: overlay;
+}
+
+/* ---------- owner video (opt-in) ---------------------------------------- */
+
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.32;
+  /* Purely decorative: it never intercepts a click or takes focus. */
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ---------- content ------------------------------------------------------ */
+
+.content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ---------- reduced motion -----------------------------------------------
+   The atmosphere is already static (no animation, no transition), so there
+   is nothing to switch off. The grain softens slightly to reduce the
+   high-frequency pattern that some users find uncomfortable. */
+
+@media (prefers-reduced-motion: reduce) {
+  .grain {
+    opacity: 0.025;
+  }
+}

@@ -145,6 +145,52 @@ ${colorBlock(DARK, ':root')}
   --atmo-violet: ${tokens.atmosphere.fieldViolet};
   --atmo-cyan: ${tokens.atmosphere.fieldCyan};
   --atmo-charcoal: ${tokens.atmosphere.fieldCharcoal};
+
+  /* ---- Liquid-glass semantic layer -------------------------------------
+     Every value below is DERIVED from a primitive already declared above
+     (glass.level1/level3, color.dark, shadow.dark). No new hue is
+     introduced — see src/app/glass-design-system.test.ts.               */
+  --glass-surface: ${tokens.glass.semantic.surface};
+  --glass-surface-strong: ${tokens.glass.semantic.surfaceStrong};
+  --glass-border: ${tokens.glass.semantic.border};
+  --glass-stroke-gradient: ${tokens.glass.semantic.strokeGradient};
+  --glass-stroke-width: ${tokens.glass.semantic.strokeWidthPx}px;
+  --glass-blur-subtle: ${tokens.glass.semantic.blurSubtle}px;
+  --glass-blur-strong: ${tokens.glass.semantic.blurStrong}px;
+  --glass-inset-highlight: ${tokens.glass.semantic.insetHighlight};
+  --glass-inset-highlight-strong: ${tokens.glass.semantic.insetHighlightStrong};
+  --glass-solid-fallback: ${tokens.glass.semantic.solidFallback};
+  --glass-solid-fallback-strong: ${tokens.glass.semantic.solidFallbackStrong};
+  --glass-shadow-soft: ${tokens.glass.semantic.shadowSoft};
+  --glass-shadow-strong: ${tokens.glass.semantic.shadowStrong};
+  --glass-scrim: ${tokens.glass.semantic.scrim};
+
+  /* Semantic text ramp (aliases over color.dark) */
+  --text-primary: ${tokens.semantic.text.primary};
+  --text-secondary: ${tokens.semantic.text.secondary};
+  --text-tertiary: ${tokens.semantic.text.tertiary};
+
+  /* Micro-label: mono · uppercase · ~0.15em */
+  --micro-label-font: ${tokens.typography.families.web.mono};
+  --micro-label-size: ${tokens.semantic.microLabel.sizePx / 16}rem;
+  --micro-label-weight: ${tokens.semantic.microLabel.weight};
+  --micro-label-tracking: ${tokens.semantic.microLabel.trackingEm}em;
+  --micro-label-leading: ${tokens.semantic.microLabel.lineHeight};
+  --micro-label: ${tokens.semantic.microLabel.weight} ${tokens.semantic.microLabel.sizePx / 16}rem/${tokens.semantic.microLabel.lineHeight} ${tokens.typography.families.web.mono};
+
+  /* Space scale (derived from spacing) */
+  --space-xs: ${tokens.semantic.space.xs}px;
+  --space-sm: ${tokens.semantic.space.sm}px;
+  --space-md: ${tokens.semantic.space.md}px;
+  --space-lg: ${tokens.semantic.space.lg}px;
+  --space-xl: ${tokens.semantic.space.xl}px;
+  --space-xxl: ${tokens.semantic.space.xxl}px;
+  --space-xxxl: ${tokens.semantic.space.xxxl}px;
+  --space-section: ${tokens.semantic.space.section}px;
+  --space-hero: ${tokens.semantic.space.hero}px;
+
+  /* Radii (semantic completion) */
+  --radius-pill: ${tokens.semantic.radius.pill}px;
 }
 `;
 
