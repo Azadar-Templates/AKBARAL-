@@ -1,10 +1,10 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ContactForm } from '../_components/contact-form';
 import { FeedbackForm } from '../_components/feedback-form';
+import { PublicSiteFooter, PublicSiteHeader } from '../_components/public-site-chrome';
 import styles from './public-info.module.css';
 
-type PublicKind = 'about' | 'contact' | 'documentation' | 'faq' | 'features' | 'feedback' | 'privacy' | 'security' | 'terms';
+export type PublicKind = 'about' | 'contact' | 'documentation' | 'faq' | 'features' | 'feedback' | 'privacy' | 'security' | 'terms' | 'team' | 'blog';
 
 const pageCopy: Record<PublicKind, { eyebrow: string; title: string; intro: string }> = {
   about: { eyebrow: 'About AKBARAL!', title: 'One intelligence. Every solution.', intro: 'AKBARAL! is an orchestration product for turning a goal into a reviewable result — without asking you to become the operator of every tool.' },
@@ -16,21 +16,22 @@ const pageCopy: Record<PublicKind, { eyebrow: string; title: string; intro: stri
   privacy: { eyebrow: 'Privacy', title: 'A factual view of your product data.', intro: 'This page describes the data boundaries implemented by the product. It is not a promise that a feature exists when the API does not support it.' },
   security: { eyebrow: 'Security', title: 'Boundaries are part of the interface.', intro: 'AKBARAL! makes permissions, provider availability, sandboxed previews, and verification visible instead of implying certainty.' },
   terms: { eyebrow: 'Terms', title: 'Use the product with care.', intro: 'Outputs can be wrong, providers can be unavailable, and successful Work tasks consume the credits shown by your account.' },
+  team: { eyebrow: 'Our team', title: 'People behind the product.', intro: 'We publish contributor information only when it is verified and approved for the public site.' },
+  blog: { eyebrow: 'Blogs', title: 'Notes from the work.', intro: 'Only posts that exist in the repository are listed here. Empty is more honest than a made-up newsroom.' },
 };
 
-function PublicHeader() {
-  return <header className={styles.header}><Link href="/" className={styles.brand}><span className={styles.mark}>A!</span><span><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span></Link><nav aria-label="Public navigation"><Link href="/features">Product</Link><Link href="/documentation">Guide</Link><Link href="/pricing">Pricing</Link><Link href="/help">Help</Link></nav><div className={styles.headerActions}><Link href="/signin">Sign in</Link><Link className={styles.primary} href="/signup">Start free</Link></div></header>;
-}
-
-function PublicFrame({ kind, children }: { kind: PublicKind; children: ReactNode }) {
+export function PublicFrame({ kind, children }: { kind: PublicKind; children: ReactNode }) {
   const copy = pageCopy[kind];
-  return <main className={styles.page}><PublicHeader /><div className={styles.pageBody}><Link className={styles.back} href="/">← Back to AKBARAL!</Link><div className={styles.heading}><span>{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.intro}</p></div>{children}</div><footer className={styles.footer}><span>AKBARAL! · One Intelligence. Every Solution.</span><div><Link href="/privacy">Privacy</Link><Link href="/security">Security</Link><Link href="/terms">Terms</Link></div></footer></main>;
+  return <main className={styles.page}><PublicSiteHeader /><div className={styles.pageBody}><div className={styles.heading}><span>{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.intro}</p></div>{children}</div><PublicSiteFooter /></main>;
 }
 
 export function PublicInfoPage({ kind }: { kind: PublicKind }) {
   if (kind === 'contact') return <PublicFrame kind={kind}><div className={styles.formPanel}><ContactForm /></div></PublicFrame>;
   if (kind === 'feedback') return <PublicFrame kind={kind}><div className={styles.formPanel}><FeedbackForm /></div></PublicFrame>;
-  if (kind === 'about') return <PublicFrame kind={kind}><div className={styles.twoColumn}><section className={styles.story}><h2>From a sentence to a result.</h2><p>Chat is the open conversation. Work is the tracked task. MASTER coordinates the lifecycle between goal understanding, planning, routing, tools, provider fallback, verification, and the final artifact.</p><p>The interface is intentionally calm: show what is configured, show what happened, and keep unsupported claims out of the way.</p></section><section className={styles.noteList}><div><b>01 · Start with intent</b><span>Write the goal in your own words.</span></div><div><b>02 · Choose the mode</b><span>Chat for thinking; Work for tracked execution.</span></div><div><b>03 · Review the result</b><span>Inspect state, activity, verification, and output where supported.</span></div></section></div></PublicFrame>;
+  if (kind === 'about') return <PublicFrame kind={kind}><div className={styles.aboutStack}>
+    <section className={styles.story}><h2>A workspace for the whole handoff.</h2><p>AKBARAL! brings conversation, tracked Work tasks, configured capabilities, files, review, and history into one product. The aim is practical: make the next useful step easier to see without hiding the limits of the system.</p><p>The registry contains <strong>4,001 registered agent contracts</strong>. That is a count of registered contracts; it does not promise availability or revenue for every account.</p></section>
+    <div className={styles.aboutGrid}><section className={styles.aboutCard}><span>WHO IT IS FOR</span><h2>People with work to clarify.</h2><p>Use it when a goal needs a conversation first, or when a task needs stages, an output, and a record you can inspect.</p></section><section className={styles.aboutCard}><span>HOW IT WORKS</span><h2>Chat or Work.</h2><p><b>Chat</b> is the open conversation. <b>Work</b> turns a goal into a tracked task with the state and output returned by the configured product path.</p></section><section className={styles.aboutCard}><span>WHAT IT DOES NOT DO</span><h2>No invented certainty.</h2><p>It does not promise every provider is available, turn an empty state into activity, or claim that an output is correct without the verification the configured flow can actually provide.</p></section></div>
+  </div></PublicFrame>;
   if (kind === 'features') return <PublicFrame kind={kind}><FeatureSections /></PublicFrame>;
   if (kind === 'documentation') return <PublicFrame kind={kind}><DocSections /></PublicFrame>;
   if (kind === 'faq') return <PublicFrame kind={kind}><FaqSections /></PublicFrame>;

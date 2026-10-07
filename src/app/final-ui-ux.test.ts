@@ -6,6 +6,7 @@ import { join } from 'node:path';
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const landing = read('src/app/_components/landing-reset.tsx');
+const publicChrome = read('src/app/_components/public-site-chrome.tsx');
 const page = read('src/app/page.tsx');
 const appShell = read('src/app/_components/app-shell.tsx');
 const workbench = read('src/app/_components/workbench/workbench-shell.tsx');
@@ -27,20 +28,21 @@ function collectFiles(dir: string): string[] {
 describe('AKBARAL! full UI/UX reset contract', () => {
   it('root is always the landing page and not the sign-in view', () => {
     assert.match(page, /<LandingReset \/>/);
-    assert.match(landing, /One Intelligence\. Every Solution\./);
+    assert.match(landing + publicChrome, /One Intelligence\. Every Solution\./);
     assert.match(landing, /Go to your workspace/);
     assert.match(landing, /One simple product/);
     assert.doesNotMatch(page + landing, /location\.hash = '#\/login'|Sign in to your workspace/);
   });
 
   it('landing sections follow the required one-product flow', () => {
-    const markers = ['topbar', 'hero', 'Product interface overview', 'Quick paths', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title', 'footer'];
+    const markers = ['PublicSiteHeader', 'hero', 'Product interface overview', 'Quick paths', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title'];
     let previous = -1;
     for (const marker of markers) {
       const index = landing.indexOf(marker);
       assert.ok(index > previous, `${marker} appears in order`);
       previous = index;
     }
+    assert.match(landing, /PublicSiteFooter/);
   });
 
   it('settings is a real options page and not the dashboard', () => {

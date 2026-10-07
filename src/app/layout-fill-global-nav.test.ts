@@ -58,7 +58,7 @@ describe('authenticated layout fill and shared Chat navigation', () => {
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
-    assert.match(output, /54 route\/width checks passed/);
+    assert.match(output, /90 route\/width checks passed/);
     assert.doesNotMatch(output, /FAIL|overflow|finding/i);
   });
 });

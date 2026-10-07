@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { PublicPricingTable } from './public-pricing';
+import { PublicSiteFooter, PublicSiteHeader } from './public-site-chrome';
 import styles from './landing-reset.module.css';
 
 function useSignedInHint() {
@@ -26,24 +28,7 @@ export function LandingReset() {
 
   return (
     <main className={styles.page}>
-      <header className={styles.topbar}>
-        <div className={styles.topbarInner}>
-          <Link className={styles.brand} href="/" aria-label="AKBARAL! home">
-            <span className={styles.mark}>A!</span>
-            <span><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span>
-          </Link>
-          <nav className={styles.nav} aria-label="Landing sections">
-            <a href="#how-it-works">How it works</a>
-            <a href="#surfaces">Product</a>
-            <a href="#safety">Safety</a>
-            <Link href="/pricing">Pricing</Link>
-          </nav>
-          <div className={styles.actions}>
-            <Link className={styles.ghost} href="/signin">Sign in</Link>
-            <Link className={styles.primary} href={primaryHref}>{primaryLabel}</Link>
-          </div>
-        </div>
-      </header>
+      <PublicSiteHeader />
 
       <section className={styles.hero} aria-labelledby="hero-title">
         <div className={styles.heroCopy}>
@@ -90,7 +75,7 @@ export function LandingReset() {
         <div className={styles.surfaceGrid}>
           <Link className={`${styles.surfaceCard} ${styles.surfacePrimary}`} href="/chat"><span className={styles.surfaceTag}>PRIMARY MODE</span><h3 id="thread-title">Chat</h3><p>Think out loud with one intelligence. Conversations, attachments, model truth, and tool activity stay together.</p><span className={styles.surfaceArrow}>Open Chat ↗</span></Link>
           <Link className={styles.surfaceCard} href="/work"><span className={styles.surfaceTag}>PRIMARY MODE</span><h3>Work</h3><p>Turn a goal into a tracked run with visible stages, a sandboxed preview, and authenticated export.</p><span className={styles.surfaceArrow}>Open Work ↗</span></Link>
-          <Link className={styles.surfaceCard} href="/agents"><span className={styles.surfaceTag}>CAPABILITY REGISTRY</span><h3 id="agents-title">Agents</h3><p>Search the 4,001 registered agent contracts by capability and category. AKBARAL! never describes them as active or earning; the registry tells you what is configured.</p><span className={styles.surfaceArrow}>Explore Agents ↗</span></Link>
+          <Link className={styles.surfaceCard} href="/agents"><span className={styles.surfaceTag}>CAPABILITY REGISTRY</span><h3 id="agents-title">Agents</h3><p>Search the 4,001 registered agent contracts by capability and category. The registry describes configuration, not availability or revenue.</p><span className={styles.surfaceArrow}>Explore Agents ↗</span></Link>
           <Link className={styles.surfaceCard} href="/dashboard"><span className={styles.surfaceTag}>ACCOUNT VIEW</span><h3>Dashboard</h3><p>Current work, credits, activity, plan, and sessions in a compact view that helps you decide what is next.</p><span className={styles.surfaceArrow}>Open Dashboard ↗</span></Link>
         </div>
       </section>
@@ -104,16 +89,16 @@ export function LandingReset() {
         <div className={styles.factoryCopy}><span className={styles.eyebrow}>Agent Factory</span><h2 id="steps-title">Shape the specialist you actually need.</h2><p>Describe a purpose, choose capabilities and permissions, create it through the existing factory, then review its security and benchmark state before it becomes part of your workspace.</p><Link className={styles.secondary} href="/agent-factory">Open Agent Factory ↗</Link></div>
       </section>
 
-      <section className={`${styles.section} ${styles.pricingSection}`} aria-labelledby="pricing-title">
+      <section className={`${styles.section} ${styles.pricingSection}`} id="pricing" aria-labelledby="pricing-title">
         <div className={styles.pricingIntro}><span className={styles.eyebrow}>Simple capacity</span><h2 id="pricing-title">Start small. Scale when the work does.</h2><p>USD plans built around successful Work tasks. No invented usage, no mystery tiers.</p><Link className={styles.textLink} href="/pricing">See plans and pricing ↗</Link></div>
-        <div className={styles.priceRail}><div><small>FREE TRIAL</small><b>$0</b><span>5 tasks · 30 days</span></div><div className={styles.priceFeatured}><small>PRO</small><b>$50</b><span>100 tasks</span></div><div><small>ENTERPRISE</small><b>$400</b><span>2,000 tasks</span></div></div>
+        <PublicPricingTable />
       </section>
 
       <section className={`${styles.section} ${styles.faqSection}`} aria-labelledby="faq-title"><div className={styles.sectionHead}><span className={styles.eyebrow}>A few clear answers</span><h2 id="faq-title">Less ceremony. More useful work.</h2></div><div className={styles.faqGrid}><details className={styles.faqItem}><summary>Does Chat use Work task credits?</summary><p>No. Chat is a conversation surface. Work task credits are consumed only when a successful Work task is recorded.</p></details><details className={styles.faqItem}><summary>Can I see what happened during a Work run?</summary><p>Yes, where the configured flow supports it: task state, tool activity, verification, output, and history remain in the Work surface.</p></details><details className={styles.faqItem}><summary>Can I create a specialist agent?</summary><p>Yes. Agent Factory uses the authenticated factory contracts for templates, creation, security review, benchmarks, versions, and lifecycle status.</p></details><details className={styles.faqItem}><summary>Are plans priced in USD?</summary><p>Yes. AKBARAL! pricing is USD-only, with six published plans and no hidden regional currency switch.</p></details></div></section>
 
       <section className={styles.final} aria-labelledby="final-title"><span className={styles.eyebrow}>Ready when you are</span><h2 id="final-title">Give the goal one place to go.</h2><p>Open the workspace and let AKBARAL! carry the work from first sentence to verified result.</p><div className={styles.heroCtas}><Link className={styles.primary} href={primaryHref}>{primaryLabel}<span aria-hidden="true">↗</span></Link><Link className={styles.secondary} href="/help">Read the product guide</Link></div></section>
 
-      <footer className={styles.footer}><div className={styles.footerInner}><div className={styles.footerBrand}><span className={styles.mark}>A!</span><span><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span></div><div className={styles.footerLinks}><Link href="/pricing">Pricing</Link><Link href="/help">Help</Link><Link href="/signin">Sign in</Link><Link href="/privacy">Privacy</Link></div><span className={styles.footerMeta}>© {new Date().getUTCFullYear()} AKBARAL!</span></div></footer>
+      <PublicSiteFooter />
     </main>
   );
 }

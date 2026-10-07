@@ -79,6 +79,10 @@ export const PAGE_MODULES = {
   '/billing': '../../src/app/billing/page.tsx',
   '/help': '../../src/app/help/page.tsx',
   '/pricing': '../../src/app/pricing/page.tsx',
+  '/about': '../../src/app/(public)/about/page.tsx',
+  '/team': '../../src/app/(public)/team/page.tsx',
+  '/blog': '../../src/app/(public)/blog/page.tsx',
+  '/contact': '../../src/app/(public)/contact/page.tsx',
 };
 
 /**
