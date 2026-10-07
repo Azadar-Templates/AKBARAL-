@@ -140,16 +140,17 @@
      Every value below is DERIVED from a primitive already declared above
      (glass.level1/level3, color.dark, shadow.dark). No new hue is
      introduced — see src/app/glass-design-system.test.ts.               */
-  --glass-surface: rgba(226,240,232,0.045);
-  --glass-surface-strong: rgba(14,22,18,0.74);
-  --glass-border: rgba(226,240,232,0.10);
-  --glass-stroke-gradient: linear-gradient(180deg, rgba(226,240,232,0.38) 0%, rgba(226,240,232,0.10) 46%, rgba(226,240,232,0.03) 100%);
+  --glass-surface: rgba(255, 255, 255, 0.01);
+  --glass-surface-strong: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-stroke-gradient: linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+  --glass-stroke-gradient-strong: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.2) 80%, rgba(255,255,255,0.5) 100%);
   --glass-stroke-width: 1.4px;
-  --glass-blur-subtle: 14px;
-  --glass-blur-strong: 30px;
-  --glass-inset-highlight: rgba(255,255,255,0.06);
-  --glass-inset-highlight-strong: rgba(255,255,255,0.09);
-  --glass-solid-fallback: #0d1310;
+  --glass-blur-subtle: 4px;
+  --glass-blur-strong: 50px;
+  --glass-inset-highlight: inset 0 1px 1px rgba(255,255,255,0.1);
+  --glass-inset-highlight-strong: inset 0 1px 1px rgba(255,255,255,0.15);
+  --glass-solid-fallback: #111111;
   --glass-solid-fallback-strong: #16201a;
   --glass-shadow-soft: 0 10px 30px rgba(0,0,0,0.22);
   --glass-shadow-strong: 0 30px 80px rgba(0,0,0,0.5);

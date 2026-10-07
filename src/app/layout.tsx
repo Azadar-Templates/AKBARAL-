@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { LegacyAppLoader } from './_components/legacy-app-loader';
 import path from 'node:path';
 import './app-reset.css';
+import './glass-material.css';
 // Liquid-glass material (presentation only): two depths, a masked gradient
 // stroke, and both @supports fallbacks. Loads before every route's CSS module
 // so component styles can override it predictably.
