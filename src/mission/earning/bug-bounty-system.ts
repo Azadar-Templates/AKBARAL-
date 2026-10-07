@@ -1,5 +1,7 @@
 import { missionDb, missionId, nowIso, sha256, type Row } from '../database';
 import { currentPolicy } from '../policy';
+import { consultKnowledgeBeforeAnalysis, falsePositiveReview, linkUsageToFinding, pinKnowledgeTrace } from './knowledge-retrieval';
+import { recordOwnerFeedbackLearning, recordQualityGateLearning } from './knowledge-learning';
 
 /**
  * Scope-first bug-bounty control plane.
@@ -452,14 +454,32 @@ export function runBountyAgent(input: AgentRunInput): Record<string, unknown> {
     const candidateInput = objectInput(input.input);
     const missingInputs = (REQUIRED_INPUTS[input.agentType] ?? []).filter((key) => candidateInput[key] === undefined || candidateInput[key] === null);
     if (missingInputs.length) throw new BountySystemError('malformed_input', `required input missing: ${missingInputs.join(',')}`, 422);
+    const consultation = consultKnowledgeBeforeAnalysis({
+      agentRole: input.agentType,
+      programId,
+      target,
+      platformKey: input.platformKey,
+      category: typeof candidateInput.category === 'string' && ['web', 'web3', 'github', 'infra'].includes(candidateInput.category) ? candidateInput.category as 'web' | 'web3' | 'github' | 'infra' : undefined,
+      language: typeof candidateInput.language === 'string' ? candidateInput.language : typeof candidateInput.technology === 'string' ? candidateInput.technology : undefined,
+      framework: typeof candidateInput.framework === 'string' ? candidateInput.framework : undefined,
+      fileTypes: Array.isArray(candidateInput.fileTypes) ? candidateInput.fileTypes.map(String) : [],
+      entryPointSignals: Array.isArray(candidateInput.entryPointSignals) ? candidateInput.entryPointSignals.map(String) : [],
+      vulnClasses: Array.isArray(candidateInput.vulnClasses) ? candidateInput.vulnClasses.map(String) : typeof candidateInput.vulnerabilityClass === 'string' ? [candidateInput.vulnerabilityClass] : [],
+      runId,
+      findingId: input.findingId,
+    });
+    const trace = consultation.trace;
+    missionDb.run('UPDATE agent_run_logs SET knowledge_trace_json=?,knowledge_consulted_at=?,generic_analysis_pass=?,updated_at=? WHERE id=?', [JSON.stringify(trace), trace.consultedAt, trace.genericPass ? 1 : 0, nowIso(), runId]);
     const start = nowIso();
     const claimed = missionDb.run("UPDATE agent_run_logs SET status='running',start_at=?,updated_at=? WHERE id=? AND status='queued' AND lease_expires_at>?", [start, start, runId, start]);
     if (!claimed.changes) throw new BountySystemError('lease_claim_failed', 'agent run lease could not be claimed', 409);
     recordStage(input.findingId, input.agentType, 'running', runId);
-    const output = handler({ ...candidateInput, programId, target });
-    updateRun(runId, { status: 'done', endAt: nowIso(), output, calls: requiredTools, costCents: 0 });
+    const rawOutput = handler({ ...candidateInput, programId, target, knowledgeTrace: trace });
+    const output = rawOutput && typeof rawOutput === 'object' && !Array.isArray(rawOutput) ? { ...(rawOutput as Record<string, unknown>), knowledgeTrace: trace } : { result: rawOutput, knowledgeTrace: trace };
+    if (input.findingId) linkUsageToFinding(runId, input.findingId);
+    updateRun(runId, { status: 'done', endAt: nowIso(), output, calls: [...requiredTools, 'knowledge_retrieval'], costCents: 0 });
     recordStage(input.findingId, input.agentType, 'done', runId);
-    return { runId, status: 'done', agentType: input.agentType, target, output, outputRef: sha256(JSON.stringify(output)) };
+    return { runId, status: 'done', agentType: input.agentType, target, output, knowledgeTrace: trace, outputRef: sha256(JSON.stringify(output)) };
   } catch (error) {
     const scope = error instanceof BountyScopeError;
     const code = error instanceof BountySystemError ? error.code : scope ? error.code : 'agent_failed';
@@ -519,12 +539,23 @@ export function qualityGateFinding(input: { programId: string; target: string; f
   const finding = requiredFinding(input.finding);
   const fingerprint = findingFingerprint(input.programId, input.target, String(finding.vulnerabilityClass), String(finding.codeLocationPattern));
   const duplicate = missionDb.get<Row>('SELECT id FROM bounty_findings WHERE finding_fingerprint=? AND state NOT IN (\'rejected\',\'duplicate\')', [fingerprint]) || missionDb.get<Row>('SELECT id FROM knowledge_base_entries WHERE finding_fingerprint=?', [fingerprint]);
-  const checks: Record<string, string> = { inScope: 'pass', evidence: String(finding.evidence).trim() ? 'pass' : 'fail', reproduction: String(finding.reproduction ?? '').trim() ? 'pass' : 'fail', duplicate: duplicate ? 'fail' : 'pass' };
+  const knowledgeTrace = pinKnowledgeTrace(String(finding.vulnerabilityClass), finding.knowledgeTrace, typeof finding.agentRole === 'string' ? finding.agentRole : 'quality_gate');
+  const falsePositive = falsePositiveReview({ vulnClass: String(finding.vulnerabilityClass), finding });
+  const reportMissing = [
+    ['asset', input.target], ['vulnerabilityClassKnowledge', knowledgeTrace], ['cvssVector', finding.cvssVector], ['reproduction', finding.reproduction], ['evidence', finding.evidence], ['remediation', finding.remediation ?? finding.recommendation],
+  ].filter(([, value]) => value === null || value === undefined || (typeof value === 'string' && !value.trim())).map(([key]) => key);
+  const checks: Record<string, string> = {
+    inScope: 'pass', evidence: String(finding.evidence).trim() ? 'pass' : 'fail', reproduction: String(finding.reproduction ?? '').trim() ? 'pass' : 'fail',
+    duplicate: duplicate ? 'fail' : 'pass', knowledgeReferenced: knowledgeTrace ? 'pass' : 'fail', reportCompleteness: reportMissing.length ? 'fail' : 'pass',
+    falsePositiveReview: falsePositive.decision === 'block' ? 'fail' : falsePositive.decision === 'unverified' ? 'fail' : 'pass',
+  };
   let cvssScore: number | null = null;
   try { cvssScore = finding.cvssVector ? cvss31BaseScore(String(finding.cvssVector)) : null; checks.cvss = cvssScore === null ? 'fail' : 'pass'; } catch { checks.cvss = 'fail'; }
   const reasons = Object.entries(checks).filter(([, result]) => result !== 'pass').map(([key]) => key);
+  if (reportMissing.length) reasons.push(`report_not_ready:${reportMissing.join(',')}`);
+  if (falsePositive.decision === 'block') reasons.push(`false_positive:${falsePositive.matchedPattern ?? 'known pattern'}`);
   const decision = reasons.length ? 'reject' : 'pass';
-  return { decision, reasons, checks, fingerprint, cvssScore, scope: { targetType: scope.targetType }, duplicateId: duplicate ? String(duplicate.id) : null };
+  return { decision, reasons, checks, fingerprint, cvssScore, knowledgeTrace, falsePositiveReview: falsePositive, reportMissing, scope: { targetType: scope.targetType }, duplicateId: duplicate ? String(duplicate.id) : null };
 }
 
 export function createBountyFinding(input: { programId: string; target: string; finding: Record<string, any> }): Record<string, unknown> {
@@ -532,13 +563,14 @@ export function createBountyFinding(input: { programId: string; target: string; 
   const gate = qualityGateFinding(input);
   if (gate.decision === 'reject') {
     recordRejectAndLearn(input.programId, input.target, String(gate.fingerprint), 'quality_gate_rejected', { reasons: gate.reasons, checks: gate.checks });
+    recordQualityGateLearning({ programId: input.programId, platformKey: typeof finding.platformKey === 'string' ? finding.platformKey : null, vulnClass: String(finding.vulnerabilityClass), reasons: Array.isArray(gate.reasons) ? gate.reasons : [] });
     throw new BountySystemError('quality_gate_rejected', `finding rejected: ${(gate.reasons as string[]).join(', ')}`, 409);
   }
   const id = missionId('bfi');
   const timestamp = nowIso();
   const score = gate.cvssScore as number | null;
-  missionDb.run(`INSERT INTO bounty_findings (id,program_id,target,vulnerability_class,code_location_pattern,finding_fingerprint,title,summary,evidence,reproduction,impact,severity,cvss_vector,cvss_score,cvss_justification,state,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, input.programId, input.target, String(finding.vulnerabilityClass), String(finding.codeLocationPattern), String(gate.fingerprint), String(finding.title), String(finding.summary), String(finding.evidence), finding.reproduction ?? null, finding.impact ?? null, finding.severity ?? null, finding.cvssVector ?? null, score, finding.cvssJustification ?? null, 'gated', timestamp, timestamp]);
+  missionDb.run(`INSERT INTO bounty_findings (id,program_id,target,vulnerability_class,code_location_pattern,finding_fingerprint,title,summary,evidence,reproduction,impact,severity,cvss_vector,cvss_score,cvss_justification,remediation,state,knowledge_trace_json,false_positive_review_json,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, input.programId, input.target, String(finding.vulnerabilityClass), String(finding.codeLocationPattern), String(gate.fingerprint), String(finding.title), String(finding.summary), String(finding.evidence), finding.reproduction ?? null, finding.impact ?? null, finding.severity ?? null, finding.cvssVector ?? null, score, finding.cvssJustification ?? null, finding.remediation ?? finding.recommendation ?? null, 'gated', JSON.stringify(gate.knowledgeTrace ?? {}), JSON.stringify(gate.falsePositiveReview ?? {}), timestamp, timestamp]);
   missionDb.run('INSERT INTO quality_gate_reviews (id,finding_id,decision,reasons_json,checks_json,reviewer,created_at) VALUES (?,?,?,?,?,?,?)', [missionId('qgr'), id, 'pass', '[]', JSON.stringify(gate.checks), 'quality_gate', timestamp]);
   return missionDb.get<Row>('SELECT * FROM bounty_findings WHERE id=?', [id])!;
 }
@@ -552,6 +584,11 @@ export function approveFindingForSubmission(ownerId: string, findingId: string, 
   const review = missionDb.get<Row>('SELECT decision FROM quality_gate_reviews WHERE finding_id=? ORDER BY created_at DESC LIMIT 1', [findingId]);
   if (String(review?.decision) !== 'pass' || String(finding.state) !== 'gated') throw new BountySystemError('quality_gate_required', 'only a quality-gated finding can be approved', 409);
   if (missionDb.get<Row>('SELECT id FROM bounty_submissions WHERE finding_id=?', [findingId])) throw new BountySystemError('already_approved', 'finding already has an immutable submission approval log', 409);
+  const reportMissing = ['asset', 'vulnerabilityClass', 'cvssVector', 'reproduction', 'evidence', 'remediation'].filter((key) => {
+    const value = reportContent[key];
+    return value === undefined || value === null || (typeof value === 'string' && !value.trim());
+  });
+  if (reportMissing.length) throw new BountySystemError('report_not_ready', `report is not ready; missing: ${reportMissing.join(',')}`, 409);
   const reportJson = objectJson(reportContent, 'reportContent');
   const contentHash = sha256(reportJson);
   const timestamp = nowIso();
@@ -565,13 +602,14 @@ export function approveFindingForSubmission(ownerId: string, findingId: string, 
 export function rejectFinding(ownerId: string, findingId: string, reason: string): Record<string, unknown> {
   if (!ownerIsActive(ownerId)) throw new BountySystemError('owner_required', 'active owner is required', 403);
   const note = boundedString(reason, 'reason', 2000);
-  const finding = missionDb.get<Row>('SELECT id,program_id,target,finding_fingerprint FROM bounty_findings WHERE id=?', [findingId]);
+  const finding = missionDb.get<Row>('SELECT id,program_id,target,finding_fingerprint,vulnerability_class FROM bounty_findings WHERE id=?', [findingId]);
   if (!finding) throw new BountySystemError('not_found', 'finding not found', 404);
   missionDb.transaction(() => {
     const timestamp = nowIso();
     missionDb.run("UPDATE bounty_findings SET state='rejected',updated_at=? WHERE id=?", [timestamp, findingId]);
     missionDb.run('INSERT INTO quality_gate_reviews (id,finding_id,decision,reasons_json,checks_json,reviewer,created_at) VALUES (?,?,?,?,?,?,?)', [missionId('qgr'), findingId, 'reject', JSON.stringify([note]), '{}', ownerId, timestamp]);
     recordRejectAndLearn(String(finding.program_id), String(finding.target), String(finding.finding_fingerprint), 'owner_rejected', { findingId, ownerId, rejectedAt: timestamp });
+    recordOwnerFeedbackLearning({ findingId, programId: String(finding.program_id), vulnClass: String(finding.vulnerability_class), reasonCode: 'owner_rejected', detail: note, ownerId });
   });
   return { findingId, rejected: true, reason: note, submitted: false };
 }

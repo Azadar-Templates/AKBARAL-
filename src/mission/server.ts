@@ -85,6 +85,15 @@ import {
   saveQualityPolicy,
   validateFindingForSubmission,
 } from './earning/discipline-engine';
+import {
+  knowledgeForClass,
+  knowledgeUsageSnapshot,
+  listAgentPlaybooks,
+  listKnowledge,
+  listPlatformPlaybooks,
+  retrieveKnowledge,
+} from './earning/knowledge-retrieval';
+import { approveKnowledgeImprovement, listPendingImprovements, rejectKnowledgeImprovement } from './earning/knowledge-learning';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
@@ -1301,7 +1310,18 @@ async function handleApi(
         json(res, 200, { allocations: saved }); return true;
       }
     }
-    if (rest[0] === 'lessons' && method === 'GET') { json(res, 200, { summary: lessonsSnapshot(), details: lessonsDetail(Number(url.searchParams.get('limit') ?? 200)) }); return true; }
+    if (rest[0] === 'knowledge') {
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { knowledge: listKnowledge(url.searchParams.get('category') ?? undefined), generatedAt: nowIso() }); return true; }
+      if (method === 'GET' && rest[1] === 'usage') { json(res, 200, { usage: knowledgeUsageSnapshot(), generatedAt: nowIso() }); return true; }
+      if (method === 'GET' && rest.length === 3 && rest[1] === 'class') { const knowledge = knowledgeForClass(rest[2]); if (!knowledge) throw new HttpProblem(404, 'knowledge entry not found', 'not_found'); json(res, 200, { knowledge }); return true; }
+      if (method === 'POST' && rest[1] === 'retrieve') { json(res, 200, { consultation: retrieveKnowledge({ ...(body as any), agentRole: String(body.agentRole ?? '') }, Number(body.limit ?? 12)) }); return true; }
+      throw new HttpProblem(404, 'unknown knowledge route', 'not_found');
+    }
+    if (rest[0] === 'playbooks' && method === 'GET') { json(res, 200, { agents: listAgentPlaybooks(), platforms: listPlatformPlaybooks(), generatedAt: nowIso() }); return true; }
+    if (rest[0] === 'lessons' && rest[1] === 'pending' && method === 'GET') { json(res, 200, { improvements: listPendingImprovements(), generatedAt: nowIso() }); return true; }
+    if (rest[0] === 'lessons' && rest[1] === 'approve' && method === 'POST') { json(res, 200, { improvement: approveKnowledgeImprovement(bountyOwner.owner.id, String(body.improvementId ?? rest[2] ?? '')) }); return true; }
+    if (rest[0] === 'lessons' && rest[1] === 'reject' && method === 'POST') { json(res, 200, { improvement: rejectKnowledgeImprovement(bountyOwner.owner.id, String(body.improvementId ?? rest[2] ?? ''), String(body.reason ?? 'owner_rejected')) }); return true; }
+    if (rest[0] === 'lessons' && method === 'GET' && rest.length === 1) { json(res, 200, { summary: lessonsSnapshot(), details: lessonsDetail(Number(url.searchParams.get('limit') ?? 200)), pending: listPendingImprovements() }); return true; }
     if (rest[0] === 'reputation' && method === 'GET') { const programId = url.searchParams.get('programId'); json(res, 200, { reputation: programId ? reputationForProgram(programId) : reputationSnapshot() }); return true; }
     if (rest[0] === 'feedback' && method === 'POST') { json(res, 200, { feedback: recordPlatformFeedback({ programId: String(body.programId ?? ''), findingId: body.findingId ? String(body.findingId) : undefined, platformKey: String(body.platformKey ?? ''), outcome: body.outcome as any, detail: String(body.detail ?? '') }, bountyOwner.owner.id) }); return true; }
     if (rest[0] === 'quality-policies') {

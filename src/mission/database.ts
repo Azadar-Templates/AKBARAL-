@@ -259,6 +259,13 @@ export function applyMissionMigrations(target = missionDb): { applied: string[];
     applied.push(file);
   }
   backfillLedgerSequence(target);
+  // Knowledge is a typed, provenance-checked seed rather than opaque SQL JSON.
+  // Load it only after all migrations exist; this keeps the mission database
+  // usable by both SQLite and PostgreSQL and avoids a module-init cycle.
+  if (target === missionDb && target.tableExists('vuln_knowledge')) {
+    const { seedKnowledgeBase } = require('./earning/knowledge-catalog') as typeof import('./earning/knowledge-catalog');
+    seedKnowledgeBase();
+  }
   return { applied, total: files.length };
 }
 

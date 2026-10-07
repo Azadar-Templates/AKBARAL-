@@ -32,11 +32,11 @@ function scopeOrBlocked(context: AdapterScope | undefined): AdapterResult<never>
 }
 
 function submissionShape(style: string, finding: Record<string, any>): Record<string, unknown> {
-  const title = String(finding.title ?? ''); const summary = String(finding.summary ?? ''); const evidence = String(finding.evidence ?? ''); const reproduction = String(finding.reproduction ?? ''); const impact = String(finding.impact ?? ''); const cvss = String(finding.cvssVector ?? '');
-  if (style === 'hackerone') return { title, weakness: finding.weakness ?? finding.vulnerabilityClass ?? 'unverified', severity: { rating: finding.severity ?? 'unverified', score: finding.cvssScore ?? null }, structured: { summary, impact, stepsToReproduce: reproduction, supportingMaterial: evidence, timeline: finding.timeline ?? [] } };
-  if (style === 'immunefi') return { title, severity: finding.severity ?? 'unverified', impact, poc: reproduction, evidence, cvssVector: cvss };
-  if (style === 'github_pr') return { title, type: finding.patch ? 'pull_request_draft' : 'issue', body: `## Summary\n${summary}\n\n## Evidence\n${evidence}\n\n## Reproduction\n${reproduction}\n\n## Impact\n${impact}\n\nCVSS: ${cvss}`, submit: false };
-  return { title, markdown: `# ${title}\n\n## Summary\n${summary}\n\n## Evidence\n${evidence}\n\n## Reproduction\n${reproduction}\n\n## Impact\n${impact}\n\nCVSS: ${cvss}`, submit: false };
+  const title = String(finding.title ?? ''); const summary = String(finding.summary ?? ''); const evidence = String(finding.evidence ?? ''); const reproduction = String(finding.reproduction ?? ''); const impact = String(finding.impact ?? ''); const remediation = String(finding.remediation ?? finding.recommendation ?? ''); const cvss = String(finding.cvssVector ?? '');
+  if (style === 'hackerone') return { title, weakness: finding.weakness ?? finding.vulnerabilityClass ?? 'unverified', severity: { rating: finding.severity ?? 'unverified', score: finding.cvssScore ?? null }, structured: { summary, impact, stepsToReproduce: reproduction, supportingMaterial: evidence, remediation, timeline: finding.timeline ?? [] } };
+  if (style === 'immunefi') return { title, severity: finding.severity ?? 'unverified', impact, poc: reproduction, evidence, remediation, cvssVector: cvss };
+  if (style === 'github_pr') return { title, type: finding.patch ? 'pull_request_draft' : 'issue', body: `## Summary\n${summary}\n\n## Evidence\n${evidence}\n\n## Reproduction\n${reproduction}\n\n## Impact\n${impact}\n\n## Remediation\n${remediation}\n\nCVSS: ${cvss}`, submit: false };
+  return { title, markdown: `# ${title}\n\n## Summary\n${summary}\n\n## Evidence\n${evidence}\n\n## Reproduction\n${reproduction}\n\n## Impact\n${impact}\n\n## Remediation\n${remediation}\n\nCVSS: ${cvss}`, submit: false };
 }
 
 class ReadOnlyPlatformAdapter implements PlatformAdapter {
@@ -48,13 +48,13 @@ class ReadOnlyPlatformAdapter implements PlatformAdapter {
   buildSubmissionPayload(finding: Record<string, any>, context?: AdapterScope): AdapterResult<Record<string, unknown>> {
     const blocked = scopeOrBlocked(context); if (blocked) return blocked;
     if (!context || !missionDb.get('SELECT id FROM quality_policies WHERE program_id=?', [context.programId])) return { status: 'not_ready', reason: 'quality policy is required before any payload build', observedAt: nowIso() };
-    const required = ['title','summary','evidence','reproduction','impact','cvssVector']; const missing = required.filter((key) => !String(finding[key] ?? '').trim()); if (missing.length) return { status: 'not_ready', reason: `required fields missing: ${missing.join(', ')}`, observedAt: nowIso() };
+    const required = ['title','summary','evidence','reproduction','impact','remediation','cvssVector']; const missing = required.filter((key) => !String(finding[key] ?? '').trim()); if (missing.length) return { status: 'not_ready', reason: `required fields missing: ${missing.join(', ')}`, observedAt: nowIso() };
     return { status: 'ok', reason: 'payload built only; no submission capability exists', data: { platform: this.platformKey, submissionStyle: String(this.row.submission_style), payload: submissionShape(String(this.row.submission_style), finding), submitted: false }, observedAt: nowIso() };
   }
   validateForSubmission(finding: Record<string, any>, context?: AdapterScope): AdapterResult<Record<string, unknown>> {
     const blocked = scopeOrBlocked(context); if (blocked) return blocked;
     if (!context || !missionDb.get('SELECT id FROM quality_policies WHERE program_id=?', [context.programId])) return { status: 'not_ready', reason: 'quality policy is required before any payload build', observedAt: nowIso() };
-    const required = ['title','summary','evidence','reproduction','impact','cvssVector']; const missing = required.filter((key) => !String(finding[key] ?? '').trim()); if (missing.length) return { status: 'not_ready', reason: `platform validation failed: missing ${missing.join(', ')}`, observedAt: nowIso() };
+    const required = ['title','summary','evidence','reproduction','impact','remediation','cvssVector']; const missing = required.filter((key) => !String(finding[key] ?? '').trim()); if (missing.length) return { status: 'not_ready', reason: `platform validation failed: missing ${missing.join(', ')}`, observedAt: nowIso() };
     if (String(finding.cvssVector).length > 300 || String(finding.summary).length > 10000 || String(finding.reproduction).length > 20000) return { status: 'not_ready', reason: 'platform formatting or word limit validation failed', observedAt: nowIso() };
     const fingerprint = finding.findingFingerprint ?? finding.finding_fingerprint;
     if (fingerprint && missionDb.get('SELECT id FROM bounty_findings WHERE finding_fingerprint=? AND id<>?', [fingerprint, finding.id ?? ''])) return { status: 'not_ready', reason: 'duplicate fingerprint is not submission-ready', observedAt: nowIso() };

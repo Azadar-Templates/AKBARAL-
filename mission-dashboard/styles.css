@@ -52,6 +52,8 @@ button {
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 button.danger { background: var(--bad); color: #240808; }
 button.small { padding: 4px 9px; font-size: 12px; font-weight: 600; }
+.kb-action { min-height: 44px; min-width: 88px; }
+.action-stack { display: flex; flex-wrap: wrap; gap: 6px; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }

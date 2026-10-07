@@ -92,7 +92,7 @@ test('every adapter returns an honest typed status and never offers an outbound 
 });
 
 test('discipline requires a policy, blocks weak findings, and raises risk on platform feedback', () => {
-  const finding = createBountyFinding({ programId, target: 'authorized.example', finding: { title: 'Evidence-complete issue', summary: 'Observed unsafe behavior.', evidence: 'attached evidence', reproduction: 'safe local reproduction', impact: 'security impact', vulnerabilityClass: 'xss', codeLocationPattern: 'src/view.ts:1', cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H', cvssJustification: 'fully justified' } });
+  const finding = createBountyFinding({ programId, target: 'authorized.example', finding: { title: 'Evidence-complete issue', summary: 'Observed unsafe behavior.', evidence: 'attached evidence', reproduction: 'safe local reproduction', impact: 'security impact', remediation: 'Use context-aware output encoding.', vulnerabilityClass: 'xss', codeLocationPattern: 'src/view.ts:1', cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H', cvssJustification: 'fully justified' } });
   assert.equal(validateFindingForSubmission({ findingId: String(finding.id), platformKey: 'hackerone' }).ready, false);
   assert.ok(lessonsSnapshot().some((lesson) => lesson.reasonCode === 'missing_policy'));
   saveQualityPolicy({ programId, minConfidenceThreshold: 0.5, maxSubmissionsPerWeek: 2, minCvssForSubmit: 7 }, ownerId);

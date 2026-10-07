@@ -1,6 +1,8 @@
 import { missionDb, missionId, nowIso, type Row } from '../database';
 import { assertInScope, cvss31BaseScore } from './bug-bounty-system';
 import { adapterFor } from './platform-adapters';
+import { recordPlatformOutcomeLearning, recordQualityGateLearning } from './knowledge-learning';
+import { falsePositiveReview, knowledgeForClass } from './knowledge-retrieval';
 
 export type RiskLevel = 'healthy' | 'caution' | 'restricted';
 export interface QualityPolicyInput { programId: string; minConfidenceThreshold?: number; requirePoc?: boolean; requireEvidenceScreenshot?: boolean; maxSubmissionsPerWeek?: number; duplicateWindowDays?: number; rejectOnWeakEvidence?: boolean; minCvssForSubmit?: number }
@@ -27,14 +29,23 @@ export function validateFindingForSubmission(input: { findingId: string; platfor
   const finding = missionDb.get<Row>('SELECT * FROM bounty_findings WHERE id=?', [input.findingId]);
   if (!finding) return { ready: false, reasons: ['finding_not_found'] };
   const reasons: string[] = []; const policyRow = missionDb.get<Row>('SELECT * FROM quality_policies WHERE program_id=?', [String(finding.program_id)]);
-  if (!policyRow) { rejection(String(finding.program_id), input.findingId, input.platformKey, 'missing_policy', 'A quality policy is required before any payload build.', String(finding.finding_fingerprint)); return { ready: false, reasons: ['quality_policy_missing'], findingId: input.findingId }; }
+  if (!policyRow) {
+    rejection(String(finding.program_id), input.findingId, input.platformKey, 'missing_policy', 'A quality policy is required before any payload build.', String(finding.finding_fingerprint));
+    recordQualityGateLearning({ findingId: input.findingId, programId: String(finding.program_id), platformKey: input.platformKey, vulnClass: String(finding.vulnerability_class), reasons: ['quality_policy_missing'] });
+    return { ready: false, reasons: ['quality_policy_missing'], findingId: input.findingId };
+  }
   try { assertInScope(String(finding.program_id), String(finding.target), { agentType: 'discipline_engine' }); } catch { reasons.push('scope_gate_blocked'); }
   if (String(finding.state) !== 'gated') reasons.push('finding_not_quality_gated');
   const confidenceResult = confidence(finding); const policy = policyPublic(policyRow);
+  const falsePositive = falsePositiveReview({ vulnClass: String(finding.vulnerability_class), finding });
+  if (falsePositive.decision === 'block') reasons.push(`false_positive:${falsePositive.matchedPattern ?? 'known pattern'}`);
+  if (falsePositive.decision === 'unverified') reasons.push('vulnerability_knowledge_unverified');
   if (confidenceResult.score < Number(policy.minConfidenceThreshold)) reasons.push(`confidence_below_threshold:${confidenceResult.score}`);
   if (policy.rejectOnWeakEvidence && (!String(finding.evidence ?? '').trim() || !String(finding.reproduction ?? '').trim())) reasons.push('weak_evidence');
   if (policy.requirePoc && !String(finding.reproduction ?? '').trim()) reasons.push('poc_required');
   if (policy.requireEvidenceScreenshot && !/screenshot|image|attachment/i.test(String(finding.evidence ?? ''))) reasons.push('evidence_screenshot_required');
+  const reportMissing = [['asset', finding.target], ['vulnerability_class_knowledge', knowledgeForClass(String(finding.vulnerability_class))], ['cvss_vector', finding.cvss_vector], ['reproduction', finding.reproduction], ['evidence', finding.evidence], ['remediation', finding.remediation]].filter(([, value]) => value === null || value === undefined || (typeof value === 'string' && !value.trim())).map(([key]) => key);
+  if (reportMissing.length) reasons.push(`report_not_ready:${reportMissing.join(',')}`);
   let cvss: number | null = null; try { cvss = finding.cvss_vector ? cvss31BaseScore(String(finding.cvss_vector)) : null; } catch { reasons.push('cvss_unverified'); }
   if (cvss !== null && cvss < Number(policy.minCvssForSubmit)) reasons.push('cvss_below_policy_minimum');
   const duplicate = missionDb.get<Row>('SELECT id FROM bounty_findings WHERE program_id=? AND finding_fingerprint=? AND id<>?', [String(finding.program_id), String(finding.finding_fingerprint), input.findingId]) || missionDb.get<Row>('SELECT id FROM bounty_rejection_lessons WHERE program_id=? AND fingerprint=? AND (finding_id IS NULL OR finding_id<>?)', [String(finding.program_id), String(finding.finding_fingerprint), input.findingId]);
@@ -42,7 +53,10 @@ export function validateFindingForSubmission(input: { findingId: string; platfor
   const weekStart = new Date(); weekStart.setUTCDate(weekStart.getUTCDate() - 7); const weekly = Number(missionDb.get<Row>(`SELECT COUNT(*) AS count FROM bounty_submissions s JOIN bounty_findings f ON f.id=s.finding_id WHERE f.program_id=? AND s.created_at>=?`, [String(finding.program_id), weekStart.toISOString()])?.count ?? 0);
   if (weekly >= Number(policy.maxSubmissionsPerWeek)) reasons.push('weekly_submission_cap_exceeded');
   const risk = latestRisk(String(finding.program_id)); if (risk === 'restricted') reasons.push('program_reputation_restricted');
-  if (reasons.length) rejection(String(finding.program_id), input.findingId, input.platformKey, reasons[0].split(':')[0], reasons.join('; '), String(finding.finding_fingerprint));
+  if (reasons.length) {
+    rejection(String(finding.program_id), input.findingId, input.platformKey, reasons[0].split(':')[0], reasons.join('; '), String(finding.finding_fingerprint));
+    recordQualityGateLearning({ findingId: input.findingId, programId: String(finding.program_id), platformKey: input.platformKey, vulnClass: String(finding.vulnerability_class), reasons });
+  }
   missionDb.run('UPDATE bounty_findings SET confidence_score=?,confidence_breakdown_json=?,updated_at=? WHERE id=?', [confidenceResult.score, JSON.stringify(confidenceResult.breakdown), nowIso(), input.findingId]);
   return { ready: reasons.length === 0, reasons, findingId: input.findingId, platformKey: input.platformKey, confidence: confidenceResult, cvssScore: cvss, riskLevel: risk, policy };
 }
@@ -61,7 +75,10 @@ export function recordPlatformFeedback(input: { programId: string; findingId?: s
   const at = nowIso(); missionDb.run('INSERT INTO bounty_platform_feedback (id,program_id,finding_id,platform_key,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?)', [missionId('bpf'), input.programId, input.findingId ?? null, input.platformKey, input.outcome, String(input.detail).slice(0, 2000), at]);
   const warnings = Number(missionDb.get<Row>("SELECT COUNT(*) AS count FROM bounty_platform_feedback WHERE program_id=? AND outcome IN ('rejected_invalid','rejected_duplicate','rejected_spam')", [input.programId])?.count ?? 0); const level: RiskLevel = warnings >= 3 ? 'restricted' : warnings >= 1 ? 'caution' : 'healthy'; const multiplier = level === 'restricted' ? 0.25 : level === 'caution' ? 0.5 : 1;
   const existing = missionDb.get<Row>('SELECT program_id FROM bounty_program_risk WHERE program_id=?', [input.programId]); if (existing) missionDb.run('UPDATE bounty_program_risk SET risk_level=?,warning_count=?,submission_rate_multiplier=?,last_reviewed_at=?,updated_at=? WHERE program_id=?', [level, warnings, multiplier, at, at, input.programId]); else missionDb.run('INSERT INTO bounty_program_risk (program_id,risk_level,warning_count,submission_rate_multiplier,last_reviewed_at,updated_at) VALUES (?,?,?,?,?,?)', [input.programId, level, warnings, multiplier, at, at]);
-  rejection(input.programId, input.findingId ?? null, input.platformKey, input.outcome, input.detail); return { programId: input.programId, platformKey: input.platformKey, outcome: input.outcome, riskLevel: level, warningCount: warnings, submissionRateMultiplier: multiplier, recordedBy: ownerId, createdAt: at };
+  rejection(input.programId, input.findingId ?? null, input.platformKey, input.outcome, input.detail);
+  const vulnClass = input.findingId ? String(missionDb.get<Row>('SELECT vulnerability_class FROM bounty_findings WHERE id=?', [input.findingId])?.vulnerability_class ?? '') || null : null;
+  recordPlatformOutcomeLearning({ programId: input.programId, findingId: input.findingId ?? null, platformKey: input.platformKey, vulnClass, outcome: input.outcome, detail: input.detail, ownerId });
+  return { programId: input.programId, platformKey: input.platformKey, outcome: input.outcome, riskLevel: level, warningCount: warnings, submissionRateMultiplier: multiplier, recordedBy: ownerId, createdAt: at };
 }
 
 export function reputationSnapshot(): Array<Record<string, unknown>> {

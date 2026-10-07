@@ -800,6 +800,87 @@ async function loadBountyControl() {
   ], lessons.summary || [], 'No rejection lessons recorded.'));
 }
 
+async function loadKnowledgePanel() {
+  const freshness = $('#knowledge-freshness');
+  try {
+    const [catalog, usage] = await Promise.all([api('/bounty/knowledge'), api('/bounty/knowledge/usage')]);
+    const rows = catalog.knowledge || [];
+    const usageRows = usage.usage || [];
+    const categories = [...new Set(rows.map((row) => row.category))].sort();
+    replace('#knowledge-summary', el('div', { class: 'cards' }, [
+      el('div', { class: 'card' }, [el('div', { class: 'label', text: 'Vulnerability classes' }), el('div', { class: 'value', text: String(rows.length) }), el('div', { class: 'note', text: categories.length ? categories.join(' · ') : 'No seeded classes' })]),
+      el('div', { class: 'card' }, [el('div', { class: 'label', text: 'FP-pattern lists' }), el('div', { class: 'value', text: String(rows.filter((row) => (row.commonFalsePositives || []).length).length) }), el('div', { class: 'note', text: 'Known noise is reviewed before quality gating.' })]),
+      el('div', { class: 'card' }, [el('div', { class: 'label', text: 'Never used' }), el('div', { class: 'value', text: String(usageRows.filter((row) => row.neverUsed).length) }), el('div', { class: 'note', text: 'Candidates for owner pruning.' })]),
+    ]));
+    replace('#knowledge-table', table([
+      { label: 'Class', key: 'vulnClass' }, { label: 'Category', key: 'category' }, { label: 'Version', key: 'version' },
+      { label: 'Provenance', render: (row) => `${row.sourceType} · ${row.referenceStatus}` }, { label: 'False positives', render: (row) => (row.commonFalsePositives || []).length },
+      { label: 'Updated', render: (row) => when(row.updatedAt) },
+    ], rows, 'No vulnerability knowledge is seeded. Generic analysis remains fail-closed.'));
+    replace('#knowledge-usage-table', table([
+      { label: 'Usage', key: 'vulnClass' }, { label: 'Consulted', key: 'consultedCount' }, { label: 'Used in finding', key: 'usedInFinding' },
+      { label: 'Hit rate', render: (row) => `${Math.round(Number(row.hitRate || 0) * 100)}%` }, { label: 'Last consulted', render: (row) => when(row.lastConsultedAt) },
+    ], usageRows, 'No knowledge consultations recorded yet.'));
+    if (freshness) freshness.textContent = `Freshness: catalog and usage read at ${when(new Date().toISOString())}.`;
+  } catch (error) {
+    replace('#knowledge-table', el('p', { class: 'error', text: `Knowledge unavailable: ${error.message}` }));
+    if (freshness) freshness.textContent = 'Freshness unavailable; no cached values are shown.';
+    throw error;
+  }
+}
+
+async function loadPlaybooksPanel() {
+  const freshness = $('#playbooks-freshness');
+  try {
+    const data = await api('/bounty/playbooks');
+    replace('#agent-playbooks-table', table([
+      { label: 'Role', key: 'agentRole' }, { label: 'Steps', render: (row) => (row.orderedSteps || []).length },
+      { label: 'Handoff', key: 'handoffTo' }, { label: 'Knowledge classes', render: (row) => (row.vulnClasses || []).length }, { label: 'Source', key: 'sourceType' },
+    ], data.agents || [], 'No agent playbooks are registered.'));
+    replace('#platform-playbooks-table', table([
+      { label: 'Platform', key: 'platformKey' }, { label: 'Status', render: (row) => pill(row.status || 'unverified', row.status === 'verified' ? 'ok' : 'warn') },
+      { label: 'Required fields', render: (row) => (row.requiredFields || []).length ? row.requiredFields.join(', ') : 'unverified' },
+      { label: 'Format limits', render: (row) => row.status === 'verified' ? JSON.stringify(row.formatLimits || {}) : 'unverified' },
+      { label: 'Updated', render: (row) => when(row.updatedAt) },
+    ], data.platforms || [], 'No platform playbooks are registered.'));
+    if (freshness) freshness.textContent = `Freshness: playbooks read at ${when(new Date().toISOString())}.`;
+  } catch (error) {
+    replace('#agent-playbooks-table', el('p', { class: 'error', text: `Playbooks unavailable: ${error.message}` }));
+    if (freshness) freshness.textContent = 'Freshness unavailable; no cached values are shown.';
+    throw error;
+  }
+}
+
+async function loadLessonsPanel() {
+  const freshness = $('#lessons-freshness');
+  try {
+    const data = await api('/bounty/lessons/pending');
+    const host = $('#pending-lessons-table');
+    replace('#pending-lessons-table', table([
+      { label: 'Improvement', key: 'id', wrap: true }, { label: 'Class', key: 'vulnClass' }, { label: 'Change', key: 'changeType' },
+      { label: 'Detail', key: 'changeDetail', wrap: true }, { label: 'Evidence', render: (row) => row.evidence?.source ? `${row.evidence.source}: ${row.evidence.reasonCode}` : 'unverified', wrap: true },
+      { label: 'Action', render: (row) => el('div', { class: 'action-stack' }, [el('button', { class: 'kb-action', type: 'button', 'data-improvement-action': 'approve', 'data-improvement-id': row.id, text: 'Approve' }), el('button', { class: 'kb-action danger', type: 'button', 'data-improvement-action': 'reject', 'data-improvement-id': row.id, text: 'Reject' })]) },
+    ], data.improvements || [], 'No pending improvements. Unapproved lessons are not consulted.'));
+    host?.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-improvement-action]');
+      if (!button) return;
+      button.disabled = true;
+      try {
+        const action = button.getAttribute('data-improvement-action');
+        const id = button.getAttribute('data-improvement-id');
+        await api(`/bounty/lessons/${action}`, { method: 'POST', body: { improvementId: id, reason: action === 'reject' ? 'owner rejected from mission dashboard' : undefined } });
+        await loadLessonsPanel();
+        banner(`Knowledge improvement ${action}d.`, 'ok');
+      } catch (error) { banner(error.message, 'error'); button.disabled = false; }
+    }, { once: true });
+    if (freshness) freshness.textContent = `Freshness: pending lessons read at ${when(new Date().toISOString())}.`;
+  } catch (error) {
+    replace('#pending-lessons-table', el('p', { class: 'error', text: `Lessons unavailable: ${error.message}` }));
+    if (freshness) freshness.textContent = 'Freshness unavailable; no cached values are shown.';
+    throw error;
+  }
+}
+
 async function loadTab(tab) {
   try {
     if (tab === 'overview') {
@@ -813,6 +894,9 @@ async function loadTab(tab) {
       await loadAgents();
     }
     if (tab === 'bounties') await loadBountyControl();
+    if (tab === 'knowledge') await loadKnowledgePanel();
+    if (tab === 'playbooks') await loadPlaybooksPanel();
+    if (tab === 'lessons') await loadLessonsPanel();
     if (tab === 'customer-work') await loadCustomerWork();
     if (tab === 'money') await loadVerifiedCash();
     if (tab === 'earnings' || tab === 'resources-expiry' || tab === 'guide' || tab === 'head-chat') {

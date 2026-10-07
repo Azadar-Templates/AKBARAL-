@@ -100,17 +100,23 @@ test('quality gate computes CVSS and blocks duplicates before approval', () => {
   const vector = 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H';
   assert.equal(cvss31BaseScore(vector), 9.8);
   const fingerprint = findingFingerprint(programId, 'example.com', 'xss', 'src/render.ts:10');
-  const finding = createBountyFinding({ programId, target: 'example.com', finding: { title: 'Reflected output candidate', summary: 'Output is not encoded.', evidence: 'src/render.ts:10 innerHTML = value', reproduction: 'Local harness observed unsafe output.', impact: 'Attacker-controlled markup executes in the local harness.', vulnerabilityClass: 'xss', codeLocationPattern: 'src/render.ts:10', cvssVector: vector, cvssJustification: 'Network reachable, no privileges, no user interaction, unchanged scope.' } });
+  const finding = createBountyFinding({ programId, target: 'example.com', finding: { title: 'Reflected output candidate', summary: 'Output is not encoded.', evidence: 'src/render.ts:10 innerHTML = value', reproduction: 'Local harness observed unsafe output.', impact: 'Attacker-controlled markup executes in the local harness.', remediation: 'Use context-aware output encoding and a vetted sanitizer.', vulnerabilityClass: 'xss', codeLocationPattern: 'src/render.ts:10', cvssVector: vector, cvssJustification: 'Network reachable, no privileges, no user interaction, unchanged scope.' } });
   assert.equal(finding.finding_fingerprint, fingerprint);
   assert.equal(finding.state, 'gated');
-  assert.throws(() => createBountyFinding({ programId, target: 'example.com', finding: { title: 'Duplicate', summary: 'Same location.', evidence: 'same', reproduction: 'same', impact: 'same', vulnerabilityClass: 'xss', codeLocationPattern: 'src/render.ts:10', cvssVector: vector } }), /finding rejected: duplicate/);
-  const approved = approveFindingForSubmission(ownerId, String(finding.id), { title: 'Factual report', evidence: 'Only owner-approved content.' });
+  assert.throws(() => createBountyFinding({ programId, target: 'example.com', finding: { title: 'Duplicate', summary: 'Same location.', evidence: 'same', reproduction: 'same', impact: 'same', remediation: 'Use context-aware output encoding.', vulnerabilityClass: 'xss', codeLocationPattern: 'src/render.ts:10', cvssVector: vector } }), /finding rejected: duplicate/);
+  const approved = approveFindingForSubmission(ownerId, String(finding.id), { asset: 'example.com', vulnerabilityClass: 'xss', cvssVector: vector, reproduction: 'Local harness observed unsafe output.', title: 'Factual report', evidence: 'Only owner-approved content.', remediation: 'Use context-aware output encoding.' });
   assert.equal(approved.submitted, false);
   assert.equal(approved.approved, true);
 });
 
 test('new HTTP routes are owner-only and the legacy external route is hard-blocked', async () => {
   assert.equal((await httpRequest('/api/bounty/programs')).status, 401);
+  assert.equal((await httpRequest('/api/bounty/knowledge/usage')).status, 401);
+  const knowledge = await ownerRequest('/api/bounty/knowledge');
+  assert.equal(knowledge.status, 200);
+  assert.ok(knowledge.body.knowledge.length >= 44);
+  const pendingLessons = await ownerRequest('/api/bounty/lessons/pending');
+  assert.equal(pendingLessons.status, 200);
   const programs = await ownerRequest('/api/bounty/programs');
   assert.equal(programs.status, 200);
   assert.equal(programs.body.programs.length, 1);

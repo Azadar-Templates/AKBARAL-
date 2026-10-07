@@ -47,6 +47,9 @@
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
           <button data-tab="bounties" data-owner-only="true" class="tab">Bug bounty</button>
+          <button data-tab="knowledge" data-owner-only="true" class="tab">Knowledge</button>
+          <button data-tab="playbooks" data-owner-only="true" class="tab">Playbooks</button>
+          <button data-tab="lessons" data-owner-only="true" class="tab">Lessons</button>
           <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="earnings" data-head-agent="true" class="tab">Earnings</button>
           <button data-tab="resources-expiry" data-head-agent="true" class="tab">Resources &amp; expiry</button>
@@ -263,6 +266,30 @@
           <div id="bounty-reputation" class="table-wrap"></div>
           <h3>Lessons</h3>
           <div id="bounty-lessons" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="knowledge" class="panel" hidden>
+          <div class="head-agent-heading"><div><span class="eyebrow">Curated detection guidance</span><h2>Knowledge</h2></div><span class="pill info">Owner-only · pinned versions</span></div>
+          <p class="muted">Seeded guidance improves speed and consistency; it does not replace engineering judgement. References are provenance-checked and unknown references stay unverified.</p>
+          <p id="knowledge-freshness" class="muted small" role="status"></p>
+          <div id="knowledge-summary" class="cards"></div>
+          <div id="knowledge-table" class="table-wrap"></div>
+          <div id="knowledge-usage-table" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="playbooks" class="panel" hidden>
+          <div class="head-agent-heading"><div><span class="eyebrow">Ordered operating guidance</span><h2>Playbooks</h2></div><span class="pill info">Owner-only</span></div>
+          <p class="muted">Agent playbooks are bounded checklists. Platform playbooks show <strong>needs_owner_confirmation</strong> until current public requirements are verified by the owner.</p>
+          <p id="playbooks-freshness" class="muted small" role="status"></p>
+          <h3>Agent playbooks</h3><div id="agent-playbooks-table" class="table-wrap"></div>
+          <h3>Platform playbooks</h3><div id="platform-playbooks-table" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="lessons" class="panel" hidden>
+          <div class="head-agent-heading"><div><span class="eyebrow">Owner outcome loop</span><h2>Lessons</h2></div><span class="pill warn">Approval required</span></div>
+          <p class="muted">Only owner feedback, platform outcomes and quality-gate outcomes can propose changes. Pending improvements never affect retrieval until approved.</p>
+          <p id="lessons-freshness" class="muted small" role="status"></p>
+          <div id="pending-lessons-table" class="table-wrap"></div>
         </section>
 
         <section data-panel="money" class="panel" hidden>
