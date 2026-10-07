@@ -11,18 +11,21 @@ const workbench = readFileSync(join(root, 'src/app/_components/workbench/workben
 const dataSurfaces = readFileSync(join(root, 'src/app/_components/data-surfaces.tsx'), 'utf8');
 
 describe('responsive + honest empty-state contract for UI reset', () => {
-  it('app shell uses sidebar + main grid and collapses to a drawer under 1024px', () => {
-    assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
-    assert.match(shellCss, /shellCollapsed\{grid-template-columns:86px minmax\(0,1fr\)/);
-    assert.match(shellCss, /@media\(max-width:1023px\)/);
+  it('app shell uses a sticky global header and responsive nav bands', () => {
+    assert.match(shellCss, /\.topbar\{position:sticky/);
+    assert.match(shellCss, /@media \(min-width:1280px\)/);
+    assert.match(shellCss, /@media \(min-width:768px\) and \(max-width:1279px\)/);
+    assert.match(shellCss, /@media \(max-width:767px\)/);
     assert.match(shellCss, /transform:translateX\(-105%\)/);
-    assert.match(shellCss, /width:min\(310px,86vw\)/);
+    assert.doesNotMatch(shellCss, /\.sidebar|\.shellCollapsed|grid-template-columns:280px/);
   });
 
   it('topbar, content, and rows guard against horizontal overflow', () => {
     for (const marker of ['overflow-x:hidden', 'min-width:0', 'max-width:100%', 'overflow-wrap:anywhere']) assert.match(shellCss, new RegExp(marker.replace(/[()]/g, '\\$&')));
-    assert.match(shellCss, /@media\(max-width:767px\)/);
-    assert.match(shellCss, /@media\(max-width:360px\)/);
+    assert.match(shellCss, /\.nav a\{[^}]*white-space:nowrap[^}]*overflow-wrap:normal[^}]*word-break:normal/);
+    assert.match(shellCss, /\.contentInner > :not\(\.session\) :where\(p,h1,h2,h3,h4,li,dd,dt,pre,code\)\{overflow-wrap:anywhere\}/);
+    assert.match(shellCss, /@media \(max-width:767px\)/);
+    assert.match(shellCss, /@media \(max-width:360px\)/);
   });
 
   it('chat composer is four-line minimum and sends on Enter with Shift+Enter preserved', () => {
