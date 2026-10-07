@@ -36,6 +36,19 @@ import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
+import {
+  headAgentChat,
+  headAgentEarnings,
+  headAgentOverview,
+  listHeadAgentAgents,
+  listHeadAgentAlerts,
+  listHeadAgentApprovals,
+  listHeadAgentInfo,
+  listHeadAgentOpportunities,
+  listHeadAgentPayouts,
+  listHeadAgentProviders,
+  listTrackedResources,
+} from './head-agent';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -294,6 +307,15 @@ function requireOwner(context: RequestContext, mutation = false): SessionContext
   return context.session;
 }
 
+/** The head-agent surface is narrower than ordinary mission read access. */
+function requireHeadAgentOwner(context: RequestContext): SessionContext {
+  const session = requireOwner(context);
+  if (session.owner.role !== 'owner') {
+    throw new HttpProblem(403, 'head-agent status is available to the mission owner only', 'forbidden');
+  }
+  return session;
+}
+
 /** Agent-scoped authorization for the self-management surface. */
 function requireAgent(context: RequestContext, agentSlugOrId: string | null, readOnly=false): { agentId: string; actorId: string; actorType: 'agent' } {
   // One enforcement point for every agent-initiated mutation (work, tools,
@@ -372,6 +394,8 @@ const CONTENT_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
 };
 
 function serveStatic(res: http.ServerResponse, urlPath: string): boolean {
@@ -418,6 +442,74 @@ async function handleApi(
     const value = Number(body[key]);
     return Number.isFinite(value) ? value : fallback;
   };
+
+  // ── Owner-only read-only head-agent surface ──────────────────────────────
+  // This branch intentionally has no mutation path. Do not route it through
+  // the live chat adapter: head-agent chat is a cited database explanation,
+  // never a provider call or an action executor.
+  if (head === 'mission' && rest[0] === 'head-agent') {
+    const session = requireHeadAgentOwner(context);
+    const section = rest[1] ?? 'overview';
+    const rowLimit = Number(url.searchParams.get('limit') ?? 100);
+    if (method === 'GET') {
+      if ((section === 'overview' && (rest.length === 1 || rest.length === 2)) || (section === 'status' && rest.length === 2)) {
+        json(res, 200, headAgentOverview(session.owner.id));
+        return true;
+      }
+      if (section === 'agents' && rest.length === 2) {
+        json(res, 200, { readOnly: true, agents: listHeadAgentAgents(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'approvals' && rest.length === 2) {
+        json(res, 200, { readOnly: true, approvals: listHeadAgentApprovals(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'earnings' && rest.length === 2) {
+        json(res, 200, { readOnly: true, ...headAgentEarnings(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'resources' && rest.length === 2) {
+        json(res, 200, { readOnly: true, resources: listTrackedResources(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'alerts' && rest.length === 2) {
+        json(res, 200, { readOnly: true, alerts: listHeadAgentAlerts(session.owner.id, rowLimit), notificationDelivery: 'UNKNOWN / VERIFY REQUIRED' });
+        return true;
+      }
+      if (section === 'notifications' && rest.length === 2) {
+        const alerts = listHeadAgentAlerts(session.owner.id, rowLimit);
+        json(res, 200, { readOnly: true, generatedAt: nowIso(), unreadCount: alerts.filter((alert) => alert.status === 'open').length, alerts, notificationDelivery: 'UNKNOWN / VERIFY REQUIRED' });
+        return true;
+      }
+      if (section === 'info' && rest.length === 2) {
+        json(res, 200, { readOnly: true, info: listHeadAgentInfo(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'providers' && rest.length === 2) {
+        json(res, 200, { readOnly: true, providers: listHeadAgentProviders(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'opportunities' && rest.length === 2) {
+        json(res, 200, { readOnly: true, opportunities: listHeadAgentOpportunities(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'payouts' && rest.length === 2) {
+        json(res, 200, { readOnly: true, payouts: listHeadAgentPayouts(session.owner.id, rowLimit) });
+        return true;
+      }
+      throw new HttpProblem(404, 'unknown head-agent read route', 'not_found');
+    }
+    if (method === 'POST' && section === 'chat' && rest.length === 2) {
+      const question = typeof body.question === 'string' ? body.question : '';
+      try {
+        json(res, 200, headAgentChat(session.owner.id, question));
+      } catch (error) {
+        throw new HttpProblem(400, error instanceof Error ? error.message : 'question is invalid', 'validation_error');
+      }
+      return true;
+    }
+    throw new HttpProblem(405, 'head-agent is read-only; use GET, or POST only for cited chat questions', 'method_not_allowed');
+  }
 
   if (head === 'customer-work') {
     const resolveActor = (): MoneyActor => {
