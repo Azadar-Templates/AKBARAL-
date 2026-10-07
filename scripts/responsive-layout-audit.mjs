@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 const WIDTHS = [320, 375, 414, 640, 768, 1024, 1280, 1440, 1920];
-const ROUTES = ['/chat', '/work', '/settings', '/dashboard', '/pricing', '/'];
+const ROUTES = ['/chat', '/work', '/settings', '/dashboard', '/pricing', '/about', '/team', '/blog', '/contact', '/'];
 const root = process.cwd();
 const css = [
   'src/app/app-reset.css',
@@ -23,6 +23,10 @@ const css = [
   'src/app/_components/workbench/workbench-shell.module.css',
   'src/app/_components/auth-card.module.css',
   'src/app/_components/landing-reset.module.css',
+  'src/app/_components/public-site-chrome.module.css',
+  'src/app/_components/public-pricing.module.css',
+  'src/app/(public)/public-info.module.css',
+  'src/app/(public)/site.css',
 ].map((file) => readFileSync(`${root}/${file}`, 'utf8')).join('\n');
 
 function splitTopLevel(value, delimiter = ',') {
@@ -147,10 +151,11 @@ function fixture(route, width) {
     contentInner.append(session); content.append(contentInner); main.append(topbar, content); root.append(main);
   } else if (route === '/') {
     root.className = 'page'; root.innerHTML = `<header class="topbar"><div class="topbarInner"><a class="brand" href="#">AKBARAL!</a></div></header><section class="hero"><h1>${'Long hero title '.repeat(20)}</h1></section><section class="section"><div class="chips"><span class="chip">one</span><span class="chip">two</span></div><div class="grid3"><article class="card"><p>${'token'.repeat(100)}</p></article></div></section>`;
+  } else if (['/pricing', '/about', '/team', '/blog', '/contact'].includes(route)) {
+    root.className = 'page';
+    root.innerHTML = `<header class="header"><div class="headerInner"><a class="brand" href="/">AKBARAL!</a><nav class="desktopNav"><a class="navLink" href="/">Home</a><a class="navLink" href="/about">About Us</a><a class="navLink" href="/pricing">Pricing</a><a class="navLink" href="/team">Our Team</a><a class="navLink" href="/blog">Blogs</a><a class="navLink" href="/contact">Contact Us</a></nav><button class="menuButton">Menu</button></div></header><div class="pageBody"><div class="heading"><span>AKBARAL!</span><h1>${'Public page '.repeat(10)}</h1><p>${'Public content '.repeat(30)}</p></div>${route === '/pricing' ? '<section class="table"><article class="plan"><h2>Free</h2><a href="#">Start</a></article><article class="plan"><h2>Enterprise</h2><a href="#">Start</a></article></section>' : '<section class="directoryState"><div class="emptyState"><h2>Honest empty state</h2><p>No fabricated content.</p></div></section>'}</div><footer class="footer"><div class="footerInner"><nav class="footerNav"><a href="/">Home</a><a href="/about">About Us</a><a href="/pricing">Pricing</a><a href="/team">Our Team</a><a href="/blog">Blogs</a><a href="/contact">Contact Us</a></nav></div></footer>`;
   } else if (route === '/settings') {
     root.className = 'shell'; root.innerHTML = '<div class="content"><div class="contentInner"><div class="settingsGrid grid"><section class="panel"><h2>Account</h2><p>Settings</p></section><section class="panel"><h2>Privacy</h2><p>Security</p></section></div></div></div>';
-  } else if (route === '/pricing') {
-    root.className = 'shell'; root.innerHTML = '<div class="content"><div class="contentInner"><div class="grid grid3"><article class="panelSoft"><h2>Free</h2><a href="#">Start</a></article><article class="panelSoft"><h2>Pro</h2><a href="#">Start</a></article><article class="panelSoft"><h2>Scale</h2><a href="#">Start</a></article></div></div></div>';
   } else {
     root.className = 'shell'; root.innerHTML = '<div class="content"><div class="contentInner"><div class="grid grid4"><article class="metric"><strong>Metric</strong></article></div><div class="grid grid2"><section class="panel"><h2>Data</h2></section><section class="panel"><h2>Data</h2></section></div></div></div>';
   }

@@ -49,7 +49,59 @@ const limits = new Map<string, { starts: number[]; blockedUntil: number }>();
 const WINDOW_MS = 60000;
 const MAX_BYTES = 4 * 1024 * 1024;
 
-export interface GithubClientDependencies { fetch?: typeof fetch; now?: () => number; beforeRequest?: () => void; onRateLimit?: (delayMs: number) => void }
+/**
+ * A small process-wide token bucket. The rolling ceiling below is still the
+ * final safety check, while this gate spaces bursts from parallel agents and
+ * shares an explicit cooldown after GitHub returns 403/429. Waiting is
+ * deliberate: callers do not spin or create retry storms.
+ */
+export class GithubBountyRateGate {
+  #tokens: number;
+  #lastRefill: number;
+  #blockedUntil = 0;
+  #waiters = 0;
+  readonly #capacity: number;
+  readonly #refillPerMs: number;
+  constructor(capacity: number, now: () => number = Date.now) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1) throw new Error('invalid_rate_gate_capacity');
+    this.#capacity = capacity;
+    this.#tokens = capacity;
+    this.#lastRefill = now();
+    this.#refillPerMs = capacity / WINDOW_MS;
+    this.#now = now;
+  }
+  readonly #now: () => number;
+  cooldown(delayMs: number): void {
+    if (Number.isFinite(delayMs) && delayMs > 0) this.#blockedUntil = Math.max(this.#blockedUntil, this.#now() + delayMs);
+  }
+  async acquire(): Promise<void> {
+    this.#waiters += 1;
+    try {
+      for (;;) {
+        const now = this.#now();
+        const elapsed = Math.max(0, now - this.#lastRefill);
+        this.#tokens = Math.min(this.#capacity, this.#tokens + elapsed * this.#refillPerMs);
+        this.#lastRefill = now;
+        const blockedFor = this.#blockedUntil - now;
+        if (blockedFor <= 0 && this.#tokens >= 1) { this.#tokens -= 1; return; }
+        const refillFor = this.#tokens >= 1 ? 0 : Math.ceil((1 - this.#tokens) / this.#refillPerMs);
+        await new Promise(resolve => setTimeout(resolve, Math.max(10, blockedFor, refillFor)));
+      }
+    } finally { this.#waiters -= 1; }
+  }
+  snapshot(): { capacity: number; tokens: number; blockedUntil: number; waiters: number } {
+    return { capacity: this.#capacity, tokens: this.#tokens, blockedUntil: this.#blockedUntil, waiters: this.#waiters };
+  }
+}
+
+const rateGates = new Map<string, GithubBountyRateGate>();
+function gateFor(key: string, authenticated: boolean, now: () => number): GithubBountyRateGate {
+  let gate = rateGates.get(key);
+  if (!gate) { gate = new GithubBountyRateGate(authenticated ? 30 : 10, now); rateGates.set(key, gate); }
+  return gate;
+}
+
+export interface GithubClientDependencies { fetch?: typeof fetch; now?: () => number; beforeRequest?: () => void; onRateLimit?: (delayMs: number) => void; rateGate?: GithubBountyRateGate }
 
 /** Bounty-label search terms. Kept narrow and explicit — never a generic crawl. */
 const BOUNTY_SEARCH_QUERIES = [
@@ -65,6 +117,7 @@ export class GithubBountyClient {
   #now: () => number;
   #beforeRequest?: () => void;
   #onRateLimit?: (delayMs: number) => void;
+  #rateGate: GithubBountyRateGate;
   constructor(config: { accessToken: string | null }, dependencies: GithubClientDependencies = {}) {
     if (config.accessToken !== null) {
       if (typeof config.accessToken !== 'string' || !/^[A-Za-z0-9._~+/-]+=*$/.test(config.accessToken) || config.accessToken.length > 8192) fail('github_credentials_invalid');
@@ -75,6 +128,7 @@ export class GithubBountyClient {
     this.#now = dependencies.now ?? Date.now;
     this.#beforeRequest = dependencies.beforeRequest;
     this.#onRateLimit = dependencies.onRateLimit;
+    this.#rateGate = dependencies.rateGate ?? gateFor(this.#key, this.#token !== null, this.#now);
   }
   get authenticated(): boolean { return this.#token !== null; }
 
@@ -93,6 +147,7 @@ export class GithubBountyClient {
   async #request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH', path: string, query: Record<string, string> | undefined,
     parse: (value: unknown, status: number) => T, body?: unknown, mutation?: { authorize: () => void }): Promise<T> {
     const signal = AbortSignal.timeout(20000);
+    await this.#rateGate.acquire();
     this.#reserveRequest();
     this.#beforeRequest?.();
     mutation?.authorize();
@@ -114,6 +169,7 @@ export class GithubBountyClient {
         const remaining = response.headers.get('x-ratelimit-remaining');
         const reset = response.headers.get('x-ratelimit-reset');
         const delay = remaining === '0' && reset && /^\d+$/.test(reset) ? Math.max(WINDOW_MS, Number(reset) * 1000 - this.#now()) : WINDOW_MS;
+        this.#rateGate.cooldown(delay);
         this.#onRateLimit?.(delay);
         throw new GithubBountyError('github_rate_limited', !!mutation, delay);
       }
@@ -155,7 +211,13 @@ export class GithubBountyClient {
         if (seen.has(key)) continue;
         const labels = Array.isArray(item.labels) ? item.labels.map(l => typeof l === 'object' && l ? String((l as Record<string, unknown>).name ?? '') : String(l)).filter(Boolean) : [];
         const title = nonEmpty(item.title, 400);
-        seen.set(key, { repoFullName: repo, issueNumber: number, issueUrl: nonEmpty(item.html_url, 400), title, labels, hintedAmountCents: hintAmountCents(title, labels) });
+        // Search results include the issue body. A title or label hint is not
+        // evidence of a bounty, so discard leads without an explicit currency
+        // declaration in this real GitHub response.
+        const issueBody = typeof item.body === 'string' && item.body.length <= 30000 && !/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(item.body) ? item.body : '';
+        const declaredAmountCents = extractDeclaredAmountCents(issueBody);
+        if (declaredAmountCents === null) continue;
+        seen.set(key, { repoFullName: repo, issueNumber: number, issueUrl: nonEmpty(item.html_url, 400), title, labels, issueBody, hintedAmountCents: declaredAmountCents });
       }
       if (seen.size >= limit) break;
     }
@@ -226,6 +288,7 @@ export class GithubBountyClient {
   async downloadRepositoryArchive(repo: string, ref: string): Promise<Uint8Array> {
     const name = repoFullName(repo), branch = branchName(ref);
     const signal = AbortSignal.timeout(30000);
+    await this.#rateGate.acquire();
     this.#reserveRequest();
     this.#beforeRequest?.();
     let response: Response | undefined;
@@ -242,6 +305,7 @@ export class GithubBountyClient {
         const remaining = response.headers.get('x-ratelimit-remaining');
         const reset = response.headers.get('x-ratelimit-reset');
         const delay = remaining === '0' && reset && /^\d+$/.test(reset) ? Math.max(WINDOW_MS, Number(reset) * 1000 - this.#now()) : WINDOW_MS;
+        this.#rateGate.cooldown(delay);
         this.#onRateLimit?.(delay);
         throw new GithubBountyError('github_rate_limited', false, delay);
       }
@@ -380,7 +444,7 @@ export class GithubBountyClient {
   }
 }
 
-export interface BountyLeadRaw { repoFullName: string; issueNumber: number; issueUrl: string; title: string; labels: string[]; hintedAmountCents: number | null }
+export interface BountyLeadRaw { repoFullName: string; issueNumber: number; issueUrl: string; title: string; labels: string[]; hintedAmountCents: number | null; /** Body returned by GitHub search; optional for hand-authored classifier fixtures. */ issueBody?: string }
 export interface PullRequestProofRaw { repoFullName: string; number: number; url: string; headSha: string; state: 'open' | 'merged' | 'closed_unmerged'; mergedAt: string | null }
 export type PullRequestReviewState = 'approved' | 'changes_requested' | 'review_pending' | 'not_applicable';
 export type PullRequestChecksState = 'passing' | 'failing' | 'pending' | 'not_reported' | 'not_applicable';
@@ -395,11 +459,14 @@ export interface RepoMetadataRaw { repoFullName: string; stargazersCount: number
 export interface BountyIssueDetailRaw { repoFullName: string; issueNumber: number; issueUrl: string; title: string; body: string; labels: string[] }
 export interface LeadRiskRaw { accepted: boolean; reason: string | null }
 
-function hintAmountCents(title: string, labels: readonly string[]): number | null {
-  const haystack = `${title} ${labels.join(' ')}`;
-  const match = /\$\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)/.exec(haystack);
+/** Extract only an explicit USD amount from the issue body returned by GitHub.
+ * Currency-free numbers, title text, and labels are intentionally ignored. */
+export function extractDeclaredAmountCents(body: string): number | null {
+  if (typeof body !== 'string' || body.length > 30000) return null;
+  const amount = '([0-9]{1,9}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})?)(?![0-9])';
+  const match = new RegExp(`(?:\\$\\s*${amount}|\\bUSD\\s*${amount}|\\b${amount}\\s*USD\\b)`, 'i').exec(body);
   if (!match) return null;
-  const n = Number(match[1].replace(/,/g, ''));
+  const n = Number((match[1] ?? match[2] ?? match[3]).replace(/,/g, ''));
   if (!Number.isFinite(n) || n <= 0 || n > 1000000) return null;
   return Math.round(n * 100);
 }

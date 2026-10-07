@@ -6,6 +6,7 @@ import path from 'node:path';
 const root = process.cwd();
 const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
 const landing = read('src/app/_components/landing-reset.tsx');
+const publicChrome = read('src/app/_components/public-site-chrome.tsx');
 const landingCss = read('src/app/_components/landing-reset.module.css');
 const pricing = read('src/app/_lib/pricing.ts');
 const publicPage = read('src/app/page.tsx');
@@ -13,22 +14,23 @@ const publicPage = read('src/app/page.tsx');
 describe('AKBARAL! landing reset contract', () => {
   it('uses the exact identity, tagline and honest calls to action', () => {
     assert.match(landing, /AKBARAL!/);
-    assert.match(landing, /One Intelligence\. Every Solution\./);
+    assert.match(landing + publicChrome, /One Intelligence\. Every Solution\./);
     assert.match(landing, /Start free/);
     assert.match(landing, /Go to your workspace/);
     assert.match(landing, /See plans and pricing/);
-    assert.match(landing, /Sign in/);
+    assert.match(landing + publicChrome, /Sign in/);
     assert.doesNotMatch(landing, /AKBARAL AI/);
   });
 
   it('follows the required section flow', () => {
-    const order = ['topbar', 'hero', 'Product interface overview', 'Quick paths', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title', 'footer'];
+    const order = ['PublicSiteHeader', 'hero', 'Product interface overview', 'Quick paths', 'features-title', 'integrations-title', 'thread-title', 'agents-title', 'security-title', 'steps-title', 'faq-title', 'final-title'];
     let previous = -1;
     for (const marker of order) {
       const index = landing.indexOf(marker);
       assert.ok(index > previous, `${marker} appears in order`);
       previous = index;
     }
+    assert.match(landing, /PublicSiteFooter/);
   });
 
   it('publishes the six exact USD prices and Work quotas unchanged', () => {
@@ -45,7 +47,7 @@ describe('AKBARAL! landing reset contract', () => {
 
   it('describes 4,001 agents truthfully as registered contracts', () => {
     assert.match(landing, /4,001 registered agent contracts/);
-    assert.match(landing, /never describes them as active or earning/);
+    assert.match(landing, /registry describes configuration, not availability or revenue/);
     assert.doesNotMatch(landing, /4,001 active|4,001 earning/i);
   });
 

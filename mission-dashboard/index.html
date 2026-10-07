@@ -4,17 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow, noarchive" />
-    <title>ZA141251SA — Mission Control</title>
+    <title>Private Mission Control</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="mark">ZA141251SA</span>
+        <span class="mark">Private</span>
         <span class="sub">Mission Control</span>
       </div>
       <div class="topbar-right">
         <span id="identity" class="identity">not signed in</span>
+        <span id="head-agent-notification" class="notification-badge" hidden aria-live="polite"></span>
         <button id="signout" class="ghost" hidden>Sign out</button>
       </div>
     </header>
@@ -44,18 +46,89 @@
         <nav class="tabs" id="tabs" aria-label="Mission sections">
           <button data-tab="overview" class="tab active">Overview</button>
           <button data-tab="agents" class="tab">Agents</button>
+          <button data-tab="bounties" data-owner-only="true" class="tab">Bug bounty</button>
+          <button data-tab="knowledge" data-owner-only="true" class="tab">Knowledge</button>
+          <button data-tab="playbooks" data-owner-only="true" class="tab">Playbooks</button>
+          <button data-tab="lessons" data-owner-only="true" class="tab">Lessons</button>
+          <button data-tab="approvals" class="tab">Approvals</button>
+          <button data-tab="earnings" data-head-agent="true" class="tab">Earnings</button>
+          <button data-tab="resources-expiry" data-head-agent="true" class="tab">Resources &amp; expiry</button>
+          <button data-tab="guide" data-head-agent="true" class="tab">Guide</button>
+          <button data-tab="head-chat" data-head-agent="true" class="tab">Chat</button>
           <button data-tab="customer-work" class="tab">Customers &amp; work</button>
           <button data-tab="money" class="tab">Verified cash</button>
           <button data-tab="treasury" class="tab">Legacy accounting &amp; destinations</button>
           <button data-tab="withdraw" class="tab">Withdraw</button>
           <button data-tab="publishing" class="tab">Publishing</button>
-          <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="tools" class="tab">Tools &amp; credentials</button>
           <button data-tab="policy" class="tab">Policy</button>
           <button data-tab="audit" class="tab">Audit</button>
         </nav>
 
         <div id="banner" class="banner" hidden></div>
+
+        <section data-panel="earnings" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div>
+              <span class="eyebrow">Read-only head agent</span>
+              <h2>Verified earnings</h2>
+            </div>
+            <span class="pill info">Owner view · no actions</span>
+          </div>
+          <p class="muted">Realized revenue is reported only from received records with a non-empty verifier. Contracted and expected amounts remain separate and are not earnings.</p>
+          <div id="head-earnings-summary" class="cards"></div>
+          <div id="head-earnings-realized" class="table-wrap"></div>
+          <h3>Contracted / expected — not earned</h3>
+          <div id="head-earnings-expected" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="resources-expiry" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div>
+              <span class="eyebrow">Owner inventory</span>
+              <h2>Resources &amp; expiry</h2>
+            </div>
+            <span class="pill info">Read-only</span>
+          </div>
+          <p class="muted">Tracked resources are an owner inventory, separate from agent-bound resources. Costs without evidence are explicitly unverified. The head agent flags expiry; it does not renew, buy or change anything.</p>
+          <div id="head-resources" class="table-wrap"></div>
+          <h3>Alerts</h3>
+          <div id="head-alerts" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="guide" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div>
+              <span class="eyebrow">How this works</span>
+              <h2>Head-agent guide</h2>
+            </div>
+            <span class="pill info">Cited, no execution</span>
+          </div>
+          <div id="head-guide" class="guide-grid">
+            <article class="card"><h3>What it can do</h3><p>Read mission records, summarize current state, list human approvals, flag recorded expiries, explain provider readiness, and answer cited questions.</p></article>
+            <article class="card"><h3>What it cannot do</h3><p>It cannot spend, purchase, create accounts, submit work or PRs, approve requests, call providers, or perform any external action. Every decision stays with the human owner.</p></article>
+            <article class="card"><h3>Money truth</h3><p>Verified realized revenue requires a received record and a non-empty verifier. Discovery, quotes, contracted and expected amounts are never presented as earnings.</p></article>
+            <article class="card"><h3>Notifications</h3><p>Dashboard notifications poll the read-only alert endpoint. Email and WhatsApp delivery: <strong>UNKNOWN / VERIFY REQUIRED</strong>.</p></article>
+          </div>
+          <div id="head-info-records" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="head-chat" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div>
+              <span class="eyebrow">Cited read-only chat</span>
+              <h2>Ask the head agent</h2>
+            </div>
+            <span class="pill info">No tools · no provider calls</span>
+          </div>
+          <p class="muted">Ask about approvals, verified earnings, expiry, provider readiness, payout queue state, agents or discovery records. Answers cite mission records and never execute an action.</p>
+          <form id="head-chat-form" class="inline-form">
+            <input id="head-chat-question" name="question" maxlength="2000" placeholder="What approvals or expiry alerts need my review?" required />
+            <button type="submit">Ask</button>
+          </form>
+          <div id="head-chat-status" class="muted small" role="status"></div>
+          <div id="head-chat-answer" class="chat-answer" hidden></div>
+        </section>
 
         <section data-panel="customer-work" class="panel" hidden>
           <h2>Real customer → real work → verified USD</h2>
@@ -65,6 +138,21 @@
         </section>
 
         <section data-panel="overview" class="panel">
+          <div class="head-agent-overview">
+            <div class="head-agent-heading">
+              <div><span class="eyebrow">Mission awareness</span><h2>Owner overview</h2></div>
+              <span id="head-read-only-state" class="pill info">Read-only head agent</span>
+            </div>
+            <p id="head-overview-note" class="muted small">The head agent reports current persisted evidence only. It never acts on your behalf.</p>
+            <div id="head-overview-cards" class="cards"></div>
+            <div id="head-overview-alerts" class="alert-list"></div>
+            <div class="grid-2">
+              <div><h3>Provider readiness</h3><div id="head-provider-readiness" class="table-wrap"></div></div>
+              <div><h3>Payout queue evidence</h3><div id="head-payout-queue" class="table-wrap"></div></div>
+            </div>
+            <h3>Discovery evidence — not revenue</h3>
+            <div id="head-opportunities" class="table-wrap"></div>
+          </div>
           <div class="cards" id="overview-cards"></div>
           <h2>Revenue — realized only</h2>
           <p class="muted small" id="revenue-honesty"></p>
@@ -136,6 +224,72 @@
 
           <div id="agent-list" class="table-wrap"></div>
           <div id="agent-report"></div>
+        </section>
+
+        <section data-panel="bounties" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div><span class="eyebrow">Authorized security testing only</span><h2>Bug bounty control plane</h2></div>
+            <span class="pill warn">Owner approval required</span>
+          </div>
+          <p class="muted">The configured program scope file and allowlist are the only source of truth. No program or target is seeded. Unlisted targets hard-block before any external call; submissions are never automatic.</p>
+          <h3>Programs</h3>
+          <div id="bounty-programs" class="table-wrap"></div>
+          <form id="bounty-program-form" class="stack-form">
+            <h3>Configure a program — owner</h3>
+            <label>Platform <input name="platform" placeholder="HackerOne / Bugcrowd / YesWeHack" required /></label>
+            <label>Program handle <input name="programHandle" required /></label>
+            <label>Scope URL <input name="scopeUrl" type="url" required /></label>
+            <label>Program terms SHA-256 <input name="programTermsHash" pattern="[a-fA-F0-9]{64}" minlength="64" maxlength="64" required /></label>
+            <button type="submit">Save program</button>
+            <p class="muted small">Saving metadata does not authorize a target. Add explicit scope entries separately.</p>
+          </form>
+          <form id="bounty-scope-form" class="stack-form">
+            <h3>Explicit scope allowlist / denylist — owner</h3>
+            <label>Program ID <input name="programId" required /></label>
+            <label>Target <input name="target" placeholder="example.com or org/repo" required /></label>
+            <label>Target type <select name="targetType"><option value="domain">domain</option><option value="repo">repo</option><option value="package">package</option><option value="API">API</option></select></label>
+            <label class="checkbox-label"><input name="inScope" type="checkbox" /> Explicitly in scope</label>
+            <label class="checkbox-label"><input name="authRequired" type="checkbox" /> Requires owner-provided authorization</label>
+            <button type="submit">Save scope entry</button>
+          </form>
+          <h3>Registered capability agents</h3>
+          <div id="bounty-agent-registry" class="table-wrap"></div>
+          <h3>Findings and quality-gate state</h3>
+          <div id="bounty-findings" class="table-wrap"></div>
+          <h3>Scope-gate events</h3>
+          <div id="bounty-scope-events" class="table-wrap"></div>
+          <h3>Providers</h3>
+          <div id="bounty-providers" class="table-wrap"></div>
+          <h3>Platforms</h3>
+          <div id="bounty-platforms" class="table-wrap"></div>
+          <h3>Reputation</h3>
+          <div id="bounty-reputation" class="table-wrap"></div>
+          <h3>Lessons</h3>
+          <div id="bounty-lessons" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="knowledge" class="panel" hidden>
+          <div class="head-agent-heading"><div><span class="eyebrow">Curated detection guidance</span><h2>Knowledge</h2></div><span class="pill info">Owner-only · pinned versions</span></div>
+          <p class="muted">Seeded guidance improves speed and consistency; it does not replace engineering judgement. References are provenance-checked and unknown references stay unverified.</p>
+          <p id="knowledge-freshness" class="muted small" role="status"></p>
+          <div id="knowledge-summary" class="cards"></div>
+          <div id="knowledge-table" class="table-wrap"></div>
+          <div id="knowledge-usage-table" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="playbooks" class="panel" hidden>
+          <div class="head-agent-heading"><div><span class="eyebrow">Ordered operating guidance</span><h2>Playbooks</h2></div><span class="pill info">Owner-only</span></div>
+          <p class="muted">Agent playbooks are bounded checklists. Platform playbooks show <strong>needs_owner_confirmation</strong> until current public requirements are verified by the owner.</p>
+          <p id="playbooks-freshness" class="muted small" role="status"></p>
+          <h3>Agent playbooks</h3><div id="agent-playbooks-table" class="table-wrap"></div>
+          <h3>Platform playbooks</h3><div id="platform-playbooks-table" class="table-wrap"></div>
+        </section>
+
+        <section data-panel="lessons" class="panel" hidden>
+          <div class="head-agent-heading"><div><span class="eyebrow">Owner outcome loop</span><h2>Lessons</h2></div><span class="pill warn">Approval required</span></div>
+          <p class="muted">Only owner feedback, platform outcomes and quality-gate outcomes can propose changes. Pending improvements never affect retrieval until approved.</p>
+          <p id="lessons-freshness" class="muted small" role="status"></p>
+          <div id="pending-lessons-table" class="table-wrap"></div>
         </section>
 
         <section data-panel="money" class="panel" hidden>
@@ -281,6 +435,12 @@
         </section>
 
         <section data-panel="approvals" class="panel" hidden>
+          <div class="head-agent-heading">
+            <div><span class="eyebrow">Human decision queue</span><h2>Approvals</h2></div>
+            <span class="pill warn">Head agent cannot approve</span>
+          </div>
+          <p id="head-approvals-note" class="muted small"></p>
+          <div id="head-approvals" class="table-wrap"></div>
           <h2>Pending approvals</h2>
           <p class="muted small">
             Spend above the approval threshold, new resources, upgrades, tool access and every payout

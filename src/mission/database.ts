@@ -230,6 +230,27 @@ export function applyMissionMigrations(target = missionDb): { applied: string[];
           `ALTER TABLE mission_payout_slots DROP CONSTRAINT IF EXISTS mission_payout_slots_slot_check;
            ALTER TABLE mission_payout_slots ADD CONSTRAINT mission_payout_slots_slot_check CHECK (slot BETWEEN 1 AND 5);`,
         );
+      } else if (file === '0040_bounty_scale_executor.sql') {
+        if (target.engineName() === 'sqlite') {
+          // SQLite cannot drop an inline UNIQUE(agent_id) constraint. Rebuild
+          // only this historical binding table with the same columns/FKs while
+          // preserving every existing assignment row.
+          target.exec(`PRAGMA foreign_keys=OFF;
+            CREATE TABLE mission_bounty_assignments_scale (
+              id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES mission_agents(id),
+              opportunity_id TEXT NOT NULL UNIQUE REFERENCES mission_bounty_opportunities(id),
+              money_opportunity_id TEXT NOT NULL REFERENCES mission_money_opportunities(id),
+              state TEXT NOT NULL CHECK(state IN ('eligible','revoked')), approved_by TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            INSERT INTO mission_bounty_assignments_scale (id,agent_id,opportunity_id,money_opportunity_id,state,approved_by,created_at)
+              SELECT id,agent_id,opportunity_id,money_opportunity_id,state,approved_by,created_at FROM mission_bounty_assignments;
+            DROP TABLE mission_bounty_assignments;
+            ALTER TABLE mission_bounty_assignments_scale RENAME TO mission_bounty_assignments;
+            PRAGMA foreign_keys=ON;`);
+        } else {
+          target.exec('ALTER TABLE mission_bounty_assignments DROP CONSTRAINT IF EXISTS mission_bounty_assignments_agent_id_key;');
+        }
+        target.exec(sql);
       } else {
         target.exec(sql);
       }
@@ -238,6 +259,13 @@ export function applyMissionMigrations(target = missionDb): { applied: string[];
     applied.push(file);
   }
   backfillLedgerSequence(target);
+  // Knowledge is a typed, provenance-checked seed rather than opaque SQL JSON.
+  // Load it only after all migrations exist; this keeps the mission database
+  // usable by both SQLite and PostgreSQL and avoids a module-init cycle.
+  if (target === missionDb && target.tableExists('vuln_knowledge')) {
+    const { seedKnowledgeBase } = require('./earning/knowledge-catalog') as typeof import('./earning/knowledge-catalog');
+    seedKnowledgeBase();
+  }
   return { applied, total: files.length };
 }
 

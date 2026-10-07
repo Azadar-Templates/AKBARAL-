@@ -23,7 +23,7 @@ function client() {
     const url = new URL(String(input)); const p = url.pathname;
     if (p === '/search/issues') {
       const q = url.searchParams.get('q') ?? '';
-      if (q.startsWith('label:bounty')) return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test $100', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
+      if (q.startsWith('label:bounty')) return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
       return json({ items: [] });
     }
     if (p === `/repos/${REPO}`) return json({ stargazers_count: 42, forks_count: 3, open_issues_count: 5, created_at: '2018-01-01T00:00:00Z', archived: false, fork: false });
@@ -37,7 +37,7 @@ function client() {
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
 }
 
-const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_scheduler_state', 'mission_bounty_review_scheduler_state', 'mission_opportunity_roi', 'mission_money_grants'];
+const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_runs', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_scheduler_state', 'mission_bounty_review_scheduler_state', 'mission_opportunity_roi', 'mission_money_grants'];
 let w: InstanceType<typeof GithubBountyWorkflow>;
 before(() => {
   applyMissionMigrations();

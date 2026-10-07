@@ -35,6 +35,7 @@
     "mission:serve": "tsx scripts/mission-serve.ts",
     "mission:money-worker": "tsx scripts/mission-money-worker.ts",
     "mission:bounty-worker": "tsx scripts/mission-bounty-worker.ts",
+    "mission:bounty:dry-run": "DRY_RUN=true tsx scripts/mission-bounty-dry-run.ts",
     "mission:chat-worker": "tsx scripts/mission-chat-worker.ts",
     "mission:browser-check": "tsx scripts/mission-browser-check.ts",
     "mission:sync-registry": "tsx scripts/mission-sync-registry.ts",
