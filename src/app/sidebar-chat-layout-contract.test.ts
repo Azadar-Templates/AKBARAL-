@@ -17,7 +17,7 @@ function navItems(source: string, constName: string) {
   return [...block.matchAll(/\{\s*href:\s*'([^']+)',\s*label:\s*'([^']+)'/g)].map((match) => ({ href: match[1], label: match[2] }));
 }
 
-describe('sidebar navigation contract', () => {
+describe('header navigation contract', () => {
   const nav = navItems(shell, 'NAV_GROUPS');
 
   it('keeps Chat and Task as the first two primary modes', () => {
@@ -46,7 +46,8 @@ describe('sidebar navigation contract', () => {
   it('keeps nav targets at least 44px tall and keyboard operable', () => {
     assert.match(shellCss, /\.nav a\{[^}]*min-height:42px/);
     assert.match(shellCss, /\.shell :where\(button, a\[href\]\)\s*\{\s*min-height:\s*44px/);
-    assert.match(shell, /<nav className=\{styles\.nav\}/);
+    assert.match(shell, /className=\{styles\.nav\}/);
+    assert.match(shell, /aria-controls="workspace-navigation"/);
   });
 });
 

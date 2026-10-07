@@ -38,7 +38,8 @@ describe('agent session layout — four panes', () => {
       assert.ok(shell.includes(label), `${label} is in the global navigation`);
     }
     assert.match(shell, /aria-current=\{pathname === item\.href \? 'page' : undefined\}/);
-    assert.match(shellCss, /grid-template-columns:280px minmax\(0,1fr\)/);
+    assert.match(shellCss, /\.topbar\{position:sticky/);
+    assert.doesNotMatch(shellCss, /\.sidebar|\.shellCollapsed|grid-template-columns:280px/);
   });
 
   it('left rail is collapsible with a real new-session action and grouped real rows', () => {

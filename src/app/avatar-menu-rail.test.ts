@@ -9,7 +9,7 @@ const cssPath = 'src/app/_components/app-shell.module.css';
 const shell = readFileSync(join(root, shellPath), 'utf8');
 const css = readFileSync(join(root, cssPath), 'utf8');
 
-describe('avatar menu and collapsed rail contract', () => {
+describe('avatar menu and global header contract', () => {
   it('ports the account menu outside viewport-locked overflow and restores focus on close', () => {
     assert.match(shell, /createPortal\([\s\S]*document\.body/);
     assert.match(shell, /event\.key === 'Escape'/);
@@ -24,19 +24,18 @@ describe('avatar menu and collapsed rail contract', () => {
     }
     assert.match(css, /\.menu :is\(.menuHead b,.menuHead small,a,button\)\{white-space:nowrap;overflow-wrap:normal;word-break:normal\}/);
     assert.match(css, /\.navText\{white-space:nowrap;overflow-wrap:normal;word-break:normal\}/);
+    assert.match(css, /\.content :where\(\.secondaryButton,\.ghostButton,\.smallButton,\.historySearch button\)\{white-space:nowrap/);
   });
 
-  it('uses a true 56px, accessible collapsed rail with legible centred marks and an active indicator', () => {
-    assert.match(css, /\.shellCollapsed\{grid-template-columns:56px minmax\(0,1fr\)\}/);
-    assert.match(css, /\.shellCollapsed \.mark\{width:38px;height:38px;overflow:visible\}/);
-    assert.match(css, /\.shellCollapsed \.navBullet\{width:24px;height:24px\}/);
-    assert.match(css, /\.shellCollapsed \.nav a\[aria-current=page\]::before/);
-    assert.match(shell, /aria-label=\{collapsed \? 'Expand navigation' : 'Collapse navigation'\}/);
-    assert.match(shell, /aria-label=\{collapsed \? item\.label : undefined\}/);
+  it('uses one header navigation surface with no collapsed icon rail or sidebar', () => {
+    assert.match(shell, /<header className=\{styles\.topbar\}/);
+    assert.match(shell, /<WorkspaceNavigation/);
+    assert.doesNotMatch(shell, /Collapse navigation|shellCollapsed|className=\{styles\.sidebar\}/);
+    assert.doesNotMatch(css, /\.shellCollapsed|\.sidebar/);
   });
 
   it('keeps navigation and menu actions at least 44px tall', () => {
-    assert.match(css, /\.menu a,\.menu button\{min-height:44px\}/);
+    assert.match(css, /\.menu a,\.menu button\{[^}]*min-height:44px/);
     assert.match(css, /\.shell :where\(button, a\[href\]\) \{ min-height: 44px; \}/);
   });
 });
