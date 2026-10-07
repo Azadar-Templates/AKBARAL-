@@ -150,16 +150,17 @@ ${colorBlock(DARK, ':root')}
      Every value below is DERIVED from a primitive already declared above
      (glass.level1/level3, color.dark, shadow.dark). No new hue is
      introduced — see src/app/glass-design-system.test.ts.               */
-  --glass-surface: ${tokens.glass.semantic.surface};
-  --glass-surface-strong: ${tokens.glass.semantic.surfaceStrong};
-  --glass-border: ${tokens.glass.semantic.border};
-  --glass-stroke-gradient: ${tokens.glass.semantic.strokeGradient};
+  --glass-surface: ${tokens.glass.surface};
+  --glass-surface-strong: ${tokens.glass['surface-strong']};
+  --glass-border: ${tokens.glass.border};
+  --glass-stroke-gradient: ${tokens.glass['stroke-gradient']};
+  --glass-stroke-gradient-strong: ${tokens.glass['stroke-gradient-strong']};
   --glass-stroke-width: ${tokens.glass.semantic.strokeWidthPx}px;
-  --glass-blur-subtle: ${tokens.glass.semantic.blurSubtle}px;
-  --glass-blur-strong: ${tokens.glass.semantic.blurStrong}px;
-  --glass-inset-highlight: ${tokens.glass.semantic.insetHighlight};
-  --glass-inset-highlight-strong: ${tokens.glass.semantic.insetHighlightStrong};
-  --glass-solid-fallback: ${tokens.glass.semantic.solidFallback};
+  --glass-blur-subtle: ${tokens.glass['blur-subtle']};
+  --glass-blur-strong: ${tokens.glass['blur-strong']};
+  --glass-inset-highlight: ${tokens.glass['inset-highlight']};
+  --glass-inset-highlight-strong: ${tokens.glass['inset-highlight-strong']};
+  --glass-solid-fallback: ${tokens.glass['solid-fallback']};
   --glass-solid-fallback-strong: ${tokens.glass.semantic.solidFallbackStrong};
   --glass-shadow-soft: ${tokens.glass.semantic.shadowSoft};
   --glass-shadow-strong: ${tokens.glass.semantic.shadowStrong};
