@@ -26,6 +26,74 @@ import { AwinError } from './earning/awin';
 import { configuredAwinWorkflow } from './earning/awin-workflow';
 import { GithubBountyError } from './earning/github-bounty-client';
 import { configuredGithubBountyWorkflow } from './earning/github-bounty-workflow';
+import { bountyRunsSnapshot } from './earning/github-bounty-parallel-executor';
+import {
+  BountyScopeError,
+  BountySystemError,
+  qualityGateFinding,
+  bountyFindingSnapshot,
+  bountyStageSnapshot,
+  bountySubmissionSnapshot,
+  createBountyFinding,
+  createBountyProgram,
+  deleteBountyProgram,
+  getBountyProgram,
+  listAgentRegistry,
+  listBountyPrograms,
+  listScopeAllowlist,
+  scopeEventSnapshot,
+  runBountyAgent,
+  rejectFinding,
+  approveFindingForSubmission,
+  removeScopeAllowlist,
+  updateBountyProgram,
+  upsertScopeAllowlist,
+  type ProgramInput,
+} from './earning/bug-bounty-system';
+import {
+  ModelLayerError,
+  checkModelHealth,
+  createModelProvider,
+  deleteModelProvider,
+  getModelProvider,
+  listModelProviders,
+  listModelSpendCaps,
+  modelCallObservability,
+  modelHealthEvents,
+  setModelSpendCap,
+  updateModelProvider,
+  type ModelProviderInput,
+} from './earning/model-layer';
+import {
+  defaultPlatformAllocation,
+  getPlatformAdapter,
+  listPlatformAdapters,
+  platformAdapterReadOnlyProof,
+  platformAllocationRows,
+  platformSyncEvents,
+  savePlatformAllocation,
+  syncPlatformAdapter,
+} from './earning/platform-adapters';
+import {
+  buildPlatformSubmissionPayload,
+  getQualityPolicy,
+  lessonsDetail,
+  lessonsSnapshot,
+  reputationForProgram,
+  reputationSnapshot,
+  recordPlatformFeedback,
+  saveQualityPolicy,
+  validateFindingForSubmission,
+} from './earning/discipline-engine';
+import {
+  knowledgeForClass,
+  knowledgeUsageSnapshot,
+  listAgentPlaybooks,
+  listKnowledge,
+  listPlatformPlaybooks,
+  retrieveKnowledge,
+} from './earning/knowledge-retrieval';
+import { approveKnowledgeImprovement, listPendingImprovements, rejectKnowledgeImprovement } from './earning/knowledge-learning';
 import { revokeOpportunity, agentMoneyOverview, listMoneyOperations, listEarningJobs, reconcileEarningPayment, cashAccount } from './money';
 import { MoneyError, cancelMoney, listCashEntries, assertMoneyOwner, moneyOverview, bootstrapMoneyAgents, approveOpportunity, setMoneyGrant, allocateCash, freezeCash, requestMoney, decideMoney, verifyMoneyReceipt, dispatchMoney, reconcileMoney, provisionMoneyAgent, queueEarning, type MoneyActor } from './money';
 import { configuredMoneyProvider } from './money-stripe';
@@ -36,6 +104,19 @@ import { recordResourceCallCost } from './resource-budgets';
 import { listOwnerResourceCalls, cancelOwnerResourceCall, reconcileOwnerResourceCall } from './resource-calls';
 import { bindResourceCredential } from './self-management';
 import { appendAgentMessage, listAgentMessages } from './messaging';
+import {
+  headAgentChat,
+  headAgentEarnings,
+  headAgentOverview,
+  listHeadAgentAgents,
+  listHeadAgentAlerts,
+  listHeadAgentApprovals,
+  listHeadAgentInfo,
+  listHeadAgentOpportunities,
+  listHeadAgentPayouts,
+  listHeadAgentProviders,
+  listTrackedResources,
+} from './head-agent';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -294,6 +375,15 @@ function requireOwner(context: RequestContext, mutation = false): SessionContext
   return context.session;
 }
 
+/** The head-agent surface is narrower than ordinary mission read access. */
+function requireHeadAgentOwner(context: RequestContext): SessionContext {
+  const session = requireOwner(context);
+  if (session.owner.role !== 'owner') {
+    throw new HttpProblem(403, 'head-agent status is available to the mission owner only', 'forbidden');
+  }
+  return session;
+}
+
 /** Agent-scoped authorization for the self-management surface. */
 function requireAgent(context: RequestContext, agentSlugOrId: string | null, readOnly=false): { agentId: string; actorId: string; actorType: 'agent' } {
   // One enforcement point for every agent-initiated mutation (work, tools,
@@ -372,6 +462,8 @@ const CONTENT_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
 };
 
 function serveStatic(res: http.ServerResponse, urlPath: string): boolean {
@@ -418,6 +510,95 @@ async function handleApi(
     const value = Number(body[key]);
     return Number.isFinite(value) ? value : fallback;
   };
+
+  if (head === 'mission' && rest[0] === 'model-providers') {
+    const session = requireHeadAgentOwner(context);
+    if (method === 'GET' && rest.length === 1) { json(res, 200, { providers: listModelProviders(), spendCaps: listModelSpendCaps(), fallbackEvents: modelCallObservability().filter((row) => row.status === 'fallback') }); return true; }
+    if (method === 'POST' && rest.length === 1) { json(res, 201, { provider: createModelProvider(body as unknown as ModelProviderInput, session.owner.id) }); return true; }
+    if (rest.length === 2 && method === 'GET') { const provider = getModelProvider(rest[1]); if (!provider) throw new HttpProblem(404, 'model provider not found', 'not_found'); json(res, 200, { provider, healthEvents: modelHealthEvents(provider.id) }); return true; }
+    if (rest.length === 2 && (method === 'PATCH' || method === 'PUT')) { json(res, 200, { provider: updateModelProvider(rest[1], body as any, session.owner.id) }); return true; }
+    if (rest.length === 2 && method === 'DELETE') { deleteModelProvider(rest[1], session.owner.id); json(res, 200, { disabled: true }); return true; }
+    throw new HttpProblem(404, 'unknown model provider route', 'not_found');
+  }
+  if (head === 'mission' && rest[0] === 'model-spend-caps') {
+    const session = requireHeadAgentOwner(context);
+    if (method === 'GET') { json(res, 200, { caps: listModelSpendCaps() }); return true; }
+    if (method === 'POST') { json(res, 200, { cap: setModelSpendCap(String(body.scopeKey ?? ''), Number(body.capCents), body.period as any, session.owner.id) }); return true; }
+    throw new HttpProblem(405, 'use GET or POST', 'method_not_allowed');
+  }
+  if (head === 'mission' && rest[0] === 'model-health' && rest[1] === 'check' && method === 'POST') {
+    requireHeadAgentOwner(context);
+    const programId = String(body.programId ?? ''); const target = String(body.target ?? '');
+    json(res, 200, { providers: await checkModelHealth({ programId, target, providerId: body.providerId ? String(body.providerId) : undefined }), checkedAt: nowIso() }); return true;
+  }
+
+  // ── Owner-only read-only head-agent surface ──────────────────────────────
+  // This branch intentionally has no mutation path. Do not route it through
+  // the live chat adapter: head-agent chat is a cited database explanation,
+  // never a provider call or an action executor.
+  if (head === 'mission' && rest[0] === 'head-agent') {
+    const session = requireHeadAgentOwner(context);
+    const section = rest[1] ?? 'overview';
+    const rowLimit = Number(url.searchParams.get('limit') ?? 100);
+    if (method === 'GET') {
+      if ((section === 'overview' && (rest.length === 1 || rest.length === 2)) || (section === 'status' && rest.length === 2)) {
+        json(res, 200, headAgentOverview(session.owner.id));
+        return true;
+      }
+      if (section === 'agents' && rest.length === 2) {
+        json(res, 200, { readOnly: true, agents: listHeadAgentAgents(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'approvals' && rest.length === 2) {
+        json(res, 200, { readOnly: true, approvals: listHeadAgentApprovals(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'earnings' && rest.length === 2) {
+        json(res, 200, { readOnly: true, ...headAgentEarnings(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'resources' && rest.length === 2) {
+        json(res, 200, { readOnly: true, resources: listTrackedResources(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'alerts' && rest.length === 2) {
+        json(res, 200, { readOnly: true, alerts: listHeadAgentAlerts(session.owner.id, rowLimit), notificationDelivery: 'UNKNOWN / VERIFY REQUIRED' });
+        return true;
+      }
+      if (section === 'notifications' && rest.length === 2) {
+        const alerts = listHeadAgentAlerts(session.owner.id, rowLimit);
+        json(res, 200, { readOnly: true, generatedAt: nowIso(), unreadCount: alerts.filter((alert) => alert.status === 'open').length, alerts, notificationDelivery: 'UNKNOWN / VERIFY REQUIRED' });
+        return true;
+      }
+      if (section === 'info' && rest.length === 2) {
+        json(res, 200, { readOnly: true, info: listHeadAgentInfo(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'providers' && rest.length === 2) {
+        json(res, 200, { readOnly: true, providers: listHeadAgentProviders(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'opportunities' && rest.length === 2) {
+        json(res, 200, { readOnly: true, opportunities: listHeadAgentOpportunities(session.owner.id, rowLimit) });
+        return true;
+      }
+      if (section === 'payouts' && rest.length === 2) {
+        json(res, 200, { readOnly: true, payouts: listHeadAgentPayouts(session.owner.id, rowLimit) });
+        return true;
+      }
+      throw new HttpProblem(404, 'unknown head-agent read route', 'not_found');
+    }
+    if (method === 'POST' && section === 'chat' && rest.length === 2) {
+      const question = typeof body.question === 'string' ? body.question : '';
+      try {
+        json(res, 200, headAgentChat(session.owner.id, question));
+      } catch (error) {
+        throw new HttpProblem(400, error instanceof Error ? error.message : 'question is invalid', 'validation_error');
+      }
+      return true;
+    }
+    throw new HttpProblem(405, 'head-agent is read-only; use GET, or POST only for cited chat questions', 'method_not_allowed');
+  }
 
   if (head === 'customer-work') {
     const resolveActor = (): MoneyActor => {
@@ -1108,9 +1289,119 @@ async function handleApi(
   }
 
   if (head === 'bounty') {
+    const bountyOwner = requireHeadAgentOwner(context);
+    if (rest[0] === 'platforms') {
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { adapters: listPlatformAdapters(), allocations: platformAllocationRows(), readOnlyProof: platformAdapterReadOnlyProof(), sourceCount: 0 }); return true; }
+      if (rest.length >= 2) {
+        const platformKey = rest[1];
+        if (method === 'GET' && rest.length === 2) { const adapter = getPlatformAdapter(platformKey); if (!adapter) throw new HttpProblem(404, 'platform adapter not found', 'not_found'); json(res, 200, { adapter, syncEvents: platformSyncEvents(platformKey) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'sync') { json(res, 200, { result: await syncPlatformAdapter(platformKey, { programId: String(body.programId ?? ''), target: String(body.target ?? '') }) }); return true; }
+        if (method === 'GET' && rest.length === 3 && rest[2] === 'sync-events') { json(res, 200, { events: platformSyncEvents(platformKey) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'payload') { json(res, 200, { result: buildPlatformSubmissionPayload({ findingId: String(body.findingId ?? ''), platformKey }) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'validate') { json(res, 200, { result: validateFindingForSubmission({ findingId: String(body.findingId ?? ''), platformKey }) }); return true; }
+      }
+      throw new HttpProblem(404, 'unknown platform adapter route', 'not_found');
+    }
+    if (rest[0] === 'allocate') {
+      if (method === 'GET') { json(res, 200, { allocations: platformAllocationRows(), defaults: listPlatformAdapters().map((row) => defaultPlatformAllocation(String(row.platformKey))) }); return true; }
+      if (method === 'POST') {
+        const allocations = Array.isArray(body.allocations) ? body.allocations : [body];
+        const saved = allocations.map((allocation) => savePlatformAllocation({ platformKey: String(allocation.platformKey ?? ''), agentType: String(allocation.agentType ?? ''), concurrency: Number(allocation.concurrency ?? 1), priority: Number(allocation.priority ?? 2) === 1 ? 1 : 2, strategy: String(allocation.strategy ?? ''), active: allocation.active !== false }, bountyOwner.owner.id));
+        json(res, 200, { allocations: saved }); return true;
+      }
+    }
+    if (rest[0] === 'knowledge') {
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { knowledge: listKnowledge(url.searchParams.get('category') ?? undefined), generatedAt: nowIso() }); return true; }
+      if (method === 'GET' && rest[1] === 'usage') { json(res, 200, { usage: knowledgeUsageSnapshot(), generatedAt: nowIso() }); return true; }
+      if (method === 'GET' && rest.length === 3 && rest[1] === 'class') { const knowledge = knowledgeForClass(rest[2]); if (!knowledge) throw new HttpProblem(404, 'knowledge entry not found', 'not_found'); json(res, 200, { knowledge }); return true; }
+      if (method === 'POST' && rest[1] === 'retrieve') { json(res, 200, { consultation: retrieveKnowledge({ ...(body as any), agentRole: String(body.agentRole ?? '') }, Number(body.limit ?? 12)) }); return true; }
+      throw new HttpProblem(404, 'unknown knowledge route', 'not_found');
+    }
+    if (rest[0] === 'playbooks' && method === 'GET') { json(res, 200, { agents: listAgentPlaybooks(), platforms: listPlatformPlaybooks(), generatedAt: nowIso() }); return true; }
+    if (rest[0] === 'lessons' && rest[1] === 'pending' && method === 'GET') { json(res, 200, { improvements: listPendingImprovements(), generatedAt: nowIso() }); return true; }
+    if (rest[0] === 'lessons' && rest[1] === 'approve' && method === 'POST') { json(res, 200, { improvement: approveKnowledgeImprovement(bountyOwner.owner.id, String(body.improvementId ?? rest[2] ?? '')) }); return true; }
+    if (rest[0] === 'lessons' && rest[1] === 'reject' && method === 'POST') { json(res, 200, { improvement: rejectKnowledgeImprovement(bountyOwner.owner.id, String(body.improvementId ?? rest[2] ?? ''), String(body.reason ?? 'owner_rejected')) }); return true; }
+    if (rest[0] === 'lessons' && method === 'GET' && rest.length === 1) { json(res, 200, { summary: lessonsSnapshot(), details: lessonsDetail(Number(url.searchParams.get('limit') ?? 200)), pending: listPendingImprovements() }); return true; }
+    if (rest[0] === 'reputation' && method === 'GET') { const programId = url.searchParams.get('programId'); json(res, 200, { reputation: programId ? reputationForProgram(programId) : reputationSnapshot() }); return true; }
+    if (rest[0] === 'feedback' && method === 'POST') { json(res, 200, { feedback: recordPlatformFeedback({ programId: String(body.programId ?? ''), findingId: body.findingId ? String(body.findingId) : undefined, platformKey: String(body.platformKey ?? ''), outcome: body.outcome as any, detail: String(body.detail ?? '') }, bountyOwner.owner.id) }); return true; }
+    if (rest[0] === 'quality-policies') {
+      if (method === 'GET') { const programId = url.searchParams.get('programId'); json(res, 200, { policies: programId ? [getQualityPolicy(programId)].filter(Boolean) : listBountyPrograms().map((program) => getQualityPolicy(String(program.id))).filter(Boolean) }); return true; }
+      if (method === 'POST') { json(res, 200, { policy: saveQualityPolicy({ programId: String(body.programId ?? ''), minConfidenceThreshold: body.minConfidenceThreshold === undefined ? undefined : Number(body.minConfidenceThreshold), requirePoc: body.requirePoc === true, requireEvidenceScreenshot: body.requireEvidenceScreenshot === true, maxSubmissionsPerWeek: body.maxSubmissionsPerWeek === undefined ? undefined : Number(body.maxSubmissionsPerWeek), duplicateWindowDays: body.duplicateWindowDays === undefined ? undefined : Number(body.duplicateWindowDays), rejectOnWeakEvidence: body.rejectOnWeakEvidence !== false, minCvssForSubmit: body.minCvssForSubmit === undefined ? undefined : Number(body.minCvssForSubmit) }, bountyOwner.owner.id) }); return true; }
+    }
+    // New scope-first control plane. These routes are deliberately evaluated
+    // before the legacy GitHub issue workflow so a configured program and its
+    // explicit allowlist are never bypassed by an older command name.
+    if (rest[0] === 'programs') {
+      const session = requireHeadAgentOwner(context);
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { programs: listBountyPrograms(), empty: listBountyPrograms().length === 0 }); return true; }
+      if (method === 'POST' && rest.length === 1) {
+        const result = createBountyProgram(body as unknown as ProgramInput);
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'bounty.program_created', subjectType: 'bounty_program', subjectId: String(result.id), detail: { platform: result.platform, programHandle: result.programHandle } });
+        json(res, 201, { program: result }); return true;
+      }
+      if (rest.length >= 2) {
+        const programId = String(rest[1]);
+        if (rest[2] === 'scope') {
+          if (method === 'GET' && rest.length === 3) { json(res, 200, { programId, scope: listScopeAllowlist(programId), empty: listScopeAllowlist(programId).length === 0 }); return true; }
+          if (method === 'POST' && rest.length === 3) { json(res, 201, { scope: upsertScopeAllowlist(programId, { target: String(body.target ?? ''), targetType: body.targetType as any, inScope: body.inScope === true, authRequired: body.authRequired === true, rateLimitPerMin: body.rateLimitPerMin === null || body.rateLimitPerMin === undefined ? null : Number(body.rateLimitPerMin), lastVerifiedAt: body.lastVerifiedAt ? String(body.lastVerifiedAt) : null }) }); return true; }
+          if (method === 'DELETE' && rest.length === 4) { removeScopeAllowlist(programId, rest[3]); json(res, 200, { removed: true }); return true; }
+        }
+        if (method === 'GET' && rest.length === 2) { const program = getBountyProgram(programId); if (!program) throw new HttpProblem(404, 'bounty program not found', 'not_found'); json(res, 200, { program }); return true; }
+        if ((method === 'PATCH' || method === 'PUT') && rest.length === 2) { json(res, 200, { program: updateBountyProgram(programId, body as any) }); return true; }
+        if (method === 'DELETE' && rest.length === 2) { deleteBountyProgram(programId); json(res, 200, { deleted: true }); return true; }
+      }
+      throw new HttpProblem(404, 'unknown bounty program route', 'not_found');
+    }
+    if (rest[0] === 'scope-events' && method === 'GET') {
+      requireHeadAgentOwner(context);
+      json(res, 200, { events: scopeEventSnapshot(url.searchParams.get('programId') ?? undefined) }); return true;
+    }
+    if (rest[0] === 'agents' && method === 'GET' && rest.length === 1) {
+      requireHeadAgentOwner(context);
+      json(res, 200, { agents: listAgentRegistry(), count: listAgentRegistry().length }); return true;
+    }
+    if (rest[0] === 'agents' && method === 'POST' && rest.length === 3 && rest[2] === 'run') {
+      requireHeadAgentOwner(context);
+      const result = runBountyAgent({ agentType: rest[1], programId: String(body.programId ?? ''), target: String(body.target ?? ''), input: (body.input && typeof body.input === 'object' ? body.input : {}) as Record<string, unknown>, ownerId: context.session?.owner.id, findingId: body.findingId ? String(body.findingId) : undefined, requestedCostCents: body.requestedCostCents === undefined ? 0 : Number(body.requestedCostCents), availableTools: Array.isArray(body.availableTools) ? body.availableTools.map(String) : undefined });
+      json(res, 200, { result }); return true;
+    }
+    if (rest[0] === 'findings') {
+      const session = requireHeadAgentOwner(context);
+      if (method === 'GET' && rest.length === 1) { json(res, 200, { findings: bountyFindingSnapshot() }); return true; }
+      if (method === 'POST' && rest.length === 1) { json(res, 201, { finding: createBountyFinding({ programId: String(body.programId ?? ''), target: String(body.target ?? ''), finding: (body.finding && typeof body.finding === 'object' ? body.finding : {}) as Record<string, any> }) }); return true; }
+      if (rest.length >= 2) {
+        const findingId = rest[1];
+        if (method === 'GET' && rest.length === 3 && rest[2] === 'stages') { json(res, 200, { findingId, stages: bountyStageSnapshot(findingId) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'quality-gate') {
+          const finding = bountyFindingSnapshot(findingId)[0];
+          if (!finding) throw new HttpProblem(404, 'finding not found', 'not_found');
+          const gate = qualityGateFinding({ programId: String(finding.program_id), target: String(finding.target), finding: { ...finding, vulnerabilityClass: finding.vulnerability_class, codeLocationPattern: finding.code_location_pattern, cvssVector: finding.cvss_vector } });
+          missionDb.run('INSERT INTO quality_gate_reviews (id,finding_id,decision,reasons_json,checks_json,reviewer,created_at) VALUES (?,?,?,?,?,?,?)', [missionId('qgr'), findingId, gate.decision === 'pass' ? 'pass' : 'reject', JSON.stringify(gate.reasons), JSON.stringify(gate.checks), session.owner.id, nowIso()]);
+          missionDb.run('UPDATE bounty_findings SET state=?,updated_at=? WHERE id=?', [gate.decision === 'pass' ? 'gated' : 'rejected', nowIso(), findingId]);
+          json(res, 200, { gate }); return true;
+        }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'approve-submit') { json(res, 200, { result: approveFindingForSubmission(session.owner.id, findingId, (body.report && typeof body.report === 'object' ? body.report : {}) as Record<string, unknown>) }); return true; }
+        if (method === 'POST' && rest.length === 3 && rest[2] === 'reject') { json(res, 200, { result: rejectFinding(session.owner.id, findingId, String(body.reason ?? 'owner_rejected')) }); return true; }
+        if (method === 'GET' && rest.length === 2) { const finding = bountyFindingSnapshot(findingId)[0]; if (!finding) throw new HttpProblem(404, 'finding not found', 'not_found'); json(res, 200, { finding }); return true; }
+      }
+      throw new HttpProblem(404, 'unknown bounty finding route', 'not_found');
+    }
+    if (rest[0] === 'submissions' && method === 'GET') { requireHeadAgentOwner(context); json(res, 200, { submissions: bountySubmissionSnapshot() }); return true; }
+    const legacyExternalCommands = new Set(['discover', 'check-policy', 'refresh-assignment', 'queue-execution', 'run-execution', 'draft', 'submit', 'track-pull-request']);
+    if (method === 'POST' && legacyExternalCommands.has(String(rest[0]))) {
+      // The older GitHub workflow has no per-request program/target argument.
+      // Refuse it rather than allowing a legacy route to bypass the new scope
+      // authority. Use the scope-first agent pipeline above instead.
+      throw new HttpProblem(409, 'scope_control_plane_required: configure a bounty program and run a scope-gated agent before any external action', 'scope_control_plane_required');
+    }
     const actor: MoneyActor = { kind: 'owner', id: requireOwner(context, method !== 'GET').owner.id };
     assertMoneyOwner(actor);
     const workflow = configuredGithubBountyWorkflow();
+    if (method === 'GET' && rest.length === 1 && rest[0] === 'runs') {
+      // Owner-only operational observability: these are durable run/job rows,
+      // not an optimistic worker status or a synthetic issue list.
+      json(res, 200, bountyRunsSnapshot()); return true;
+    }
     if (method === 'GET' && !rest.length) { json(res, 200, workflow.overview(actor)); return true; }
     if (method !== 'POST') throw new HttpProblem(405, 'use POST', 'method_not_allowed');
     let result: unknown;
@@ -2833,6 +3124,9 @@ export function createMissionServer(): http.Server {
               : error instanceof FreelancerError ? (error.code === 'freelancer_rate_limited' ? 429 : 409)
               : error instanceof AwinError ? (error.code === 'awin_rate_limited' ? 429 : 409)
               : error instanceof GithubBountyError ? (error.code === 'github_rate_limited' ? 429 : 409)
+              : error instanceof BountyScopeError ? error.statusCode
+              : error instanceof BountySystemError ? error.statusCode
+              : error instanceof ModelLayerError ? error.statusCode
               : error instanceof MoneyError ? error.statusCode
               : error instanceof MissionTreasuryError ? error.statusCode
                 : error instanceof MissionSelfServiceError ? error.statusCode
@@ -2843,6 +3137,9 @@ export function createMissionServer(): http.Server {
               : error instanceof FreelancerError ? error.code
               : error instanceof AwinError ? error.code
               : error instanceof GithubBountyError ? error.code
+              : error instanceof BountyScopeError ? error.code
+              : error instanceof BountySystemError ? error.code
+              : error instanceof ModelLayerError ? error.code
               : error instanceof MoneyError ? error.code
               : error instanceof MissionTreasuryError ? error.code
                 : error instanceof MissionSelfServiceError ? error.code

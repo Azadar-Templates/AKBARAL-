@@ -24,7 +24,7 @@ const json = (body: unknown, status = 200) => new Response(body === null ? '' : 
 function client() {
   const transport: typeof fetch = async input => {
     const url = new URL(String(input)), p = url.pathname;
-    if (p === '/search/issues') return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Correct escaped query handling $100 bounty', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
+    if (p === '/search/issues') return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Correct escaped query handling $100 bounty', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
     if (p === `/repos/${REPO}/contents/CONTRIBUTING.md`) return json({ content: Buffer.from('AI-assisted changes are allowed if disclosed.').toString('base64'), encoding: 'base64' });
     if (p.startsWith(`/repos/${REPO}/contents/`)) return json({}, 404);
     if (p === `/repos/${REPO}/issues/7`) return json({ number: 7, html_url: `https://github.com/${REPO}/issues/7`, state: 'open', title: 'Correct escaped query handling', body: 'The parser should preserve a backslash in escaped query values.', labels: [{ name: 'bounty' }] });

@@ -25,7 +25,7 @@ function client() {
     const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
     if (p === '/search/issues') {
       const q = url.searchParams.get('q') ?? '';
-      if (q.startsWith('label:bounty')) return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test $100', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
+      if (q.startsWith('label:bounty')) return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test $100', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
       return json({ items: [] });
     }
     if (p === `/repos/${REPO}/contents/CONTRIBUTING.md`) {
@@ -162,7 +162,7 @@ it('automatically rejects a known bait/farm-repo lead at discovery and refuses a
     const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
     if (p === '/search/issues') {
       const q = url.searchParams.get('q') ?? '';
-      if (q.startsWith('label:bounty')) return json({ items: [{ number: 1, html_url: `https://github.com/${baitRepo}/issues/1`, title: 'Fix this for $500', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${baitRepo}` }] });
+      if (q.startsWith('label:bounty')) return json({ items: [{ number: 1, html_url: `https://github.com/${baitRepo}/issues/1`, title: 'Fix this for $500', body: 'Bounty: $500 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${baitRepo}` }] });
       return json({ items: [] });
     }
     if (p === `/repos/${baitRepo}`) return json({ stargazers_count: 0, forks_count: 0, open_issues_count: 40, created_at: new Date().toISOString(), archived: false, fork: false });
@@ -184,7 +184,7 @@ it('automatically rejects a brand-new zero-star repo lead as high risk', async (
     const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
     if (p === '/search/issues') {
       const q = url.searchParams.get('q') ?? '';
-      if (q.startsWith('label:bounty')) return json({ items: [{ number: 1, html_url: `https://github.com/${newRepo}/issues/1`, title: 'Please fix this bug', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${newRepo}` }] });
+      if (q.startsWith('label:bounty')) return json({ items: [{ number: 1, html_url: `https://github.com/${newRepo}/issues/1`, title: 'Please fix this bug', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${newRepo}` }] });
       return json({ items: [] });
     }
     if (p === `/repos/${newRepo}`) return json({ stargazers_count: 0, forks_count: 0, open_issues_count: 1, created_at: new Date().toISOString(), archived: false, fork: false });
@@ -204,8 +204,8 @@ it('automatically rejects duplicate templated titles posted across unrelated rep
     if (p === '/search/issues') {
       const q = url.searchParams.get('q') ?? '';
       if (q.startsWith('label:bounty')) return json({ items: [
-        { number: 1, html_url: 'https://github.com/repo-one/x/issues/1', title: templated, state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/repo-one/x' },
-        { number: 1, html_url: 'https://github.com/repo-two/y/issues/1', title: templated, state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/repo-two/y' },
+        { number: 1, html_url: 'https://github.com/repo-one/x/issues/1', title: templated, body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/repo-one/x' },
+        { number: 1, html_url: 'https://github.com/repo-two/y/issues/1', title: templated, body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/repo-two/y' },
       ] });
       return json({ items: [] });
     }
