@@ -250,7 +250,7 @@ export function removeScopeAllowlist(programId: string, id: string): void {
 export function listAgentRegistry(): Array<Record<string, unknown>> {
   return missionDb.all<Row>('SELECT * FROM agent_registry WHERE active=1 ORDER BY type').map((row) => ({
     type: String(row.type), capabilityDescription: String(row.capability_description), inputSchema: parseJson(row.input_schema_json, {}), outputSchema: parseJson(row.output_schema_json, {}),
-    requiredTools: parseJson(row.required_tools_json, []), maxConcurrency: Number(row.max_concurrency), rateLimitPerMin: Number(row.rate_limit_per_min), costBudgetCents: Number(row.cost_budget_cents), qualityGateRequired: Number(row.quality_gate_required) === 1,
+    requiredTools: parseJson(row.required_tools_json, []), maxConcurrency: Number(row.max_concurrency), rateLimitPerMin: Number(row.rate_limit_per_min), cooldownMs: Number(row.cooldown_ms), timeoutMs: Number(row.timeout_ms), costBudgetCents: Number(row.cost_budget_cents), qualityGateRequired: Number(row.quality_gate_required) === 1,
   }));
 }
 
@@ -423,7 +423,11 @@ export function runBountyAgent(input: AgentRunInput): Record<string, unknown> {
   if (!missionDb.get('SELECT id FROM bounty_programs WHERE id=?', [programId])) throw new BountySystemError('program_not_configured', 'program is not configured', 403);
   const runId = missionId('arl');
   const queuedAt = nowIso();
-  const leaseExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const timeoutMs = Math.min(Math.max(Number(registry.timeout_ms) || 300000, 1000), 30 * 60 * 1000);
+  const cooldownMs = Math.max(Number(registry.cooldown_ms) || 0, 0);
+  const previousRun = cooldownMs ? missionDb.get<Row>('SELECT created_at FROM agent_run_logs WHERE agent_type=? ORDER BY created_at DESC LIMIT 1', [input.agentType]) : null;
+  if (previousRun && Date.now() - Date.parse(String(previousRun.created_at)) < cooldownMs) throw new BountySystemError('cooldown_active', 'agent cooldown is active', 429);
+  const leaseExpiresAt = new Date(Date.now() + timeoutMs).toISOString();
   missionDb.run(`INSERT INTO agent_run_logs (id,agent_type,program_id,target,status,lease_expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`, [runId, input.agentType, programId, target, 'queued', leaseExpiresAt, queuedAt, queuedAt]);
   recordStage(input.findingId, input.agentType, 'queued', runId);
   try {

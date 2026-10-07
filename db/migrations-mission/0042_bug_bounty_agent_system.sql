@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS agent_registry (
   required_tools_json TEXT NOT NULL DEFAULT '[]',
   max_concurrency INTEGER NOT NULL DEFAULT 1 CHECK (max_concurrency > 0),
   rate_limit_per_min INTEGER NOT NULL DEFAULT 30 CHECK (rate_limit_per_min > 0),
+  cooldown_ms INTEGER NOT NULL DEFAULT 0 CHECK (cooldown_ms >= 0),
+  timeout_ms INTEGER NOT NULL DEFAULT 300000 CHECK (timeout_ms > 0),
   cost_budget_cents INTEGER NOT NULL DEFAULT 0 CHECK (cost_budget_cents >= 0),
   quality_gate_required INTEGER NOT NULL DEFAULT 1 CHECK (quality_gate_required IN (0,1)),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
