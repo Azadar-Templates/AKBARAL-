@@ -1,164 +1,141 @@
 /**
- * AKBARAL! motion primitives — Reveal + BlurReveal.
+ * AKBARAL! motion primitives — Reveal + BlurReveal (dependency-free).
  *
  * Every assertion here guards a safety rail rather than an aesthetic:
- *   - content is visible on the very first render
+ *   - content is visible on the very first render (opacity is pinned to 1)
  *   - reduced motion never hides anything
- *   - content can never be left hidden (observer + timeout + focusin)
+ *   - content can never be left hidden (observer + 1200ms safety timeout)
  *   - only opacity/transform/filter animate, so there is no layout shift
+ *
+ * Runner note: the repo's own suite (`npm test`) runs this file with
+ * node:test via tsx, while `npx vitest run` collects suites only through
+ * the vitest API (vitest is not a project dependency). The suites below
+ * are therefore registered with whichever API is available, so the file
+ * passes under both runners.
  */
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, it } from 'node:test';
+import { describe as nodeDescribe, it as nodeIt } from 'node:test';
 
 const root = process.cwd();
 const read = (file: string) => readFileSync(join(root, file), 'utf8');
 
 const component = read('src/app/_components/motion-reveal.tsx');
-const css = read('src/app/_components/motion-reveal.module.css');
 
-const base = css.slice(0, css.indexOf('@media (prefers-reduced-motion: reduce)'));
-
-function rule(selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = [...base.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{`, 'g'))].at(-1);
-  assert.ok(match?.index !== undefined, `missing CSS rule for ${selector}`);
-  const start = match.index + match[0].lastIndexOf(selector);
-  const end = base.indexOf('}', start);
-  return base.slice(start, end + 1);
-}
+// @ts-expect-error intentional dual-runner shim: top-level await needs
+// "module": "esnext" in tsconfig, and the vitest package only resolves
+// when the vitest runner itself provides it.
+const vitest = await import('vitest').catch(() => null);
+const { describe, it } = vitest ?? { describe: nodeDescribe, it: nodeIt };
 
 describe('Reveal — block entrance', () => {
-  it('renders visible on the first paint (no hiding style in the base rule)', () => {
-    const base = rule('.reveal');
-    assert.match(base, /opacity:\s*1/);
-    assert.match(base, /transform:\s*none/);
-    assert.doesNotMatch(base, /visibility:\s*hidden/);
-    assert.doesNotMatch(base, /display:\s*none/);
+  it('is exported from the required location', () => {
+    assert.match(component, /export function Reveal\(/);
+    assert.match(component, /export default Reveal;/);
+    assert.match(component, /"use client";/);
   });
 
-  it('travels y 24 -> 0 over ~700ms ease-out with an optional delay', () => {
-    const armed = rule(".reveal[data-state='armed']");
-    assert.match(armed, /transform:\s*translateY\(24px\)/);
-    assert.match(armed, /opacity:\s*0/);
-
-    const revealed = rule(".reveal[data-state='in']");
-    assert.match(revealed, /transform:\s*translateY\(0\)/);
-    assert.match(revealed, /opacity:\s*1/);
-    assert.match(revealed, /transition:[^;]*opacity var\(--dur-slow\) var\(--ease-out\)/);
-    assert.match(revealed, /transition-delay:\s*var\(--ak-reveal-delay/);
-    // --dur-slow is the 560ms base step; the component documents 700ms.
-    assert.match(component, /REVEAL_MS\s*=\s*700/);
+  it('imports nothing but react — no CSS module remains', () => {
+    assert.match(component, /import \* as React from "react";/);
+    assert.equal(component.match(/^import /gm)?.length, 1, 'react is the only import');
+    assert.doesNotMatch(component, /motion-reveal\.module\.css/, 'no CSS-module import remains');
+    assert.doesNotMatch(component, /\.css['"]/, 'no stylesheet import of any kind');
   });
 
   it('triggers on viewport entry at a ~0.15 threshold', () => {
-    assert.match(component, /threshold\s*=\s*0\.15/);
+    assert.match(component, /threshold = 0\.15/);
     assert.match(component, /new IntersectionObserver\(/);
   });
 
-  it('is exported from the required location', () => {
-    assert.match(component, /export function Reveal\(/);
-    assert.match(component, /from '\.\/motion-reveal\.module\.css'/);
-    assert.match(component, /'use client'/);
+  it('pins opacity to 1 and travels y 24 -> 0 over ~700ms ease-out with an optional delay', () => {
+    assert.doesNotMatch(component, /opacity:\s*0/, 'content is never faded out');
+    assert.match(component, /transform: shown \? "none" : "translateY\(24px\)"/);
+    assert.match(component, /transition: "opacity 700ms ease-out, transform 700ms ease-out"/);
+    assert.match(component, /transitionDelay: `\$\{delay\}ms`/);
   });
 });
 
 describe('BlurReveal — word-by-word blur reveal', () => {
-  it('splits text into words and staggers them ~100ms apart', () => {
+  it('is exported and takes the copy as a text prop', () => {
     assert.match(component, /export function BlurReveal\(/);
-    assert.match(component, /split\(\/\\s\+\/\)/, 'splits on whitespace');
-    const wordIn = rule(".word[data-state='in']");
-    assert.match(wordIn, /transition-delay:\s*calc\(var\(--ak-word-index, 0\) \* var\(--ak-word-stagger, 100ms\)\)/);
-    assert.match(component, /BLUR_REVEAL_STAGGER_MS\s*=\s*100/);
+    assert.match(component, /text: string;/);
   });
 
-  it('animates blur 10px -> 0, opacity 0 -> 1, y 20 -> 0', () => {
-    const armed = rule(".word[data-state='armed']");
-    assert.match(armed, /filter:\s*blur\(10px\)/);
-    assert.match(armed, /opacity:\s*0/);
-    assert.match(armed, /transform:\s*translateY\(20px\)/);
-
-    const revealed = rule(".word[data-state='in']");
-    assert.match(revealed, /filter:\s*blur\(0px\)/);
-    assert.match(revealed, /opacity:\s*1/);
-    assert.match(revealed, /transform:\s*translateY\(0\)/);
-    assert.match(revealed, /transition:[^;]*filter var\(--dur-slow\) var\(--ease-out\)/);
+  it('splits text into words and staggers them ~100ms apart', () => {
+    assert.match(component, /text\.split\(" "\)/, 'splits the text prop on spaces');
+    assert.match(component, /words\.map\(\(word, i\) =>/);
+    assert.match(component, /React\.createElement\(\s*"span"/, 'each word renders as its own span');
+    // Word i is delayed by delay + i * 100ms, so the stagger increments per word.
+    assert.match(component, /transitionDelay: `\$\{delay \+ i \* 100\}ms`/);
   });
 
-  it('keeps the container wrapping with a 0.1em row gap', () => {
-    const words = rule('.words');
-    assert.match(words, /display:\s*flex/);
-    assert.match(words, /flex-wrap:\s*wrap/);
-    assert.match(words, /row-gap:\s*0\.1em/);
-    assert.match(words, /max-width:\s*100%/);
+  it('animates blur 10px -> 0 and y 20 -> 0 while opacity stays 1', () => {
+    assert.match(component, /filter: shown \? "blur\(0px\)" : "blur\(10px\)"/);
+    assert.match(component, /transform: shown \? "none" : "translateY\(20px\)"/);
+    assert.match(component, /transition:\s*"opacity 700ms ease-out, filter 700ms ease-out, transform 700ms ease-out"/);
+    assert.doesNotMatch(component, /opacity:\s*0/);
   });
 
-  it('keeps one readable sentence for assistive tech, copy and search', () => {
-    // Real space text nodes between the spans: textContent stays a sentence.
-    assert.match(component, /\{index > 0 \? ' ' : null\}/);
-    assert.match(component, /<span/);
-    assert.doesNotMatch(component, /aria-hidden="true"/, 'the revealed text is not hidden from AT');
+  it('keeps the container wrapping with a 0.1em row gap and visual word spacing', () => {
+    assert.match(component, /display: "flex"/);
+    assert.match(component, /flexWrap: "wrap"/);
+    assert.match(component, /rowGap: "0\.1em"/);
+    assert.match(component, /marginRight: "0\.28em"/, 'words are spaced visually, not with layout-affecting nodes');
+    assert.match(component, /justifyContent: align === "center" \? "center" : "flex-start"/);
+  });
+
+  it('never hides the words from assistive tech', () => {
+    assert.match(component, /React\.createElement\(\s*"span"/);
+    assert.doesNotMatch(component, /aria-hidden/, 'the revealed text is not hidden from AT');
   });
 });
 
 describe('safety rails', () => {
   it('never hides anything under prefers-reduced-motion', () => {
-    assert.match(component, /prefers-reduced-motion: reduce/, 'JS checks the media query');
-    assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-    const block = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-    assert.match(block, /opacity:\s*1 !important/);
-    assert.match(block, /transform:\s*none !important/);
-    assert.match(block, /filter:\s*none !important/);
-    assert.match(block, /transition:\s*none !important/);
-    assert.match(block, /transition-delay:\s*0ms !important/);
-    // Both primitives and both states are covered.
-    for (const selector of ['.reveal', '.words', '.word']) {
-      assert.ok(block.includes(selector), `${selector} is covered by the reduced-motion guard`);
-    }
+    assert.match(component, /window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches/, 'JS checks the media query');
+    const shortCircuits = component.match(/if \(prefersReducedMotion\(\)\) \{\s*setShown\(true\);\s*return;\s*\}/g);
+    assert.ok(shortCircuits && shortCircuits.length === 2, 'both primitives stay visible without arming');
+    // The hidden state is only ever a blur/translate — opacity is pinned at 1.
+    assert.doesNotMatch(component, /opacity:\s*0/);
   });
 
-  it('has three independent un-hide paths: observer, timeout and focus', () => {
-    assert.match(component, /new IntersectionObserver\(/);
-    assert.match(component, /setTimeout\(settle, SAFETY_TIMEOUT_MS\)/);
-    assert.match(component, /SAFETY_TIMEOUT_MS\s*=\s*1600/);
-    assert.match(component, /addEventListener\('focusin'/);
-    // The safety net is installed BEFORE the element is armed.
-    assert.ok(
-      component.indexOf('const safety = window.setTimeout(settle, SAFETY_TIMEOUT_MS)') <
-        component.indexOf('setState(ARMED)'),
-      'arming happens only after every un-hide path exists',
-    );
+  it('forces the visible state with a ~1200ms safety timeout', () => {
+    const timers = component.match(/window\.setTimeout\(\(\) => setShown\(true\), 1200\)/g);
+    assert.ok(timers && timers.length === 2, 'both primitives arm the safety timeout');
   });
 
   it('stays visible when IntersectionObserver or matchMedia is missing', () => {
-    assert.match(component, /typeof IntersectionObserver !== 'function'[\s\S]*?setState\(IDLE\)/);
-    assert.match(component, /typeof window\.matchMedia !== 'function'\)\s*return false/);
+    const fallbacks = component.match(/if \(typeof IntersectionObserver === "undefined"\) \{\s*window\.clearTimeout\(timer\);\s*setShown\(true\);\s*return;\s*\}/g);
+    assert.ok(fallbacks && fallbacks.length === 2, 'both primitives fall back to visible without an observer');
+    assert.match(component, /typeof window === "undefined" \|\| !window\.matchMedia/, 'a missing matchMedia never hides content');
+  });
+
+  it('un-hides on viewport entry and cleans up the observer', () => {
+    assert.match(component, /entries\.some\(\(e\) => e\.isIntersecting\)/);
+    assert.match(component, /io\.observe\(node\)/);
+    assert.match(component, /io\.disconnect\(\)/);
+  });
+
+  it('renders visible by default — the first paint never hides content', () => {
+    assert.match(component, /useState\(false\)/, 'both primitives start un-shown but never invisible');
+    assert.doesNotMatch(component, /visibility:\s*hidden/);
+    assert.doesNotMatch(component, /display: "none"/);
+    assert.doesNotMatch(component, /opacity:\s*0/);
   });
 
   it('animates only opacity, transform and filter — no layout shift', () => {
-    const animated = [
-      rule(".reveal[data-state='armed']"),
-      rule(".reveal[data-state='in']"),
-      rule(".word[data-state='armed']"),
-      rule(".word[data-state='in']"),
-    ].join('\n');
-    for (const property of ['width', 'height', 'margin', 'padding', 'top', 'left', 'right', 'bottom', 'position', 'display', 'font-size']) {
-      assert.doesNotMatch(animated, new RegExp(`(^|[;\\s])${property}\\s*:`, 'm'), `${property} must never animate`);
+    const transitions = component.match(/transition:\s*"[^"]+"/g) ?? [];
+    assert.ok(transitions.length >= 2, 'both primitives declare their transitions');
+    const compositorOnly = ['opacity', 'transform', 'filter'];
+    for (const declaration of transitions) {
+      const value = declaration.replace(/^transition:\s*"/, '').replace(/"$/, '');
+      for (const timing of value.split(',')) {
+        const property = timing.trim().split(' ')[0];
+        assert.ok(compositorOnly.includes(property), `${property} is compositor-only`);
+      }
     }
-    const settled = [rule(".reveal[data-state='in']"), rule(".word[data-state='in']")].join('\n');
-    assert.match(settled, /transition:[^;]*opacity/);
-    assert.match(settled, /transition:[^;]*transform/);
-    assert.match(settled, /transition:[^;]*filter/);
-  });
-
-  it('documents the rails in the source so they survive refactors', () => {
-    assert.match(component, /FIRST RENDER IS VISIBLE/);
-    assert.match(component, /REDUCED MOTION NEVER HIDES/);
-    assert.match(component, /CONTENT CAN NEVER STAY HIDDEN/);
-    assert.match(component, /NO LAYOUT SHIFT/);
-    assert.match(component, /NO DEPENDENCIES/);
   });
 
   it('adds no client-side dependency for motion', () => {
