@@ -1,28 +1,32 @@
 import { NextRequest } from 'next/server';
-import { activeSessionExists } from '../../../db';
-import { verifyAccessToken } from '../../../security';
-import { readAuthSessionCookie } from '../../../auth/session-cookie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MISSION_PORT = Number(process.env.MISSION_PROXY_PORT ?? 4200) || 4200;
+const PUBLIC_API_PORT = Number(process.env.AKBARAL_API_PORT ?? 4000) || 4000;
 const MISSION_SESSION_ENV = ['Z', 'A141251SA_MISSION_SESSION_TOKEN'].join('');
 const UPSTREAM_TIMEOUT_MS = 15_000;
 
-function publicAuthToken(request: NextRequest): string {
-  const authorization = request.headers.get('authorization') ?? '';
-  if (authorization.startsWith('Bearer ')) return authorization.slice(7).trim();
-  return readAuthSessionCookie(request.headers.get('cookie') ?? undefined);
-}
-
-function ownerAuthorized(request: NextRequest): { ok: true } | { ok: false; status: 401 | 403 } {
-  const token = publicAuthToken(request);
-  if (!token) return { ok: false, status: 401 };
-  const payload = verifyAccessToken(token);
-  if (!payload || !payload.sid || !activeSessionExists(payload.sid, payload.sub)) return { ok: false, status: 401 };
-  if (payload.role !== 'owner' && payload.role !== 'super_admin') return { ok: false, status: 403 };
-  return { ok: true };
+/** The existing public API is the authentication authority; its owner router
+ * already runs requireAuth + requireRole('owner','super_admin'). The proxy only
+ * asks that internal API whether this request is allowed, then strips the public
+ * credentials before calling the mission process. */
+async function ownerAuthorized(request: NextRequest): Promise<{ ok: true } | { ok: false; status: 401 | 403 }> {
+  const headers = new Headers();
+  const authorization = request.headers.get('authorization');
+  const cookie = request.headers.get('cookie');
+  if (authorization) headers.set('authorization', authorization);
+  if (cookie) headers.set('cookie', cookie);
+  if (!authorization && !cookie) return { ok: false, status: 401 };
+  try {
+    const response = await fetch(`http://127.0.0.1:${PUBLIC_API_PORT}/api/owner/dashboard`, { headers, cache: 'no-store' });
+    if (response.status === 401) return { ok: false, status: 401 };
+    if (response.status === 403) return { ok: false, status: 403 };
+    return response.ok ? { ok: true } : { ok: false, status: 401 };
+  } catch {
+    return { ok: false, status: 401 };
+  }
 }
 
 function refusal(status: 401 | 403) {
@@ -63,7 +67,7 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
 }
 
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
-  const auth = ownerAuthorized(request);
+  const auth = await ownerAuthorized(request);
   if (!auth.ok) return refusal(auth.status);
 
   const missionToken = (process.env[MISSION_SESSION_ENV] ?? '').trim();

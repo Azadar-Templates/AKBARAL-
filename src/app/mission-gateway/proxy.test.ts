@@ -10,17 +10,18 @@ const shell = fs.readFileSync(path.join(here, '../_components/app-shell.tsx'), '
 test('mission proxy is owner-gated before upstream access', () => {
   assert.match(route, /ownerAuthorized\(request\)/);
   assert.match(route, /if \(!auth\.ok\) return refusal\(auth\.status\)/);
-  assert.match(route, /verifyAccessToken/);
-  assert.match(route, /activeSessionExists/);
-  assert.match(route, /payload\.role !== 'owner' && payload\.role !== 'super_admin'/);
+  assert.match(route, /\/api\/owner\/dashboard/);
+  assert.match(route, /PUBLIC_API_PORT/);
+  assert.match(route, /response\.status === 403/);
   assert.match(route, /127\.0\.0\.1/);
   assert.match(route, /cache-control.*no-store/);
 });
 
 test('proxy does not forward the public cookie or authorization and has honest upstream failure handling', () => {
   assert.match(route, /function forwardedHeaders/);
-  assert.doesNotMatch(route, /headers\.set\(['"]cookie/);
-  assert.doesNotMatch(route, /headers\.set\(['"]authorization['"].*request/);
+  assert.match(route, /forwardedHeaders/);
+  assert.doesNotMatch(route, /function forwardedHeaders[\s\S]*headers\.set\(['"]cookie/);
+  assert.doesNotMatch(route, /function forwardedHeaders[\s\S]*request\.headers\.get\(['"]authorization/);
   assert.match(route, /MISSION_SESSION_ENV/);
   assert.match(route, /status: 502/);
   assert.match(route, /mission service is unavailable/);
