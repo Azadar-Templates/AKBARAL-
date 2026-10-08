@@ -33,6 +33,7 @@ async function main() {
     do {
       try {
         const result = await runGithubBountyCycle(actor, configuredGithubBountyWorkflow());
+        if (result.reason === 'program_not_configured') process.stdout.write('[mission:bounty] scope_gate: program_not_configured\n');
         process.stdout.write(`[mission:bounty] ${JSON.stringify(result)}\n`);
       } catch (error) {
         process.stderr.write(`[mission:bounty] blocked:${publicFailure(error)}\n`);

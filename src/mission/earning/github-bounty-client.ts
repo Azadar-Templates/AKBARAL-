@@ -191,11 +191,20 @@ export class GithubBountyClient {
   }
 
   /** Public, unauthenticated-capable search across explicit bounty-style labels only. */
-  async searchBountyIssues(limit = 30, signal?: AbortSignal): Promise<BountyLeadRaw[]> {
+  /** When `repos` is given, each bounty query is narrowed to exactly one
+   * `repo:owner/name` qualifier, so GitHub never returns issues from any other
+   * repository. Callers must pass only scope-gated repository names. */
+  async searchBountyIssues(limit = 30, signal?: AbortSignal, repos?: string[]): Promise<BountyLeadRaw[]> {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 50) fail('github_invalid_limit');
     void signal;
     const seen = new Map<string, BountyLeadRaw>();
-    for (const q of BOUNTY_SEARCH_QUERIES) {
+    const queries = repos === undefined
+      ? BOUNTY_SEARCH_QUERIES
+      : repos.flatMap(repo => {
+        if (!/^[a-z0-9_.-]{1,100}\/[a-z0-9_.-]{1,100}$/i.test(repo)) fail('github_repo_scope_invalid');
+        return BOUNTY_SEARCH_QUERIES.map(base => `${base} repo:${repo}`);
+      });
+    for (const q of queries) {
       const page = await this.#request('GET', '/search/issues', { q, per_page: String(Math.min(limit, 30)), sort: 'created', order: 'desc' },
         value => value as { items?: unknown[] });
       for (const raw of page.items ?? []) {

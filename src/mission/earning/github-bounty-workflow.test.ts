@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 const testLiveness = setInterval(() => {}, 1000);
 import { GithubBountyClient } from './github-bounty-client';
 const { applyMissionMigrations, missionDb: db } = require('../database') as typeof import('../database');
+const { registerFixtureRepoProgram, SCOPE_TABLES } = require('./github-bounty-scope.fixtures') as typeof import('./github-bounty-scope.fixtures');
 const { GithubBountyWorkflow } = require('./github-bounty-workflow') as typeof import('./github-bounty-workflow');
 const m = require('../money') as typeof import('../money');
 const { updatePolicy, setKillSwitch } = require('../policy') as typeof import('../policy');
@@ -49,7 +50,7 @@ function client() {
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
 }
 
-const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_earning_jobs', 'mission_money_receipts', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_accounts', 'mission_opportunity_roi'];
+const tables = [...SCOPE_TABLES, 'mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_earning_jobs', 'mission_money_receipts', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_accounts', 'mission_opportunity_roi'];
 let w: InstanceType<typeof GithubBountyWorkflow>;
 before(() => {
   applyMissionMigrations();
@@ -59,6 +60,7 @@ before(() => {
 beforeEach(() => {
   setKillSwitch(false, owner.id);
   for (const table of tables) db.run(`DELETE FROM ${table}`);
+  registerFixtureRepoProgram([REPO]); // scope: this fixture repo is the one allow-listed target
   updatePolicy({ killSwitch: false, autonomousEnabled: true, currency: 'USD', maxDailySpendCents: 100000, maxExpenseCents: 10000, requireApprovalAboveCents: 500 }, owner.id);
   for (const id of [agent, other]) m.setMoneyGrant(owner, id, { spendLimitCents: 10000, delegationCents: 0, canCreate: false, expiresAt: new Date(Date.now() + 86400000).toISOString(), status: 'active' });
   banned = false; mergedState = 'open'; reviewState = 'APPROVED'; checkConclusion = 'success';
@@ -158,6 +160,7 @@ it('policy is blocked and no work proceeds while the kill switch is engaged', as
 
 it('automatically rejects a known bait/farm-repo lead at discovery and refuses assignment even after a passing policy check', async () => {
   const baitRepo = 'someone/agent-bounties-farm';
+  registerFixtureRepoProgram([baitRepo]); // scope: the risk screen only sees allow-listed repos
   const transport: typeof fetch = async (input, init) => {
     const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
     if (p === '/search/issues') {
@@ -180,6 +183,7 @@ it('automatically rejects a known bait/farm-repo lead at discovery and refuses a
 
 it('automatically rejects a brand-new zero-star repo lead as high risk', async () => {
   const newRepo = 'someone/totally-legit-project';
+  registerFixtureRepoProgram([newRepo]); // scope: allow-listed so the risk screen is reached
   const transport: typeof fetch = async (input, init) => {
     const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
     if (p === '/search/issues') {
@@ -199,6 +203,7 @@ it('automatically rejects a brand-new zero-star repo lead as high risk', async (
 
 it('automatically rejects duplicate templated titles posted across unrelated repos', async () => {
   const templated = 'Please help us fix critical issue for bounty reward';
+  registerFixtureRepoProgram(['repo-one/x', 'repo-two/y']); // scope: both repos allow-listed
   const transport: typeof fetch = async (input, init) => {
     const url = new URL(String(input)); const method = init?.method ?? 'GET'; const p = url.pathname;
     if (p === '/search/issues') {

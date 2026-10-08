@@ -42,6 +42,7 @@ Names only. Values never belong in Git, chat, or docs.
 | `ZA141251SA_CREDENTIAL_KEY` | Credential-vault encryption key. Must be at least 32 characters. | Generate yourself. Must match the key that encrypted any stored model credential. | `src/mission/auth.ts:311`, `auth.ts:323` | MISSING |
 | `ZA141251SA_BOUNTY_WORKER_ENABLED` | Must equal the exact string `true` to let the bounty worker run. | Set by you in GitHub repository variables. | `scripts/mission-bounty-worker.ts:22`, `.github/workflows/mission-bounty-worker.yml:22` | MISSING. Leave unset until the owner explicitly enables the worker. |
 | `ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST` | Immutable `sha256:<64 lowercase hex>` digest of the trusted sandbox image. | Emitted by the sandbox publish workflow (`.github/workflows/bounty-sandbox-publish.yml`). It is **not** a value you choose. | `src/mission/earning/github-bounty-sandbox.ts:89` | MISSING |
+| `ZA141251SA_BOUNTY_SANDBOX_IMAGE_REPOSITORY` | Optional override of the sandbox image repository. Default `ghcr.io/azadar-templates/akbaral-bounty-sandbox`. Must not include a tag or digest. | `src/mission/earning/github-bounty-sandbox.ts` | Not set. Default applies. |
 | `ZA141251SA_BOUNTY_SANDBOX_RUNTIME` | Container runtime. Defaults to `docker`; `podman` is also accepted. | Set on the host that runs the sandbox. | `src/mission/earning/github-bounty-sandbox.ts:94` | Not set. Default `docker` applies. |
 | `ZA141251SA_CHAT_FREE_TIER` | Opt-in for the existing free-tier model configuration. Leave unset unless you have explicitly opted in. | Your own decision, through the existing owner flow. | `src/mission/chat-provider.ts:97` | MISSING (intentionally) |
 | `ZA141251SA_MISSION_SERVER_ENABLED` | Enables the mission server. **Keep it unset for this task.** | Not applicable here. | `scripts/start-prod.mjs:94` | Not set. Must stay unset. |
@@ -388,10 +389,11 @@ to work until the owner has finished the separate work.
    empty and `available()` returns false (`github-bounty-sandbox.ts:93`, `:97`).
    The workflow then returns `sandbox_unavailable` and performs no execution
    (`github-bounty-workflow.ts:346`, `:364`, `:369`).
-   - The image name is **hard-coded** to
-     `ghcr.io/azadar-templates/akbaral-bounty-sandbox`
-     (`github-bounty-sandbox.ts:34`). It is **not** your own registry. Your own
-     registry would need a code change, which this task does not make.
+   - The image repository defaults to
+     `ghcr.io/azadar-templates/akbaral-bounty-sandbox`. Set
+     `ZA141251SA_BOUNTY_SANDBOX_IMAGE_REPOSITORY` to use your own registry
+     (`github-bounty-sandbox.ts`, `configuredSandboxRepository`). An invalid value
+     fails closed: no image, nothing runs. The digest pin is still required.
 2. **Settlement adapter is absent.** Bounty acceptance cannot credit cash yet.
    This is the owner's stated status; I did not re-verify it in code. Confirm
    the current state in `src/mission/earning/settlement-verification.ts` before
@@ -402,13 +404,11 @@ to work until the owner has finished the separate work.
 4. **No auto-submission.** The control plane has no code path that submits a
    report to a platform. Reports require owner review (`bug-bounty-system.ts`,
    `reportWriter` and quality gates).
-5. **GitHub bounty worker is not scope-gated.** `runGithubBountyCycle` and the
-   GitHub bounty workflow never call `assertInScope` (the only callers are
-   `bug-bounty-system.ts`, `discipline-engine.ts`, `model-layer.ts`, and
-   `platform-adapters.ts`). Adding `repo` scope rows does **not** restrict the
-   GitHub issue bounty worker. The legacy `/api/bounty/...` GitHub route refuses
-   with `409 scope_control_plane_required` (`server.ts:1392-1395`), but the
-   worker path is not that route. Treat this as a known gap until it is fixed.
+5. **GitHub bounty worker is scope-gated, but only for `repo` rows.** Discovery
+   and every repository-scoped action (policy read, assignment, draft, execution,
+   submit, PR monitoring) require an exact `repo` allow row under an active
+   program. Domains and APIs do not affect this worker. See
+   `docs/MISSION_BOUNTY_WORKER_RUNTIME.md`.
 6. **Programs are inactive by default.** Scope checks fail with
    `program_inactive` until you set `active: true`.
 7. **Bounty amounts and platform terms are not verified by this repo.** Every

@@ -10,6 +10,7 @@ import { GithubBountyClient, GithubBountyRateGate } from './github-bounty-client
 import { GithubBountyWorkflow } from './github-bounty-workflow';
 import { bountyRunsSnapshot, releaseExpiredBountyRuns, runParallelBountyCycle } from './github-bounty-parallel-executor';
 import { applyMissionMigrations, missionDb as db, missionId, type Row } from '../database';
+const { registerFixtureRepoProgram } = require('./github-bounty-scope.fixtures') as typeof import('./github-bounty-scope.fixtures');
 
 const owner = { kind: 'owner' as const, id: 'parallel-owner' };
 const now = new Date('2026-01-01T00:00:00.000Z');
@@ -18,6 +19,8 @@ let issueRows: Row[] = [];
 
 before(() => {
   applyMissionMigrations();
+  // scope: every fixture repository is allow-listed under one active program
+  registerFixtureRepoProgram(['acme/lease', ...Array.from({ length: 100 }, (_, index) => `acme/widget-${index + 1}`)]);
   db.run("INSERT INTO mission_owner (id,email,password_hash,role,status) VALUES (?,'parallel@example.invalid','fixture','owner','active')", [owner.id]);
   for (let index = 1; index <= 100; index += 1) {
     const agentId = `parallel-agent-${index}`;
