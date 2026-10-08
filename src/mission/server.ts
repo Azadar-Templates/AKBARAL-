@@ -50,6 +50,7 @@ import {
   upsertScopeAllowlist,
   type ProgramInput,
 } from './earning/bug-bounty-system';
+import { fetchBountyTerms, type BountyTermsRefusalReason } from './earning/bounty-terms-fetch';
 import {
   ModelLayerError,
   checkModelHealth,
@@ -490,6 +491,23 @@ function serveStatic(res: http.ServerResponse, urlPath: string): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 // Routes
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fail-closed HTTP mapping for scope-terms refusals. A refusal is never a 2xx,
+ * and the response body is the ordinary error shape carrying the typed reason.
+ */
+function termsFetchStatus(reason: BountyTermsRefusalReason): number {
+  switch (reason) {
+    case 'timeout': return 504;
+    case 'non_2xx':
+    case 'unsupported_content_type':
+    case 'too_large':
+    case 'network_error':
+    case 'unresolvable_host': return 502;
+    case 'blocked_address': return 403;
+    default: return 400;
+  }
+}
 
 async function handleApi(
   req: http.IncomingMessage,
@@ -1333,6 +1351,22 @@ async function handleApi(
     // explicit allowlist are never bypassed by an older command name.
     if (rest[0] === 'programs') {
       const session = requireHeadAgentOwner(context);
+      // Literal route, registered before any `:id` parsing so `fetch-terms` can
+      // never be read as a program id. Owner-only like its siblings, and it reads
+      // and writes no program row: the hash is of the program's own public page.
+      if (rest.length === 2 && rest[1] === 'fetch-terms') {
+        if (method !== 'POST') throw new HttpProblem(405, 'use POST to fetch scope terms', 'method_not_allowed');
+        const result = await fetchBountyTerms(String(body.scopeUrl ?? ''));
+        if (!result.ok) throw new HttpProblem(termsFetchStatus(result.reason), result.message, result.reason);
+        json(res, 200, {
+          scopeUrl: result.scopeUrl,
+          sha256: result.sha256,
+          byteLength: result.byteLength,
+          fetchedAt: new Date(result.fetchedAtMs).toISOString(),
+          contentPreview: result.contentPreview,
+        });
+        return true;
+      }
       if (method === 'GET' && rest.length === 1) { json(res, 200, { programs: listBountyPrograms(), empty: listBountyPrograms().length === 0 }); return true; }
       if (method === 'POST' && rest.length === 1) {
         const result = createBountyProgram(body as unknown as ProgramInput);
