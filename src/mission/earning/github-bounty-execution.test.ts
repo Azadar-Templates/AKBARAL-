@@ -13,12 +13,13 @@ import { GithubBountyClient } from './github-bounty-client';
 import type { BountySandboxRunner, BountySolutionProposal, SandboxInspection, SandboxVerification } from './github-bounty-sandbox';
 import type { BountySolutionInput, BountySolutionProvider } from './github-bounty-solution-provider';
 const { applyMissionMigrations, missionDb: db } = require('../database') as typeof import('../database');
+const { registerFixtureRepoProgram, SCOPE_TABLES } = require('./github-bounty-scope.fixtures') as typeof import('./github-bounty-scope.fixtures');
 const { GithubBountyWorkflow } = require('./github-bounty-workflow') as typeof import('./github-bounty-workflow');
 const money = require('../money') as typeof import('../money');
 const { updatePolicy, setKillSwitch } = require('../policy') as typeof import('../policy');
 
 const owner = { kind: 'owner' as const, id: 'execution-owner' }, agent = 'execution-agent', REPO = 'acme/widget';
-const tables = ['mission_bounty_candidates', 'mission_bounty_execution_jobs', 'mission_bounty_events', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_opportunity_roi', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations'];
+const tables = [...SCOPE_TABLES, 'mission_bounty_candidates', 'mission_bounty_execution_jobs', 'mission_bounty_events', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_opportunity_roi', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations'];
 const json = (body: unknown, status = 200) => new Response(body === null ? '' : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 function client() {
@@ -61,6 +62,7 @@ beforeEach(() => {
   // Candidate and execution job cross-reference after a successful run.
   db.run('UPDATE mission_bounty_execution_jobs SET candidate_id=NULL');
   for (const table of tables) db.run(`DELETE FROM ${table}`);
+  registerFixtureRepoProgram([REPO]); // scope: this fixture repo is the one allow-listed target
   updatePolicy({ killSwitch: false, autonomousEnabled: true, currency: 'USD', maxDailySpendCents: 100000, maxExpenseCents: 10000, requireApprovalAboveCents: 500 }, owner.id);
   money.setMoneyGrant(owner, agent, { spendLimitCents: 10000, delegationCents: 0, canCreate: false, expiresAt: new Date(Date.now() + 86400000).toISOString(), status: 'active' });
   runner = new FakeRunner(); solutions = new FakeSolutions(); workflow = new GithubBountyWorkflow(client(), runner, solutions);

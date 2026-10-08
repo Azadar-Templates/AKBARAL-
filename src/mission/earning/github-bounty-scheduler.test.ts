@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 const testLiveness = setInterval(() => {}, 1000);
 import { GithubBountyClient } from './github-bounty-client';
 const { applyMissionMigrations, missionDb: db } = require('../database') as typeof import('../database');
+const { registerFixtureRepoProgram, SCOPE_TABLES } = require('./github-bounty-scope.fixtures') as typeof import('./github-bounty-scope.fixtures');
 const { GithubBountyWorkflow } = require('./github-bounty-workflow') as typeof import('./github-bounty-workflow');
 const { runGithubBountyCycle } = require('./github-bounty-scheduler') as typeof import('./github-bounty-scheduler');
 const m = require('../money') as typeof import('../money');
@@ -37,7 +38,7 @@ function client() {
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
 }
 
-const tables = ['mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_runs', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_scheduler_state', 'mission_bounty_review_scheduler_state', 'mission_opportunity_roi', 'mission_money_grants'];
+const tables = [...SCOPE_TABLES, 'mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_runs', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_bounty_scheduler_state', 'mission_bounty_review_scheduler_state', 'mission_opportunity_roi', 'mission_money_grants'];
 let w: InstanceType<typeof GithubBountyWorkflow>;
 before(() => {
   applyMissionMigrations();
@@ -47,6 +48,7 @@ before(() => {
 beforeEach(() => {
   setKillSwitch(false, owner.id);
   for (const table of tables) db.run(`DELETE FROM ${table}`);
+  registerFixtureRepoProgram([REPO]); // scope: this fixture repo is the one allow-listed target
   db.run("INSERT INTO mission_bounty_scheduler_state (id, last_attempted_at, last_result) VALUES ('global', NULL, NULL)");
   db.run("INSERT INTO mission_bounty_review_scheduler_state (id, last_attempted_at, last_result) VALUES ('global', NULL, NULL)");
   updatePolicy({ killSwitch: false, autonomousEnabled: true, currency: 'USD', maxDailySpendCents: 100000, maxExpenseCents: 10000, requireApprovalAboveCents: 500 }, owner.id);

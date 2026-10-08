@@ -10,6 +10,7 @@
 import { missionDb as db, missionId, type Row } from '../database';
 import type { MoneyActor } from '../money';
 import type { GithubBountyWorkflow } from './github-bounty-workflow';
+import { filterInScopeRepos } from './github-bounty-scope-gate';
 
 export const DEFAULT_BOUNTY_MAX_CONCURRENCY = 8;
 const DEFAULT_LEASE_MS = 30 * 60 * 1000;
@@ -63,7 +64,7 @@ function finiteReason(value: unknown): string {
     'sandbox_tests_failed', 'repository_not_execution_eligible', 'model_resource_not_configured',
     'model_prompt_exceeds_configured_bound', 'model_proposal_not_strict_json',
     'proposal_out_of_bounds', 'verification_out_of_bounds', 'issue_snapshot_out_of_bounds',
-    'lease_expired', 'parallel_execution_failed', 'assignment_failed', 'policy_check_failed',
+    'lease_expired', 'parallel_execution_failed', 'assignment_failed', 'policy_check_failed', 'scope_gate_blocked',
   ]);
   const reason = typeof value === 'string' ? value : '';
   return allowed.has(reason) ? reason : 'parallel_execution_failed';
@@ -180,7 +181,11 @@ export async function runParallelBountyCycle(actor: MoneyActor, workflow: Github
   const opportunities = await workflow.discover(actor);
   const accepted = opportunities.filter(row => String(row.risk_state) === 'accepted');
   const rejected = opportunities.filter(row => String(row.risk_state) === 'rejected');
-  const candidates = accepted.filter(row => !db.get('SELECT id FROM mission_bounty_assignments WHERE opportunity_id=?', [String(row.id)]));
+  // Scope gate before any policy fetch: only allow-listed repositories proceed.
+  const candidates = filterInScopeRepos(
+    accepted.filter(row => !db.get('SELECT id FROM mission_bounty_assignments WHERE opportunity_id=?', [String(row.id)])),
+    row => String(row.repo_full_name), { agentType: 'github_bounty_parallel' },
+  );
 
   let policyChecked = 0, policyAllowed = 0, policyBanned = 0;
   const policyResults = await mapLimit(candidates, maxConcurrency, async opportunity => {

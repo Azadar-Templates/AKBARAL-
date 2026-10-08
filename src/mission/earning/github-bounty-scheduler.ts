@@ -7,6 +7,7 @@ import { missionDb as db, nowIso, type Row } from '../database';
 import type { MoneyActor } from '../money';
 import { GithubBountyWorkflow } from './github-bounty-workflow';
 import { runParallelBountyCycle, DEFAULT_BOUNTY_MAX_CONCURRENCY } from './github-bounty-parallel-executor';
+import { recordNoActiveProgram } from './github-bounty-scope-gate';
 
 const MIN_DISCOVERY_INTERVAL_MS = 10 * 60 * 1000;
 const MIN_PR_REVIEW_INTERVAL_MS = 15 * 60 * 1000;
@@ -63,6 +64,12 @@ export async function runGithubBountyCycle(actor: MoneyActor, workflow: GithubBo
     executionReason: null, maxConcurrency: DEFAULT_BOUNTY_MAX_CONCURRENCY, availableViableIssues: 0,
     idleIssues: 0, leasesReleased: 0,
   } as const;
+  // Fail closed: with no active bounty program there is no authorized target,
+  // so the cycle performs no discovery, no GitHub read, no draft and no PR review.
+  if (!db.get<Row>('SELECT id FROM bounty_programs WHERE active=1')) {
+    recordNoActiveProgram({ agentType: 'github_bounty_cycle' });
+    return { ran: false, reason: 'program_not_configured', ...empty };
+  }
   const reviewDue = isDue('mission_bounty_review_scheduler_state', MIN_PR_REVIEW_INTERVAL_MS);
   const discoveryDue = isDue('mission_bounty_scheduler_state', MIN_DISCOVERY_INTERVAL_MS);
   if (!reviewDue && !discoveryDue) return { ran: false, reason: 'not_due', ...empty };

@@ -29,9 +29,17 @@ const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_REPORT_BYTES = 96 * 1024;
 const DOCKER_TIMEOUT_MS = 6 * 60 * 1000;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
-/** Trusted registry path is fixed in code. Deployment supplies only an immutable
- * digest, never an arbitrary image name selected by a repository/model. */
-const TRUSTED_SANDBOX_IMAGE = 'ghcr.io/azadar-templates/akbaral-bounty-sandbox';
+/** Default trusted sandbox repository. Deployment may override the repository
+ * through ZA141251SA_BOUNTY_SANDBOX_IMAGE_REPOSITORY (owner-controlled env, not
+ * a repository/model input). A digest is always required, and the override is
+ * validated so it cannot carry a tag, digest, whitespace, or traversal. */
+export const DEFAULT_SANDBOX_IMAGE_REPOSITORY = 'ghcr.io/azadar-templates/akbaral-bounty-sandbox';
+const SANDBOX_REPOSITORY = /^[a-z0-9][a-z0-9._/-]{0,199}$/;
+export function configuredSandboxRepository(value: string | undefined = process.env.ZA141251SA_BOUNTY_SANDBOX_IMAGE_REPOSITORY): string | null {
+  const raw = (value ?? '').trim();
+  if (!raw) return DEFAULT_SANDBOX_IMAGE_REPOSITORY;
+  return SANDBOX_REPOSITORY.test(raw) && !raw.includes('..') && !raw.includes('//') && !raw.endsWith('/') ? raw : null;
+}
 const SAFE_PATH = /^(?!\.git(?:\/|$))(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._@+\-/]{1,400}$/;
 const SAFE_EXECUTABLE = /^[A-Za-z0-9._+-]{1,80}$/;
 const TEST_EXECUTABLES = new Set(['npm', 'npx', 'pnpm', 'yarn', 'bun', 'deno', 'node', 'python', 'python3', 'pytest', 'go', 'cargo', 'make', 'gradle', 'mvn', 'composer', 'php', 'ruby', 'rspec', 'dotnet', 'swift', 'java']);
@@ -85,12 +93,14 @@ function reportFromStdout(stdout: Buffer): any {
 export class OciBountySandboxRunner implements BountySandboxRunner {
   readonly image: string;
   readonly runtime: string;
-  constructor(options: { image?: string; runtime?: string } = {}) {
+  constructor(options: { image?: string; runtime?: string; repository?: string } = {}) {
     const digest = options.image ?? process.env.ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST ?? '';
+    const repository = configuredSandboxRepository(options.repository ?? process.env.ZA141251SA_BOUNTY_SANDBOX_IMAGE_REPOSITORY);
     // A digest by itself is intentionally not enough to fetch a remote image.
     // The deployment pre-pulls this exact GHCR manifest; #run still uses
     // --pull=never so the mission worker cannot fetch an unreviewed tag.
-    this.image = DIGEST.test(digest) ? `${TRUSTED_SANDBOX_IMAGE}@${digest}` : '';
+    // An invalid repository override fails closed: no image, so nothing runs.
+    this.image = DIGEST.test(digest) && repository ? `${repository}@${digest}` : '';
     this.runtime = options.runtime ?? process.env.ZA141251SA_BOUNTY_SANDBOX_RUNTIME ?? 'docker';
   }
   async available(): Promise<boolean> {

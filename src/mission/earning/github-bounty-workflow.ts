@@ -28,6 +28,8 @@ import { assertMoneyOwner, grant, cashAccount, approveOpportunity, MoneyError, t
 import { currentPolicy, checkActivity } from '../policy';
 import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient, type BountyLeadRaw, type PullRequestReviewSnapshotRaw } from './github-bounty-client';
 import { OciBountySandboxRunner, type BountySandboxRunner } from './github-bounty-sandbox';
+import { BountyScopeError } from './bug-bounty-system';
+import { allowlistedRepoNames, decideRepoScope, filterInScopeRepos, gateGithubRepo, recordNoActiveProgram } from './github-bounty-scope-gate';
 import { GoogleBountySolutionProvider, type BountySolutionProvider } from './github-bounty-solution-provider';
 
 const LEDGER_PROVIDER = 'github-bounty-settlement';
@@ -55,6 +57,7 @@ function required(value: string, max = 400): string {
   return value;
 }
 function executionFailureCode(error: unknown): string {
+  if (error instanceof BountyScopeError) return 'scope_gate_blocked';
   // Only our finite internal reasons become durable evidence. Never store raw
   // provider, GitHub, Docker, repository, or model error text.
   const message = error instanceof Error ? error.message : '';
@@ -116,7 +119,17 @@ export class GithubBountyWorkflow {
   /** Public GitHub issue search only — no marketplace website is contacted. */
   async discover(actor: MoneyActor): Promise<Row[]> {
     this.live(actor);
-    const leads: BountyLeadRaw[] = await this.github.searchBountyIssues(30);
+    // Scope gate: discovery searches only repositories with an exact allow row
+    // under an active program. With no active program, nothing is searched.
+    const scoped = allowlistedRepoNames();
+    let leads: BountyLeadRaw[] = [];
+    if (scoped.repos.length === 0) {
+      recordNoActiveProgram({ agentType: 'github_bounty_discovery' });
+    } else {
+      if (scoped.truncated > 0) appendMissionAudit({ actorType: 'system', actorId: null, action: 'bounty.scope_gate_search_truncated', subjectType: 'github_bounty_worker', subjectId: 'github-issue-bounty', detail: { searched: scoped.repos.length, notSearched: scoped.truncated } });
+      leads = await this.github.searchBountyIssues(30, undefined, scoped.repos);
+      leads = filterInScopeRepos(leads, lead => lead.repoFullName, { agentType: 'github_bounty_discovery' });
+    }
     const duplicateTitles = detectDuplicateTitles(leads);
     // Fraud/bait-repo risk screen runs BEFORE any candidate is ever prepared, on every
     // genuinely new lead — never on already-recorded opportunities (no re-litigating history).
@@ -145,7 +158,8 @@ export class GithubBountyWorkflow {
           event(id, r.state === 'rejected' ? 'risk_rejected' : 'discovered', r.reason ?? lead.issueUrl);
         }
       }
-      return db.all<Row>('SELECT * FROM mission_bounty_opportunities ORDER BY observed_at DESC LIMIT 200');
+      return db.all<Row>('SELECT * FROM mission_bounty_opportunities ORDER BY observed_at DESC LIMIT 200')
+        .filter(row => decideRepoScope(String(row.repo_full_name)).allowed);
     });
   }
 
@@ -157,6 +171,7 @@ export class GithubBountyWorkflow {
     this.live(actor);
     const opp = get('mission_bounty_opportunities', opportunityId);
     const repo = String(opp.repo_full_name);
+    gateGithubRepo(repo, { agentType: 'github_bounty_policy' });
     const files = await this.github.fetchRepoPolicyFiles(repo);
     const result = classifyRepoPolicy(repo, files, nowIso());
     return db.transaction(() => {
@@ -177,6 +192,7 @@ export class GithubBountyWorkflow {
   assign(actor: MoneyActor, input: { agentId: string; opportunityId: string }) {
     this.live(actor); grant(input.agentId);
     const op = get('mission_bounty_opportunities', input.opportunityId);
+    gateGithubRepo(String(op.repo_full_name), { agentType: 'github_bounty_assign' });
     if (String(op.risk_state) === 'rejected') deny('lead_risk_rejected');
     const policyRow = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(op.repo_full_name)]);
     if (!policyRow) deny('policy_not_checked');
@@ -208,6 +224,7 @@ export class GithubBountyWorkflow {
    * claim. The existing assignment, policy, MoneyActor and approval gates stay
    * authoritative. */
   queueExecution(actor: MoneyActor, assignmentId: string) {
+    gateGithubRepo(String(this.opportunity(this.assignment(assignmentId)).repo_full_name), { agentType: 'github_bounty_execution', runId: assignmentId });
     return db.transaction(() => {
       const assignment = this.assignment(assignmentId); this.live(actor, assignment);
       const opportunity = this.opportunity(assignment);
@@ -246,6 +263,9 @@ export class GithubBountyWorkflow {
     const opportunity = this.opportunity(assignment);
     try {
       this.live(actor, assignment);
+      gateGithubRepo(String(opportunity.repo_full_name), { agentType: 'github_bounty_execution', runId: jobId });
+      // Fail closed before any repository, issue, archive, or model call.
+      if (!(await this.sandbox.available())) throw new Error('sandbox_unavailable');
       const policy = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(opportunity.repo_full_name)]);
       if (!policy || !Number(policy.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
       db.transaction(() => {
@@ -380,6 +400,7 @@ export class GithubBountyWorkflow {
     required(input.filePath, 400); required(input.commitMessage, 400); required(input.prTitle, 250);
     if (typeof input.fileContent !== 'string' || input.fileContent.length > 500000) deny('invalid_input');
     if (typeof input.prBody !== 'string' || input.prBody.length > 50000) deny('invalid_input');
+    gateGithubRepo(String(this.opportunity(this.assignment(assignmentId)).repo_full_name), { agentType: 'github_bounty_draft', runId: assignmentId });
     return db.transaction(() => {
       const a = this.assignment(assignmentId); this.live(actor, a);
       const body = input.prBody + MANDATORY_DISCLOSURE;
@@ -419,6 +440,7 @@ export class GithubBountyWorkflow {
     if (this.dryRun) deny('dry_run_submission_blocked');
     const c = this.candidate(candidateId), a = this.assignment(String(c.assignment_id)); this.live(actor, a);
     if (c.state !== 'eligible' || c.approved_hash !== c.content_hash || !c.approved_by) deny('owner_approval_required');
+    gateGithubRepo(String(c.repo_full_name), { agentType: 'github_bounty_submit', runId: candidateId });
     db.transaction(() => { this.live(actor, this.assignment(String(c.assignment_id))); db.run("UPDATE mission_bounty_candidates SET state='submitting',updated_at=? WHERE id=? AND state='eligible'", [nowIso(), candidateId]); });
     let open = true;
     try {
@@ -455,6 +477,7 @@ export class GithubBountyWorkflow {
     assertMoneyOwner(actor);
     const c = this.candidate(candidateId);
     if (!['submitted', 'merged', 'closed_unmerged'].includes(String(c.state)) || !c.external_pr_number) deny('not_submitted');
+    gateGithubRepo(String(c.repo_full_name), { agentType: 'github_bounty_monitor', runId: candidateId });
     const status = await this.github.getPullRequest(String(c.repo_full_name), Number(c.external_pr_number));
     return db.transaction(() => {
       assertMoneyOwner(actor);
@@ -531,6 +554,7 @@ export class GithubBountyWorkflow {
     for (const candidate of candidates) {
       attempted++;
       try {
+        gateGithubRepo(String(candidate.repo_full_name), { agentType: 'github_bounty_monitor', runId: String(candidate.id) });
         const snapshot = await this.github.getPullRequestReviewSnapshot(String(candidate.repo_full_name), Number(candidate.external_pr_number));
         const persisted = this.recordPullRequestReviewSnapshot(actor, String(candidate.id), snapshot);
         if (!persisted) continue;
@@ -543,6 +567,10 @@ export class GithubBountyWorkflow {
         if (snapshot.checksState === 'failing') checksFailing++;
       } catch (error) {
         failed++;
+        if (error instanceof BountyScopeError) {
+          try { event(String(candidate.id), 'review_refresh_scope_blocked', error.reason.slice(0, 120)); } catch { /* audit failure must not hide the refusal */ }
+          continue;
+        }
         const code = error instanceof GithubBountyError ? error.code : 'github_monitor_failed';
         // No raw upstream body/error is retained: it may include untrusted PR
         // text. The durable retry signal is the still-submitted candidate.
