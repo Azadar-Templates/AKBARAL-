@@ -338,6 +338,7 @@ export function AppShell({ title, children, allowAnonymous = false, viewportLock
                   <Link href="/billing" onClick={closeAccountMenu}>Billing &amp; credits</Link>
                   <Link href="/help" onClick={closeAccountMenu}>Help</Link>
                   {canOwner ? <Link href="/owner" onClick={closeAccountMenu}>Owner</Link> : null}
+                  {canOwner ? <Link href="/mission-gateway/" aria-current={pathname.startsWith('/mission-gateway') ? 'page' : undefined} onClick={closeAccountMenu}>Mission Control</Link> : null}
                   {canAdmin ? <Link href="/admin" onClick={closeAccountMenu}>Admin</Link> : null}
                   <button type="button" onClick={() => { closeAccountMenu(); void signOut(); }}>Log out</button>
                 </nav>,

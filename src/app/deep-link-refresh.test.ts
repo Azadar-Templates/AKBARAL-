@@ -57,7 +57,9 @@ test('unknown paths still 404 instead of silently serving the application', () =
   };
   walk(appDir);
   const catchAll = dirs.filter((name) => name.startsWith('[...') || name.startsWith('[[...'));
-  assert.deepEqual(catchAll, [], 'a catch-all route would make every unknown path a 200');
+  // The private mission proxy is intentionally the only scoped catch-all: it is
+  // owner-gated before any upstream call and is not a public application SPA.
+  assert.deepEqual(catchAll, ['[[...path]]'], 'only the owner-gated mission proxy may catch a path suffix');
   assert.ok(!routes.has('/nonexistent-xyz'));
 });
 
