@@ -360,3 +360,18 @@ th {
   font: var(--micro-label);
   letter-spacing: var(--micro-label-tracking);
 }
+
+/* Owner bounty registration: compact, dependency-free and touch-safe. */
+.bounty-registration-form { gap: 12px; }
+.bounty-registration-form .inline-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.bounty-registration-form h4 { margin: 8px 0 0; color: var(--text); }
+.bounty-targets { display: grid; gap: 8px; }
+.bounty-target-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .35fr) auto; gap: 8px; align-items: center; }
+.warning-text { margin: 0; color: var(--warn); font-size: 12.5px; line-height: 1.5; }
+.bounty-preview-region { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; background: var(--panel-2); }
+.bounty-preview-region pre { margin: 0; max-height: 180px; overflow: auto; color: var(--muted); font: 12px/1.5 ui-monospace, monospace; }
+.bounty-program-card { display: grid; gap: 8px; margin-bottom: 10px; }
+.bounty-card-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bounty-card-targets { margin: 0; padding-left: 20px; color: var(--muted); }
+.empty-state { padding: 12px; }
+@media (max-width: 560px) { .bounty-registration-form .inline-form, .bounty-target-row { grid-template-columns: 1fr; } .bounty-target-row button { width: 100%; } }

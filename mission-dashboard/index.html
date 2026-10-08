@@ -234,15 +234,35 @@
           <p class="muted">The configured program scope file and allowlist are the only source of truth. No program or target is seeded. Unlisted targets hard-block before any external call; submissions are never automatic.</p>
           <h3>Programs</h3>
           <div id="bounty-programs" class="table-wrap"></div>
-          <form id="bounty-program-form" class="stack-form">
-            <h3>Configure a program — owner</h3>
-            <label>Platform <input name="platform" placeholder="HackerOne / Bugcrowd / YesWeHack" required /></label>
-            <label>Program handle <input name="programHandle" required /></label>
-            <label>Scope URL <input name="scopeUrl" type="url" required /></label>
-            <label>Program terms SHA-256 <input name="programTermsHash" pattern="[a-fA-F0-9]{64}" minlength="64" maxlength="64" required /></label>
-            <button type="submit">Save program</button>
-            <p class="muted small">Saving metadata does not authorize a target. Add explicit scope entries separately.</p>
-          </form>
+          <section id="bounty-registration" class="stack-form" data-owner-only="true" aria-labelledby="bounty-registration-heading">
+            <h3 id="bounty-registration-heading">Register a bounty program</h3>
+            <p class="muted small">Owner-only registration. The program is created inactive, then explicit scope rows are saved before any optional activation.</p>
+            <form id="bounty-program-form" class="stack-form bounty-registration-form">
+              <label>Platform
+                <select name="platform" id="bounty-platform" required>
+                  <option value="">Choose a platform</option><option value="github">github</option><option value="immunefi">immunefi</option><option value="code4rena">code4rena</option><option value="sherlock">sherlock</option><option value="hackerone">hackerone</option><option value="bugcrowd">bugcrowd</option><option value="other">Other</option>
+                </select>
+              </label>
+              <label id="bounty-other-platform-wrap" hidden>Other platform <input name="otherPlatform" id="bounty-other-platform" autocomplete="off" /></label>
+              <label>Program handle <input name="programHandle" required autocomplete="off" /></label>
+              <label>Scope URL
+                <span class="inline-form"><input name="scopeUrl" id="bounty-scope-url" type="url" inputmode="url" placeholder="https://…" required autocomplete="url" /><button type="button" id="bounty-fetch-terms">Fetch terms &amp; hash</button></span>
+              </label>
+              <p id="bounty-terms-status" class="muted small" role="status"></p>
+              <label>Terms hash <input name="programTermsHash" id="bounty-terms-hash" pattern="[0-9a-fA-F]{64}" minlength="64" maxlength="64" required autocomplete="off" /></label>
+              <div id="bounty-terms-meta" class="muted small" hidden></div>
+              <div id="bounty-terms-preview-region" class="bounty-preview-region" role="group" aria-labelledby="bounty-terms-preview-heading" hidden><h4 id="bounty-terms-preview-heading">Fetched terms preview</h4><pre id="bounty-terms-preview"></pre></div>
+              <div class="bounty-targets" role="group" aria-labelledby="bounty-targets-heading">
+                <h4 id="bounty-targets-heading">In-scope targets</h4>
+                <p class="warning-text">Only add targets this program has publicly listed as in scope. Do not add anything else — testing an out-of-scope target is unlawful.</p>
+                <div id="bounty-registration-targets"></div>
+                <button type="button" class="ghost" id="bounty-add-target">Add target</button>
+              </div>
+              <label class="checkbox-label"><input name="activateNow" id="bounty-activate-now" type="checkbox" /> <span><strong>Activate now</strong><br /><small class="muted">Activating allows the worker to act on these targets. Leave unchecked until the scope above is correct.</small></span></label>
+              <button type="submit" id="bounty-registration-submit" disabled>Register program</button>
+              <p id="bounty-registration-status" class="muted small" role="status"></p>
+            </form>
+          </section>
           <form id="bounty-scope-form" class="stack-form">
             <h3>Explicit scope allowlist / denylist — owner</h3>
             <label>Program ID <input name="programId" required /></label>

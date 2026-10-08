@@ -755,17 +755,104 @@ async function loadHeadAgentChat(question) {
   }
 }
 
+function bountyTargetRow(target = '', targetType = 'repo') {
+  const row = el('div', { class: 'bounty-target-row' });
+  const input = el('input', { name: 'target', placeholder: 'org/repo or example.com', required: 'required', value: target });
+  const select = el('select', { name: 'targetType' }, [
+    el('option', { value: 'repo', text: 'repo' }), el('option', { value: 'domain', text: 'domain' }),
+    el('option', { value: 'package', text: 'package' }), el('option', { value: 'API', text: 'API' }),
+  ]);
+  select.value = targetType;
+  const remove = el('button', { type: 'button', class: 'ghost small', text: 'Remove target' });
+  remove.addEventListener('click', () => row.remove());
+  row.append(input, select, remove);
+  return row;
+}
+
+function addBountyTarget(target = '', targetType = 'repo') {
+  const host = $('#bounty-registration-targets');
+  if (host) host.appendChild(bountyTargetRow(target, targetType));
+}
+
+function clearTermsResult(message = '') {
+  const hash = $('#bounty-terms-hash');
+  if (hash) hash.value = '';
+  const meta = $('#bounty-terms-meta');
+  if (meta) { meta.textContent = ''; meta.hidden = true; }
+  const previewRegion = $('#bounty-terms-preview-region');
+  if (previewRegion) previewRegion.hidden = true;
+  const status = $('#bounty-terms-status');
+  if (status) status.textContent = message;
+}
+
+function termsHashValid() {
+  return /^[0-9a-f]{64}$/i.test(String($('#bounty-terms-hash')?.value || '').trim());
+}
+
+function updateBountySubmitState() {
+  const button = $('#bounty-registration-submit');
+  if (button) button.disabled = !termsHashValid();
+}
+
+async function fetchBountyTermsForForm() {
+  const url = String($('#bounty-scope-url')?.value || '').trim();
+  const status = $('#bounty-terms-status');
+  if (!/^https:\/\/[^\s]+$/i.test(url)) { clearTermsResult('Enter a valid https:// scope URL before fetching terms.'); updateBountySubmitState(); return; }
+  const button = $('#bounty-fetch-terms');
+  button.disabled = true;
+  clearTermsResult('Fetching terms…');
+  try {
+    const result = await api('/bounty/programs/fetch-terms', { method: 'POST', body: { scopeUrl: url } });
+    $('#bounty-terms-hash').value = result.sha256 || '';
+    $('#bounty-terms-meta').textContent = `sha256: ${result.sha256} · byteLength: ${result.byteLength} · fetchedAt: ${result.fetchedAt}`;
+    $('#bounty-terms-meta').hidden = false;
+    $('#bounty-terms-preview').textContent = result.contentPreview || '';
+    $('#bounty-terms-preview-region').hidden = false;
+    status.textContent = 'Terms fetched. Review the preview and scope before registering.';
+  } catch (error) {
+    clearTermsResult(`${error.code || 'error'}: ${error.message}`);
+  } finally { button.disabled = false; updateBountySubmitState(); }
+}
+
+function bountyProgramCard(program, scope) {
+  const targets = (scope || []).filter((row) => row.inScope === true || Number(row.in_scope) === 1);
+  const card = el('article', { class: 'card bounty-program-card' });
+  const title = el('div', { class: 'bounty-card-title' }, [el('strong', { text: `${program.platform} / ${program.programHandle}` }), pill(program.active ? 'active' : 'inactive', program.active ? 'ok' : 'warn')]);
+  const targetList = targets.length ? el('ul', { class: 'bounty-card-targets' }, targets.map((row) => el('li', { text: `${row.target} (${row.targetType || row.target_type || 'unknown'})` }))) : el('p', { class: 'muted small', text: 'No in-scope targets saved. Activation is disabled.' });
+  const actions = el('div', { class: 'action-stack' });
+  const toggle = el('button', { type: 'button', class: program.active ? 'ghost' : '', text: program.active ? 'Deactivate' : 'Activate' });
+  toggle.disabled = !program.active && targets.length === 0;
+  if (!program.active && targets.length === 0) toggle.title = 'Add at least one in-scope target before activating.';
+  toggle.addEventListener('click', async () => {
+    if (!isOwnerSession() || (!program.active && targets.length === 0)) return;
+    toggle.disabled = true;
+    try { await api(`/bounty/programs/${encodeURIComponent(program.id)}`, { method: 'PATCH', body: { active: !program.active } }); await loadBountyControl(); banner(`Program ${program.active ? 'deactivated' : 'activated'}.`, 'ok'); }
+    catch (error) { toggle.disabled = false; banner(error.message, 'error'); }
+  });
+  actions.appendChild(toggle);
+  card.append(title, el('p', { class: 'muted small', text: `In-scope targets: ${targets.length}` }), targetList, actions);
+  return card;
+}
+
+async function renderBountyPrograms(programs) {
+  const host = $('#bounty-programs');
+  if (!host) return;
+  host.replaceChildren();
+  if (!programs || programs.length === 0) { host.appendChild(el('p', { class: 'empty-state muted', text: 'No bounty programs registered yet. The worker stays idle until a program is active with at least one in-scope target.' })); return; }
+  const cards = await Promise.all(programs.map(async (program) => {
+    try { const result = await api(`/bounty/programs/${encodeURIComponent(program.id)}/scope`); return bountyProgramCard(program, result.scope || []); }
+    catch (error) { return el('article', { class: 'card', children: [], text: `${program.platform} / ${program.programHandle}: ${error.message}` }); }
+  }));
+  host.append(...cards);
+}
+
 async function loadBountyControl() {
   if (!isOwnerSession()) return;
   const [programs, agents, findings, events, providers, platforms, reputation, lessons] = await Promise.all([
     api('/bounty/programs'), api('/bounty/agents'), api('/bounty/findings'), api('/bounty/scope-events'),
     api('/mission/model-providers'), api('/bounty/platforms'), api('/bounty/reputation'), api('/bounty/lessons'),
   ]);
-  replace('#bounty-programs', table([
-    { label: 'ID', key: 'id' }, { label: 'Platform', key: 'platform' }, { label: 'Handle', key: 'programHandle' },
-    { label: 'Active', render: (row) => row.active ? pill('active', 'ok') : pill('inactive', 'warn') },
-    { label: 'Scope entries', render: (row) => row.inScopeAssets?.length || 0 }, { label: 'Terms hash', key: 'programTermsHash', wrap: true },
-  ], programs.programs || [], 'No bounty programs configured. No targets or earnings are inferred.'));
+  await renderBountyPrograms(programs.programs || []);
   replace('#bounty-agent-registry', table([
     { label: 'Agent type', key: 'type' }, { label: 'Capability', key: 'capabilityDescription', wrap: true },
     { label: 'Required tools', render: (row) => (row.requiredTools || []).join(', ') }, { label: 'Concurrency', key: 'maxConcurrency' },
@@ -1994,17 +2081,65 @@ function wire() {
     signOut();
   });
 
+  $('#bounty-platform').addEventListener('change', (event) => {
+    const other = $('#bounty-other-platform-wrap');
+    const input = $('#bounty-other-platform');
+    other.hidden = event.target.value !== 'other';
+    input.required = event.target.value === 'other';
+  });
+  $('#bounty-add-target').addEventListener('click', () => addBountyTarget());
+  $('#bounty-fetch-terms').addEventListener('click', () => { void fetchBountyTermsForForm(); });
+  $('#bounty-terms-hash').addEventListener('input', updateBountySubmitState);
+  $('#bounty-terms-hash').addEventListener('blur', () => {
+    const status = $('#bounty-terms-status');
+    if ($('#bounty-terms-hash').value && !termsHashValid()) status.textContent = 'Terms hash must be exactly 64 hexadecimal characters.';
+    updateBountySubmitState();
+  });
+  addBountyTarget();
+
   $('#bounty-program-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!isOwnerSession()) { banner('Bug bounty program configuration requires the mission owner session.', 'error'); return; }
+    if (!termsHashValid()) { banner('Enter or fetch a valid 64-character terms hash before registering.', 'error'); return; }
     const form = event.target;
-    const body = Object.fromEntries(new FormData(form));
+    const submit = $('#bounty-registration-submit');
+    const status = $('#bounty-registration-status');
+    const platformSelect = $('#bounty-platform').value;
+    const platform = platformSelect === 'other' ? String($('#bounty-other-platform').value || '').trim() : platformSelect;
+    const scopeUrl = String($('#bounty-scope-url').value || '').trim();
+    const rows = $$('#bounty-registration-targets .bounty-target-row').map((row) => ({ target: String($('input', row).value || '').trim(), targetType: $('select', row).value })).filter((row) => row.target);
+    if (!platform || !scopeUrl || !/^https:\/\/[^\s]+$/i.test(scopeUrl) || !termsHashValid()) { status.textContent = 'Platform, handle, https scope URL, and a valid terms hash are required.'; return; }
+    if ($$('#bounty-registration-targets .bounty-target-row input').some((input) => !input.value.trim())) { status.textContent = 'Remove empty target rows or fill them before saving.'; return; }
+    submit.disabled = true;
+    status.textContent = 'Saving inactive program…';
+    let program;
+    const failedTargets = [];
     try {
-      await api('/bounty/programs', { method: 'POST', body: { ...body, active: false } });
-      form.reset();
+      const created = await api('/bounty/programs', { method: 'POST', body: { platform, programHandle: String(form.programHandle.value || '').trim(), scopeUrl, programTermsHash: String($('#bounty-terms-hash').value).trim(), active: false } });
+      program = created.program;
+      for (const row of rows) {
+        try { await api(`/bounty/programs/${encodeURIComponent(program.id)}/scope`, { method: 'POST', body: { target: row.target, targetType: row.targetType, inScope: true } }); }
+        catch (error) { failedTargets.push(`${row.target} (${error.code || 'error'}: ${error.message})`); }
+      }
+      if (failedTargets.length) {
+        status.textContent = `Partial failure: the program was created but these targets failed: ${failedTargets.join('; ')}. The program was NOT activated.`;
+        banner('Partial failure — program was not activated.', 'error');
+        await loadBountyControl();
+        return;
+      }
+      if ($('#bounty-activate-now').checked && rows.length > 0) {
+        status.textContent = 'Activating after all scope rows saved…';
+        await api(`/bounty/programs/${encodeURIComponent(program.id)}`, { method: 'PATCH', body: { active: true } });
+      }
+      form.reset(); $('#bounty-other-platform-wrap').hidden = true; clearTermsResult(); $('#bounty-registration-targets').replaceChildren(); addBountyTarget(); updateBountySubmitState();
       await loadBountyControl();
-      banner('Program metadata saved. No target is authorized until an explicit scope entry is added.', 'ok');
-    } catch (error) { banner(error.message, 'error'); }
+      status.textContent = 'Program registered successfully.';
+      banner('Bounty program registered. Scope was saved before activation.', 'ok');
+    } catch (error) {
+      if (error.code === 'program_exists') { status.textContent = `${error.code}: ${error.message} Use the existing program card instead. No further requests were sent.`; banner('That program already exists. Use its existing card instead.', 'error'); return; }
+      status.textContent = program ? `Registration failed after program creation: ${error.code || 'error'}: ${error.message}. The program was NOT activated.` : `${error.code || 'error'}: ${error.message}`;
+      banner(status.textContent, 'error');
+    } finally { submit.disabled = !termsHashValid(); }
   });
 
   $('#bounty-scope-form').addEventListener('submit', async (event) => {
