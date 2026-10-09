@@ -1,12 +1,17 @@
 import { NextRequest } from 'next/server';
+import {
+  MISSION_PORT,
+  UPSTREAM_TIMEOUT_MS,
+  invalidateMissionSessionToken,
+  missionSessionEnvNames,
+  missionSessionToken,
+  ownerCredentialsConfigured,
+} from '../mission-session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MISSION_PORT = Number(process.env.MISSION_PROXY_PORT ?? 4200) || 4200;
 const PUBLIC_API_PORT = Number(process.env.AKBARAL_API_PORT ?? 4000) || 4000;
-const MISSION_SESSION_ENV = ['Z', 'A141251SA_MISSION_SESSION_TOKEN'].join('');
-const UPSTREAM_TIMEOUT_MS = 15_000;
 
 /** The existing public API is the authentication authority; its owner router
  * already runs requireAuth + requireRole('owner','super_admin'). The proxy only
@@ -39,14 +44,13 @@ function upstreamPath(path: string[], request: NextRequest): string {
   return `http://127.0.0.1:${MISSION_PORT}/${suffix}${query}`;
 }
 
-function forwardedHeaders(request: NextRequest): Headers {
+function forwardedHeaders(request: NextRequest, missionToken: string): Headers {
   const headers = new Headers();
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
   const accept = request.headers.get('accept');
   if (accept) headers.set('accept', accept);
-  const missionToken = (process.env[MISSION_SESSION_ENV] ?? '').trim();
-  if (missionToken) headers.set('authorization', `Bearer ${missionToken}`);
+  headers.set('authorization', `Bearer ${missionToken}`);
   return headers;
 }
 
@@ -70,56 +74,81 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   const auth = await ownerAuthorized(request);
   if (!auth.ok) return refusal(auth.status);
 
-  const missionToken = (process.env[MISSION_SESSION_ENV] ?? '').trim();
-  if (!missionToken) {
-    // Honest 503 — and owner-only: this branch sits behind ownerAuthorized, so
-    // no unauthenticated client can reach it. Name the missing variable (never
-    // its value) and state the exact owner action. The mission server has no
-    // static token: owner sessions are minted at runtime by POST
-    // /api/session/login with the mission owner email and password.
-    console.error(`[mission-proxy] upstream session is not configured: set ${MISSION_SESSION_ENV} to a mission owner session token`);
-    return Response.json(
-      {
-        error: 'mission upstream session is not configured',
-        missingEnvVar: MISSION_SESSION_ENV,
-        howToFix: [
-          `Mission owner sessions are minted at runtime only: sign in to the loopback mission server (POST /api/session/login, port ${MISSION_PORT}) with the mission owner email and password.`,
-          `Set the returned session token as ${MISSION_SESSION_ENV} in the web process environment; the proxy presents it to the mission server as a bearer token.`,
-          'Sessions expire (default 12 hours) and every new sign-in revokes the previous session; a stale token surfaces as an upstream 401, not a proxy error.',
-        ].join(' '),
-      },
-      { status: 503, headers: { 'cache-control': 'no-store' } },
-    );
-  }
+  // Read the request body once so a single authenticated retry can replay it.
+  const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
 
+  const session = await missionSessionToken();
+  if (!session) return missionSessionUnavailable();
+
+  let upstream = await fetchMission(request, path, body, session.token);
+  if ((upstream.status === 401 || upstream.status === 403) && session.source === 'auto') {
+    // The cached session was rejected (expired or revoked): drop it, sign in
+    // once more and retry the request exactly once. Never loop. An explicit
+    // operator override is never silently replaced by an automatic sign-in.
+    invalidateMissionSessionToken();
+    const fresh = await missionSessionToken();
+    if (!fresh) return missionSessionUnavailable();
+    if (fresh.token !== session.token) upstream = await fetchMission(request, path, body, fresh.token);
+  }
+  return relay(upstream);
+}
+
+async function fetchMission(request: NextRequest, path: string[], body: ArrayBuffer | undefined, missionToken: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    const upstream = await fetch(upstreamPath(path, request), {
+    return await fetch(upstreamPath(path, request), {
       method: request.method,
-      headers: forwardedHeaders(request),
-      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer(),
+      headers: forwardedHeaders(request, missionToken),
+      body,
       signal: controller.signal,
       cache: 'no-store',
     });
-    const responseHeaders = new Headers();
-    const contentType = upstream.headers.get('content-type') ?? '';
-    if (contentType) responseHeaders.set('content-type', contentType);
-    responseHeaders.set('cache-control', 'no-store');
-    // The private dashboard was authored at origin root. Rebase only its own
-    // absolute asset/API URLs so browser requests stay inside /mission-gateway/*;
-    // ordinary mission API/stream responses remain streamed unchanged.
-    if (upstream.ok && (contentType.includes('text/html') || contentType.includes('javascript'))) {
-      let text = await upstream.text();
-      if (contentType.includes('text/html')) text = text.replace(/(src|href)="\/(app|styles|manifest\.webmanifest)/g, '$1="/mission-gateway/$2');
-      if (contentType.includes('javascript')) text = text.replace("register('/service-worker.js')", "register('/mission-gateway/service-worker.js')").replace('fetch(`/api${path}`', 'fetch(`/mission-gateway/api${path}`');
-      return new Response(text, { status: upstream.status, headers: responseHeaders });
-    }
-    return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
   } catch (error) {
     console.error('[mission-proxy] upstream request failed:', error instanceof Error ? error.message : 'unknown error');
     return Response.json({ error: 'mission service is unavailable' }, { status: 502, headers: { 'cache-control': 'no-store' } });
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function relay(upstream: Response): Promise<Response> {
+  const responseHeaders = new Headers();
+  const contentType = upstream.headers.get('content-type') ?? '';
+  if (contentType) responseHeaders.set('content-type', contentType);
+  responseHeaders.set('cache-control', 'no-store');
+  // The private dashboard was authored at origin root. Rebase only its own
+  // absolute asset/API URLs so browser requests stay inside /mission-gateway/*;
+  // ordinary mission API/stream responses remain streamed unchanged.
+  if (upstream.ok && (contentType.includes('text/html') || contentType.includes('javascript'))) {
+    let text = await upstream.text();
+    if (contentType.includes('text/html')) text = text.replace(/(src|href)="\/(app|styles|manifest\.webmanifest)/g, '$1="/mission-gateway/$2');
+    if (contentType.includes('javascript')) text = text.replace("register('/service-worker.js')", "register('/mission-gateway/service-worker.js')").replace('fetch(`/api${path}`', 'fetch(`/mission-gateway/api${path}`');
+    return new Response(text, { status: upstream.status, headers: responseHeaders });
+  }
+  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+}
+
+/** Honest, owner-only 503 — reachable only behind ownerAuthorized. Names env
+ * var NAMES only: never a password, a session token, or a raw upstream body
+ * that could contain one. */
+function missionSessionUnavailable(): Response {
+  const names = missionSessionEnvNames();
+  const howToFix = [
+    `Preferred: set ${names.ownerEmail} and ${names.ownerPassword} (the mission owner credentials) in the web process environment — the proxy then signs in to the loopback mission server (POST /api/session/login on 127.0.0.1:${MISSION_PORT}) on demand and keeps the session in memory only.`,
+    `Alternative: set ${names.override} to a mission owner session token as a manual override (sessions expire, and every mission sign-in revokes older sessions).`,
+    'Verify the mission owner account exists (npm run mission:init) and that the mission server is listening on the loopback port.',
+  ].join(' ');
+  if (!ownerCredentialsConfigured()) {
+    const missingEnvVars: string[] = [];
+    if (!(process.env[names.ownerEmail] ?? '').trim()) missingEnvVars.push(names.ownerEmail);
+    if (!(process.env[names.ownerPassword] ?? '')) missingEnvVars.push(names.ownerPassword);
+    console.error(`[mission-proxy] mission session is not configured: set ${names.ownerEmail} and ${names.ownerPassword}, or ${names.override}`);
+    return Response.json({ error: 'mission upstream session is not configured', missingEnvVars, howToFix }, { status: 503, headers: { 'cache-control': 'no-store' } });
+  }
+  console.error(`[mission-proxy] mission sign-in failed: the configured ${names.ownerEmail} / ${names.ownerPassword} credentials were rejected, or the mission server is unreachable`);
+  return Response.json(
+    { error: 'mission upstream sign-in failed', invalidEnvVars: [names.ownerEmail, names.ownerPassword], howToFix },
+    { status: 503, headers: { 'cache-control': 'no-store' } },
+  );
 }
