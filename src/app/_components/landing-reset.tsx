@@ -7,6 +7,8 @@ import { BlurReveal, Reveal } from './motion-reveal';
 import { PublicPricingTable } from './public-pricing';
 import { PublicSiteFooter, PublicSiteHeader } from './public-site-chrome';
 import styles from './landing-reset.module.css';
+import { BrandMark } from './brand-mark';
+
 
 function useSignedInHint() {
   const [signedIn, setSignedIn] = useState(false);
@@ -55,7 +57,7 @@ export function LandingReset({ heroVideo = false }: { heroVideo?: boolean } = {}
             </div>
           </div>
           <div className={styles.signalCard}><span className={styles.signalIcon}>✓</span><div><b>Verification stays visible</b><small>Outputs, activity, and limits remain part of the product surface.</small></div></div>
-          <div className={styles.orb}><span>A!</span><small>ONE CORE</small></div>
+          <div className={styles.orb}><BrandMark size={26} /><small>ONE CORE</small></div>
         </div>
       </section>
 

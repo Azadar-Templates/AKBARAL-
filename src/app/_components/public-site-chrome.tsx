@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import styles from './public-site-chrome.module.css';
+import { BrandLogo, BrandMark } from './brand-mark';
+
 
 const NAV_ITEMS = [
   { href: '/', label: 'Home' },
@@ -86,7 +88,7 @@ export function PublicSiteHeader() {
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <Link className={styles.brand} href="/" aria-label="AKBARAL! home">
-            <span className={styles.mark}>A!</span>
+            <span className={styles.mark} aria-hidden="true"><BrandMark size={21} /></span>
             <span className={styles.brandText}><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span>
           </Link>
           <nav className={styles.desktopNav} aria-label="Public navigation">
@@ -129,7 +131,7 @@ export function PublicSiteFooter() {
   const year = new Date().getFullYear();
   return <footer className={styles.footer}>
     <div className={styles.footerInner}>
-      <div className={styles.footerBrand}><b>AKBARAL!</b><span>One Intelligence. Every Solution.</span></div>
+      <div className={styles.footerBrand}><BrandLogo className={styles.footerMark} decorative /><b>AKBARAL!</b><span>One Intelligence. Every Solution.</span></div>
       <nav className={styles.footerNav} aria-label="Footer navigation">
         {NAV_ITEMS.map((item) => <Link key={item.href} href={item.href}>{item.label}</Link>)}
       </nav>

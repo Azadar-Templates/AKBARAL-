@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import styles from './auth-card.module.css';
+import { BrandMark } from './brand-mark';
+
 import { clearStoredTokens } from './app-shell';
 
 type AuthMode = 'signin' | 'signup';
@@ -78,7 +80,7 @@ export function AuthCard({ mode }: { mode: AuthMode }) {
     <main className={styles.page}>
       <section className={styles.card} aria-labelledby="auth-title">
         <header className={styles.brand}>
-          <span className={styles.mark} aria-hidden="true">A!</span>
+          <span className={styles.mark} aria-hidden="true"><BrandMark size={30} /></span>
           <b>AKBARAL!</b>
           <p>One Intelligence. Every Solution.</p>
         </header>

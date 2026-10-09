@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AKBARAL! brand asset — GENERATED, do not hand-edit.
+ Source of truth: scripts/brand/akbaral-mark.mjs (build: npm run brand:build).
+ Original work authored in this repository: straight-edge polygons only, no
+ third-party or trademarked shapes, no font, no raster, no external reference.
+ Colour: values are existing public/tokens.css tokens, nothing new.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="AKBARAL! monogram">
+  <title>AKBARAL! monogram</title>
+  <desc>Original AKBARAL! mark: flat-cut apex, equal-weight strokes, rising crossbar.</desc>
+    <path fill="#2f8348" fill-rule="nonzero" d="M26 8L34 8L16 56L8 56ZM30 8L38 8L56 56L48 56ZM20 42L44 38L44 46L20 50Z"/>
+</svg>

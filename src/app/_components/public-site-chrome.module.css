@@ -256,6 +256,14 @@
   gap: 7px;
 }
 
+.footerMark {
+  justify-self: start;
+  /* Explicit width/height attributes already reserve the box; this only keeps
+     the lockup inside the column on a 320px viewport. */
+  max-width: 100%;
+  height: auto;
+}
+
 .footerBrand b {
   color: var(--text);
   font-size: 0.8rem;

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AKBARAL! brand asset — GENERATED, do not hand-edit.
+ Source of truth: scripts/brand/akbaral-mark.mjs (build: npm run brand:build).
+ Original work authored in this repository: straight-edge polygons only, no
+ third-party or trademarked shapes, no font, no raster, no external reference.
+ Colour: values are existing public/tokens.css tokens, nothing new.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 436 64" width="436" height="64" role="img" aria-label="AKBARAL!">
+  <title>AKBARAL!</title>
+  <desc>Original AKBARAL! mark: flat-cut apex, equal-weight strokes, rising crossbar.</desc>
+    <path fill="#f8fafc" fill-rule="nonzero" d="M26 8L34 8L16 56L8 56ZM30 8L38 8L56 56L48 56ZM20 42L44 38L44 46L20 50ZM98 8L106 8L88 56L80 56ZM102 8L110 8L128 56L120 56ZM92 42L116 38L116 46L92 50ZM135 8L146 8L146 56L135 56ZM145 26.5L174 8L174 19L145 37.5ZM153 20.5L177 45L177 56L153 31.5ZM184 8L195 8L195 56L184 56ZM192 8L210 8L218 16L218 38L192 38ZM192 27L218 27L218 48L210 56L192 56ZM195 27L207 27L207 19L195 19ZM195 45L207 45L207 38L195 38ZM243 8L251 8L233 56L225 56ZM247 8L255 8L273 56L265 56ZM237 42L261 38L261 46L237 50ZM280 8L291 8L291 56L280 56ZM288 8L306 8L314 16L314 33L306 41L288 41ZM291 30L303 30L303 19L291 19ZM299 28.5L322 45L322 56L299 39.5ZM347 8L355 8L337 56L329 56ZM351 8L359 8L377 56L369 56ZM341 42L365 38L365 46L341 50ZM384 8L395 8L395 56L384 56ZM384 45L418 45L418 56L384 56ZM425 8L436 8L436 35L425 35ZM425 45L436 45L436 56L425 56Z"/>
+</svg>

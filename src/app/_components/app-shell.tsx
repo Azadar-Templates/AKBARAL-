@@ -6,6 +6,8 @@ import type { ReactNode, RefObject } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './app-shell.module.css';
+import { BrandMark } from './brand-mark';
+
 
 type Account = {
   id?: string;
@@ -291,14 +293,14 @@ export function AppShell({ title, children, allowAnonymous = false, viewportLock
   };
 
   if (authenticated === null && !allowAnonymous) {
-    return <main className={styles.state}><div className={styles.stateCard}><span className={styles.mark}>A!</span><p>Opening AKBARAL!</p></div></main>;
+    return <main className={styles.state}><div className={styles.stateCard}><span className={styles.mark} aria-hidden="true"><BrandMark size={22} /></span><p>Opening AKBARAL!</p></div></main>;
   }
 
   if (authenticated === false && !allowAnonymous) {
     return (
       <main className={styles.state}>
         <div className={styles.stateCard}>
-          <span className={styles.mark}>A!</span>
+          <span className={styles.mark} aria-hidden="true"><BrandMark size={22} /></span>
           <h1>Sign in</h1>
           <p>This workspace surface is private to your account.</p>
           <Link href="/signin">Continue to sign in</Link>
@@ -316,7 +318,7 @@ export function AppShell({ title, children, allowAnonymous = false, viewportLock
           <div className={styles.headerPrimary}>
             <div className={styles.title}>
               <Link className={styles.brand} href="/chat" aria-label="AKBARAL! workspace">
-                <span className={styles.mark} aria-hidden="true">A!</span>
+                <span className={styles.mark} aria-hidden="true"><BrandMark size={22} /></span>
                 <span className={styles.brandText}><b>AKBARAL!</b><small>One Intelligence. Every Solution.</small></span>
               </Link>
               <h1>{title}</h1>

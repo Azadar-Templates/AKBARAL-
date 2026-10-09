@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { existsSync } from 'node:fs';
 import { LegacyAppLoader } from './_components/legacy-app-loader';
 import path from 'node:path';
+import { BRAND_ASSETS } from './_components/brand-mark-data';
 import './app-reset.css';
 import './glass-material.css';
 // Liquid-glass material (presentation only): two depths, a masked gradient
@@ -10,9 +11,54 @@ import './glass-material.css';
 // so component styles can override it predictably.
 import './glass.css';
 
+/**
+ * Brand surface of the document head.
+ *
+ * `metadataBase` is what makes every relative URL below (and every `alternates`
+ * canonical Next generates) absolute instead of silently dropping the tag —
+ * the same `AKBARAL_SITE_URL` convention robots.ts and sitemap.ts already use,
+ * including its default host, so all three agree on the canonical origin.
+ *
+ * The icon/OG files are repo-served from public/ (see scripts/brand/build.mjs —
+ * original geometry, existing tokens.css colours, no CDN, no third-party mark).
+ * `theme-color` stays the hand-written tag below; declaring it here too would
+ * emit a second, conflicting meta.
+ */
+const siteBase = process.env.AKBARAL_SITE_URL ?? 'https://akbaral.duckdns.org';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteBase),
   title: 'AKBARAL! — One Intelligence. Every Solution.',
   description: 'AKBARAL! is one simple workspace for Chat, Task, files, images, projects, agents, automations, dashboard, billing, pricing, settings, and help. The registry contains 4,001 registered agent contracts.',
+  applicationName: 'AKBARAL!',
+  manifest: BRAND_ASSETS.manifest,
+  icons: {
+    icon: [
+      { url: BRAND_ASSETS.icon, type: 'image/svg+xml' },
+      { url: BRAND_ASSETS.favicon32, type: 'image/png', sizes: '32x32' },
+      { url: BRAND_ASSETS.favicon16, type: 'image/png', sizes: '16x16' },
+      { url: BRAND_ASSETS.favicon, type: 'image/x-icon', sizes: '48x48' },
+    ],
+    shortcut: [{ url: BRAND_ASSETS.favicon, type: 'image/x-icon' }],
+    apple: [{ url: BRAND_ASSETS.appleTouchIcon, type: 'image/png', sizes: '180x180' }],
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'AKBARAL!',
+    locale: 'en_US',
+    images: [
+      {
+        url: BRAND_ASSETS.ogImage,
+        width: 1200,
+        height: 630,
+        alt: 'AKBARAL! — One Intelligence. Every Solution.',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    images: [{ url: BRAND_ASSETS.ogImage, width: 1200, height: 630, alt: 'AKBARAL! — One Intelligence. Every Solution.' }],
+  },
 };
 
 /**

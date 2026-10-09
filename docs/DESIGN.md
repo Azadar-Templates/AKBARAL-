@@ -185,3 +185,31 @@ tasks, projects and the knowledge index with explicit "nothing indexed yet" /
 "no matches" / "search failed" states. Provider sign-in buttons render as real
 server-side OAuth links when configured and disabled with the exact credential
 names they need when not — never a control that silently does nothing.
+
+## Brand mark — generated, never traced (2026-10-10)
+
+`scripts/brand/akbaral-mark.mjs` holds the geometry once: straight-edge polygons
+for the monogram (flat-cut apex, equal-weight strokes, a crossbar that rises to
+the right) and for the AKBARAL! wordmark's own angular capitals. `npm run
+brand:build` renders that file into every shipped asset — the SVGs under
+`public/brand/`, the favicon/PNG sizes, `public/favicon.ico`, `apple-touch-icon`,
+`manifest.webmanifest`, the 1200×630 Open Graph card, and the path data
+`src/app/_components/brand-mark.tsx` inlines — so a raster can never disagree
+with its vector. `npm run brand:check` (asserted by
+`src/app/brand-assets.test.ts`) fails the suite if a checked-in asset is stale.
+
+Two rules are load-bearing. **Originality:** no third-party or trademarked
+shape, no icon pack, no font — the wordmark is drawn, not typeset, so it embeds
+nothing. **Colour:** every value is a copy of an existing `public/tokens.css`
+token (`#2f8348`, `#286f3d`, `#69ad7d`, `#020617`, `#0f172a`, `#f8fafc`,
+`#ffffff`); the build refuses to emit if a literal is not already a token, and
+the test re-measures contrast from the pixels (≥4.5:1 for the plated uses,
+≥3:1 — WCAG's non-text bar — for the single-colour master on any ground).
+
+In the DOM the mark is inline SVG with `fill="currentColor"`, so each tile keeps
+its own token colour (topbar `--accent-bright`, sign-in tile `--on-accent`)
+instead of needing a variant per background; every one of them sits next to the
+brand name as text, so each instance is `aria-hidden` and the files carry a
+`<title>` for the cases where a logo alone must name itself. The private mission
+dashboard is deliberately unbranded — its header mark reads `Private` /
+`Mission Control` by design, and its asset list is pinned by the gateway tests.
