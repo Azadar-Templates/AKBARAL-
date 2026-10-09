@@ -72,8 +72,24 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
 
   const missionToken = (process.env[MISSION_SESSION_ENV] ?? '').trim();
   if (!missionToken) {
-    console.error('[mission-proxy] upstream session is not configured');
-    return Response.json({ error: 'mission service is unavailable' }, { status: 502, headers: { 'cache-control': 'no-store' } });
+    // Honest 503 — and owner-only: this branch sits behind ownerAuthorized, so
+    // no unauthenticated client can reach it. Name the missing variable (never
+    // its value) and state the exact owner action. The mission server has no
+    // static token: owner sessions are minted at runtime by POST
+    // /api/session/login with the mission owner email and password.
+    console.error(`[mission-proxy] upstream session is not configured: set ${MISSION_SESSION_ENV} to a mission owner session token`);
+    return Response.json(
+      {
+        error: 'mission upstream session is not configured',
+        missingEnvVar: MISSION_SESSION_ENV,
+        howToFix: [
+          `Mission owner sessions are minted at runtime only: sign in to the loopback mission server (POST /api/session/login, port ${MISSION_PORT}) with the mission owner email and password.`,
+          `Set the returned session token as ${MISSION_SESSION_ENV} in the web process environment; the proxy presents it to the mission server as a bearer token.`,
+          'Sessions expire (default 12 hours) and every new sign-in revokes the previous session; a stale token surfaces as an upstream 401, not a proxy error.',
+        ].join(' '),
+      },
+      { status: 503, headers: { 'cache-control': 'no-store' } },
+    );
   }
 
   const controller = new AbortController();
@@ -91,7 +107,7 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
     if (contentType) responseHeaders.set('content-type', contentType);
     responseHeaders.set('cache-control', 'no-store');
     // The private dashboard was authored at origin root. Rebase only its own
-    // absolute asset/API URLs so browser requests stay inside /mission/*;
+    // absolute asset/API URLs so browser requests stay inside /mission-gateway/*;
     // ordinary mission API/stream responses remain streamed unchanged.
     if (upstream.ok && (contentType.includes('text/html') || contentType.includes('javascript'))) {
       let text = await upstream.text();
