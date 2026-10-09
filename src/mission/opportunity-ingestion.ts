@@ -575,9 +575,12 @@ export async function fetchGitHubBounties(limit = 50): Promise<FetchedOpportunit
   if (cached && !cached.expired) return cached.response as FetchedOpportunity[];
 
   // GitHub Search API requires User-Agent and accepts unauthenticated but rate limited
+  // Every query must carry is:issue — /search/issues returns 422 without it, and a
+  // 422 here was previously swallowed by the `continue` below, so the feed silently
+  // produced nothing while appearing healthy.
   const queries = [
-    'label:"💎 Bounty" state:open',
-    'label:bounty state:open',
+    'label:"💎 Bounty" state:open is:issue',
+    'label:bounty state:open is:issue',
     '"bounty" in:title state:open is:issue',
   ];
   const allJobs: FetchedOpportunity[] = [];
@@ -593,6 +596,11 @@ export async function fetchGitHubBounties(limit = 50): Promise<FetchedOpportunit
     if (!res.ok) {
       // Respect rate limit — if 403, break
       if (res.status === 403) break;
+      // Any other failure is persisted against the source, never swallowed: an empty
+      // feed must stay distinguishable from a broken one when the owner reads state.
+      try {
+        updateIngestionState('github_bounties', { last_error: `search_rejected:http_${res.status}:${q}` });
+      } catch { /* the failure record must never mask the fetch result */ }
       continue;
     }
     const data = (await res.json()) as { items?: any[] };

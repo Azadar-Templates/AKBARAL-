@@ -25,6 +25,22 @@ export interface RepoGateContext { agentType?: string; runId?: string }
 const REPO_PATTERN = /^[a-z0-9_.-]{1,100}\/[a-z0-9_.-]{1,100}$/;
 /** Caps GitHub search fan-out per discovery pass. Repos beyond this are not searched. */
 export const MAX_SCOPED_SEARCH_REPOS = 10;
+/** Hard upper bound on the tunable cap. Each extra repo multiplies the request count
+ *  (one search per bounty label per repo), so widening past this would only spend the
+ *  provider rate budget faster — it cannot widen what is legally in scope. */
+export const MAX_SCOPED_SEARCH_REPOS_CEILING = 50;
+
+/**
+ * Per-pass search fan-out. Defaults to the historical 10; an operator with a token
+ * (a higher GitHub rate budget) can widen it to admit more of the allowlist per pass
+ * without changing the gate itself: only exact allow rows under active programs are
+ * ever searched, whatever the number.
+ */
+export function scopedSearchRepoCap(): number {
+  const raw = Number(process.env.ZA141251SA_BOUNTY_SCOPE_REPOS ?? MAX_SCOPED_SEARCH_REPOS);
+  if (!Number.isSafeInteger(raw) || raw < 1) return MAX_SCOPED_SEARCH_REPOS;
+  return Math.min(MAX_SCOPED_SEARCH_REPOS_CEILING, raw);
+}
 
 export function normalizeRepoFullName(input: unknown): string | null {
   if (typeof input !== 'string') return null;
@@ -62,7 +78,8 @@ export function allowlistedRepoNames(): { repos: string[]; truncated: number } {
     `SELECT DISTINCT s.target AS target FROM scope_allowlist s JOIN bounty_programs p ON p.id = s.program_id
       WHERE p.active = 1 AND s.in_scope = 1 AND s.target_type = 'repo' ORDER BY s.target`,
   ).map(row => String(row.target)).filter(repo => decideRepoScope(repo).allowed);
-  return { repos: candidates.slice(0, MAX_SCOPED_SEARCH_REPOS), truncated: Math.max(0, candidates.length - MAX_SCOPED_SEARCH_REPOS) };
+  const cap = scopedSearchRepoCap();
+  return { repos: candidates.slice(0, cap), truncated: Math.max(0, candidates.length - cap) };
 }
 
 function recordRefusal(decision: Extract<RepoScopeDecision, { allowed: false }>, context: RepoGateContext): void {

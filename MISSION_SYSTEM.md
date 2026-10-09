@@ -191,6 +191,52 @@ statements are filtered out for PostgreSQL. Verify with:
 npm run mission:pg-check     # real PostgreSQL (pglite wire protocol) end-to-end: 10 checks, 0 failures
 ```
 
+## 6e. Fleet readiness, admission and evidence-gated verification (added 2026-10-09)
+
+Registering 4,001 specialists is not the same as being able to earn with them, so the
+mission now reports the difference from live rows instead of inferring it:
+
+```bash
+npm run fleet:readiness              # the eight counts, per-blocker blast radius, gates
+npm run fleet:readiness -- --json    # same facts, machine-readable
+npm run fleet:readiness -- --reconcile   # file one owner action per open blocker (idempotent)
+npm run fleet:readiness -- --discover   # real read-only GitHub bounty discovery pass
+```
+
+`src/mission/earning/fleet-readiness.ts` answers, in order: agents registered · tools
+valid and executable · execution-ready agents · agents with verified platform access ·
+eligible tasks assignable · tasks assigned/in flight · tasks completed **with
+evidence** · verified revenue in cents · settled payout cents. Each agent that cannot
+start gets the blocker code that stopped it (`autonomy_disabled`,
+`no_payout_slot_verified`, `no_platform_credential`, `no_provider_ready`,
+`no_active_money_grant`, `no_scoped_contract`, `owner_action_pending`,
+`kill_switch_engaged`) and a free or owner-side path through it. Fixture-origin
+agents (`origin_platform='fixture'`) are counted separately and never satisfy a
+production claim.
+
+Two things changed in the execution loop itself:
+
+* **Admission is no longer capped at an arbitrary number.** The allocator used to clamp
+  every batch to `Math.min(50, limit)` and the scheduler asked for 5 per tick; nothing
+  about safety depended on those numbers, they only throttled throughput. A cycle now
+  admits every eligible work item up to `MAX_ITEMS_PER_CYCLE = 1000` (an anti-runaway
+  bound), optionally narrowed by `ZA141251SA_MAX_AGENTS_PER_CYCLE`. Real concurrency is
+  still bounded by what actually gates it: one exclusive agent per opportunity,
+  `ZA141251SA_MAX_WORK_PER_AGENT` (default 3) simultaneous items per agent, the provider
+  cooldown/rate tables, the policy spend caps and the owner safety gate. Candidate
+  selection was moved into SQL (`candidateAgentsFor`), so a pass over a 4,001-agent
+  registry is linear in *matching* agents rather than 4,001 × opportunities.
+* **Result verification can no longer be self-attested.** The scheduler used to flip
+  work to `verified` with hard-coded `passed: true` confidences — one of them from the
+  agent that did the work. `src/mission/earning/result-verification.ts` derives the
+  verdict instead: evidence must be content-addressed (sha256 of what was produced,
+  recorded by the assigned producer only), a verifier may not approve its own output or
+  the producer's submission, evidence that predates the assignment is refused, and an
+  opportunity advances only when **two distinct independent verifiers** passed the exact
+  same bytes. A verdict taken by fixture agents is stored as `mode='test_fixture'` and is
+  not committable. `ZA141251SA_BOUNTY_SCOPE_REPOS` (default 10, ceiling 50) only widens
+  how many already-allowlisted repositories one discovery pass searches.
+
 ## 7. What still needs an external action
 
 Nothing in this system fabricates accounts, credentials, payments or results.
@@ -220,6 +266,13 @@ The mission dashboard lists the outstanding activations (`requiresExternalActiva
 * **Verify integrity:** `GET /api/audit/verify` (audit chain) and
   `GET /api/treasury` (ledger chain) return the verification result; the
   dashboard shows both on the Overview tab.
+* **Ask what the fleet can actually do:** `npm run fleet:readiness`. Read-only; it
+  never starts work, spends money or writes a completion record. Add `--reconcile` to
+  file the open blockers into the owner's human-action queue (one task per blocker,
+  re-running creates nothing new while the same blocker stays open).
+* **Check a paid claim against its proof:** `mission_execution_evidence` holds the
+  content-addressed output per assignment and `mission_result_verifications` holds who
+  reviewed which bytes; an opportunity with no evidence row stays `executing`.
 
 ## 9. Honesty rules encoded in the product
 

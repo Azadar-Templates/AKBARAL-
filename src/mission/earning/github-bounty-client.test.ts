@@ -171,3 +171,26 @@ it('reads review and check evidence without treating an approval or passing run 
   assert.equal(calls[2].url.pathname, `/repos/acme/widget/commits/${sha}/check-runs`);
   assert.ok(calls.every(c => c.init.method === undefined || c.init.method === 'GET'));
 });
+
+it('carries is:issue on every discovery query, because /search/issues answers 422 without it', async () => {
+  // Live regression, 2026-10-09: `label:bounty state:open` returned
+  // 422 "Query must include 'is:issue' or 'is:pull-request'" from the public search
+  // endpoint, so every discovery pass recorded zero leads while the pipeline looked
+  // healthy. The qualifier is part of the contract with the provider now.
+  const unscoped = fixture([json({ items: [] }), json({ items: [] }), json({ items: [] })], null);
+  await unscoped.client.searchBountyIssues(10);
+  assert.equal(unscoped.calls.length, 3);
+  for (const call of unscoped.calls) {
+    const q = call.url.searchParams.get('q') ?? '';
+    assert.match(q, /\bis:issue\b/, `query "${q}" would be rejected by GitHub with 422`);
+    assert.match(q, /state:open/);
+    assert.match(q, /label:/, 'only explicit bounty-style labels are ever searched');
+  }
+  const scoped = fixture([json({ items: [] }), json({ items: [] }), json({ items: [] })], null);
+  await scoped.client.searchBountyIssues(10, undefined, ['acme/widget']);
+  for (const call of scoped.calls) {
+    const q = call.url.searchParams.get('q') ?? '';
+    assert.match(q, /repo:acme\/widget/, 'scoped discovery still restricts the search to the allowlisted repository');
+    assert.match(q, /\bis:issue\b/);
+  }
+});

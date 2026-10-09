@@ -210,7 +210,7 @@ export function allocateBestAgent(opportunityId: string): { agent: Row | null; s
     if (readiness && readiness.status==='blocked') return { agent: null, score: null, reason: 'provider_blocked_per_tos' };
   } catch {}
 
-  const agents = allActiveAgents();
+  const agents = candidateAgentsFor(opp!, candidatePoolSize());
   let best: AllocationScore | null = null;
   let bestAgent: Row | null = null;
   for (const agent of agents) {
@@ -231,9 +231,116 @@ export function allocateBestAgent(opportunityId: string): { agent: Row | null; s
   return { agent: bestAgent, score: best, reason: 'allocated' };
 }
 
-/** Batch allocate: assign top N opportunities to best agents (no fabrication) */
-export function allocateBatch(limit = 10): Array<{ opportunity: Row; agent: Row | null; score: AllocationScore | null }> {
-  const opps = db.all<Row>('SELECT * FROM mission_earning_engine_opportunities WHERE verification_state IN (\'discovered\',\'qualified\',\'legitimacy_verified\') ORDER BY score DESC, created_at ASC LIMIT ?', [Math.min(50, Math.max(1, limit))]);
+/** How many work items one agent may hold at once. Mirrors the workload-penalty
+ *  banding above (>=3 assigned is already penalised), so a busy agent stops being
+ *  the best candidate rather than being blocked outright. */
+export function maxConcurrentWorkPerAgent(): number {
+  const raw = Number(process.env.ZA141251SA_MAX_WORK_PER_AGENT ?? 3);
+  return Number.isSafeInteger(raw) && raw >= 1 && raw <= 64 ? raw : 3;
+}
+
+/** Anti-runaway bound for a single cycle. This is NOT a fleet cap: the fleet is only
+ *  ever limited by how much eligible work actually exists (one exclusive agent per
+ *  opportunity), so this ceiling simply stops one tick from trying to walk an
+ *  unbounded backlog inside a single transaction window. */
+export const MAX_ITEMS_PER_CYCLE = 1000;
+
+/** Candidate pool scanned per opportunity. Bounded so one allocation pass over a
+ *  4,001-agent registry stays linear in matched rows, not quadratic. */
+export function candidatePoolSize(): number {
+  const raw = Number(process.env.ZA141251SA_CANDIDATE_POOL ?? 200);
+  return Number.isSafeInteger(raw) && raw >= 20 && raw <= 4100 ? raw : 200;
+}
+
+export interface AdmissionCeiling {
+  /** Opportunities this cycle may try to allocate. */
+  cycleLimit: number;
+  /** Pending eligible opportunities at the time of the call. */
+  pendingEligible: number;
+  /** Operator throttle (ZA141251SA_MAX_AGENTS_PER_CYCLE); null = no throttle. */
+  throttle: number | null;
+  reason: string;
+}
+
+/**
+ * Cycle admission ceiling.
+ *
+ * The allocator used to clamp every batch to `Math.min(50, limit)` and the scheduler
+ * passed `5`. Neither number was a safety property: no rate limit, spend cap, ToS
+ * gate or isolation guarantee depended on it. Real safety lives in
+ * `allocateBestAgent` (kill switch, eligibility, provider readiness), the exclusive
+ * per-opportunity lock, per-agent workload, provider cooldown tables and the policy
+ * spend caps. Those all stay; the arbitrary lid is replaced by
+ * "as many eligible items as exist, up to an anti-runaway bound", optionally
+ * throttled by the operator through one env var.
+ */
+export function admissionCeiling(): AdmissionCeiling {
+  if (currentPolicy().killSwitch) return { cycleLimit: 0, pendingEligible: 0, throttle: null, reason: 'kill_switch_engaged' };
+  const pendingEligible = Number(db.get<Row>("SELECT COUNT(*) AS c FROM mission_earning_engine_opportunities WHERE verification_state IN ('discovered','qualified','legitimacy_verified')")?.c ?? 0);
+  const raw = Number(process.env.ZA141251SA_MAX_AGENTS_PER_CYCLE ?? 0);
+  const throttle = Number.isSafeInteger(raw) && raw >= 1 ? raw : null;
+  const ceiling = Math.min(MAX_ITEMS_PER_CYCLE, throttle ?? MAX_ITEMS_PER_CYCLE);
+  const cycleLimit = Math.max(0, Math.min(pendingEligible, ceiling));
+  const reason = cycleLimit === 0
+    ? 'no_eligible_work'
+    : throttle !== null && pendingEligible > throttle
+      ? `operator_throttle_${throttle}`
+      : pendingEligible <= ceiling ? 'all_eligible_admitted' : `anti_runaway_bound_${MAX_ITEMS_PER_CYCLE}`;
+  return { cycleLimit, pendingEligible, throttle, reason };
+}
+
+/**
+ * Candidate agents for one opportunity, filtered in SQL.
+ *
+ * The previous behaviour — score all 4,001+ registry agents for every opportunity —
+ * is O(agents × opportunities) with two JSON.parse calls per pair, which makes a
+ * genuinely concurrent fleet impossible on a $0 box long before any safety limit
+ * bites. This narrows to agents whose persisted capability tags actually name a
+ * required capability or tool, skipping anyone already at their concurrency limit.
+ * If the narrow match finds nobody the caller falls back to the full fleet, so this
+ * can only speed allocation up, never change which agent wins when one does match.
+ */
+export function candidateAgentsFor(opportunity: Row, limit = 200): Row[] {
+  // Materialize the registry before filtering it. The previous code path merged
+  // unsynced catalog entries in as `virtual-…` rows at read time; an SQL prefilter
+  // would have dropped those agents out of the fleet entirely, so a thin registry is
+  // synced first (one-off — it short-circuits once 4,000+ rows exist).
+  if (Number(db.get<Row>("SELECT COUNT(*) AS c FROM mission_agents WHERE status='active'")?.c ?? 0) < 2000) {
+    try { ensureCatalogPersisted(); } catch { /* a thin registry must not break allocation */ }
+  }
+  const required: string[] = [];
+  for (const field of ['required_capabilities_json', 'required_tools_json'] as const) {
+    try {
+      const parsed = JSON.parse(String((opportunity as any)[field] ?? '[]'));
+      if (Array.isArray(parsed)) for (const item of parsed) if (typeof item === 'string' && item.length >= 3) required.push(item);
+    } catch { /* column absent or malformed — fall through to the broad set */ }
+  }
+  const cap = Math.max(20, Math.min(2000, Math.trunc(limit) || 200));
+  const perAgent = maxConcurrentWorkPerAgent();
+  const base = `FROM mission_agents a WHERE a.status='active'
+      AND (SELECT COUNT(*) FROM mission_earning_engine_opportunities o
+            WHERE o.exclusive_agent_id=a.id AND o.verification_state IN ('assigned','executing','verified')) < ?`;
+  if (required.length === 0) {
+    return db.all<Row>(`SELECT a.id, a.slug, a.name, a.capabilities, a.status, a.depth ${base} ORDER BY a.slug LIMIT ?`, [perAgent, cap]);
+  }
+  const likes = required.map(() => 'a.capabilities LIKE ?').join(' OR ');
+  const patterns = required.map(term => `%${String(term).toLowerCase().replace(/[%_]/g, '')}%`);
+  const rows = db.all<Row>(
+    `SELECT a.id, a.slug, a.name, a.capabilities, a.status, a.depth ${base} AND (${likes}) ORDER BY a.slug LIMIT ?`,
+    [perAgent, ...patterns, cap],
+  );
+  if (rows.length > 0) return rows;
+  return db.all<Row>(`SELECT a.id, a.slug, a.name, a.capabilities, a.status, a.depth ${base} ORDER BY a.slug LIMIT ?`, [perAgent, cap]);
+}
+
+/** Batch allocate: assign every eligible opportunity this cycle may admit (no
+ *  fabrication, no arbitrary 50-item lid). `limit` overrides the ceiling for callers
+ *  that want a smaller, explicit batch. */
+export function allocateBatch(limit?: number): Array<{ opportunity: Row; agent: Row | null; score: AllocationScore | null }> {
+  const ceiling = admissionCeiling();
+  const wanted = limit === undefined || !Number.isFinite(limit) ? ceiling.cycleLimit : Math.max(1, Math.trunc(limit as number));
+  if (wanted <= 0) return [];
+  const opps = db.all<Row>("SELECT * FROM mission_earning_engine_opportunities WHERE verification_state IN ('discovered','qualified','legitimacy_verified') ORDER BY score DESC, created_at ASC LIMIT ?", [Math.min(wanted, MAX_ITEMS_PER_CYCLE)]);
   return opps.map(opp => {
     const { agent, score } = allocateBestAgent(String(opp.id));
     return { opportunity: opp, agent, score };
@@ -246,6 +353,7 @@ export function allocatorStatus(): Record<string, unknown> {
   const idle = idleAgents().length;
   const busy = busyAgents().length;
   const pending = Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_earning_engine_opportunities WHERE verification_state IN (\'discovered\',\'qualified\',\'legitimacy_verified\')')?.c ?? 0);
+  const admission = admissionCeiling();
   const assigned = Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_earning_engine_opportunities WHERE verification_state IN (\'assigned\',\'executing\')')?.c ?? 0);
   return {
     totalAgents,
@@ -254,6 +362,7 @@ export function allocatorStatus(): Record<string, unknown> {
     pendingOpportunities: pending,
     assignedOpportunities: assigned,
     utilization: totalAgents ? Math.round(busy/totalAgents*1000)/10 : 0,
+    admission,
     workforce: '4,001+ catalog + child agents; no agent sits waiting when legitimate permitted work is available',
     policy: { killSwitch: currentPolicy().killSwitch, maxAgents: currentPolicy().maxAgents },
   };

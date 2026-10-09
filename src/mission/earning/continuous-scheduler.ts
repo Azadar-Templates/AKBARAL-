@@ -14,6 +14,7 @@ import * as GlobalDiscovery from './global-discovery';
 import * as Allocator from './workload-allocator';
 import * as ExecutionPipeline from './execution-pipeline';
 import * as ProviderReadiness from './provider-capability-registry';
+import * as ResultVerification from './result-verification';
 import { configuredGithubBountyWorkflow } from './github-bounty-workflow';
 import { runGithubBountyCycle } from './github-bounty-scheduler';
 
@@ -48,6 +49,9 @@ export interface TickResult {
   bountyPrClosedUnmerged: number;
   bountyChecksPassing: number;
   bountyChecksFailing: number;
+  /** Executing opportunities with no recorded output yet: real work in flight,
+   *  not verified, and never counted as completed. */
+  awaitingEvidence: number;
   /** Isolated bounty source/test execution, not a PR or settlement count. */
   bountyExecutionAttempted: number;
   bountyExecutionDrafted: number;
@@ -105,6 +109,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
   }
 
   let discovered = 0, qualified = 0, matched = 0, locked = 0, executing = 0, verified = 0, settled = 0, failed = 0, retried = 0, expired = 0, rateLimited = 0, reinvested = 0, scaled = 0;
+  let awaitingEvidence = 0;
   let bountyDiscovered = 0, bountyRejected = 0, bountyPolicyAllowed = 0, bountyAssigned = 0;
   let bountyPrReviewed = 0, bountyPrMerged = 0, bountyPrClosedUnmerged = 0, bountyChecksPassing = 0, bountyChecksFailing = 0;
   let bountyExecutionAttempted = 0, bountyExecutionDrafted = 0, bountyExecutionBlocked = 0;
@@ -180,7 +185,11 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
     try { const due = ExecutionPipeline.retryDueExecutions(5); if (due.length) retried += due.length; } catch {}
 
     // ── 4. MATCH → LOCK → EXECUTE for top pending opportunities (allocator + execution pipeline with durable idempotency + human gate)
-    const batch = Allocator.allocateBatch(5);
+    // Elastic admission: every eligible opportunity this cycle may admit is walked,
+    // not a fixed 5. The safety gates (kill switch, eligibility, provider readiness,
+    // exclusive per-opportunity lock, spend caps) are all inside allocateBestAgent and
+    // the pipeline, so scale is bounded by real constraints instead of a hard-coded lid.
+    const batch = Allocator.allocateBatch();
     for (const { opportunity: opp, agent } of batch) {
       if (!agent) continue;
       const oppId = String(opp.id);
@@ -235,30 +244,20 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
       } catch { continue; }
     }
 
-    // ── 5. VERIFY → (simulated) DELIVER → MONITOR PAYMENT → RECONCILE
-    // For demo, auto-verify executing opps with 2 verifiers if they have been executing >30s (or immediately in tests)
-    // In production, verification is manual/multi-agent; here we simulate the loop without faking revenue:
-    // we only verify if opportunity has required tools and policy permits, then wait for provider payment.
-    // We do NOT auto-invent provider payment — that stays owner/provider-confirmed.
-    const executingOpps = db.all<Row>('SELECT id, exclusive_agent_id FROM mission_earning_engine_opportunities WHERE verification_state=\'executing\' LIMIT 3');
-    for (const r of executingOpps) {
-      const oppId = String(r.id);
-      const agentId = String((r as any).exclusive_agent_id ?? '');
-      if (!agentId || agentId.startsWith('virtual-')) continue;
-      try {
-        // Find a second verifier (any other active agent)
-        const other = db.get<Row>('SELECT id FROM mission_agents WHERE id !=? AND status=\'active\' LIMIT 1', [agentId]);
-        const vAgent = other ? String(other.id) : agentId;
-        const res = EarningEngine.verifyWorkMultiAgent(oppId, [
-          { agentId, confidence: 0.92, passed: true },
-          { agentId: vAgent, confidence: 0.88, passed: true },
-        ]);
-        if (res.verified) verified++;
-      } catch {
-        // need_two_verifiers etc — will retry next tick
-        retried++;
-      }
-    }
+    // ── 5. VERIFY → MONITOR PAYMENT → RECONCILE
+    // Verification is evidence-gated (result-verification.ts), and payment/settlement remain
+    // owner/provider gates: this loop advances nothing it cannot point at bytes for.
+    // THIS BLOCK USED TO FABRICATE COMPLETION. It called verifyWorkMultiAgent with
+    // {producer: 0.92 passed:true} plus "any other active agent" at 0.88 passed:true —
+    // no artifact, no digest, no independent reviewer — which flipped opportunities to
+    // `verified` and fed mission_opportunity_roi, reinvestment and class scaling with a
+    // made-up success record. Verification is now derived from durable evidence: an
+    // opportunity with no recorded output stays `executing` and is reported as awaiting
+    // evidence, never counted as completed work.
+    const verification = ResultVerification.autonomousVerifyExecuting(Math.min(25, Math.max(3, Allocator.admissionCeiling().cycleLimit || 3)));
+    verified += verification.verified;
+    awaitingEvidence = verification.awaitingEvidence;
+    retried += verification.failed;
 
     // Note: provider payment + settlement are HUMAN/PROVIDER gates — scheduler does NOT simulate them.
     // It only counts already settled in this tick for metrics.
@@ -286,7 +285,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
     // Nothing was recorded then and nothing is recorded now; the counters in
     // `detail` below remain the honest per-cycle record.
 
-    detail = `cycle ${cycle}: disc ${discovered} qual ${qualified} match ${matched} lock ${locked} exec ${executing} verify ${verified} settle ${settled} fail ${failed} retry ${retried} expire ${expired} bounty(disc ${bountyDiscovered} rej ${bountyRejected} allow ${bountyPolicyAllowed} assign ${bountyAssigned} pr-review ${bountyPrReviewed} merge ${bountyPrMerged} closed ${bountyPrClosedUnmerged} checks-pass ${bountyChecksPassing} checks-fail ${bountyChecksFailing} exec-attempt ${bountyExecutionAttempted} exec-drafted ${bountyExecutionDrafted} exec-blocked ${bountyExecutionBlocked})`;
+    detail = `cycle ${cycle}: disc ${discovered} qual ${qualified} match ${matched} lock ${locked} exec ${executing} verify ${verified} awaiting-evidence ${awaitingEvidence} settle ${settled} fail ${failed} retry ${retried} expire ${expired} bounty(disc ${bountyDiscovered} rej ${bountyRejected} allow ${bountyPolicyAllowed} assign ${bountyAssigned} pr-review ${bountyPrReviewed} merge ${bountyPrMerged} closed ${bountyPrClosedUnmerged} checks-pass ${bountyChecksPassing} checks-fail ${bountyChecksFailing} exec-attempt ${bountyExecutionAttempted} exec-drafted ${bountyExecutionDrafted} exec-blocked ${bountyExecutionBlocked})`;
     db.run('UPDATE mission_scheduler_ticks SET completed_at=?, discovered=?, qualified=?, matched=?, locked=?, executing=?, verified=?, settled=?, failed=?, retried=?, expired=?, rate_limited=?, detail=?, status=\'completed\' WHERE id=?',
       [nowIso(), discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, detail, tickId]);
     db.run('UPDATE mission_scheduler_state SET last_tick_at=?, last_cycle=?, consecutive_failures=0, last_error=NULL, updated_at=? WHERE id=\'global\'', [nowIso(), cycle, nowIso()]);
@@ -298,7 +297,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
           [missionId('intel'), cycle, String(roi.registry_key), Number(roi.attempts), Number(roi.successes), Number(roi.successes), Number(roi.total_gross_cents), Number(roi.total_fees_cents), Number(roi.total_net_cents), Number(roi.avg_score ?? 0), nowIso()]);
       }
     } catch {}
-    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, bountyExecutionAttempted, bountyExecutionDrafted, bountyExecutionBlocked, detail };
+    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, awaitingEvidence, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, bountyExecutionAttempted, bountyExecutionDrafted, bountyExecutionBlocked, detail };
   } catch (e) {
     const msg = (e as any)?.message ?? String(e);
     failed++;
@@ -306,7 +305,7 @@ export async function tickScheduler(actor: MoneyActor): Promise<TickResult> {
       [nowIso(), discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, `failed: ${msg.slice(0,500)}`, tickId]);
     db.run('UPDATE mission_scheduler_state SET consecutive_failures=consecutive_failures+1, last_error=?, updated_at=? WHERE id=\'global\'', [msg.slice(0,500), nowIso()]);
     detail = `failed: ${msg.slice(0,500)}`;
-    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, bountyExecutionAttempted, bountyExecutionDrafted, bountyExecutionBlocked, detail };
+    return { cycle, discovered, qualified, matched, locked, executing, verified, settled, failed, retried, expired, rateLimited, reinvested, scaled, awaitingEvidence, bountyDiscovered, bountyRejected, bountyPolicyAllowed, bountyAssigned, bountyPrReviewed, bountyPrMerged, bountyPrClosedUnmerged, bountyChecksPassing, bountyChecksFailing, bountyExecutionAttempted, bountyExecutionDrafted, bountyExecutionBlocked, detail };
   } finally {
     tickRunning = false;
   }

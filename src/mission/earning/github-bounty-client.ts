@@ -104,10 +104,20 @@ function gateFor(key: string, authenticated: boolean, now: () => number): Github
 export interface GithubClientDependencies { fetch?: typeof fetch; now?: () => number; beforeRequest?: () => void; onRateLimit?: (delayMs: number) => void; rateGate?: GithubBountyRateGate }
 
 /** Bounty-label search terms. Kept narrow and explicit — never a generic crawl. */
+/**
+ * Bounty-label search terms. Kept narrow and explicit — never a generic crawl.
+ *
+ * `is:issue` is mandatory, not stylistic: GitHub's /search/issues endpoint answers
+ * 422 `Query must include 'is:issue' or 'is:pull-request'` without it. Before it was
+ * added, every discovery pass through this client failed validation and the workflow
+ * recorded zero leads — the pipeline looked idle-but-healthy. Verified live on
+ * 2026-10-09: `label:bounty state:open` → 422,
+ * `label:bounty state:open is:issue` → 200 with 4,227 open matches.
+ */
 const BOUNTY_SEARCH_QUERIES = [
-  'label:bounty state:open',
-  'label:"help wanted" label:bounty state:open',
-  'label:paid-issue state:open',
+  'label:bounty state:open is:issue',
+  'label:"help wanted" label:bounty state:open is:issue',
+  'label:paid-issue state:open is:issue',
 ];
 
 export class GithubBountyClient {
