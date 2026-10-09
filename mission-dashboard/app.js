@@ -103,6 +103,184 @@ function banner(message, kind = 'ok') {
   bannerTimer = setTimeout(() => { node.hidden = true; }, 6000);
 }
 
+// ── navigation ──────────────────────────────────────────────────────────────
+/**
+ * Six primary items; every view kept.
+ *
+ * The console used to expose 19 top-level tabs, which read as clutter. 13 of
+ * them are now sub-sections of the six families below. This is presentation
+ * only: every view id, its panel, its loader and its owner / head-agent gate
+ * attributes are unchanged, so
+ *
+ *   · each view still deep-links as #/<id> — including the hidden ones, which
+ *     open their family and themselves on load;
+ *   · back/forward works, because the route lives in the URL, not only in
+ *     memory (the old nav kept `activeTab` in a variable, so a reload or a
+ *     back step always landed back on Overview);
+ *   · nothing is deleted, so no data path, access check or loader changed.
+ *
+ * Policy and Audit are ONE primary item that shows both views on one screen.
+ * The hash-chained audit trail is a compliance control, so it is kept beside
+ * the policy it evidences — reachable in a single click from the primary row
+ * and still separately linkable as #/audit — rather than buried a level deeper.
+ */
+const PRIMARY_TABS = ['overview', 'bounties', 'agents', 'approvals', 'earnings', 'policy'];
+
+/** The consolidated views, keyed by the family that now hosts them. */
+const TAB_GROUPS = {
+  overview: ['resources-expiry', 'tools', 'guide'],
+  bounties: [],
+  agents: ['head-chat', 'knowledge', 'playbooks', 'lessons'],
+  approvals: [],
+  earnings: ['money', 'treasury', 'withdraw', 'customer-work', 'publishing'],
+  policy: ['audit'],
+};
+
+/** Views that share a screen, so neither sits one click behind the other. */
+const TAB_COVIEW = { policy: ['policy', 'audit'], audit: ['policy', 'audit'] };
+
+const TAB_PARENT = {};
+const TAB_VIEWS = PRIMARY_TABS.slice();
+for (const family of Object.keys(TAB_GROUPS)) {
+  for (const view of TAB_GROUPS[family]) {
+    TAB_PARENT[view] = family;
+    TAB_VIEWS.push(view);
+  }
+}
+
+/**
+ * Redirects. View ids never moved, so nothing here is load-bearing for links
+ * this dashboard generated itself: these are the label-derived spellings a
+ * person would type or paste, plus the pre-routing "#<id>" form (handled by the
+ * optional slash below). They resolve to the canonical #/<id> and the address
+ * bar is rewritten, so an old or guessed link lands on the right view instead
+ * of silently falling back to Overview.
+ */
+const TAB_ROUTE_ALIASES = {
+  'bug-bounty': 'bounties',
+  'bugbounty': 'bounties',
+  'verified-cash': 'money',
+  'cash': 'money',
+  'legacy-accounting': 'treasury',
+  'accounting': 'treasury',
+  'destinations': 'treasury',
+  'payout-destinations': 'treasury',
+  'resources': 'resources-expiry',
+  'expiry': 'resources-expiry',
+  'credentials': 'tools',
+  'tools-credentials': 'tools',
+  customers: 'customer-work',
+  work: 'customer-work',
+  chat: 'head-chat',
+  'audit-trail': 'audit',
+  withdrawal: 'withdraw',
+  'legacy-withdraw': 'withdraw',
+};
+
+function groupOfView(view) {
+  return PRIMARY_TABS.includes(view) ? view : (TAB_PARENT[view] || null);
+}
+
+function tabButton(view) {
+  return $(`#tabs [data-tab="${view}"]`);
+}
+
+function viewLabel(view) {
+  const button = tabButton(view);
+  return (button && button.textContent.trim()) || view;
+}
+
+/**
+ * Whether the current caller may see this nav entry at all. This is the single
+ * source of truth for the gate rules that used to be applied with two
+ * $$('[data-…]') loops, so a sub-view can never be shown without its family
+ * (or hidden while its panel stays on screen).
+ */
+function gateHidesNavEntry(button) {
+  if (button.getAttribute('data-head-agent') === 'true') return !canMutate();
+  if (button.getAttribute('data-owner-only') === 'true') return !isOwnerSession();
+  return false;
+}
+
+/** The view a route addresses, or null when the fragment is not a view. */
+function routeFromHash(hash) {
+  const match = /^#\/?([A-Za-z0-9][A-Za-z0-9-]*)$/.exec((hash || '').trim());
+  if (!match) return null;
+  const raw = match[1].toLowerCase();
+  // '#link=<token>' is an access link, not a route: readLinkFromUrl owns it.
+  if (raw === 'link') return null;
+  const view = Object.prototype.hasOwnProperty.call(TAB_ROUTE_ALIASES, raw) ? TAB_ROUTE_ALIASES[raw] : raw;
+  return TAB_VIEWS.includes(view) ? view : null;
+}
+
+/** Paints buttons, the sub-section row and the visible panels. Loads nothing. */
+function applyTabChrome(view) {
+  const family = groupOfView(view) || view;
+  const shown = TAB_COVIEW[view] || [view];
+  state.activeTab = view;
+  for (const panel of $$('[data-panel]')) panel.hidden = !shown.includes(panel.getAttribute('data-panel'));
+  for (const button of $$('#tabs .tab')) {
+    const entry = button.getAttribute('data-tab');
+    button.hidden = gateHidesNavEntry(button);
+    const active = PRIMARY_TABS.includes(entry)
+      ? entry === family
+      : shown.includes(entry) && groupOfView(entry) === family;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  const bar = $('#subtabs');
+  if (!bar) return;
+  const children = $$('.subtab', bar);
+  for (const button of children) {
+    button.hidden = button.getAttribute('data-group') !== family || gateHidesNavEntry(button);
+  }
+  // A family with no children (or only gated-away ones) shows no empty row.
+  bar.hidden = !children.some((button) => !button.hidden);
+}
+
+function writeRoute(view) {
+  const wanted = `#/${view}`;
+  if (window.location.hash === wanted) return;
+  try {
+    window.history.pushState({}, '', wanted);
+  } catch {
+    // A locked-down host still switches the view; only the URL stays put.
+  }
+}
+
+/**
+ * The one navigation entry point: resolve the view, paint, record the route,
+ * then let each existing loader fill its own panel. A gated sub-view falls
+ * back to its family with the reason on the banner, exactly as the head-agent
+ * chat guard did before — it never renders a blank screen.
+ */
+async function activateTab(view, options = {}) {
+  let target = TAB_VIEWS.includes(view) ? view : 'overview';
+  // Gating is decided by the gate rules themselves, never by whether the
+  // button happens to be visible right now: a sub-view of a family that is not
+  // currently open is hidden for a different reason (its family is closed), and
+  // must still open normally.
+  //
+  // This also closes a gap the routes made possible: before routing, a gated
+  // view was unreachable simply because its button was hidden, so a shared
+  // #/<view> link is checked against the very same rule here — for a primary as
+  // well as a sub-view. The caller falls back to its family, or to Overview,
+  // with the reason on the banner; the private panel is never rendered. The
+  // server still guards the data independently, as it always did.
+  const button = tabButton(target);
+  if (button && gateHidesNavEntry(button)) {
+    banner(`${viewLabel(target)} needs the mission owner session.`, 'error');
+    target = TAB_PARENT[target] || 'overview';
+  }
+  applyTabChrome(target);
+  if (options.navigate) writeRoute(target);
+  await loadTab(target);
+  for (const sibling of (TAB_COVIEW[target] || [])) {
+    if (sibling !== target) await loadTab(sibling);
+  }
+}
+
 // ── API ─────────────────────────────────────────────────────────────────────
 async function api(path, options = {}) {
   const headers = { 'content-type': 'application/json' };
@@ -187,8 +365,10 @@ async function start() {
   $('#login-panel').hidden = true;
   $('#app').hidden = false;
   $('#signout').hidden = !canMutate();
-  $$('[data-head-agent="true"]').forEach((tab) => { tab.hidden = !canMutate(); });
-  $$('[data-owner-only="true"]').forEach((tab) => { tab.hidden = !isOwnerSession(); });
+  // Gate rules, visible panels and the sub-section row are one computation,
+  // so a consolidated view can never be shown without its family (or hidden
+  // while its panel stays on screen).
+  applyTabChrome(state.activeTab);
   // Identify the operator from the session state we already hold, before any
   // network round-trip: a signed-in person must never see "not signed in".
   showIdentity();
@@ -200,7 +380,7 @@ async function start() {
   } catch (error) {
     if (error.status !== 401) banner(error.message, 'error');
   }
-  await loadTab(state.activeTab);
+  await activateTab(state.activeTab);
   if (canMutate()) {
     try { await loadHeadAgentOverview(); } catch (error) { if (error.status !== 401) banner(error.message, 'error'); }
     await loadHeadAgentNotifications();
@@ -2167,12 +2347,24 @@ function wire() {
   $('#tabs').addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-tab]');
     if (!button) return;
-    const tab = button.getAttribute('data-tab');
-    state.activeTab = tab;
-    $$('#tabs .tab').forEach((entry) => entry.classList.toggle('active', entry === button));
-    $$('[data-panel]').forEach((panel) => { panel.hidden = panel.getAttribute('data-panel') !== tab; });
-    await loadTab(tab);
+    // One entry point, so a click, a shared link and a back step all leave the
+    // same thing on screen.
+    await activateTab(button.getAttribute('data-tab'), { navigate: true });
   });
+
+  // Back / forward and hand-written routes. Both events are watched: history
+  // moves fired by pushState arrive as popstate, address-bar and fragment
+  // changes arrive as hashchange, and a host that suppresses one still gets the
+  // other.
+  // An absent or unknown fragment means the pre-routing default: back/forward
+  // has to agree with the address bar, so returning to the bare URL shows
+  // Overview rather than leaving a stale view under an empty hash.
+  const followRoute = () => {
+    const view = routeFromHash(window.location.hash) || 'overview';
+    if (view !== state.activeTab) void activateTab(view);
+  };
+  window.addEventListener('hashchange', followRoute);
+  window.addEventListener('popstate', followRoute);
 
   $('#agent-search').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -2363,6 +2555,17 @@ function wire() {
 async function boot() {
   readLinkFromUrl();
   wire();
+  // A bookmarked or shared #/<view> opens that view, and an old or
+  // label-derived spelling is redirected to the canonical route so the address
+  // bar shows what is actually on screen. Without a route this stays on
+  // Overview, exactly as before.
+  const route = routeFromHash(window.location.hash);
+  if (route) {
+    state.activeTab = route;
+    if (window.location.hash !== `#/${route}`) {
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}#/${route}`);
+    }
+  }
   if (!state.token && !state.link) return;
   try {
     if (state.token) {

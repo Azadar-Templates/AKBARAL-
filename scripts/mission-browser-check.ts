@@ -88,12 +88,16 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(page.locator('#app')).toBeVisible();
     await expect(page.locator('#identity')).toContainText('signed in as');
     checkpoint(name, 'real owner sign-in');
+    // Verified cash sits inside the Earnings family now (consolidated nav), so
+    // the family row is opened before the sub-section is clicked.
+    await page.locator('[data-tab="earnings"]').click();
     await page.locator('[data-tab="money"]').click();
     await expect(page.locator('#verified-cash-summary')).toContainText('Verified available');
     await expect(page.locator('#verified-cash-summary')).toContainText('0.00 USD');
     await expect(page.locator('#money-command-form')).toBeVisible();
     await page.screenshot({path:path.join(evidenceDir,`${name}-verified-cash.png`),fullPage:true});
     checkpoint(name,'verified cash dashboard shows zero real funds; owner controls render without provider calls');
+    await page.locator('[data-tab="overview"]').click();
     await page.locator('[data-tab="tools"]').click();
     const credentialForm = page.locator('#credential-form');
     await expect(credentialForm.locator('[name="scope"]')).toHaveValue('');
@@ -198,6 +202,7 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await readPage.goto(`${base}/#link=${encodeURIComponent(link.token)}`);
     await expect(readPage.locator('#identity')).toContainText('read-only access link');
     assert.equal(new URL(readPage.url()).hash, '');
+    await readPage.locator('[data-tab="overview"]').click();
     await readPage.locator('[data-tab="tools"]').click();
     await expect(readPage.locator('[data-resource-calls], [data-bind-credential], [data-resource-periods]')).toHaveCount(0);
     await expect(readPage.locator('#credential-form')).toBeHidden();

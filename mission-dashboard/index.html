@@ -45,24 +45,36 @@
       <section id="app" hidden>
         <nav class="tabs" id="tabs" aria-label="Mission sections">
           <button data-tab="overview" class="tab active">Overview</button>
-          <button data-tab="agents" class="tab">Agents</button>
           <button data-tab="bounties" data-owner-only="true" class="tab">Bug bounty</button>
-          <button data-tab="knowledge" data-owner-only="true" class="tab">Knowledge</button>
-          <button data-tab="playbooks" data-owner-only="true" class="tab">Playbooks</button>
-          <button data-tab="lessons" data-owner-only="true" class="tab">Lessons</button>
+          <button data-tab="agents" class="tab">Agents</button>
           <button data-tab="approvals" class="tab">Approvals</button>
           <button data-tab="earnings" data-head-agent="true" class="tab">Earnings</button>
-          <button data-tab="resources-expiry" data-head-agent="true" class="tab">Resources &amp; expiry</button>
-          <button data-tab="guide" data-head-agent="true" class="tab">Guide</button>
-          <button data-tab="head-chat" data-head-agent="true" class="tab">Chat</button>
-          <button data-tab="customer-work" class="tab">Customers &amp; work</button>
-          <button data-tab="money" class="tab">Verified cash</button>
-          <button data-tab="treasury" class="tab">Legacy accounting &amp; destinations</button>
-          <button data-tab="withdraw" class="tab">Withdraw</button>
-          <button data-tab="publishing" class="tab">Publishing</button>
-          <button data-tab="tools" class="tab">Tools &amp; credentials</button>
-          <button data-tab="policy" class="tab">Policy</button>
-          <button data-tab="audit" class="tab">Audit</button>
+          <button data-tab="policy" class="tab">Policy &amp; audit</button>
+          <!--
+            Consolidated navigation. Nothing here is deleted or renamed: the 13
+            views below are the same views that used to crowd the top row, each
+            still addressed by its own stable id and its own hash route
+            ( #/<id> ), each still gated by the same owner / head-agent rules.
+            A hidden view is one click away here, or directly linkable, and it
+            opens on back/forward exactly like a primary tab does.
+            Audit is deliberately rendered beside Policy on one screen rather
+            than buried in a menu — it is a compliance control.
+          -->
+          <div class="subtabs" id="subtabs" role="group" aria-label="Sections in the current tab" hidden>
+            <button data-tab="resources-expiry" data-group="overview" data-head-agent="true" class="tab subtab">Resources &amp; expiry</button>
+            <button data-tab="tools" data-group="overview" class="tab subtab">Tools &amp; credentials</button>
+            <button data-tab="guide" data-group="overview" data-head-agent="true" class="tab subtab">Guide</button>
+            <button data-tab="head-chat" data-group="agents" data-head-agent="true" class="tab subtab">Chat</button>
+            <button data-tab="knowledge" data-group="agents" data-owner-only="true" class="tab subtab">Knowledge</button>
+            <button data-tab="playbooks" data-group="agents" data-owner-only="true" class="tab subtab">Playbooks</button>
+            <button data-tab="lessons" data-group="agents" data-owner-only="true" class="tab subtab">Lessons</button>
+            <button data-tab="money" data-group="earnings" class="tab subtab">Verified cash</button>
+            <button data-tab="treasury" data-group="earnings" class="tab subtab">Legacy accounting &amp; destinations</button>
+            <button data-tab="withdraw" data-group="earnings" class="tab subtab">Withdraw</button>
+            <button data-tab="customer-work" data-group="earnings" class="tab subtab">Customers &amp; work</button>
+            <button data-tab="publishing" data-group="earnings" class="tab subtab">Publishing</button>
+            <button data-tab="audit" data-group="policy" class="tab subtab">Audit trail</button>
+          </div>
         </nav>
 
         <div id="banner" class="banner" hidden></div>

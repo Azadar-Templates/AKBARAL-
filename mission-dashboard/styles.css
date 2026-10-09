@@ -65,6 +65,12 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .tab { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
 .tab.active { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
+/* Consolidated navigation: the sub-section row of the active family. Same
+   tokens and the same .tab chip as the primary row, on its own wrapped line —
+   the primary row itself never scrolls sideways at any width. */
+.subtabs { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin: -2px 0 4px; padding-top: 7px; border-top: 1px dashed var(--line); }
+.subtabs[hidden] { display: none; }
+.tab.subtab { font-size: 12.5px; padding: 5px 9px; }
 
 .banner { padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--line); }
 .banner.error { border-color: var(--bad); color: #ffd0d0; background: #2a1416; }
@@ -148,6 +154,15 @@ td.wrap { white-space: normal; max-width: 460px; }
 /* ── Responsive pass
 : 320 → 1440+ without horizontal overflow ─────────────── */
 html, body { max-width: 100%; overflow-x: hidden; }
+
+@media (max-width: 768px) {
+  /* The requirement's own breakpoint: six primaries plus an opened sub-row,
+     wrapping inside the viewport, never scrolling sideways. */
+  .tabs { gap: 4px; margin-bottom: 12px; }
+  .tab { padding: 7px 10px; font-size: 13px; }
+  .tab.subtab { font-size: 12px; padding: 5px 8px; }
+  .subtabs { gap: 4px; padding-top: 6px; }
+}
 
 @media (max-width: 720px) {
   .topbar { flex-wrap: wrap; padding: 12px 14px; }
