@@ -22,9 +22,17 @@ const PUBLIC_BEARER = ['public-', 'owner-bearer'].join('');
 const PUBLIC_COOKIE = ['akbaral_session=', 'public-session-value'].join('');
 
 const here = path.resolve(process.cwd(), 'src/app/mission-gateway');
+const repoRoot = path.resolve(here, '../../..');
 const route = fs.readFileSync(path.join(here, '[[...path]]/route.ts'), 'utf8');
 const sessionModule = fs.readFileSync(path.join(here, 'mission-session.ts'), 'utf8');
 const shell = fs.readFileSync(path.join(here, '../_components/app-shell.tsx'), 'utf8');
+// The REAL private dashboard shell, served by the mission server at origin
+// root and relayed by the proxy under /mission-gateway.
+const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'mission-dashboard/index.html'), 'utf8');
+const dashboardJs = fs.readFileSync(path.join(repoRoot, 'mission-dashboard/app.js'), 'utf8');
+const dashboardSw = fs.readFileSync(path.join(repoRoot, 'mission-dashboard/service-worker.js'), 'utf8');
+const dashboardManifest = fs.readFileSync(path.join(repoRoot, 'mission-dashboard/manifest.webmanifest'), 'utf8');
+const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
 
 // ── Source-level regression assertions ──────────────────────────────────────
 
@@ -98,7 +106,7 @@ test('only the mission prefix gets an owner console entry point', () => {
 
 // ── Runtime behaviour of the handler ────────────────────────────────────────
 
-function mockRequest(init: { authorization?: string; cookie?: string; method?: string; body?: string } = {}): NextRequest {
+function mockRequest(init: { authorization?: string; cookie?: string; method?: string; body?: string; url?: string } = {}): NextRequest {
   const headers = new Headers();
   if (init.authorization) headers.set('authorization', init.authorization);
   if (init.cookie) headers.set('cookie', init.cookie);
@@ -106,7 +114,7 @@ function mockRequest(init: { authorization?: string; cookie?: string; method?: s
   return {
     headers,
     method: init.method ?? 'GET',
-    nextUrl: new URL('http://localhost/mission-gateway/api/overview'),
+    nextUrl: new URL(init.url ?? 'http://localhost/mission-gateway/api/overview'),
     arrayBuffer: async () => (payload === undefined ? new ArrayBuffer(0) : (new TextEncoder().encode(payload).buffer as ArrayBuffer)),
   } as unknown as NextRequest;
 }
@@ -150,7 +158,7 @@ const bearerOf = (call: FetchCall) => new Headers(call.init.headers).get('author
 function stubWorld(options: {
   ownerCheckStatus?: number;
   login?: (loginCount: number) => Response;
-  api?: (apiCount: number) => Response;
+  api?: (apiCount: number, url: string) => Response;
 }): { calls: FetchCall[]; restore: () => void } {
   const calls: FetchCall[] = [];
   const g = globalThis as unknown as { fetch: typeof fetch };
@@ -169,7 +177,7 @@ function stubWorld(options: {
       return (options.login ?? (() => okLogin(MINTED_TOKEN)))(logins);
     }
     api += 1;
-    return (options.api ?? okApi)(api);
+    return (options.api ?? okApi)(api, url);
   }) as typeof fetch;
   return { calls, restore: () => { g.fetch = original; } };
 }
@@ -443,5 +451,172 @@ test('scanner-style sweep: no secret or literal bearer shape in logs, responses,
     for (const source of [route, sessionModule]) assert.doesNotMatch(source, /Bearer [A-Za-z0-9._~+/=-]{20,}/);
     // The forbidden marker is only ever constructed dynamically.
     for (const source of [route, sessionModule]) assert.doesNotMatch(source, new RegExp(FORBIDDEN_MARKER));
+  });
+});
+
+// ── Dashboard root-path serving ─────────────────────────────────────────────
+// The mission server serves its dashboard shell at origin root (/ → index.html,
+// /app.js, /styles.css, …) ONLY when mission-dashboard/ exists next to it
+// (src/mission/server.ts dashboardDir()); the production image once omitted
+// that directory, so every proxied dashboard request got the mission server's
+// {"error":{"code":"not_found"}} 404. These tests pin the whole chain: the
+// image ships the directory, the proxy requests upstream /, and nothing the
+// dashboard loads or calls escapes the /mission-gateway prefix.
+
+test('production image ships the mission dashboard directory to the runtime stage', () => {
+  const runtimeStage = dockerfile.indexOf('AS runtime');
+  assert.ok(runtimeStage !== -1, 'Dockerfile must keep its runtime stage');
+  assert.ok(
+    dockerfile.indexOf('COPY mission-dashboard ./mission-dashboard', runtimeStage) !== -1,
+    'runtime stage must COPY mission-dashboard/ — without it the mission server 404s / and every shell asset',
+  );
+});
+
+test('dashboard shell URLs stay inside the serving prefix in both modes', () => {
+  // Service worker precache entries are relative to the worker's own URL, so
+  // they resolve to /… over direct loopback and to /mission-gateway/… through
+  // the proxy — never to the public app root.
+  const shellList = /const SHELL = \[([^\]]*)\]/.exec(dashboardSw);
+  assert.ok(shellList, 'service worker must declare its SHELL precache list');
+  const entries = shellList[1].split(',').map((entry) => entry.trim()).filter(Boolean);
+  assert.ok(entries.length >= 4, 'precache list must cover the shell');
+  for (const entry of entries) assert.match(entry, /^'\.\//, `precache entry must be location-relative: ${entry}`);
+  // The authenticated-API bypass follows the serving prefix too: a hardcoded
+  // '/api/' bypass would let /mission-gateway/api/* GETs be cached into
+  // persistent CacheStorage, breaking the never-cache-private rule.
+  assert.match(dashboardSw, /new URL\('\.\/api\/', self\.location\.href\)/);
+  assert.match(dashboardSw, /startsWith\(API_ROOT\)/);
+  assert.doesNotMatch(dashboardSw, /startsWith\('\/api\/'\)/);
+  // An installed PWA launches inside the serving prefix in both modes.
+  assert.equal((JSON.parse(dashboardManifest) as { start_url: string }).start_url, './');
+});
+
+test('proxy rebase covers every root-absolute asset/API reference in the dashboard', () => {
+  // Exact set: any new root-absolute asset reference forces a rebase update.
+  const htmlRefs = [...dashboardHtml.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(htmlRefs, ['/app.js', '/manifest.webmanifest', '/styles.css']);
+  for (const ref of htmlRefs) assert.match(ref, /^\/(app|styles|manifest\.webmanifest)/, 'proxy HTML rebase must match this reference');
+  // The dashboard API helper is the single fetch choke point…
+  const fetches = [...dashboardJs.matchAll(/fetch\(`([^`]+)`/g)].map((m) => m[1]);
+  assert.deepEqual(fetches, ['/api${path}']);
+  const registers = [...dashboardJs.matchAll(/\.register\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.deepEqual(registers, ['/service-worker.js']);
+  // …and the proxy rewrites exactly these shapes under the prefix.
+  assert.ok(route.includes('"/mission-gateway/$2'), 'proxy must rebase HTML asset URLs');
+  assert.ok(route.includes("register('/mission-gateway/service-worker.js')"), 'proxy must rebase the worker registration');
+  assert.ok(route.includes('fetch(`/mission-gateway/api${path}`'), 'proxy must rebase the dashboard API choke point');
+});
+
+test('runtime: GET /mission-gateway requests upstream / and returns the dashboard HTML with rebased assets', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({
+      api: (_count, url) => {
+        if (url === `http://127.0.0.1:${expectedMissionPort()}/`) {
+          return new Response(dashboardHtml, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+        }
+        return new Response('unexpected upstream call', { status: 500 });
+      },
+    });
+    try {
+      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, url: 'http://localhost/mission-gateway' }), params([]));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 1);
+      assert.equal(apiCalls[0].url, `http://127.0.0.1:${expectedMissionPort()}/`);
+      const body = await response.text();
+      assert.ok(body.includes('src="/mission-gateway/app.js"'));
+      assert.ok(body.includes('href="/mission-gateway/styles.css"'));
+      assert.ok(body.includes('href="/mission-gateway/manifest.webmanifest"'));
+      assert.ok(!/(src|href)="\/(?!mission-gateway\/)/.test(body), 'no asset reference may escape to the public app root');
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('runtime: GET /mission-gateway/ requests the same upstream / and returns the dashboard HTML', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({
+      api: (_count, url) => {
+        if (url === `http://127.0.0.1:${expectedMissionPort()}/`) {
+          return new Response(dashboardHtml, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+        }
+        return new Response('unexpected upstream call', { status: 500 });
+      },
+    });
+    try {
+      // Next normalizes both spellings to the optional catch-all with an empty
+      // path, so both must request the mission server's real dashboard path.
+      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, url: 'http://localhost/mission-gateway/' }), params([]));
+      assert.equal(response.status, 200);
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 1);
+      assert.equal(apiCalls[0].url, `http://127.0.0.1:${expectedMissionPort()}/`);
+      const body = await response.text();
+      assert.ok(body.includes('src="/mission-gateway/app.js"'));
+      assert.ok(!/(src|href)="\/(?!mission-gateway\/)/.test(body), 'no asset reference may escape to the public app root');
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('runtime: dashboard asset through the prefix returns the asset with its content type and rebased API URLs', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({
+      api: (_count, url) => {
+        if (url === `http://127.0.0.1:${expectedMissionPort()}/app.js`) {
+          return new Response(dashboardJs, { status: 200, headers: { 'content-type': 'text/javascript; charset=utf-8' } });
+        }
+        return new Response('unexpected upstream call', { status: 500 });
+      },
+    });
+    try {
+      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, url: 'http://localhost/mission-gateway/app.js' }), params(['app.js']));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'text/javascript; charset=utf-8');
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 1);
+      assert.equal(apiCalls[0].url, `http://127.0.0.1:${expectedMissionPort()}/app.js`);
+      const body = await response.text();
+      assert.ok(body.includes('fetch(`/mission-gateway/api${path}`'), 'dashboard API calls must stay under the prefix');
+      assert.ok(body.includes("register('/mission-gateway/service-worker.js')"), 'worker registration must stay under the prefix');
+      assert.ok(!body.includes('fetch(`/api${path}`'), 'no API call may escape to the public app root');
+      assert.ok(!body.includes("register('/service-worker.js')"), 'no worker registration may escape to the public app root');
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('runtime: dashboard-issued API call through the prefix reaches the MISSION server, never the public API', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({});
+    try {
+      // Mirrors the dashboard sign-in form: api('/session/login', { method: 'POST', … }).
+      const loginBody = JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      const response = await POST(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, method: 'POST', body: loginBody, url: 'http://localhost/mission-gateway/api/session/login' }), params(['api', 'session', 'login']));
+      assert.equal(response.status, 200);
+      const ownerCheck = world.calls.find((call) => call.url.includes('/api/owner/dashboard'));
+      assert.ok(ownerCheck, 'owner check must run first');
+      // Both the proxy's own sign-in and the forwarded dashboard login POST to
+      // the mission server's /api/session/login; they are distinguished the
+      // same way the mission server sees them — the forwarded call carries the
+      // proxy's minted bearer token, the proxy's own sign-in carries none.
+      const loginUrlCalls = world.calls.filter((call) => call.url.endsWith('/api/session/login'));
+      assert.equal(loginUrlCalls.length, 2);
+      const [proxySignIn, dashboardCall] = loginUrlCalls;
+      assert.equal(new Headers(proxySignIn.init.headers).get('authorization'), null);
+      assert.equal(dashboardCall.url, `http://127.0.0.1:${expectedMissionPort()}/api/session/login`);
+      assert.equal(dashboardCall.init.method, 'POST');
+      assert.equal(bearerOf(dashboardCall), `Bearer ${MINTED_TOKEN}`);
+      assert.deepEqual(JSON.parse(new TextDecoder().decode(dashboardCall.init.body as ArrayBuffer)), { email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      assert.notEqual(dashboardCall.url, ownerCheck.url, 'mission upstream must differ from the public owner-check API');
+      assert.ok(dashboardCall.url.startsWith('http://127.0.0.1:'), 'mission upstream stays on loopback');
+    } finally {
+      world.restore();
+    }
   });
 });

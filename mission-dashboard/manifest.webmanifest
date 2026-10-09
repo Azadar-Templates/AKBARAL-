@@ -1,7 +1,7 @@
 {
   "name": "Private Mission Control",
   "short_name": "Mission Control",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0b0f14",
   "theme_color": "#121821",

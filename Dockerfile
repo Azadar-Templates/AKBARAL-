@@ -45,6 +45,15 @@ COPY package.json next.config.mjs ./
 COPY db ./db
 COPY public ./public
 COPY scripts ./scripts
+# mission-dashboard/ is REQUIRED at runtime: the private mission server serves
+# its dashboard shell from it (src/mission/server.ts dashboardDir()) at / and
+# /index.html plus the shell assets, and the owner-only /mission-gateway proxy
+# relays exactly those paths. Without this COPY every dashboard/asset request
+# gets the mission server's {"error":{"code":"not_found"}} 404. Nothing reads
+# this directory at build time, so the runtime stage is the only place it is
+# needed (it resolves both the <cwd> and the dist/scripts/__dirname
+# dashboardDir() candidates to /app/mission-dashboard).
+COPY mission-dashboard ./mission-dashboard
 RUN chmod +x scripts/entrypoint.sh && chown -R 1000:1000 /app && chmod -R 755 /app && chmod -R 777 /data
 # Build stamp: the commit that produced this image. CI passes
 # --build-arg GIT_SHA=<sha>; any runtime (Modal, Docker hosts) can then
