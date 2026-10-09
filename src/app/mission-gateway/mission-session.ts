@@ -8,14 +8,29 @@
  * expire, and every mission sign-in revokes older sessions). So the proxy signs
  * in ITSELF, on demand:
  *
+ * PRECEDENCE. The helpers here are only consulted for a request that needs a
+ * mission session AND carries none of its own. A caller that presents a usable
+ * `Authorization: Bearer <mission session>` outranks everything below and is
+ * relayed verbatim by the route handler — this module is never asked for a
+ * token, so neither an override nor a minted session is ever SUBSTITUTED for
+ * the caller's own valid session. Substituting one is exactly what revoked the
+ * caller: login rotates sessions, so a proxy-mint token and the dashboard's own
+ * token revoke each other in a loop. Full order, decided once per request in
+ * [[...path]]/route.ts: (0) the caller's own bearer; (1) this override;
+ * (2) automatic sign-in. Sessionless paths (shell, assets, sign-in, sign-out)
+ * ask for nothing at all and therefore cost no login.
+ *
  *   1. The mission session token override env var, when set, is an OPTIONAL
- *      manual override and is always tried FIRST — no sign-in happens while it
- *      is accepted. Overrides go stale on their own (sessions expire, and
- *      every mission sign-in — including the dashboard's own login — revokes
- *      older sessions), so a 401 on the override is NOT passed through: the
- *      caller latches that override value as dead and fails over to a freshly
- *      minted automatic session. A NEW override value is always tried first
- *      again, so operator precedence is preserved exactly.
+ *      manual override and is always tried FIRST among the proxy's OWN
+ *      credentials — no sign-in happens while it is accepted. Overrides go
+ *      stale on their own (sessions expire, and every mission sign-in —
+ *      including the dashboard's own login — revokes older sessions), so a 401
+ *      on the override is NOT passed through: the caller latches that override
+ *      value as dead and fails over to a freshly minted automatic session. A
+ *      NEW override value is always tried first again, so operator precedence
+ *      is preserved exactly. This failover applies ONLY to the proxy's own
+ *      credential; a 401/403 against a caller's relayed session passes through
+ *      untouched, because failing over there would revoke that caller.
  *   2. Otherwise the proxy signs in to the loopback mission server with the
  *      mission owner email/password env vars from its own environment (the
  *      production wrapper starts the mission child with the same environment —

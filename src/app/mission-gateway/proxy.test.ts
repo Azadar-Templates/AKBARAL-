@@ -49,14 +49,53 @@ test('mission proxy is owner-gated before any mission session work', () => {
   assert.ok(route.indexOf('if (!auth.ok) return refusal(auth.status);') < route.indexOf('await missionSessionToken()'));
 });
 
-test('proxy forwards only the mission bearer credential — never the public cookie or authorization', () => {
-  assert.match(route, /function forwardedHeaders\(request: NextRequest, missionToken: string\)/);
-  assert.match(route, /headers\.set\('authorization', `Bearer \$\{missionToken\}`\)/);
-  assert.doesNotMatch(route, /function forwardedHeaders[\s\S]*headers\.set\(['"]cookie/);
-  assert.doesNotMatch(route, /function forwardedHeaders[\s\S]*request\.headers\.get\(['"]authorization/);
+test('proxy forwards exactly one mission bearer credential — never the public cookie or the caller authorization', () => {
+  // A nullable token IS the contract: sessionless paths send no credential at all.
+  assert.match(route, /function forwardedHeaders\(request: NextRequest, missionToken: string \| null\)/);
+  assert.match(route, /if \(missionToken\) headers\.set\('authorization', `Bearer \$\{missionToken\}`\)/);
+  // Exactly one place may set a credential on the upstream call, so two tokens
+  // can never be sent on one request.
+  assert.equal((route.match(/headers\.set\('authorization'/g) ?? []).length, 1, 'upstream must never be given more than one credential');
+  const forwarded = route.slice(route.indexOf('function forwardedHeaders'), route.indexOf('export async function GET'));
+  assert.doesNotMatch(forwarded, /headers\.set\(['"]cookie/);
+  assert.doesNotMatch(forwarded, /request\.headers\.get\(['"]authorization/);
   // Genuine upstream failures stay 502.
   assert.match(route, /status: 502/);
   assert.match(route, /mission service is unavailable/);
+});
+
+test('owner check is presented the public cookie ONLY — a mission bearer can never satisfy it', () => {
+  // Cause 2: the public middleware reads the bearer BEFORE the cookie
+  // (src/server/middleware/auth.ts:22-25), so forwarding a mission session
+  // token here made a valid owner look unauthenticated. The gateway must not
+  // read the caller's authorization header for the public check at all.
+  const ownerCheck = route.slice(route.indexOf('async function ownerAuthorized'), route.indexOf('function refusal'));
+  assert.ok(ownerCheck.length > 0, 'ownerAuthorized must exist');
+  assert.doesNotMatch(ownerCheck, /authorization/, 'the public owner check may never be handed an authorization header');
+  assert.match(ownerCheck, /request\.headers\.get\('cookie'\)/);
+  assert.match(ownerCheck, /if \(!cookie\) return \{ ok: false, status: 401 \}/);
+  assert.match(ownerCheck, /new Headers\(\{ cookie \}\)/);
+  // It still runs FIRST, before any session acquisition or forwarding.
+  assert.ok(route.indexOf('if (!auth.ok) return refusal(auth.status);') < route.indexOf('const callerToken = callerBearerToken('));
+});
+
+test('caller session is relayed, never substituted, and its 401/403 passes through', () => {
+  // Cause 1: every mission sign-in revokes prior sessions, so the gateway
+  // minting its own token logs the dashboard out. A caller that presents a
+  // usable bearer must therefore be forwarded verbatim with no failover.
+  assert.match(route, /const callerToken = callerBearerToken\(request\.headers\);/);
+  assert.match(route, /if \(callerToken\) \{[\s\S]*?return relay\(await fetchMission\(request, path, body, callerToken\)\)/);
+  // The caller branch returns before the proxy's own credential is consulted,
+  // so no override or mint can be substituted for it and no login is triggered.
+  const callerBranch = route.slice(route.indexOf('if (callerToken) {'), route.indexOf('const session = await missionSessionToken()'));
+  assert.doesNotMatch(callerBranch, /missionSessionToken|noteOverrideRejected|invalidateMissionSessionToken/, 'a relayed caller session must not trigger proxy credential work or failover');
+  assert.ok(route.indexOf('if (isSessionlessMissionPath(path))') < route.indexOf('const callerToken = callerBearerToken('), 'sessionless paths must not acquire a credential');
+  // Sessionless = the mission server's own shell/assets plus sign-in/sign-out.
+  assert.match(route, /path\.length === 3 && path\[1\] === 'session' && \(path\[2\] === 'login' \|\| path\[2\] === 'logout'\)/);
+  // Strict, syntactic bearer parsing (never a second credential, never junk).
+  assert.match(route, /if \(value\.includes\(','\)\) return null/);
+  assert.match(route, /if \(!value\.startsWith\('Bearer '\)\) return null/);
+  assert.match(route, /token\.length > MAX_RELAYED_TOKEN_LENGTH/);
 });
 
 test('missing or rejected mission credentials fail with an honest 503 naming env vars — never a value', () => {
@@ -193,7 +232,7 @@ test('runtime: no override + owner credentials present → proxy signs in once a
     const world = stubWorld({});
     const errors = captureConsoleError();
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 200);
       const logins = loginCalls(world.calls);
       const apiCalls = missionApiCalls(world.calls);
@@ -227,9 +266,9 @@ test('runtime: concurrent first requests share exactly ONE upstream login', asyn
     const errors = captureConsoleError();
     try {
       const responses = await Promise.all([
-        GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview'])),
-        GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview'])),
-        GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview'])),
+        GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview'])),
+        GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview'])),
+        GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview'])),
       ]);
       for (const response of responses) assert.equal(response.status, 200);
       assert.equal(loginCalls(world.calls).length, 1);
@@ -251,8 +290,8 @@ test('runtime: cached token is reused — login count stays 1 across sequential 
   await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
     const world = stubWorld({});
     try {
-      const first = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
-      const second = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'treasury']));
+      const first = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
+      const second = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'treasury']));
       assert.equal(first.status, 200);
       assert.equal(second.status, 200);
       assert.equal(loginCalls(world.calls).length, 1);
@@ -274,7 +313,7 @@ test('runtime: upstream 401 → token invalidated, re-login once, request retrie
     });
     const errors = captureConsoleError();
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 401); // the second 401 is returned honestly — no infinite retry
       const logins = loginCalls(world.calls);
       const apiCalls = missionApiCalls(world.calls);
@@ -303,7 +342,7 @@ test('runtime: a retried mutation replays the same request body on both attempts
         : new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })),
     });
     try {
-      const response = await POST(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, method: 'POST', body: 'ping-payload' }), params(['api', 'policy', 'kill-switch']));
+      const response = await POST(mockRequest({ cookie: PUBLIC_COOKIE, method: 'POST', body: 'ping-payload' }), params(['api', 'policy', 'kill-switch']));
       assert.equal(response.status, 200);
       const apiCalls = missionApiCalls(world.calls);
       assert.equal(apiCalls.length, 2);
@@ -324,7 +363,7 @@ test('runtime: owner email/password missing → 503 naming the missing var NAMEs
     const world = stubWorld({});
     const errors = captureConsoleError();
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 503);
       assert.equal(response.headers.get('cache-control'), 'no-store');
       const body = await response.text();
@@ -355,7 +394,7 @@ test('runtime: credentials configured but rejected → 503 naming them as invali
     });
     const errors = captureConsoleError();
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 503);
       const body = await response.text();
       const parsed = JSON.parse(body);
@@ -379,7 +418,7 @@ test('runtime: explicit session token override takes precedence — no login hap
     const world = stubWorld({});
     const errors = captureConsoleError();
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 200);
       assert.equal(loginCalls(world.calls).length, 0);
       const apiCalls = missionApiCalls(world.calls);
@@ -417,7 +456,7 @@ test('runtime: non-owner request is refused with 403 before any mission-server c
   await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
     const world = stubWorld({ ownerCheckStatus: 403 });
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 403);
       assert.equal(world.calls.length, 1);
       assert.ok(world.calls[0].url.includes('/api/owner/dashboard'));
@@ -438,7 +477,7 @@ test('scanner-style sweep: no secret or literal bearer shape in logs, responses,
     const errors = captureConsoleError();
     let body = '';
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 200);
       body = await response.text();
     } finally {
@@ -522,7 +561,7 @@ test('runtime: GET /mission-gateway requests upstream / and returns the dashboar
       },
     });
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, url: 'http://localhost/mission-gateway' }), params([]));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, url: 'http://localhost/mission-gateway' }), params([]));
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
       assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -553,7 +592,7 @@ test('runtime: GET /mission-gateway/ requests the same upstream / and returns th
     try {
       // Next normalizes both spellings to the optional catch-all with an empty
       // path, so both must request the mission server's real dashboard path.
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, url: 'http://localhost/mission-gateway/' }), params([]));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, url: 'http://localhost/mission-gateway/' }), params([]));
       assert.equal(response.status, 200);
       const apiCalls = missionApiCalls(world.calls);
       assert.equal(apiCalls.length, 1);
@@ -578,7 +617,7 @@ test('runtime: dashboard asset through the prefix returns the asset with its con
       },
     });
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, url: 'http://localhost/mission-gateway/app.js' }), params(['app.js']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, url: 'http://localhost/mission-gateway/app.js' }), params(['app.js']));
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('content-type'), 'text/javascript; charset=utf-8');
       const apiCalls = missionApiCalls(world.calls);
@@ -595,30 +634,32 @@ test('runtime: dashboard asset through the prefix returns the asset with its con
   });
 });
 
-test('runtime: dashboard-issued API call through the prefix reaches the MISSION server, never the public API', async () => {
+test('runtime: dashboard sign-in through the prefix reaches the MISSION server credential-free, with no proxy login', async () => {
   await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
     const world = stubWorld({});
     try {
       // Mirrors the dashboard sign-in form: api('/session/login', { method: 'POST', … }).
       const loginBody = JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
-      const response = await POST(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}`, method: 'POST', body: loginBody, url: 'http://localhost/mission-gateway/api/session/login' }), params(['api', 'session', 'login']));
+      const response = await POST(mockRequest({ cookie: PUBLIC_COOKIE, method: 'POST', body: loginBody, url: 'http://localhost/mission-gateway/api/session/login' }), params(['api', 'session', 'login']));
       assert.equal(response.status, 200);
       const ownerCheck = world.calls.find((call) => call.url.includes('/api/owner/dashboard'));
       assert.ok(ownerCheck, 'owner check must run first');
-      // Both the proxy's own sign-in and the forwarded dashboard login POST to
-      // the mission server's /api/session/login; they are distinguished the
-      // same way the mission server sees them — the forwarded call carries the
-      // proxy's minted bearer token, the proxy's own sign-in carries none.
+      // Exactly ONE /api/session/login exists: the dashboard's own. The proxy
+      // mints nothing on a sessionless path — had it signed in here, that
+      // sign-in would revoke the very session the dashboard is receiving.
       const loginUrlCalls = world.calls.filter((call) => call.url.endsWith('/api/session/login'));
-      assert.equal(loginUrlCalls.length, 2);
-      const [proxySignIn, dashboardCall] = loginUrlCalls;
-      assert.equal(new Headers(proxySignIn.init.headers).get('authorization'), null);
+      assert.equal(loginUrlCalls.length, 1, 'the proxy must not add its own sign-in to a sessionless path');
+      const [dashboardCall] = loginUrlCalls;
       assert.equal(dashboardCall.url, `http://127.0.0.1:${expectedMissionPort()}/api/session/login`);
       assert.equal(dashboardCall.init.method, 'POST');
-      assert.equal(bearerOf(dashboardCall), `Bearer ${MINTED_TOKEN}`);
+      assert.equal(bearerOf(dashboardCall), null, 'sessionless paths must carry no credential');
       assert.deepEqual(JSON.parse(new TextDecoder().decode(dashboardCall.init.body as ArrayBuffer)), { email: OWNER_EMAIL, password: OWNER_PASSWORD });
       assert.notEqual(dashboardCall.url, ownerCheck.url, 'mission upstream must differ from the public owner-check API');
       assert.ok(dashboardCall.url.startsWith('http://127.0.0.1:'), 'mission upstream stays on loopback');
+      // The login response is relayed unchanged — that is how app.js:177 reads
+      // payload.token and stores it for every later call.
+      const payload = JSON.parse(await response.text()) as { token?: string };
+      assert.equal(payload.token, MINTED_TOKEN, 'the mission login body must survive the proxy untouched');
     } finally {
       world.restore();
     }
@@ -655,7 +696,7 @@ test('runtime: rejected override fails over to a freshly minted session — and 
     const errors = captureConsoleError();
     try {
       // First request: override rejected → exactly one automatic sign-in → retry succeeds.
-      const first = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const first = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(first.status, 200);
       assert.equal(loginCalls(world.calls).length, 1);
       let apiCalls = missionApiCalls(world.calls);
@@ -663,7 +704,7 @@ test('runtime: rejected override fails over to a freshly minted session — and 
       assert.equal(bearerOf(apiCalls[0]), `Bearer ${OVERRIDE_TOKEN}`);
       assert.equal(bearerOf(apiCalls[1]), `Bearer ${MINTED_TOKEN}`);
       // Second request: the dead override is latched — skipped outright, no new login.
-      const second = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'treasury']));
+      const second = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'treasury']));
       assert.equal(second.status, 200);
       assert.equal(loginCalls(world.calls).length, 1);
       apiCalls = missionApiCalls(world.calls);
@@ -672,7 +713,7 @@ test('runtime: rejected override fails over to a freshly minted session — and 
       // A NEW override value is tried first again — refreshing the override
       // takes effect without a restart. (withMissionEnv restores the env after.)
       process.env[MISSION_SESSION_ENV] = OVERRIDE_TOKEN_2;
-      const third = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'policy']));
+      const third = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'policy']));
       assert.equal(third.status, 200);
       apiCalls = missionApiCalls(world.calls);
       assert.equal(apiCalls.length, 4);
@@ -699,7 +740,7 @@ test('runtime: rejected override without owner credentials → honest 503 naming
     });
     const errors = captureConsoleError();
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 503);
       const body = await response.text();
       const parsed = JSON.parse(body) as { invalidEnvVars?: string[]; howToFix?: string };
@@ -729,7 +770,7 @@ test('runtime: override 403 passes through without failover — no silent escala
       api: () => new Response(JSON.stringify({ error: { code: 'forbidden', message: 'this mission role is read-only' } }), { status: 403, headers: { 'content-type': 'application/json' } }),
     });
     try {
-      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'overview']));
       assert.equal(response.status, 403);
       assert.equal(loginCalls(world.calls).length, 0);
       const apiCalls = missionApiCalls(world.calls);
@@ -739,4 +780,203 @@ test('runtime: override 403 passes through without failover — no silent escala
       world.restore();
     }
   });
+});
+
+// ── Caller session relay: the login-loop fix ───────────────────────────────
+// The gateway used to answer every mission call with a token of its OWN. Since
+// each mission sign-in revokes the account's previous sessions
+// (src/mission/auth.ts:144-146) and resolveSession only accepts live ones
+// (:177-181), the proxy's mint revoked the dashboard's token and the
+// dashboard's login revoked the proxy's — an inescapable loop. These tests pin
+// the contract that breaks it: relay the caller's session, mint only as a
+// fallback, and cost a sessionless path nothing.
+const CALLER_TOKEN = ['caller-', 'mission-session-token'].join('');
+const CALLER_TOKEN_2 = ['caller-', 'mission-session-token-two'].join('');
+
+test('relay: caller bearer is used verbatim — zero logins, and the override is never substituted', async () => {
+  await withMissionEnv({ override: OVERRIDE_TOKEN, email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({});
+    try {
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN}` }), params(['api', 'overview']));
+      assert.equal(response.status, 200);
+      // Exactly one credential, chosen once: the caller's own.
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 1);
+      assert.equal(bearerOf(apiCalls[0]), `Bearer ${CALLER_TOKEN}`);
+      assert.notEqual(bearerOf(apiCalls[0]), `Bearer ${OVERRIDE_TOKEN}`, 'the override must never be substituted for a caller session');
+      assert.notEqual(bearerOf(apiCalls[0]), `Bearer ${MINTED_TOKEN}`, 'a proxy-minted token must never replace the caller session');
+      // Zero sign-ins: this is what stopped revoking the caller.
+      assert.equal(loginCalls(world.calls).length, 0);
+      // The public cookie still never leaves toward the mission server.
+      assert.equal(new Headers(apiCalls[0].init.headers).get('cookie'), null);
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('relay: a caller session on one request does not make the proxy mint for the next cookie-only caller', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({});
+    try {
+      const relayed = await GET(mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN_2}` }), params(['api', 'overview']));
+      assert.equal(relayed.status, 200);
+      const fallback = await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params(['api', 'treasury']));
+      assert.equal(fallback.status, 200);
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 2);
+      assert.equal(bearerOf(apiCalls[0]), `Bearer ${CALLER_TOKEN_2}`, 'first call relays the caller');
+      assert.equal(bearerOf(apiCalls[1]), `Bearer ${MINTED_TOKEN}`, 'cookie-only caller falls back to the proxy session');
+      // Auto-mint is the fallback only: exactly one sign-in, for the second call.
+      assert.equal(loginCalls(world.calls).length, 1);
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('relay: unusable bearer shapes fall back safely and are never forwarded upstream', async () => {
+  const unusable = [
+    ['basic scheme', `Basic ${'dGVzdA=='}`],
+    ['bare Bearer', 'Bearer'],
+    ['Bearer with empty token', 'Bearer '],
+    ['multi-value header', `Bearer ${CALLER_TOKEN}, Bearer ${OVERRIDE_TOKEN}`],
+    ['internal whitespace', `Bearer ${CALLER_TOKEN} trailing`],
+    ['over-long value', `Bearer ${'x'.repeat(600)}`],
+  ] as const;
+  for (const [label, value] of unusable) {
+    await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+      const world = stubWorld({});
+      try {
+        const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, authorization: value }), params(['api', 'overview']));
+        assert.equal(response.status, 200, label);
+        const apiCalls = missionApiCalls(world.calls);
+        assert.equal(apiCalls.length, 1, label);
+        // Falls back to the documented precedence (auto-mint), never to garbage.
+        assert.equal(bearerOf(apiCalls[0]), `Bearer ${MINTED_TOKEN}`, `${label} must not be relayed`);
+        assert.equal(loginCalls(world.calls).length, 1, `${label} must fall back to exactly one sign-in`);
+      } finally {
+        world.restore();
+      }
+    });
+  }
+});
+
+test('relay: a bearer with no public cookie never reaches the mission server, and the owner check refuses it', async () => {
+  for (const ownerCheckStatus of [200, 401, 403]) {
+    await withMissionEnv({ override: OVERRIDE_TOKEN, email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+      const world = stubWorld({ ownerCheckStatus });
+      try {
+        const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+        assert.equal(response.status, 401, 'a public check needs the public cookie; a bearer alone is unauthenticated');
+        assert.equal(world.calls.length, 0, 'no owner check, no login, and no mission call may happen');
+        assert.equal(loginCalls(world.calls).length, 0);
+        assert.equal(missionApiCalls(world.calls).length, 0, 'the bearer must never be replayed upstream');
+        const body = await response.text();
+        assert.ok(!body.includes(PUBLIC_BEARER) && !body.includes(FORBIDDEN_MARKER));
+      } finally {
+        world.restore();
+      }
+    });
+  }
+});
+
+test('relay: the public cookie is never forwarded upstream on any path', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({});
+    try {
+      await GET(mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN}` }), params(['api', 'overview']));
+      await GET(mockRequest({ cookie: PUBLIC_COOKIE }), params([]));
+      await POST(mockRequest({ cookie: PUBLIC_COOKIE, method: 'POST', body: '{}' }), params(['api', 'tasks']));
+      const upstream = world.calls.filter((call) => !call.url.includes('/api/owner/dashboard'));
+      assert.ok(upstream.length >= 3);
+      for (const call of upstream) {
+        assert.equal(new Headers(call.init.headers).get('cookie'), null, 'the public session cookie must never reach the mission server');
+        assert.ok(call.url.includes('127.0.0.1'), 'upstream stays on loopback');
+      }
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('relay: shell, asset, sign-in and sign-out send no credential and trigger zero logins', async () => {
+  const cases = [
+    { label: 'shell', path: [] as string[], method: 'GET', url: 'http://localhost/mission-gateway/', expectUpstream: `http://127.0.0.1:${4200}/`, ownLogins: 0 },
+    { label: 'shell trailing slash', path: [''], method: 'GET', url: 'http://localhost/mission-gateway/', expectUpstream: `http://127.0.0.1:${4200}/`, ownLogins: 0 },
+    { label: 'asset', path: ['app.js'], method: 'GET', url: 'http://localhost/mission-gateway/app.js', expectUpstream: `http://127.0.0.1:${4200}/app.js`, ownLogins: 0 },
+    { label: 'styles', path: ['styles.css'], method: 'GET', url: 'http://localhost/mission-gateway/styles.css', expectUpstream: `http://127.0.0.1:${4200}/styles.css`, ownLogins: 0 },
+    { label: 'sign-in', path: ['api', 'session', 'login'], method: 'POST', url: 'http://localhost/mission-gateway/api/session/login', expectUpstream: `http://127.0.0.1:${4200}/api/session/login`, ownLogins: 1 },
+    { label: 'sign-out', path: ['api', 'session', 'logout'], method: 'POST', url: 'http://localhost/mission-gateway/api/session/logout', expectUpstream: `http://127.0.0.1:${4200}/api/session/logout`, ownLogins: 0 },
+  ];
+  for (const item of cases) {
+    // Owner credentials ARE configured here: a page load must still not spend one.
+    await withMissionEnv({ override: OVERRIDE_TOKEN, email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+      const world = stubWorld({
+        api: (_count, url) => (url === item.expectUpstream
+          ? new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
+          : new Response(JSON.stringify({ unexpected: url }), { status: 500, headers: { 'content-type': 'application/json' } })),
+      });
+      try {
+        // Even a caller that presents its own bearer gets no credential here,
+        // and the proxy never substitutes its own.
+        const request = item.method === 'GET'
+          ? mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN}`, url: item.url })
+          : mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN}`, method: 'POST', body: '{}', url: item.url });
+        const response = await (item.method === 'GET' ? GET(request, params(item.path)) : POST(request, params(item.path)));
+        assert.equal(response.status, 200, item.label);
+        const missionCalls = world.calls.filter((call) => !call.url.includes('/api/owner/dashboard'));
+        assert.equal(missionCalls.length, item.ownLogins === 1 ? 1 : 1, `${item.label}: exactly one upstream call — the caller's own`);
+        for (const call of missionCalls) {
+          assert.equal(bearerOf(call), null, `${item.label} must be forwarded with NO credential`);
+          assert.equal(new Headers(call.init.headers).get('cookie'), null, item.label);
+        }
+        // Zero proxy sign-ins: no /api/session/login beyond the caller's own.
+        const loginUrls = world.calls.filter((call) => call.url.endsWith('/api/session/login'));
+        assert.equal(loginUrls.length, item.ownLogins, `${item.label}: proxy must mint nothing`);
+      } finally {
+        world.restore();
+      }
+    });
+  }
+});
+
+test('relay: a sessioned path is NOT treated as sessionless (/api/session/me keeps its credential)', async () => {
+  await withMissionEnv({ email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({});
+    try {
+      // The dashboard reload path (app.js:2370) calls /session/me with its own token.
+      const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN}` }), params(['api', 'session', 'me']));
+      assert.equal(response.status, 200);
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 1);
+      assert.equal(bearerOf(apiCalls[0]), `Bearer ${CALLER_TOKEN}`);
+      assert.equal(loginCalls(world.calls).length, 0);
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('relay: caller 401 and 403 pass through with zero logins and exactly ONE upstream attempt', async () => {
+  for (const status of [401, 403] as const) {
+    await withMissionEnv({ override: OVERRIDE_TOKEN, email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+      const world = stubWorld({
+        api: () => new Response(JSON.stringify({ error: { code: status === 401 ? 'unauthorized' : 'forbidden', message: status === 401 ? 'mission sign-in required' : 'read-only access link' } }), { status, headers: { 'content-type': 'application/json' } }),
+      });
+      try {
+        const response = await GET(mockRequest({ cookie: PUBLIC_COOKIE, authorization: `Bearer ${CALLER_TOKEN}` }), params(['api', 'overview']));
+        assert.equal(response.status, status, `${status} must reach the caller unchanged`);
+        const apiCalls = missionApiCalls(world.calls);
+        assert.equal(apiCalls.length, 1, `${status}: no retry — a second attempt with another credential is what caused the loop`);
+        assert.equal(bearerOf(apiCalls[0]), `Bearer ${CALLER_TOKEN}`);
+        assert.equal(loginCalls(world.calls).length, 0, `${status}: the proxy must never sign in to "rescue" a rejected caller session`);
+        // The upstream error body is relayed, so the dashboard can react (app.js:120).
+        const parsed = JSON.parse(await response.text()) as { error?: { code?: string } };
+        assert.equal(parsed.error?.code, status === 401 ? 'unauthorized' : 'forbidden');
+      } finally {
+        world.restore();
+      }
+    });
+  }
 });

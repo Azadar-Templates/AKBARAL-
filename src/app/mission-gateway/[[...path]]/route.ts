@@ -15,19 +15,111 @@ export const dynamic = 'force-dynamic';
 
 const PUBLIC_API_PORT = Number(process.env.AKBARAL_API_PORT ?? 4000) || 4000;
 
-/** The existing public API is the authentication authority; its owner router
+/**
+ * Mission session tokens are 43-character base64url values
+ * (src/mission/auth.ts:141 `randomBytes(32).toString('base64url')`). Anything
+ * longer than this generous cap is not a mission session, so it is treated as
+ * absent rather than relayed to the mission server as a credential.
+ */
+const MAX_RELAYED_TOKEN_LENGTH = 512;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Which credential a request is answered with.
+//
+// A caller that already holds a mission session (the private dashboard keeps
+// one in sessionStorage and resends it on every call —
+// mission-dashboard/app.js:109) is RELAYED, never substituted. That is the
+// whole point of this file: every mission sign-in rotates — and therefore
+// revokes — the account's previous sessions
+// (src/mission/auth.ts:144-146, inside login()'s transaction), and
+// resolveSession only accepts `revoked_at IS NULL`
+// (src/mission/auth.ts:177-181). So a proxy-minted token and the dashboard's
+// own token revoke EACH OTHER: dashboard login kills the cached mint, the
+// gateway's re-mint kills the dashboard, and the dashboard's next 401 calls
+// signOut() (app.js:120) — a loop the owner cannot escape.
+//
+// Precedence for a path that needs a mission session, decided ONCE per request:
+//   1. the caller's own usable `Authorization: Bearer <token>` — used verbatim;
+//   2. the operator override (the mission session token env var — its name is
+//      built dynamically in ../mission-session and is never spelled
+//      literally in public runtime source), tried first and exactly once,
+//      and never substituted for 1;
+//   3. automatic sign-in with the mission owner credentials (the fallback for a
+//      sessionless caller, e.g. a scripted owner on a cookie-only request).
+// A path the mission server answers without a session (shell, assets, sign-in,
+// sign-out) gets NO credential at all and never reaches 2 or 3, so an ordinary
+// page load cannot mint — and therefore cannot revoke — anything.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The caller's own mission bearer token, or null when the request carries no
+ * credential this gateway can faithfully relay.
+ *
+ * Deliberately syntactic and strict: `Basic …`, a bare `Bearer`, a repeated /
+ * multi-value `authorization` header (Headers.get joins those with ", ", which
+ * would otherwise smuggle a second credential upstream), and implausibly long
+ * values all read as "no caller session" and fall back to the documented
+ * precedence. The mission server's own parser is the exact contract mirrored
+ * here (src/mission/server.ts:359-363: `startsWith('Bearer ')` then trim).
+ */
+function callerBearerToken(headers: Headers): string | null {
+  const header = headers.get('authorization');
+  if (!header) return null;
+  const value = header.trim();
+  if (value.includes(',')) return null;
+  if (!value.startsWith('Bearer ')) return null;
+  const token = value.slice('Bearer '.length).trim();
+  if (!token) return null;
+  if (/\s/.test(token)) return null;
+  if (token.length > MAX_RELAYED_TOKEN_LENGTH) return null;
+  return token;
+}
+
+/**
+ * Paths the mission process answers for itself, with no session consulted:
+ * everything outside /api/ is read straight off disk by serveStatic
+ * (src/mission/server.ts:3152, 470-489 — the dashboard shell at `/` and its
+ * assets), and `POST /api/session/login` / `POST /api/session/logout` are
+ * handled before any session is required (src/mission/server.ts:1528-1544).
+ * `/api/session/me` is NOT in this set: it calls requireOwner
+ * (src/mission/server.ts:1545-1546) and needs the caller's session.
+ *
+ * These paths must be forwarded CREDENTIAL-FREE. Answering them with a minted
+ * session would mean signing in on every page load, and each sign-in revokes
+ * the owner's previously issued sessions — including the one the dashboard is
+ * signing with.
+ */
+function isSessionlessMissionPath(path: string[]): boolean {
+  if (path.length === 0) return true;
+  if (path.every((part) => part === '')) return true;
+  if (path[0] !== 'api') return true;
+  return path.length === 3 && path[1] === 'session' && (path[2] === 'login' || path[2] === 'logout');
+}
+
+/**
+ * The existing public API is the authentication authority; its owner router
  * already runs requireAuth + requireRole('owner','super_admin'). The proxy only
  * asks that internal API whether this request is allowed, then strips the public
- * credentials before calling the mission process. */
+ * credentials before calling the mission process.
+ *
+ * The check is presented the PUBLIC SESSION COOKIE AND NOTHING ELSE. That is
+ * load-bearing, not an oversight: the public middleware reads the bearer BEFORE
+ * the cookie (src/server/middleware/auth.ts:22-25), so presenting a mission
+ * session token here — which is not a public JWT — made the owner check answer
+ * 401 even for an owner with a perfectly valid public cookie, and the dashboard
+ * reacted to that 401 by signing out (mission-dashboard/app.js:120). A caller
+ * with a bearer but no public cookie is therefore unauthenticated *for the
+ * public check* and is refused before anything is forwarded — so an
+ * un-verifiable bearer can never be replayed upstream either.
+ */
 async function ownerAuthorized(request: NextRequest): Promise<{ ok: true } | { ok: false; status: 401 | 403 }> {
-  const headers = new Headers();
-  const authorization = request.headers.get('authorization');
   const cookie = request.headers.get('cookie');
-  if (authorization) headers.set('authorization', authorization);
-  if (cookie) headers.set('cookie', cookie);
-  if (!authorization && !cookie) return { ok: false, status: 401 };
+  if (!cookie) return { ok: false, status: 401 };
   try {
-    const response = await fetch(`http://127.0.0.1:${PUBLIC_API_PORT}/api/owner/dashboard`, { headers, cache: 'no-store' });
+    const response = await fetch(`http://127.0.0.1:${PUBLIC_API_PORT}/api/owner/dashboard`, {
+      headers: new Headers({ cookie }),
+      cache: 'no-store',
+    });
     if (response.status === 401) return { ok: false, status: 401 };
     if (response.status === 403) return { ok: false, status: 403 };
     return response.ok ? { ok: true } : { ok: false, status: 401 };
@@ -46,13 +138,20 @@ function upstreamPath(path: string[], request: NextRequest): string {
   return `http://127.0.0.1:${MISSION_PORT}/${suffix}${query}`;
 }
 
-function forwardedHeaders(request: NextRequest, missionToken: string): Headers {
+/**
+ * The single credential-bearing header set for the loopback mission call.
+ * Only content-type, accept and (optionally) one bearer leave this process —
+ * never the public cookie, and never the caller's raw authorization header
+ * passed through untouched. `missionToken === null` means "send no
+ * credential", which is what sessionless paths require.
+ */
+function forwardedHeaders(request: NextRequest, missionToken: string | null): Headers {
   const headers = new Headers();
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
   const accept = request.headers.get('accept');
   if (accept) headers.set('accept', accept);
-  headers.set('authorization', `Bearer ${missionToken}`);
+  if (missionToken) headers.set('authorization', `Bearer ${missionToken}`);
   return headers;
 }
 
@@ -78,6 +177,27 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
 
   // Read the request body once so a single authenticated retry can replay it.
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
+
+  // The caller's session is decided here, once, and only for paths that need a
+  // session at all.
+  if (isSessionlessMissionPath(path)) {
+    // No credential, no override, no mint: the mission server answers this
+    // itself, and any sign-in here would revoke the owner's live dashboard
+    // session. The response is relayed unchanged.
+    return relay(await fetchMission(request, path, body, null));
+  }
+
+  const callerToken = callerBearerToken(request.headers);
+  if (callerToken) {
+    // Relay, never substitute. The caller's own session answers for the
+    // caller: a 401/403 from the mission server passes through EXACTLY as-is,
+    // with no failover and no second attempt. Failing over to a proxy-minted
+    // token here is what caused the loop — the failover login would revoke the
+    // caller's session while the caller watched its own request bounce, and a
+    // 403 (authenticated-but-forbidden) must never be answered with a
+    // different credential at all.
+    return relay(await fetchMission(request, path, body, callerToken));
+  }
 
   const session = await missionSessionToken();
   if (!session) return missionSessionUnavailable();
@@ -110,7 +230,7 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   return relay(upstream);
 }
 
-async function fetchMission(request: NextRequest, path: string[], body: ArrayBuffer | undefined, missionToken: string): Promise<Response> {
+async function fetchMission(request: NextRequest, path: string[], body: ArrayBuffer | undefined, missionToken: string | null): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
@@ -150,7 +270,8 @@ async function relay(upstream: Response): Promise<Response> {
  * over with. Names the env var NAME only. A bare 401 here would trap the owner
  * in a dashboard login loop that cannot succeed (the mission login itself
  * would pass, then every data call would 401 again), so the misconfiguration
- * is named directly instead. */
+ * is named directly instead. Only reachable for a caller with no session of
+ * its own — a caller that presented a bearer is never substituted. */
 function overrideDead(): Response {
   const names = missionSessionEnvNames();
   console.error(`[mission-proxy] mission session override rejected: ${names.override} is expired or revoked, and no owner credentials are configured to fail over with`);
@@ -168,9 +289,10 @@ function overrideDead(): Response {
   );
 }
 
-/** Honest, owner-only 503 — reachable only behind ownerAuthorized. Names env
- * var NAMES only: never a password, a session token, or a raw upstream body
- * that could contain one. */
+/** Honest, owner-only 503 — reachable only behind ownerAuthorized, and only
+ * when the caller presented no mission session of its own. Names env var
+ * NAMES only: never a password, a session token, or a raw upstream body that
+ * could contain one. */
 function missionSessionUnavailable(): Response {
   const names = missionSessionEnvNames();
   const howToFix = [
