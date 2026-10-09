@@ -72,6 +72,8 @@ export interface FleetSummary {
     startingConcurrently: number;
     blockedAgents: number;
     eligibleTasksAssignable: number;
+    bountyLeadsAccepted: number;
+    bountyAssignments: number;
     assignedEligibleTasks: number;
     completedWithEvidence: number;
     independentlyVerifiedRevenueCents: number;
@@ -86,7 +88,9 @@ export interface FleetSummary {
 
 /** Agents created by test fixtures are never counted as production readiness. The
  * mission's own provisioning writes origin_platform='mission'/'akbaral-registry'. */
-const PRODUCTION_AGENT_WHERE = `origin_platform IS NULL OR origin_platform NOT IN ('fixture','test','test_fixture')`;
+// Parenthesized on purpose: AND binds tighter than OR, so an unparenthesized
+// `... AND a IS NULL OR a NOT IN (...)` silently matches every row instead of none.
+const PRODUCTION_AGENT_WHERE = `(origin_platform IS NULL OR origin_platform NOT IN ('fixture','test','test_fixture'))`;
 
 /** Fresh deployments have an unseeded readiness view; without rows the ToS gate is a
  *  no-op and the owner sees "nothing blocked" instead of "37 sources, all awaiting
@@ -212,10 +216,16 @@ export function fleetSummary(): FleetSummary {
     }
   }
 
+  // Two work paths feed the fleet: the engine's opportunity queue and the
+  // GitHub-issue-bounty workflow (its own candidates/assignments tables). Counting only
+  // the first would report "0 eligible tasks" while real, policy-checked bounty
+  // assignments were sitting in the second.
+  const bountyEligible = count("SELECT COUNT(*) AS c FROM mission_bounty_opportunities WHERE risk_state='accepted'");
+  const bountyAssigned = count("SELECT COUNT(*) AS c FROM mission_bounty_assignments WHERE state IN ('eligible','assigned','executing')");
   const eligible = count(
     "SELECT COUNT(*) AS c FROM mission_earning_engine_opportunities WHERE verification_state IN ('discovered','qualified','legitimacy_verified')",
-  );
-  const assigned = count("SELECT COUNT(*) AS c FROM mission_earning_engine_opportunities WHERE verification_state IN ('assigned','executing')");
+  ) + bountyEligible;
+  const assigned = count("SELECT COUNT(*) AS c FROM mission_earning_engine_opportunities WHERE verification_state IN ('assigned','executing')") + bountyAssigned;
   const completedWithEvidence = count(
     `SELECT COUNT(DISTINCT v.opportunity_id) AS c FROM mission_result_verifications v
        JOIN mission_earning_engine_opportunities e ON e.id = v.opportunity_id
@@ -263,6 +273,8 @@ export function fleetSummary(): FleetSummary {
       startingConcurrently: Math.min(admissible, Math.max(eligible, 0), concurrencyCeiling > 0 ? concurrencyCeiling : Number.MAX_SAFE_INTEGER),
       blockedAgents: blocked,
       eligibleTasksAssignable: eligible,
+      bountyLeadsAccepted: bountyEligible,
+      bountyAssignments: bountyAssigned,
       assignedEligibleTasks: assigned,
       completedWithEvidence,
       independentlyVerifiedRevenueCents: sum("SELECT COALESCE(SUM(amount_cents),0) AS total FROM mission_revenue WHERE status='received' AND verifier IS NOT NULL"),

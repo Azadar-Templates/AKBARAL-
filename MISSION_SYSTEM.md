@@ -212,7 +212,9 @@ start gets the blocker code that stopped it (`autonomy_disabled`,
 `no_active_money_grant`, `no_scoped_contract`, `owner_action_pending`,
 `kill_switch_engaged`) and a free or owner-side path through it. Fixture-origin
 agents (`origin_platform='fixture'`) are counted separately and never satisfy a
-production claim.
+production claim. Both work paths are counted — the engine's opportunity queue and the
+GitHub-issue-bounty workflow (`bountyLeadsAccepted`, `bountyAssignments`) — so a
+policy-checked bounty assignment is never reported as "no eligible tasks".
 
 Two things changed in the execution loop itself:
 

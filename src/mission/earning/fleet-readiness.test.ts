@@ -72,7 +72,7 @@ beforeEach(() => {
   updatePolicy({
     currency: 'USD', killSwitch: false, autonomousEnabled: true, maxAgents: 5000, maxDailySpendCents: 100000, maxExpenseCents: 10000, requireApprovalAboveCents: 5000,
   } as never, ownerId);
-  for (const table of ['mission_human_action_tasks', 'mission_agent_contracts', 'mission_money_grants', 'mission_credentials', 'mission_earning_engine_opportunities', 'mission_result_verifications', 'mission_execution_evidence', 'mission_revenue', 'mission_payouts']) {
+  for (const table of ['mission_human_action_tasks', 'mission_agent_contracts', 'mission_money_grants', 'mission_credentials', 'mission_earning_engine_opportunities', 'mission_result_verifications', 'mission_execution_evidence', 'mission_revenue', 'mission_payouts', 'mission_bounty_assignments', 'mission_bounty_opportunities', 'mission_money_opportunities']) {
     try { db.run(`DELETE FROM ${table}`); } catch { /* nothing yet */ }
   }
   db.run("UPDATE mission_payout_slots SET status='unconfigured', verified_at=NULL, verified_by=NULL");
@@ -86,6 +86,44 @@ it('counts registered fleet from live rows and never from fixture-origin agents'
   assert.equal(summary.counts.fixtureOriginAgents, 1, 'the fixture agent is tracked separately, not silently mixed in');
   assert.ok(!summary.counts.registeredAgents || summary.counts.registeredAgents === db.get<Row>("SELECT COUNT(*) AS c FROM mission_agents WHERE origin_platform NOT IN ('fixture','test','test_fixture')")!.c);
   assert.equal(summary.measuredFrom, 'live mission database rows only');
+});
+
+it('separates active from paused agents without the AND/OR precedence trap', () => {
+  const pausedId = `agt-fr-paused-${randomUUID().slice(0, 8)}`;
+  db.run(
+    "INSERT INTO mission_agents (id,slug,name,role_key,depth,generation,status,mission_role,origin_platform,capabilities) VALUES (?,?,?,?,0,'registry','paused','worker','akbaral-registry',?)",
+    [pausedId, `${slugSeed}-paused`, 'Fleet paused', 'specialist', JSON.stringify(['coding'])],
+  );
+  const summary = fleetSummary();
+  assert.equal(summary.counts.registeredAgents, 3, 'a retired specialist is still registered');
+  assert.equal(summary.counts.pausedOrRetiredAgents, 1, 'and is counted as paused, not as active');
+  assert.equal(summary.counts.activeAgents, summary.counts.registeredAgents - 1);
+  assert.equal(summary.counts.executionReadyAgents, 0, 'a paused agent is not admissible either');
+  db.run('DELETE FROM mission_agents WHERE id=?', [pausedId]);
+});
+
+it('counts work on the GitHub-bounty path, not only the engine queue', () => {
+  const repo = 'tenstorrent/tt-metal';
+  db.run(
+    `INSERT INTO mission_bounty_opportunities (id, repo_full_name, issue_number, issue_url, title, labels_json, hinted_amount_cents, state, observed_at, risk_state, issue_body)
+     VALUES ('bty_test_1', ?, 59732, 'https://github.com/tenstorrent/tt-metal/issues/59732', 'Fix distribution bias', '["bounty"]', 300000, 'discovered', ?, 'accepted', 'live-shaped fixture')`,
+    [repo, nowIso()],
+  );
+  db.run(
+    `INSERT INTO mission_money_opportunities (id, title, evidence_url, activity, provider, approved_by, status, created_at)
+     VALUES ('opp_test_1', 'Bounty: fix distribution bias', 'https://github.com/tenstorrent/tt-metal/issues/59732', 'software_development', 'github', ?, 'approved', ?)`,
+    [ownerId, nowIso()],
+  );
+  db.run(
+    `INSERT INTO mission_bounty_assignments (id, agent_id, opportunity_id, money_opportunity_id, state, approved_by, created_at)
+     VALUES ('bta_test_1', ?, 'bty_test_1', 'opp_test_1', 'eligible', ?, ?)`,
+    [agentOne, ownerId, nowIso()],
+  );
+  const summary = fleetSummary();
+  assert.equal(summary.counts.bountyLeadsAccepted, 1);
+  assert.equal(summary.counts.bountyAssignments, 1);
+  assert.equal(summary.counts.eligibleTasksAssignable, 1, 'the bounty lead is real eligible work');
+  assert.equal(summary.counts.assignedEligibleTasks, 1);
 });
 
 it('a registered agent is NOT execution-ready: zero grants, zero credentials, zero contracts', () => {
