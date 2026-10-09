@@ -9,7 +9,13 @@
  * in ITSELF, on demand:
  *
  *   1. The mission session token override env var, when set, is an OPTIONAL
- *      manual override and always wins — no sign-in happens in that case.
+ *      manual override and is always tried FIRST — no sign-in happens while it
+ *      is accepted. Overrides go stale on their own (sessions expire, and
+ *      every mission sign-in — including the dashboard's own login — revokes
+ *      older sessions), so a 401 on the override is NOT passed through: the
+ *      caller latches that override value as dead and fails over to a freshly
+ *      minted automatic session. A NEW override value is always tried first
+ *      again, so operator precedence is preserved exactly.
  *   2. Otherwise the proxy signs in to the loopback mission server with the
  *      mission owner email/password env vars from its own environment (the
  *      production wrapper starts the mission child with the same environment —
@@ -35,12 +41,20 @@ const MISSION_OWNER_PASSWORD_ENV = ['Z', 'A141251SA_OWNER_PASSWORD'].join('');
 
 export interface MissionSessionToken {
   token: string;
-  /** 'override' = operator-supplied env token (never retried); 'auto' = minted by the proxy. */
+  /** 'override' = operator-supplied env token (tried first; a 401'd override fails over to auto); 'auto' = minted by the proxy. */
   source: 'override' | 'auto';
 }
 
 let cachedMissionToken: string | null = null;
 let inflightMissionLogin: Promise<string | null> | null = null;
+/**
+ * The override value the mission server already rejected with 401, if any.
+ * Memory-only like the cached token (never logged, returned, or persisted).
+ * Later requests skip exactly this dead value and go straight to automatic
+ * sign-in; a DIFFERENT override value in the environment is always tried
+ * first, so refreshing the override takes effect without a restart.
+ */
+let rejectedOverrideToken: string | null = null;
 
 /** Env var NAMES (never values) for honest error reporting. */
 export function missionSessionEnvNames(): { override: string; ownerEmail: string; ownerPassword: string } {
@@ -64,11 +78,28 @@ export function invalidateMissionSessionToken(): void {
 export function resetMissionSessionStateForTests(): void {
   cachedMissionToken = null;
   inflightMissionLogin = null;
+  rejectedOverrideToken = null;
+}
+
+/** Latch an override value the mission server rejected with 401 as dead. */
+export function noteOverrideRejected(token: string): void {
+  rejectedOverrideToken = token;
 }
 
 export async function missionSessionToken(): Promise<MissionSessionToken | null> {
   const override = explicitSessionToken();
-  if (override) return { token: override, source: 'override' };
+  if (override && override !== rejectedOverrideToken) return { token: override, source: 'override' };
+  return missionSessionTokenAuto();
+}
+
+/**
+ * Automatic session acquisition WITHOUT the override: shared in-memory cache
+ * plus a single in-flight sign-in. Used for the initial session when no live
+ * override is configured, and as the failover when a presented session is
+ * rejected with 401. Returns null when the credentials are missing, rejected,
+ * or the mission server is unreachable.
+ */
+export async function missionSessionTokenAuto(): Promise<MissionSessionToken | null> {
   if (cachedMissionToken) return { token: cachedMissionToken, source: 'auto' };
   if (!inflightMissionLogin) {
     // Single in-flight sign-in: concurrent first requests share one login call.

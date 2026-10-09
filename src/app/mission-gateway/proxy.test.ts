@@ -14,6 +14,7 @@ const MISSION_OWNER_EMAIL_ENV = ['Z', 'A141251SA_OWNER_EMAIL'].join('');
 const MISSION_OWNER_PASSWORD_ENV = ['Z', 'A141251SA_OWNER_PASSWORD'].join('');
 const FORBIDDEN_MARKER = ['Z', 'A141251SA'].join('');
 const OVERRIDE_TOKEN = ['override-', 'session-token'].join('');
+const OVERRIDE_TOKEN_2 = ['override-', 'session-token-two'].join('');
 const MINTED_TOKEN = ['minted-', 'session-token'].join('');
 const MINTED_TOKEN_2 = ['minted-', 'session-token-two'].join('');
 const OWNER_EMAIL = 'mission-owner@example.test';
@@ -86,8 +87,11 @@ test('session module signs in with the mission server’s exact login contract',
   // Single in-flight login shared by concurrent racers.
   assert.match(sessionModule, /if \(!inflightMissionLogin\)/);
   assert.match(sessionModule, /inflightMissionLogin = signInToMission\(\)/);
-  // Explicit override takes precedence and never triggers a login.
-  assert.match(sessionModule, /const override = explicitSessionToken\(\);[\s\S]*if \(override\) return \{ token: override, source: 'override' \}/);
+  // Explicit override takes precedence and never triggers a login — unless that
+  // exact value was already rejected, in which case later requests skip it.
+  assert.match(sessionModule, /const override = explicitSessionToken\(\);[\s\S]*if \(override && override !== rejectedOverrideToken\) return \{ token: override, source: 'override' \}/);
+  assert.match(sessionModule, /export function noteOverrideRejected\(token: string\): void/);
+  assert.match(sessionModule, /export async function missionSessionTokenAuto\(\): Promise<MissionSessionToken \| null>/);
 });
 
 test('proxy preserves method, query and response streaming for mission paths', () => {
@@ -158,7 +162,7 @@ const bearerOf = (call: FetchCall) => new Headers(call.init.headers).get('author
 function stubWorld(options: {
   ownerCheckStatus?: number;
   login?: (loginCount: number) => Response;
-  api?: (apiCount: number, url: string) => Response;
+  api?: (apiCount: number, url: string, init: RequestInit) => Response;
 }): { calls: FetchCall[]; restore: () => void } {
   const calls: FetchCall[] = [];
   const g = globalThis as unknown as { fetch: typeof fetch };
@@ -177,7 +181,7 @@ function stubWorld(options: {
       return (options.login ?? (() => okLogin(MINTED_TOKEN)))(logins);
     }
     api += 1;
-    return (options.api ?? okApi)(api, url);
+    return (options.api ?? okApi)(api, url, normalized);
   }) as typeof fetch;
   return { calls, restore: () => { g.fetch = original; } };
 }
@@ -615,6 +619,122 @@ test('runtime: dashboard-issued API call through the prefix reaches the MISSION 
       assert.deepEqual(JSON.parse(new TextDecoder().decode(dashboardCall.init.body as ArrayBuffer)), { email: OWNER_EMAIL, password: OWNER_PASSWORD });
       assert.notEqual(dashboardCall.url, ownerCheck.url, 'mission upstream must differ from the public owner-check API');
       assert.ok(dashboardCall.url.startsWith('http://127.0.0.1:'), 'mission upstream stays on loopback');
+    } finally {
+      world.restore();
+    }
+  });
+});
+
+test('rejected override fails over to automatic sign-in on 401 only — never on 403, never looping', () => {
+  assert.match(route, /upstream\.status === 401 && session\.source === 'override'/);
+  assert.match(route, /noteOverrideRejected\(session\.token\)/);
+  assert.match(route, /invalidateMissionSessionToken\(\);\s*\n\s*const fresh = await missionSessionTokenAuto\(\)/);
+  assert.match(route, /function overrideDead\(\): Response/);
+  assert.match(route, /invalidEnvVars: \[names\.override\]/);
+  // A 403 on an override passes through untouched: no failover, no latch.
+  // Answering "authenticated but forbidden" with a different credential of the
+  // same owner identity could silently escalate past an intentionally
+  // read-only override.
+  assert.doesNotMatch(route, /status === 403 && session\.source === 'override'/);
+  // The latched dead VALUE stays in memory only — never logged or returned.
+  assert.doesNotMatch(sessionModule, /console\.(error|warn|log|info|debug)[\s\S]{0,80}rejectedOverrideToken/);
+  assert.doesNotMatch(sessionModule, /return [^;]*rejectedOverrideToken/);
+});
+
+test('runtime: rejected override fails over to a freshly minted session — and stays healed', async () => {
+  await withMissionEnv({ override: OVERRIDE_TOKEN, email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({
+      api: (_count, _url, init) => {
+        const bearer = new Headers(init.headers).get('authorization');
+        if (bearer === `Bearer ${OVERRIDE_TOKEN}`) {
+          return new Response(JSON.stringify({ error: { code: 'unauthorized', message: 'mission sign-in required' } }), { status: 401, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({ upstream: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+    const errors = captureConsoleError();
+    try {
+      // First request: override rejected → exactly one automatic sign-in → retry succeeds.
+      const first = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      assert.equal(first.status, 200);
+      assert.equal(loginCalls(world.calls).length, 1);
+      let apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 2);
+      assert.equal(bearerOf(apiCalls[0]), `Bearer ${OVERRIDE_TOKEN}`);
+      assert.equal(bearerOf(apiCalls[1]), `Bearer ${MINTED_TOKEN}`);
+      // Second request: the dead override is latched — skipped outright, no new login.
+      const second = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'treasury']));
+      assert.equal(second.status, 200);
+      assert.equal(loginCalls(world.calls).length, 1);
+      apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 3);
+      assert.equal(bearerOf(apiCalls[2]), `Bearer ${MINTED_TOKEN}`);
+      // A NEW override value is tried first again — refreshing the override
+      // takes effect without a restart. (withMissionEnv restores the env after.)
+      process.env[MISSION_SESSION_ENV] = OVERRIDE_TOKEN_2;
+      const third = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'policy']));
+      assert.equal(third.status, 200);
+      apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 4);
+      assert.equal(bearerOf(apiCalls[3]), `Bearer ${OVERRIDE_TOKEN_2}`);
+      assert.equal(loginCalls(world.calls).length, 1);
+      // Neither the dead override, nor the minted token, nor the password leaks.
+      for (const line of errors.lines) {
+        assert.ok(!line.includes(OVERRIDE_TOKEN));
+        assert.ok(!line.includes(OVERRIDE_TOKEN_2));
+        assert.ok(!line.includes(MINTED_TOKEN));
+        assert.ok(!line.includes(OWNER_PASSWORD));
+      }
+    } finally {
+      world.restore();
+      errors.restore();
+    }
+  });
+});
+
+test('runtime: rejected override without owner credentials → honest 503 naming the override, no login attempted', async () => {
+  await withMissionEnv({ override: OVERRIDE_TOKEN }, async () => {
+    const world = stubWorld({
+      api: () => new Response(JSON.stringify({ error: { code: 'unauthorized', message: 'mission sign-in required' } }), { status: 401, headers: { 'content-type': 'application/json' } }),
+    });
+    const errors = captureConsoleError();
+    try {
+      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      assert.equal(response.status, 503);
+      const body = await response.text();
+      const parsed = JSON.parse(body) as { invalidEnvVars?: string[]; howToFix?: string };
+      assert.deepEqual(parsed.invalidEnvVars, [MISSION_SESSION_ENV]);
+      const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      assert.match(parsed.howToFix ?? '', new RegExp(escape(MISSION_SESSION_ENV)));
+      assert.match(parsed.howToFix ?? '', new RegExp(escape(MISSION_OWNER_EMAIL_ENV)));
+      // One doomed override attempt, zero logins (no credentials → no sign-in call).
+      assert.equal(missionApiCalls(world.calls).length, 1);
+      assert.equal(loginCalls(world.calls).length, 0);
+      const withoutNames = [MISSION_SESSION_ENV, MISSION_OWNER_EMAIL_ENV, MISSION_OWNER_PASSWORD_ENV]
+        .reduce((acc, name) => acc.split(name).join(''), body);
+      assert.ok(!withoutNames.includes(FORBIDDEN_MARKER));
+      assert.ok(!body.includes(OVERRIDE_TOKEN));
+      assert.ok(errors.lines.some((line) => line.includes(MISSION_SESSION_ENV)));
+      for (const line of errors.lines) assert.ok(!line.includes(OVERRIDE_TOKEN));
+    } finally {
+      world.restore();
+      errors.restore();
+    }
+  });
+});
+
+test('runtime: override 403 passes through without failover — no silent escalation', async () => {
+  await withMissionEnv({ override: OVERRIDE_TOKEN, email: OWNER_EMAIL, password: OWNER_PASSWORD }, async () => {
+    const world = stubWorld({
+      api: () => new Response(JSON.stringify({ error: { code: 'forbidden', message: 'this mission role is read-only' } }), { status: 403, headers: { 'content-type': 'application/json' } }),
+    });
+    try {
+      const response = await GET(mockRequest({ authorization: `Bearer ${PUBLIC_BEARER}` }), params(['api', 'overview']));
+      assert.equal(response.status, 403);
+      assert.equal(loginCalls(world.calls).length, 0);
+      const apiCalls = missionApiCalls(world.calls);
+      assert.equal(apiCalls.length, 1);
+      assert.equal(bearerOf(apiCalls[0]), `Bearer ${OVERRIDE_TOKEN}`);
     } finally {
       world.restore();
     }

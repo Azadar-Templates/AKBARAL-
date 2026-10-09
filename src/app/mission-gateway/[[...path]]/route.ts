@@ -5,6 +5,8 @@ import {
   invalidateMissionSessionToken,
   missionSessionEnvNames,
   missionSessionToken,
+  missionSessionTokenAuto,
+  noteOverrideRejected,
   ownerCredentialsConfigured,
 } from '../mission-session';
 
@@ -81,10 +83,25 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   if (!session) return missionSessionUnavailable();
 
   let upstream = await fetchMission(request, path, body, session.token);
-  if ((upstream.status === 401 || upstream.status === 403) && session.source === 'auto') {
+  if (upstream.status === 401 && session.source === 'override') {
+    // The override was rejected (expired, revoked, or never valid — every
+    // mission sign-in, including the dashboard's own login, revokes older
+    // sessions). Latch that value as dead so later requests skip it, drop any
+    // cached automatic token (the same revocation event would have killed it
+    // too), and fail over to a freshly minted automatic session — exactly
+    // once, never looping. Passing the 401 through would bounce the owner to
+    // a login screen that can never stick. A 403 is NOT failed over: 403 means
+    // "authenticated but forbidden", and answering it with a different
+    // credential of the same owner identity could silently escalate past an
+    // intentionally read-only override.
+    noteOverrideRejected(session.token);
+    invalidateMissionSessionToken();
+    const fresh = await missionSessionTokenAuto();
+    if (!fresh) return ownerCredentialsConfigured() ? missionSessionUnavailable() : overrideDead();
+    if (fresh.token !== session.token) upstream = await fetchMission(request, path, body, fresh.token);
+  } else if ((upstream.status === 401 || upstream.status === 403) && session.source === 'auto') {
     // The cached session was rejected (expired or revoked): drop it, sign in
-    // once more and retry the request exactly once. Never loop. An explicit
-    // operator override is never silently replaced by an automatic sign-in.
+    // once more and retry the request exactly once. Never loop.
     invalidateMissionSessionToken();
     const fresh = await missionSessionToken();
     if (!fresh) return missionSessionUnavailable();
@@ -127,6 +144,28 @@ async function relay(upstream: Response): Promise<Response> {
     return new Response(text, { status: upstream.status, headers: responseHeaders });
   }
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+}
+
+/** Honest, owner-only 503 for a dead override with no credentials to fail
+ * over with. Names the env var NAME only. A bare 401 here would trap the owner
+ * in a dashboard login loop that cannot succeed (the mission login itself
+ * would pass, then every data call would 401 again), so the misconfiguration
+ * is named directly instead. */
+function overrideDead(): Response {
+  const names = missionSessionEnvNames();
+  console.error(`[mission-proxy] mission session override rejected: ${names.override} is expired or revoked, and no owner credentials are configured to fail over with`);
+  return Response.json(
+    {
+      error: 'mission upstream session override is no longer valid',
+      invalidEnvVars: [names.override],
+      howToFix: [
+        `The ${names.override} token was rejected by the mission server (sessions expire, and every mission sign-in — including the dashboard's own login — revokes older sessions).`,
+        `Preferred: unset it and set ${names.ownerEmail} and ${names.ownerPassword} (the mission owner credentials) so the proxy signs in to the loopback mission server on demand.`,
+        `Alternative: set ${names.override} to a freshly minted mission owner session token; the proxy tries a new override value first without a restart.`,
+      ].join(' '),
+    },
+    { status: 503, headers: { 'cache-control': 'no-store' } },
+  );
 }
 
 /** Honest, owner-only 503 — reachable only behind ownerAuthorized. Names env
