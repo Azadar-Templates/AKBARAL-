@@ -1,4 +1,5 @@
 /** Isolated, hand-authored provider-shape fixtures. NO live GitHub API or money tests. */
+import { randomUUID } from 'node:crypto';
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
 import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient } from './github-bounty-client';
@@ -193,4 +194,39 @@ it('carries is:issue on every discovery query, because /search/issues answers 42
     assert.match(q, /repo:acme\/widget/, 'scoped discovery still restricts the search to the allowlisted repository');
     assert.match(q, /\bis:issue\b/);
   }
+});
+
+it('asks the platform for unclaimed issues only, and carries the assignees it did return', async () => {
+  // `no:assignee` keeps work that is already taken out of the candidate set. It is an
+  // efficiency, not the gate: maintainers also hand bounties out in prose, which the
+  // claim recheck reads for. The lead still reports assignees so nothing is silently
+  // dropped when a response contains one.
+  const clientFixture = fixture([json({ items: [
+    { number: 5, html_url: 'https://github.com/acme/widget/issues/5', title: 'Fix $50 bounty', body: 'Bounty: $50 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], assignees: [{ login: 'someone' }], repository_url: 'https://api.github.com/repos/acme/widget' },
+    { number: 6, html_url: 'https://github.com/acme/widget/issues/6', title: 'Fix $60 bounty', body: 'Bounty: $60 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: 'https://api.github.com/repos/acme/widget' },
+  ] }), json({ items: [] }), json({ items: [] })], `fixture-assignees-${randomUUID()}`);
+  const leads = await clientFixture.client.searchBountyIssues(10);
+  assert.match(String(clientFixture.calls[0].url.searchParams.get('q')), /no:assignee/);
+  assert.equal(leads.length, 2, 'the pre-filter is advisory; the client reports what came back');
+  assert.deepEqual(leads[0].assignees, ['someone']);
+  assert.deepEqual(leads[1].assignees, []);
+});
+
+it('reports the live issue state, assignees and comment count instead of throwing on them', async () => {
+  const closedIssueBody = { number: 9, html_url: 'https://github.com/acme/widget/issues/9', title: 'Was a bounty', body: '', state: 'closed', labels: [{ name: 'bounty' }], assignees: [{ login: 'Resolver' }], comments: 4, updated_at: '2026-01-02T00:00:00Z' };
+  // Two distinct responses, because `fetchIssueDetail` reads the same snapshot and then
+  // filters it; the strict and the observant call are one transport call each.
+  const closed = fixture([json(closedIssueBody), json(closedIssueBody)], `fixture-closed-${randomUUID()}`);
+  const snapshot = await closed.client.fetchIssueSnapshot('acme/widget', 9);
+  assert.equal(snapshot.state, 'closed', 'a closed issue must be observable, not an error');
+  assert.deepEqual(snapshot.assignees, ['resolver']);
+  assert.equal(snapshot.comments, 4);
+  assert.equal(snapshot.updatedAt, '2026-01-02T00:00:00Z');
+  await assert.rejects(closed.client.fetchIssueDetail('acme/widget', 9), /github_issue_not_open/);
+
+  const pull = fixture([json({ number: 9, html_url: 'https://github.com/acme/widget/pull/9', title: 'A PR', body: '', state: 'open', labels: [], pull_request: { url: 'x' } })], `fixture-pull-${randomUUID()}`);
+  assert.equal((await pull.client.fetchIssueSnapshot('acme/widget', 9)).state, 'pull_request');
+
+  const comments = fixture([json([{ body: 'I will take this.' }, { body: 'x'.repeat(9000) }, { body: '' }])], `fixture-comments-${randomUUID()}`);
+  assert.deepEqual(await comments.client.fetchIssueComments('acme/widget', 9, 5), ['I will take this.'], 'oversized and empty bodies are dropped, never truncated into something else');
 });
