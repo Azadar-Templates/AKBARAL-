@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { it } from 'node:test';
+import { after, it } from 'node:test';
 import assert from 'node:assert/strict';
 const { JSDOM } = require('jsdom');
 
@@ -189,16 +189,46 @@ function bootConsole(options: ConsoleOptions = {}) {
     return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
 
+  // Everything the page schedules, so the page can be torn down: the console keeps a 30-second
+  // notification poller alive once it is signed in and re-arms a six-second banner timer on every message,
+  // and those handles live in the jsdom realm — clearing them with the test process's own clearInterval
+  // would free nothing, and the run would sit holding the event loop open until the batch timeout. That is
+  // exactly how this file failed in CI, so the harness records the ids and clears them in that realm.
+  const timers: number[] = [];
+  const page = dom.window as unknown as {
+    setInterval: (handler: () => void, ms: number) => number;
+    clearInterval: (id: number) => void;
+    setTimeout: (handler: () => void, ms: number) => number;
+    clearTimeout: (id: number) => void;
+  };
+  const pageSetInterval = page.setInterval;
+  const pageSetTimeout = page.setTimeout;
+  page.setInterval = (handler: () => void, ms: number) => {
+    const id = pageSetInterval(handler, ms);
+    timers.push(id);
+    return id;
+  };
+  page.setTimeout = (handler: () => void, ms: number) => {
+    const id = pageSetTimeout(handler, ms);
+    timers.push(id);
+    return id;
+  };
+  const releasePage = () => {
+    if (!openPages.includes(releasePage)) openPages.push(releasePage);
+    for (const id of timers) {
+      page.clearInterval(id);
+      page.clearTimeout(id);
+    }
+    timers.length = 0;
+  };
+
   const source = files.js.replace("document.addEventListener('DOMContentLoaded', boot);", '');
   (window as unknown as { eval: (code: string) => void }).eval(`${source}\nwindow.ownerOverview = { boot, state, renderOverview, isReadOnlySession };`);
   const api = (window as unknown as { ownerOverview: OwnerOverviewInternals }).ownerOverview;
   const settle = async () => {
     await api.boot();
     for (let index = 0; index < 80; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
-    // The console keeps a 30-second notification poller running once it is signed in. That is correct
-    // in a browser and fatal in a test process, which would wait for it to drain, so the harness ends it
-    // the way the page does on sign-out.
-    if (api.state.headAgentPoller) clearInterval(api.state.headAgentPoller);
+    releasePage();
   };
   const doc = window.document;
   const read = {
@@ -215,15 +245,27 @@ function bootConsole(options: ConsoleOptions = {}) {
     loginVisible: () => !(doc.querySelector('#login-panel') as HTMLElement).hidden,
     banner: () => ({ hidden: (doc.querySelector('#banner') as HTMLElement).hidden, text: doc.querySelector('#banner')?.textContent ?? '' }),
   };
-  return { window, api, requests, problems, settle, read, document: doc };
+  return { window, api, requests, problems, settle, releasePage, read, document: doc };
 }
 
 interface OwnerOverviewInternals {
   boot: () => Promise<void>;
-  state: { token: string; link: string; owner: unknown; loadedTabs?: Set<string>; headAgentPoller?: number };
+  state: { token: string; link: string; owner: unknown; loadedTabs?: Set<string> };
   renderOverview: (overview: unknown) => void;
   isReadOnlySession: () => boolean;
 }
+
+/**
+ * Pages this file left running, so the file can finish even when an assertion threw before that test's
+ * own `settle()`. A jsdom console holds a 30-second interval and a six-second banner timeout; the test
+ * runner waits for the process to drain rather than killing it, so one leaked handle is a batch timeout in
+ * CI and no failure message at all.
+ */
+const openPages: Array<() => void> = [];
+
+after(() => {
+  for (const release of openPages.splice(0)) release();
+});
 
 /** The card the owner asked about, by its label. */
 function cardOf(cards: Array<{ label: string; value: string; note: string }>, label: string) {
