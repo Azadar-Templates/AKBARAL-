@@ -215,3 +215,40 @@ by the live 32/32 + 12/12 runs instead of unit tests. Restored tree: 87 tests, 0
   refuse the 0 queued human-action tasks; decide the Code4rena/Sherlock-style contest accounts and
   the GoFrantic `runx` identity requirement (blocked for us by `runx-cli` not being installable — see
   `docs/FIRST_REAL_EXECUTION_EVIDENCE_2026-10-10.md`); and confirm before any paid tier is activated.
+
+## 8. The credential name, and who a verdict is allowed to speak about
+
+Registered here so the two follow-up changes are findable from the same page that told the owner what
+was still missing.
+
+**One GitHub credential name, and one precedence.** Every GitHub reader now resolves its token through
+`src/mission/github-credential.ts`: `ZA141251SA_GITHUB_TOKEN` (authoritative, documented in
+`.env.example`) → `GITHUB_TOKEN` → `GH_TOKEN`, first non-blank wins, so a set-but-empty variable falls
+through instead of shadowing a usable one. The compatible names stay honoured by the read paths that
+already used them. One rule is not the same as one name for every purpose: a **write-capable** caller —
+the bounty client that forks, pushes and opens pull requests — accepts the authoritative name **only**,
+because an ambient CI `GITHUB_TOKEN` is not an owner opt-in to act as the owner. That asymmetry is the
+`scope: 'read' | 'write'` option, and `github-bounty-client.test.ts` still asserts it. Presence is all
+any report gets: `githubCredentialStatus()` returns `present` and the winning **name**, and its object
+has no field that could hold a value, a length, a prefix or a hash. A test walks `src/` and `scripts/`
+and fails if any file outside the module touches those variables directly.
+
+**A verdict says what it read.** `src/mission/data-source.ts` classifies the mission database as
+`production` / `local` / `fixture` from the resolved path, `NODE_ENV`, the `/data` volume, and an
+explicit `ZA141251SA_DATA_IS_FIXTURE` override that can only *lower* authority. The fleet readiness
+verdict carries `dataSource`, `claimStatus`, `claimRefusal` and per-field `productionClaims` marks, so
+a payout-slot count or credential count read from a scratch file is labelled
+`FIXTURE / NOT PRODUCTION` instead of being stated as the deployment's state. Classification fails
+closed: only a non-scratch path under the production volume on a production host earns `PRODUCTION`;
+a managed Postgres URL is never echoed at all, because a DSN can carry a password.
+
+**The owner activation path is one list, in three places.** `ownerActivationPath()` returns every gate
+that stops the fleet with `cleared` measured from live rows and, for each open one, the exact
+`env var` / `dashboard control` / `CLI command` that clears it plus a `file:line` citation — e.g.
+`no_payout_slot_verified` → `#slot-form` + `#slot-verification` (`mission-dashboard/index.html:332`,
+`:334`), `autonomy_disabled` → `#policy-autonomous` (`:211`, handled by `PATCH /api/policy`,
+`src/mission/server.ts:1673`, audited as `policy.update`), `no_platform_credential` →
+`ZA141251SA_GITHUB_TOKEN` (`.env.example:268`) or the vault form `#credential-form` (`:238`). It is
+printed by `npm run fleet:readiness`, included in `npm run fleet:readiness -- --json`, and rendered in
+the Overview under the five cards. A test asserts those citations resolve to real, non-blank lines in
+the cited files, so "the control exists" cannot rot into a comment that no longer matches the markup.

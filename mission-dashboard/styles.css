@@ -95,6 +95,11 @@ details.sub h3 { font-size: 15px; margin: 12px 0 6px; }
 .card .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
 .card .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+.owner-path { margin-top: 10px; }
+.owner-path summary { cursor: pointer; font-weight: 600; }
+.owner-action-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; }
+.owner-action-list .pill { margin-left: 6px; }
+
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
 

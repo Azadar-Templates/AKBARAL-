@@ -14,6 +14,7 @@
  * No registration/import-time network calls. See docs/REAL_EARNING_WORKFORCE.md.
  */
 import { createHash } from 'node:crypto';
+import { resolveGithubToken } from '../github-credential';
 
 export class GithubBountyError extends Error {
   constructor(public readonly code: string, public readonly effectMayHaveOccurred = false,
@@ -653,6 +654,9 @@ export interface BountyLead { readonly kind: 'github_bounty_lead'; readonly repo
  * never a new earning-platform account and never KYC. Discovery works even
  * without a token (unauthenticated GitHub search), just at a lower rate limit. */
 export function configuredGithubBountyClient(env: Readonly<Record<string, string | undefined>> = process.env, dependencies: GithubClientDependencies = {}): GithubBountyClient {
-  const token = env.ZA141251SA_GITHUB_TOKEN ?? null;
+  // Single-sourced lookup under the write scope: this client can fork, push and open pull requests,
+  // so it accepts only the mission-authoritative name — never an ambient CI GITHUB_TOKEN. The value
+  // goes into the Authorization header and nowhere else: never logged, sized or hashed here.
+  const token = resolveGithubToken(env, { scope: 'write' });
   return new GithubBountyClient({ accessToken: token }, dependencies);
 }

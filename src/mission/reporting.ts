@@ -17,6 +17,7 @@ import {
 import { expiringCredentials, listTools, listServices, selfManagementSnapshot, listUpgrades } from './self-management';
 import { identityLockStatus } from './identity-lock';
 import { fleetReport } from './earning/specialist-fleet';
+import { ownerActivationPath } from './earning/fleet-readiness';
 
 /**
  * MISSION REPORTING — every agent can account for its own operation, and the
@@ -28,6 +29,15 @@ import { fleetReport } from './earning/specialist-fleet';
  * (including aggressive millions-per-day KPIs) are reported as TARGETS with a
  * progress figure — never as achievements.
  */
+
+/** The compact shape the Overview renders — see `ownerActivationPath()` in fleet-readiness. */
+export interface FleetActivationView {
+  claimStatus: string;
+  source: string;
+  allClear: boolean;
+  note: string;
+  remaining: Array<{ code: string; label: string; how: string; target: string; action: string; verify: string; evidence: string }>;
+}
 
 export interface AgentReport {
   agent: {
@@ -487,6 +497,10 @@ export interface MissionOverview {
     earnedCents: number;
     settledProofs: number;
     nextAction: string;
+    /** The source mark of the verdict below, so a scratch database cannot be read as the deployment. */
+    claimStatus: string;
+    /** The owner activation path: what is still open, and the exact control that clears each item. */
+    activation: FleetActivationView | null;
   };
   opportunityCatalog?: {
     total: number;
@@ -636,7 +650,26 @@ export function buildMissionOverview(): MissionOverview {
   }
 
   const fleet = (() => {
-    const empty = { registered: 0, withPlatform: 0, ready: 0, blocked: 0, needsOwnerAction: 0, earnedCents: 0, settledProofs: 0, nextAction: '' };
+    const empty = { registered: 0, withPlatform: 0, ready: 0, blocked: 0, needsOwnerAction: 0, earnedCents: 0, settledProofs: 0, nextAction: '', claimStatus: '', activation: null as FleetActivationView | null };
+    const activation = ((): FleetActivationView | null => {
+      try {
+        const path = ownerActivationPath();
+        return {
+          claimStatus: path.claimStatus,
+          source: path.dataSource.source,
+          allClear: path.allClear,
+          note: path.note,
+          remaining: path.remaining.map(entry => ({
+            code: entry.code, label: entry.label, how: entry.how, target: entry.target,
+            action: entry.action, verify: entry.verify, evidence: entry.evidence,
+          })),
+        };
+      } catch {
+        // A missing gate view must not blank the Overview; the card says so instead of guessing.
+        return null;
+      }
+    })();
+    const firstOwnerAction = activation?.remaining[0];
     try {
       const report = fleetReport();
       const states = report.states as Record<string, number>;
@@ -657,12 +690,16 @@ export function buildMissionOverview(): MissionOverview {
             ? ownerAction
             : ownerAction
               ? String((ownerAction as { action?: string }).action ?? JSON.stringify(ownerAction).slice(0, 160))
-              : 'run discovery for the assigned venues',
+              : firstOwnerAction
+                ? `${firstOwnerAction.action} — ${firstOwnerAction.how}: ${firstOwnerAction.target}`
+                : 'run discovery for the assigned venues',
+        claimStatus: activation?.claimStatus ?? '',
+        activation,
       };
     } catch {
       // Fail closed with zeros and say why, rather than fabricating a fleet picture or 500ing the
       // whole overview for every owner.
-      return { ...empty, nextAction: 'apply the mission migrations — the specialist fleet schema is not present' };
+      return { ...empty, nextAction: firstOwnerAction ? `${firstOwnerAction.action} — ${firstOwnerAction.how}: ${firstOwnerAction.target}` : 'apply the mission migrations — the specialist fleet schema is not present', claimStatus: activation?.claimStatus ?? '', activation };
     }
   })();
 

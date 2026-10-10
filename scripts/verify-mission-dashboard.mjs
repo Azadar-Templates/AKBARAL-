@@ -125,6 +125,23 @@ async function main() {
   // The overview is one screen: exactly the five readouts the owner asked for, nothing else.
   record('the overview renders exactly the five cards and nothing else', cards.length === 5, `${cards.length} cards rendered`);
 
+  // The five readouts are half of the Overview. The other half is the activation path: what the owner
+  // still has to do, the exact control that does it, and the mark saying what these numbers may claim.
+  const activation = await waitFor(() => {
+    const block = doc.querySelector('#overview-owner-path');
+    return block && block.querySelector('summary') ? block : '';
+  }, 'the owner activation path under the overview cards').catch(() => null);
+  record('the overview surfaces the owner activation path beside the five cards', Boolean(activation),
+    activation ? String(activation.querySelector('summary').textContent).trim().slice(0, 62) : 'missing');
+  const activationText = activation ? String(activation.textContent) : '';
+  record('every surfaced action names a real control, variable or command',
+    !activationText || /ZA141251SA_GITHUB_TOKEN|#slot-form|#policy-autonomous|fleet:readiness|mission:sync-registry|#approvals/.test(activationText),
+    `${(activationText.match(/—/g) ?? []).length} dash-separated action fragment(s)`);
+  record('the verdict says which source it was read from',
+    !activationText || /PRODUCTION|FIXTURE \/ NOT PRODUCTION|LOCAL \/ NOT PRODUCTION/.test(activationText), 'claim mark present in the console');
+  record('no activation line can carry a credential',
+    !/Bearer\s|ghp_|github_pat_|-----BEGIN|password/i.test(activationText), `${activationText.length} chars scanned`);
+
   const tokenInSession = win.sessionStorage.getItem('za_mission_token');
   const tokenInLocal = win.localStorage.getItem('za_mission_token');
   record('the session token is kept for the tab only', Boolean(tokenInSession) && !tokenInLocal,

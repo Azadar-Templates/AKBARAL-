@@ -200,6 +200,19 @@
                         <input name="maxPayoutCents" type="number" min="1" placeholder="payout ceiling" />
                         <button type="submit">Update policy</button>
                       </form>
+                      <h3>Autonomous execution (owner switch)</h3>
+                      <p class="muted small">
+                        While this is off, every agent action waits for an owner approval. Turning it on
+        does not enable a payout: a verified payout destination (Money panel) and the owner payout
+                        approval are still required, and both are recorded in the audit trail.
+                      </p>
+                      <form id="autonomy-form" class="inline-form">
+                        <label class="checkbox-label">
+                          <input name="autonomousEnabled" id="policy-autonomous" type="checkbox" />
+                          <span>Allow the fleet to act without a per-action owner approval</span>
+                        </label>
+                        <button type="submit">Save</button>
+                      </form>
                       <h3>Kill switch</h3>
                       <p class="muted small">
                         Engaging the kill switch suspends every mission activity immediately — including work the

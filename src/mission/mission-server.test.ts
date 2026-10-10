@@ -98,6 +98,8 @@ const DASHBOARD_ROUTES = ['/api/overview', '/api/agents', '/api/approvals', '/ap
 const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/kill-switch', { engage: true }],
   ['/api/policy', { maxDepth: 9 }],
+  // The owner autonomy switch added with the activation path: same route, same owner-only rule.
+  ['/api/policy', { autonomousEnabled: true }],
   ['/api/credentials', { provider: 'x', label: 'y', kind: 'oauth_token', value: 'synthetic-never-logged' }],
   ['/api/targets', { label: 'target', amountCents: 100_000 }],
   ['/api/bounty/programs', { platform: 'x', programHandle: 'y', scopeUrl: 'https://scope.invalid', programTermsHash: 'a'.repeat(64) }],
@@ -180,6 +182,8 @@ test('the four stripped sections and the specialist record answer the owner with
 test('an access link can read the specialist record but cannot reach a single owner control', async () => {
   const read = createAccessLink({ label: 'specialist read', scope: 'dashboard:read', expiresInHours: 1, createdBy: 'owner' });
   const headers = { 'x-mission-link': read.token };
+  const policyBefore = await api('/api/policy', { headers: { authorization: `Bearer ${ownerToken}` } });
+  assert.equal(policyBefore.status, 200, 'the owner can read the policy the link is about to fail to change');
   const got = await api('/api/specialists?limit=5', { headers });
   assert.equal(got.status, 200, 'a scoped link may read the roster');
   assert.ok(Array.isArray(got.body.records));
@@ -188,6 +192,13 @@ test('an access link can read the specialist record but cannot reach a single ow
     assert.ok([401, 403].includes(refused.status), `${path} must refuse a link mutation, got ${refused.status}`);
     assert.notEqual(refused.status, 200, `${path} is not writable by a link`);
   }
+  // And "refused" has to mean refused: the switch is still exactly where the owner left it.
+  const policyAfter = await api('/api/policy', { headers: { authorization: `Bearer ${ownerToken}` } });
+  assert.equal(
+    Boolean(policyAfter.body?.policy?.autonomousEnabled),
+    Boolean(policyBefore.body?.policy?.autonomousEnabled),
+    'a refused link mutation cannot flip the autonomy switch',
+  );
   // A link that was never issued is refused before it can reach a handler: the guard is the session
   // check, not the shape of the body.
   const forged = await api('/api/kill-switch', { method: 'POST', headers: { 'x-mission-link': 'zal_forged_link' }, body: '{"engage":true}' });

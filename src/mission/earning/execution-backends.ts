@@ -20,6 +20,7 @@
  */
 
 import { missionDb as db, type Row } from '../database';
+import { githubCredentialStatus } from '../github-credential';
 import { chatDispatchReadiness } from '../chat-provider';
 import {
   PAYOUT_DESTINATION_TYPES, PAYOUT_VERIFICATION_CHECKS, PAYOUT_VERIFICATION_METHODS, PAYOUT_VERIFICATION_VALIDITY_DAYS, listPayoutSlotVerificationStatuses,
@@ -181,17 +182,17 @@ export interface GithubBackendReport {
  * this module or by anything that consumes it.
  */
 export function githubBackendReport(env: Readonly<Record<string, string | undefined>> = process.env): GithubBackendReport {
-  const token = env.ZA141251SA_GITHUB_TOKEN;
-  const present = typeof token === 'string' && token.length > 0;
+  // The worker's own gate: the same scope policy as the client that would use the token.
+  const status = githubCredentialStatus(env, { scope: 'write' });
   const requestsUsed = Number(db.get<Row>('SELECT COALESCE(COUNT(*),0) AS c FROM mission_bounty_api_requests')?.c ?? 0);
   return {
-    credentialPresent: present,
-    credentialSource: present ? 'ZA141251SA_GITHUB_TOKEN (environment; value never read)' : null,
+    credentialPresent: status.present,
+    credentialSource: status.present ? `${status.source} (environment; value never read)` : null,
     readOnlyCapable: true,
     submissionCapable: 'unknown',
     requirements: GITHUB_SUBMISSION_REQUIREMENTS,
     requestsUsed: Number.isSafeInteger(requestsUsed) ? requestsUsed : 0,
-    blockedFor: present ? [] : ['github_credentials_absent'],
+    blockedFor: status.present ? [] : ['github_credentials_absent'],
     note: 'Discovery, policy reads, claim rechecks and archive downloads work with or without a token. A submission needs a credential the owner authorizes with fork, contents-write and pull-request permissions; until then every candidate stays a local draft with an owner action recorded.',
   };
 }

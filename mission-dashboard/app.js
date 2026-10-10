@@ -476,6 +476,46 @@ function card(label, value, note) {
   ]);
 }
 
+/** The remaining owner actions, in the order the gates actually unblock each other. */
+function ownerActionLines(activation) {
+  const remaining = (activation && Array.isArray(activation.remaining) ? activation.remaining : []).slice(0, 6);
+  return remaining.map((row) => el('li', {}, [
+    el('strong', { text: String(row.code || 'blocker') }),
+    el('span', { text: ` — ${row.action || row.label || ''}` }),
+    row.target ? el('span', { class: 'muted', text: ` (${row.how || 'owner action'}: ${row.target})` }) : null,
+    row.cleared ? el('span', { class: 'pill ok', text: 'cleared' }) : null,
+  ]));
+}
+
+/**
+ * One card line cannot carry an activation path. The queue itself is rendered here, folded so the
+ * Overview stays short, and the source mark travels with it: an owner reading a verdict that came
+ * from a scratch database sees that before they see any number.
+ */
+function renderOwnerActivationPath(overview) {
+  const panel = document.querySelector('[data-panel="overview"]');
+  if (!panel) return;
+  const activation = (overview && overview.fleet && overview.fleet.activation) || null;
+  const lines = ownerActionLines(activation);
+  let block = panel.querySelector('#overview-owner-path');
+  if (!block) {
+    if (lines.length === 0) return;
+    block = el('details', { class: 'card owner-path', id: 'overview-owner-path' });
+    panel.append(block);
+  }
+  block.innerHTML = '';
+  block.append(
+    el('summary', { text: lines.length
+      ? `${lines.length} owner action(s) left before the fleet can work`
+      : 'No owner action outstanding' }),
+    lines.length ? el('ul', { class: 'owner-action-list' }, lines) : null,
+    activation && activation.claimStatus
+      ? el('p', { class: 'muted small', text: `Read from ${activation.source || 'the mission database'} · ${activation.claimStatus}` })
+      : null,
+    activation && activation.note ? el('p', { class: 'muted small', text: activation.note }) : null,
+  );
+}
+
 function renderOverview(overview) {
   const cards = $('#overview-cards');
   const fleet = overview.fleet || {};
@@ -488,6 +528,7 @@ function renderOverview(overview) {
     card('Earned', money(fleet.earnedCents ?? 0, currency), `${fleet.settledProofs ?? 0} verified settlement proof(s); advertised rewards are never counted`),
     card('Next action', fleet.nextAction || 'none recorded', 'the single thing that moves the fleet forward'),
   );
+  renderOwnerActivationPath(overview);
   // The read-only pill says who is looking, because a link sees fewer controls.
   const pillNode = $('#head-read-only-state');
   if (pillNode) pillNode.hidden = !state.link || isOwnerSession();
@@ -2075,6 +2116,14 @@ async function loadPolicy() {
     { setting: 'Enabled activity categories', value: policy.allowedActivities.join(', ') },
   ]));
 
+  // The checkbox mirrors the stored policy; it is the only way the switch moves from this console,
+  // and a non-owner session cannot move it at all (the handler re-checks server-side too).
+  const autonomyBox = $('#policy-autonomous');
+  if (autonomyBox) {
+    autonomyBox.checked = Boolean(policy.autonomousEnabled);
+    autonomyBox.disabled = !isOwnerSession();
+  }
+
   replace('#prohibitions', table([
     { label: 'Key', key: 'key' },
     { label: 'Prohibited', key: 'statement', wrap: true },
@@ -2393,6 +2442,25 @@ function wire() {
       await loadPolicy();
     } catch (error) { banner(error.message, 'error'); }
   });
+
+  // Guarded because the render harnesses mount app.js against partial documents; a missing control
+  // must degrade to "no switch here", never to a thrown wiring error that blanks the console.
+  const autonomyForm = $('#autonomy-form');
+  if (autonomyForm) {
+    autonomyForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!guardMutation()) return;
+      const box = $('#policy-autonomous');
+      const next = Boolean(box && box.checked);
+      try {
+        await api('/policy', { method: 'PATCH', body: { autonomousEnabled: next } });
+        banner(next
+          ? 'Autonomous execution enabled by the owner. Payouts still need a verified destination and owner approval.'
+          : 'Autonomous execution disabled by the owner: every action waits for approval again.', 'ok');
+        await loadPolicy();
+      } catch (error) { banner(error.message, 'error'); }
+    });
+  }
 
   $('#kill-on').addEventListener('click', async () => {
     if (!guardMutation()) return;

@@ -228,6 +228,14 @@ async function main(): Promise<void> {
     process.stdout.write('═'.repeat(78) + '\n');
     line('report id', readinessReportId());
     line('generated', summary.generatedAt);
+    line('read from', `${summary.dataSource.source} [${summary.dataSource.engine}] — ${summary.dataSource.kind}`);
+    line('claim status', summary.claimStatus);
+    if (!summary.dataSource.claimsAllowed) {
+      process.stdout.write(`\n  ${summary.claimStatus} — ${summary.dataSource.reasons.join('; ')}\n`);
+      process.stdout.write('  No number below may be quoted as the state of the deployment. Point\n');
+      process.stdout.write('  ZA141251SA_DATABASE_URL (or DATA_DIR) at the real database to read production.\n');
+    }
+    const mark = summary.dataSource.claimsAllowed ? '' : `  (${summary.claimStatus})`;
 
     process.stdout.write('\n  the eight counts that matter\n');
     line('1. agents registered', String(summary.counts.registeredAgents));
@@ -249,7 +257,9 @@ async function main(): Promise<void> {
     process.stdout.write('\n  execution gates (config-level; probe them with --backends)\n');
     line('execution backend', summary.execution.backendConfigured ? `configured (mode ${summary.execution.sandboxMode}${summary.execution.sandboxImagePinned ? ', OCI digest pinned' : ', no OCI pin'})` : 'NONE — no pinned OCI image and no staged namespace rootfs on this host');
     line('model dispatch', `${summary.execution.modelMode} · ${summary.execution.modelDispatchable ? 'dispatchable' : `blocked: ${summary.execution.modelBlockers.join(', ') || 'unknown'}`}`);
-    line('github credential', summary.execution.githubCredentialPresent ? 'present (read paths authenticated; submission still owner-authorized)' : 'absent (read-only discovery at the anonymous rate budget)');
+    line('github credential', `${summary.execution.githubCredentialPresent
+      ? `present via ${summary.execution.githubCredentialSource ?? 'an accepted name'} (read paths authenticated; submission still owner-authorized; value never read)`
+      : 'absent (read-only discovery at the anonymous rate budget) — set ZA141251SA_GITHUB_TOKEN (GITHUB_TOKEN and GH_TOKEN are also honoured)'}${mark}`);
     line('scoped contracts', `${summary.contracts.scopedActive} active · ${summary.contracts.preparedProposals} prepared and awaiting owner approval`);
 
     process.stdout.write('\n  blockers (each names a free or owner-side path, never a workaround)\n');
@@ -260,11 +270,27 @@ async function main(): Promise<void> {
     }
 
     process.stdout.write('\n  gates\n');
-    line('autonomous execution', summary.gates.policy.autonomousEnabled ? 'enabled' : 'DISABLED (owner switch)');
+    line('autonomous execution', `${summary.gates.policy.autonomousEnabled ? 'enabled' : 'DISABLED (owner switch)'}${mark}`);
     line('kill switch', summary.gates.policy.killSwitch ? 'ENGAGED' : 'off');
     line('policy max agents / day spend cap', `${summary.gates.policy.maxAgents} agents · ${summary.gates.policy.dailySpendCapCents} cents`);
-    line('payout slots', `${summary.gates.payoutSlots.verified} verified of ${summary.gates.payoutSlots.total} · owner approval ${summary.gates.policy.requireOwnerForPayout ? 'required' : 'not required'}`);
+    line('payout slots', `${summary.gates.payoutSlots.verified} verified of ${summary.gates.payoutSlots.total} · owner approval ${summary.gates.policy.requireOwnerForPayout ? 'required' : 'not required'}${mark}`);
     line('fixture-origin agents (excluded)', String(summary.counts.fixtureOriginAgents));
+
+    process.stdout.write('\n  owner activation path (each line is the exact thing that clears a gate)\n');
+    for (const entry of summary.activation.all) {
+      const state = entry.cleared ? 'cleared' : 'OPEN';
+      process.stdout.write(`   ${state === 'cleared' ? ' ✓' : ' ·'} [${state}] ${entry.code} — ${entry.action}\n`);
+      if (!entry.cleared) {
+        process.stdout.write(`       ${entry.how}: ${entry.target}\n`);
+        process.stdout.write(`       verify: ${entry.verify}\n`);
+        process.stdout.write(`       evidence: ${entry.evidence}\n`);
+      }
+    }
+    process.stdout.write(`\n  ${summary.activation.note}\n`);
+    if (summary.claimRefusal) process.stdout.write(`  ${summary.claimRefusal}\n`);
+    if (summary.activation.remaining.length === 0) {
+      process.stdout.write('  every gate is open on this source. Nothing here authorizes a run; the scheduler still checks each gate itself.\n');
+    }
   }
 
   if (reconcile) {

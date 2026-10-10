@@ -1,4 +1,5 @@
 import { missionDb, missionId, nowIso, type Row } from './database';
+import { resolveGithubToken } from './github-credential';
 import { getOpportunitySourceById, getOpportunitySourceByKey, createOpportunity } from './opportunity-catalog';
 
 /**
@@ -590,7 +591,7 @@ export async function fetchGitHubBounties(limit = 50): Promise<FetchedOpportunit
     const url = `https://api.github.com/search/issues?q=${encodeURIComponent(q)}&per_page=${Math.min(30, limit - allJobs.length)}`;
     const headers: Record<string, string> = { 'User-Agent': USER_AGENT, Accept: 'application/vnd.github.v3+json' };
     // Use token if available for higher rate limit
-    const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+    const token = resolveGithubToken();
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(url, { headers });
     if (!res.ok) {
@@ -990,7 +991,7 @@ async function fetchGitHubSearch(query: string, limit = 50, page = 1, cachePrefi
   const perPage = Math.min(100, limit);
   const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}`;
   const headers: Record<string, string> = { 'User-Agent': USER_AGENT, Accept: 'application/vnd.github.v3+json' };
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  const token = resolveGithubToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { headers });
   if (!res.ok) {

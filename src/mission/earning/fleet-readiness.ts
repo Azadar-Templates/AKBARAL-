@@ -25,6 +25,8 @@ import { createHumanActionTask, HUMAN_ACTION_TYPES, type HumanActionType } from 
 import { listProviderReadiness, seedProviderReadiness } from './provider-capability-registry';
 import { executionBackendConfigured } from './agent-class-contracts';
 import { chatDispatchReadiness } from '../chat-provider';
+import { githubCredentialStatus } from '../github-credential';
+import { classifyMissionDataSource, productionClaimRefusal } from '../data-source';
 
 export type BlockerCode =
   | 'autonomy_disabled'
@@ -84,6 +86,22 @@ export interface FleetSummary {
   tooling: { registered: number; executable: number; restricted: number; blocked: number; detail: Array<{ key: string; status: string; requiredPermission: string }> };
   connectors: { total: number; ready: number; notConfigured: number; blocked: number; restricted: number; degraded: number };
   blockers: BlockerSpec[];
+  /**
+   * Where this verdict was read from, and what it is therefore allowed to claim. A readiness report
+   * quoted without this is how a scratch database in /tmp ends up being described as the state of a
+   * deployment. `claimRefusal` is non-null whenever the source cannot carry a production claim.
+   */
+  dataSource: { kind: string; label: string; source: string; engine: string; claimsAllowed: boolean; reasons: readonly string[] };
+  claimStatus: string;
+  claimRefusal: string | null;
+  /**
+   * The production-shaped fields of this verdict, each carrying its own source mark. The numbers are
+   * not hidden when the source is a fixture — hiding them would look like a bug — they are labelled,
+   * so a count can never be lifted out of this report as a fact about the deployment.
+   */
+  productionClaims: Record<string, { claim: string; value: unknown; status: string }>;
+  /** The exact owner actions that clear the open blockers, and nothing else. */
+  activation: OwnerActivationPath;
   /** The execution gates at configuration level, beside the agent counts, so "0 ready
    * agents" is never mistaken for "0 agents exist": a fully provisioned fleet with nowhere
    * to run and no model permit is still a fleet that cannot earn. */
@@ -95,6 +113,7 @@ export interface FleetSummary {
     modelMode: string;
     modelBlockers: string[];
     githubCredentialPresent: boolean;
+    githubCredentialSource: string | null;
   };
   contracts: { scopedActive: number; preparedProposals: number };
   gates: { policy: { autonomousEnabled: boolean; killSwitch: boolean; maxAgents: number; dailySpendCapCents: number; requireOwnerForPayout: boolean }; payoutSlots: { total: number; verified: number } };
@@ -170,6 +189,171 @@ function productionAgents(): Row[] {
   return db.all<Row>(`SELECT id, slug, status, capabilities, origin_platform FROM mission_agents WHERE ${PRODUCTION_AGENT_WHERE}`);
 }
 
+/** How an owner clears something: the three things that actually exist. */
+export type ActivationMechanism = 'env var' | 'dashboard control' | 'CLI command';
+
+export interface OwnerActivationAction {
+  code: BlockerCode;
+  /** What the gate is, in the owner's words. */
+  label: string;
+  /** Measured right now, so the list doubles as a checklist of what is already done. */
+  cleared: boolean;
+  how: ActivationMechanism;
+  /** The exact variable name, control, or command. Never a description of one. */
+  target: string;
+  /** The imperative sentence the owner acts on. */
+  action: string;
+  /** How to see that it cleared, from the same place. */
+  verify: string;
+  /** Where the target is defined, so "the control exists" is checkable rather than promised. */
+  evidence: string;
+  ownerAction: HumanActionType;
+}
+
+export interface OwnerActivationPath {
+  generatedAt: string;
+  dataSource: { kind: string; label: string; source: string };
+  claimStatus: string;
+  claimsAllowed: boolean;
+  claimRefusal: string | null;
+  /** The gates still closed, in the order they unblock each other. */
+  remaining: OwnerActivationAction[];
+  /** Every gate, cleared or not — the checklist view. */
+  all: OwnerActivationAction[];
+  allClear: boolean;
+  note: string;
+}
+
+/**
+ * The owner activation path: for every gate that stops the fleet, the one thing that clears it.
+ *
+ * Each entry names a real, currently-existing target — a variable documented in `.env.example`, a
+ * control present in the dashboard markup, or a script in `package.json` — and carries its
+ * `file:line` so the claim can be checked without trusting this file. Nothing here suggests a
+ * workaround: an owner action stays an owner action, and the marks say which source the
+ * cleared/not-cleared judgement came from.
+ */
+export function ownerActivationPath(): OwnerActivationPath {
+  ensureGatesSeeded();
+  const dataSource = classifyMissionDataSource();
+  const mark = dataSource.label;
+  const policy = currentPolicy();
+  const credential = githubCredentialStatus(process.env, { scope: 'write' });
+  const slotsVerified = count("SELECT COUNT(*) AS c FROM mission_payout_slots WHERE status='active' AND verified_at IS NOT NULL");
+  const slotsTotal = count('SELECT COUNT(*) AS c FROM mission_payout_slots');
+  const credentialsActive = count("SELECT COUNT(*) AS c FROM mission_credentials WHERE status='active' AND (expires_at IS NULL OR expires_at>?)", [nowIso()]);
+  const connectorsReady = listProviderReadiness().filter(p => p.status === 'ready' && p.apiPermitted).length;
+  const grants = count("SELECT COUNT(DISTINCT agent_id) AS c FROM mission_money_grants WHERE status='active' AND (expires_at IS NULL OR expires_at>?)", [nowIso()]);
+  const contracts = count("SELECT COUNT(*) AS c FROM mission_agent_contracts WHERE status='active' AND (expires_at IS NULL OR expires_at>?)", [nowIso()]);
+  const pendingActions = count("SELECT COUNT(*) AS c FROM mission_human_action_tasks WHERE status='pending' AND (notes IS NULL OR notes NOT LIKE 'fleet-readiness:%')");
+
+  const entries: OwnerActivationAction[] = [
+    {
+      code: 'no_platform_credential', label: 'No GitHub/platform credential for the mission',
+      cleared: credentialsActive > 0 || credential.present,
+      how: 'env var', target: 'ZA141251SA_GITHUB_TOKEN',
+      action: credentialsActive > 0
+        ? `already satisfied: ${credentialsActive} active credential row(s) in the mission vault${credential.present ? `, and the process also reads ${credential.source} under the write scope` : ''}`
+        : credential.present
+          ? `already satisfied: the mission process reads ${credential.source}; register it as an active vault row to clear the DB gate`
+          : 'set the variable in the host secret manager (Railway service variable), restart the mission process, then store it as an active mission credential — never paste it into chat or a tracked file',
+      verify: 'npm run fleet:readiness — the github credential line reads "present via ZA141251SA_GITHUB_TOKEN"; --backends repeats it',
+      evidence: '.env.example:268 (documented name, precedence and scopes); src/mission/github-credential.ts:37 and :52 (the accepted names and the read/write scope policy); src/mission/server.ts:1875 (the owner-only vault route)',
+      ownerAction: HUMAN_ACTION_TYPES.ACCOUNT_CREATION,
+    },
+    {
+      code: 'no_payout_slot_verified', label: 'No verified payout destination',
+      cleared: slotsVerified > 0,
+      how: 'dashboard control', target: '#slot-form + #slot-verification (Money → Payout slots)',
+      action: slotsVerified > 0
+        ? `already satisfied: ${slotsVerified} of ${slotsTotal} slot(s) active and verified`
+        : `configure a slot in #slot-form, then confirm every control check in #slot-verification — ${slotsVerified} of ${slotsTotal} verified now; nothing can be paid out until one is`,
+      verify: `npm run fleet:readiness — the payout slots line reads "N verified of M" with N >= 1 (a fresh database has M=0 until the slots are configured)`,
+      evidence: 'mission-dashboard/index.html:334 (#slot-form), mission-dashboard/index.html:332 (#slot-verification), src/mission/server.ts:2277 (payout-slots routes)',
+      ownerAction: HUMAN_ACTION_TYPES.PAYMENT_SETUP,
+    },
+    {
+      code: 'autonomy_disabled', label: 'Autonomous execution is off (owner switch)',
+      cleared: Boolean(policy.autonomousEnabled) && !policy.killSwitch,
+      how: 'dashboard control', target: '#policy-autonomous (Approvals → Policy → Autonomous execution)',
+      action: policy.autonomousEnabled
+        ? (policy.killSwitch ? 'the switch is on but the kill switch is engaged; release it below' : 'already satisfied: the owner switch is on')
+        : 'tick "Allow the fleet to act without a per-action owner approval" and Save. This is a decision, not a fix: leaving it off is the safe state while payout slots or credentials are still missing',
+      verify: 'npm run fleet:readiness — the autonomous execution line reads "enabled"',
+      evidence: 'mission-dashboard/index.html:211 (#policy-autonomous), src/mission/server.ts:1673 (PATCH /api/policy accepts autonomousEnabled), src/mission/policy.ts:204 and :237 (the flag is written and audited)',
+      ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
+    },
+    {
+      code: 'kill_switch_engaged', label: 'Mission kill switch is engaged',
+      cleared: !policy.killSwitch,
+      how: 'dashboard control', target: '#kill-off (Approvals → Policy → Kill switch)',
+      action: policy.killSwitch ? 'press "Release kill switch" to resume mission activity' : 'already satisfied: the kill switch is released',
+      verify: 'npm run fleet:readiness — the kill switch line reads "off"',
+      evidence: 'mission-dashboard/index.html:222-223 (#kill-on / #kill-off), src/mission/server.ts:1665 (owner-only kill-switch POST)',
+      ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
+    },
+    {
+      code: 'no_provider_ready', label: 'No earning connector is provider-ready',
+      cleared: connectorsReady > 0,
+      how: 'env var', target: 'the per-connector variable named by CREDENTIAL_ENV (e.g. ZA141251SA_GITHUB_TOKEN for GitHub)',
+      action: connectorsReady > 0
+        ? `already satisfied: ${connectorsReady} connector(s) ready and API-permitted`
+        : 'a connector turns ready the moment its own variable and owner account exist; nothing has to be bought — the read-only research paths are free-tier',
+      verify: 'npm run fleet:readiness — the connector line counts "N ready"',
+      evidence: 'src/mission/earning/provider-capability-registry.ts:15 (CREDENTIAL_ENV) and :59 (a GitHub name resolves through the single credential source)',
+      ownerAction: HUMAN_ACTION_TYPES.TOS_ACCEPTANCE,
+    },
+    {
+      code: 'no_scoped_contract', label: 'No approved scoped agent contract',
+      cleared: contracts > 0,
+      how: 'CLI command', target: 'npm run fleet:readiness -- --contracts <class>',
+      action: contracts > 0
+        ? `already satisfied: ${contracts} active scoped contract(s)`
+        : 'prepare least-privilege contracts, then approve each one with --contracts-approve=<id>. Nothing self-approves',
+      verify: 'npm run fleet:readiness — the scoped contracts line counts "N active"',
+      evidence: 'package.json:83 (fleet:readiness), src/mission/earning/agent-class-contracts.ts (prepare/approve pair)',
+      ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
+    },
+    {
+      code: 'no_active_money_grant', label: 'No active zero-spend money grant',
+      cleared: grants > 0,
+      how: 'CLI command', target: 'npm run mission:sync-registry',
+      action: grants > 0
+        ? `already satisfied: ${grants} agent(s) hold an active grant`
+        : 'registry sync grants zero-spend authority; a grant with spend_limit_cents>0 is only needed for paid work and stays an owner decision',
+      verify: 'npm run fleet:readiness — execution-ready counts agents with an active grant',
+      evidence: 'package.json:82 (mission:sync-registry), src/mission/money.ts (setMoneyGrant)',
+      ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
+    },
+    {
+      code: 'owner_action_pending', label: 'A human-action task is open for at least one agent',
+      cleared: pendingActions === 0,
+      how: 'dashboard control', target: '#approvals / #head-approvals (Approvals)',
+      action: pendingActions === 0
+        ? 'already satisfied: no agent-specific owner task is open'
+        : `clear the ${pendingActions} open task(s) in the Approvals queue — each one states what it is waiting for`,
+      verify: 'npm run fleet:readiness — no owner_action_pending blocker is listed',
+      evidence: 'mission-dashboard/index.html:189 (#approvals), mission-dashboard/index.html:183 (#head-approvals)',
+      ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
+    },
+  ];
+
+  const remaining = entries.filter(entry => !entry.cleared);
+  return {
+    generatedAt: nowIso(),
+    dataSource: { kind: dataSource.kind, label: mark, source: dataSource.source },
+    claimStatus: mark,
+    claimsAllowed: dataSource.productionClaimsAllowed,
+    claimRefusal: productionClaimRefusal(dataSource, 'the cleared/not-cleared judgement in the owner activation path'),
+    remaining,
+    all: entries,
+    allClear: remaining.length === 0,
+    note: dataSource.productionClaimsAllowed
+      ? `${remaining.length} owner action(s) outstanding, read from ${dataSource.source}. Each entry names the control that clears it; none of them is a workaround.`
+      : `${mark}: this list was computed from ${dataSource.source}, so it is correct for that database only and must not be quoted as the deployment's state.`,
+  };
+}
+
 /** Full verdict for one agent. Reads live rows; invents nothing. */
 export function readinessFor(agentId: string): AgentReadiness {
   ensureGatesSeeded();
@@ -204,9 +388,38 @@ function sum(sql: string, params: SqlValue[] = []): number {
   return Number(db.get<Row>(sql, params)?.total ?? 0);
 }
 
+/**
+ * The production-shaped fields, each stamped with the source that justifies (or refuses) the claim.
+ * `value` stays visible on purpose: an unlabelled number invites quoting, a labelled one does not.
+ */
+function productionClaimsFor(
+  dataSource: ReturnType<typeof classifyMissionDataSource>,
+  mark: string,
+  counts: { registered: number; executionReady: number; blocked: number },
+) {
+  const status = dataSource.productionClaimsAllowed ? 'PRODUCTION' : mark;
+  const stamped = (claim: string, value: unknown) => ({ claim, value, status });
+  const payoutSlots = {
+    total: count('SELECT COUNT(*) AS c FROM mission_payout_slots'),
+    verified: count("SELECT COUNT(*) AS c FROM mission_payout_slots WHERE status='active' AND verified_at IS NOT NULL"),
+  };
+  const credential = githubCredentialStatus(process.env, { scope: 'write' });
+  return {
+    payoutSlots: stamped(`verified ${payoutSlots.verified} of ${payoutSlots.total}`, payoutSlots),
+    platformCredential: stamped(`${credential.present ? `present via ${credential.source}` : 'absent'} (${credential.scope} scope; name only)`, { present: credential.present, source: credential.source, scope: credential.scope }),
+    ownerAutonomy: stamped(`autonomous_enabled=${Boolean(currentPolicy().autonomousEnabled)} kill_switch=${Boolean(currentPolicy().killSwitch)}`, { autonomousEnabled: Boolean(currentPolicy().autonomousEnabled), killSwitch: Boolean(currentPolicy().killSwitch) }),
+    agentCounts: stamped(
+      `${counts.registered} registered · ${counts.executionReady} execution-ready · ${counts.blocked} blocked`,
+      counts,
+    ),
+  };
+}
+
 /** The fleet verdict. Single pass over the registry rows — no per-agent queries. */
 export function fleetSummary(): FleetSummary {
   ensureGatesSeeded();
+  const dataSource = classifyMissionDataSource();
+  const claimMark = dataSource.label;
   const policy = currentPolicy();
   const sets = agentScopedSets();
   const agents = productionAgents();
@@ -311,13 +524,30 @@ export function fleetSummary(): FleetSummary {
         const readiness = chatDispatchReadiness();
         return { modelDispatchable: readiness.dispatchable, modelMode: readiness.mode, modelBlockers: readiness.blockers };
       })(),
-      githubCredentialPresent: Boolean(String(process.env.ZA141251SA_GITHUB_TOKEN ?? '').trim()),
+      // Presence and the winning NAME only, resolved through the single credential source under the
+      // write scope, so this verdict can never disagree with the client that would use the token.
+      githubCredentialPresent: githubCredentialStatus(process.env, { scope: 'write' }).present,
+      githubCredentialSource: githubCredentialStatus(process.env, { scope: 'write' }).source,
     },
     contracts: {
       scopedActive: count("SELECT COUNT(*) AS c FROM mission_agent_contracts WHERE status='active' AND (expires_at IS NULL OR expires_at>?)", [nowIso()]),
       preparedProposals: count("SELECT COUNT(*) AS c FROM mission_agent_contract_proposals WHERE status='pending'"),
     },
     blockers,
+    dataSource: {
+      kind: dataSource.kind,
+      label: claimMark,
+      source: dataSource.source,
+      engine: dataSource.engine,
+      claimsAllowed: dataSource.productionClaimsAllowed,
+      reasons: dataSource.reasons,
+    },
+    claimStatus: claimMark,
+    claimRefusal: productionClaimRefusal(dataSource, 'this readiness verdict'),
+    productionClaims: productionClaimsFor(dataSource, claimMark, {
+      registered: agents.length, executionReady: admissible, blocked,
+    }),
+    activation: ownerActivationPath(),
     gates: {
       policy: {
         autonomousEnabled: Boolean(policy.autonomousEnabled), killSwitch: Boolean(policy.killSwitch), maxAgents: policy.maxAgents,

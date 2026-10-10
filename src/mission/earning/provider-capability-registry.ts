@@ -8,6 +8,7 @@
 
 import { missionDb as db, missionId, nowIso, appendMissionAudit, type Row } from '../database';
 import { PLATFORM_CONNECTORS, type PlatformConnector } from './platform-connectors';
+import { isGithubTokenEnvName, resolveGithubToken } from '../github-credential';
 
 
 /** Map connector id -> credential env var (honest, no secret values exposed) */
@@ -53,7 +54,11 @@ export interface ProviderReadiness {
 function connectorToReadiness(conn: PlatformConnector): ProviderReadiness {
   const env = CREDENTIAL_ENV[conn.id] ?? '';
   const credentialEnv = env || null;
-  const hasCredential = credentialEnv ? !!process.env[credentialEnv] : false;
+  // Presence is resolved through the single GitHub credential source when the connector declares a
+  // GitHub token name, so a credential set as any accepted alias is not reported as missing.
+  const hasCredential = credentialEnv === null ? false
+    : isGithubTokenEnvName(credentialEnv) ? resolveGithubToken() !== null
+      : !!process.env[credentialEnv];
   // Check stored credential in mission vault
   const vaultCred = credentialEnv ? db.get<Row>('SELECT id FROM mission_credentials WHERE provider=? AND status=? LIMIT 1', [conn.id, 'active']) : null;
   const configured = hasCredential || !!vaultCred;

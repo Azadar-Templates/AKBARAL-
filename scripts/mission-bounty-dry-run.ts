@@ -15,8 +15,9 @@ async function main(): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), 'akbaral-bounty-dry-run-'));
   process.env.DRY_RUN = 'true';
   process.env.ZA141251SA_DATABASE_URL = `file:${join(directory, 'mission.db')}`;
-  // No secret is printed or created. An absent ZA141251SA_GITHUB_TOKEN is
-  // intentional: discovery remains read-only and unauthenticated.
+  // No secret is printed or created. An absent GitHub credential (authoritative name
+  // ZA141251SA_GITHUB_TOKEN, then GITHUB_TOKEN, then GH_TOKEN) is intentional: discovery here
+  // stays read-only and unauthenticated.
   try {
     // These imports must happen after the disposable DB target is selected.
     // eslint/tsc accepts require here because the project includes node types.

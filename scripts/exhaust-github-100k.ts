@@ -13,6 +13,7 @@ import { seedLegitimateSources, seedPlatformOpportunities, seedRealOpportunities
 import { getCatalogStats } from '../src/mission/opportunity-catalog';
 import { ingestSource } from '../src/mission/opportunity-ingestion';
 import fs from 'fs';
+import { resolveGithubToken } from '../src/mission/github-credential';
 
 const LANGUAGES = [
   'javascript', 'python', 'typescript', 'java', 'go', 'rust', 'c++', 'c#', 'php', 'ruby',
@@ -111,7 +112,7 @@ async function main() {
           const perPage = 100;
           const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}`;
           const headers: Record<string, string> = { 'User-Agent': 'ZA141251SA-opportunity-catalog/1.0', Accept: 'application/vnd.github.v3+json' };
-          const rawToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+          const rawToken = resolveGithubToken() ?? undefined;
           const token = rawToken && !rawToken.includes('dummy') && !rawToken.includes('arena-egress') && rawToken.length > 20 ? rawToken : null;
           if (token) headers.Authorization = `Bearer ${token}`;
           const res = await fetch(url, { headers });
