@@ -92,11 +92,16 @@ Derived from the registry, not from opinion: 16,004 agents locally / 4,001 in pr
 22 verified venues in `src/mission/earning/platform-catalog.ts`. Mapping each venue to the class its
 work requires (a throwaway script, deleted after the census — nothing was written):
 
-| class | venues | what it would grant |
-| --- | --- | --- |
-| `bounty_research` | **17** | `report.submit` only |
-| `bounty_execution` | **5** | `tool.request`, `resource.request`, `report.submit`, budget ≤ 5,000¢ |
-| `evidence_verification` | **0** venues need it today | `report.submit`, `resource.request` |
+The registry defines five classes (`agent-class-contracts.ts:60`–`:126`); three may be granted to an
+agent, two may not:
+
+| class | venues that need it | frozen permission set (line) | spend | extra gates (line) |
+| --- | --- | --- | --- | --- |
+| `bounty_research` `:62` | **17 of 22** | `report.submit` (`:64`) | `maxSpendCents: 0` | none |
+| `bounty_execution` `:76` | **5 of 22** | `tool.request`, `report.submit` (`:78`) | ≤ 5,000¢ | `requiresSandbox: true` (`:81`) → `no_execution_backend` `:182`; `requiresMoneyGrant: true` (`:82`) → an active grant at or above the class floor |
+| `evidence_verification` `:88` | **0 today** | `report.submit` (`:90`) | `maxSpendCents: 0` | none |
+| `owner_submission` `:100` | — | `[]` (`:102`) | 0 | `ownerOnly: true` (`:107`) — never an agent grant |
+| `payout_release` `:112` | — | `[]` (`:114`) | 0 | `ownerOnly: true` (`:119`) — never an agent grant |
 
 **One class does not cover the fleet.** `bounty_research` covers 17 of 22 venues with the smallest
 possible permission set (`report.submit` alone, zero budget); `bounty_execution` is required for the
@@ -306,10 +311,15 @@ failing**.
    This is the only step that writes `mission_agent_contracts` rows, and it cannot run without the
    digest that was just shown on screen.
 4. `no_scoped_contract` is now cleared globally (the readiness gate is "≥ 1 active unexpired
-   contract"); the per-agent list shrinks by exactly the number of agents approved. To cover the whole
-   registered fleet at 200 per batch: 21 cycles for the 4,001 agents production reports, 81 for the
-   16,004 local fixture. Nothing caps the fleet — the queue guard only says one unreviewed batch per
-   class at a time.
+   contract"); the per-agent list shrinks by exactly the number of agents approved. Covering the whole
+   fleet is click-bound, not capped: the batch ceiling is 200 and cycles = ceil(eligible ÷ 200), where
+   *eligible* is the registry minus fixture-origin and non-active agents and, for classes with spend,
+   minus agents without an active money grant at or above the class floor
+   (`eligibleAgentsForClass`, `agent-class-contracts.ts:205`). Each call scans at most 4× the requested
+   limit, so on a registry where many agents are ineligible a batch can come back smaller than asked
+   and take more cycles. Reference points: 4,001 agents registered in production ⇒ at most 21 cycles;
+   16,004 locally ⇒ at most 81. Nothing here caps how many agents may eventually hold a contract — the
+   queue guard only says one unreviewed batch per class at a time.
 5. For `bounty_execution` (the other 5 venues) the same two clicks are necessary but **not
    sufficient**: that class is also gated by `no_execution_backend`, because no pinned OCI image is
    configured. The block says so in the class row's blockers rather than letting the owner prepare 200
