@@ -13,7 +13,7 @@ passes.
 | Layer | Path | What it does |
 | --- | --- | --- |
 | Schema | `db/migrations-mission/0048_specialist_platform_fleet.sql` | 7 tables: platform verification records, 1:1 primary assignments, persistent specialist profiles, evaluation results, ranked opportunity queues, per-agent fleet states, state-transition audit |
-| Verified catalog | `src/mission/earning/platform-catalog.ts` | 22 venues the owner named or that the mission needs, each with a dated evidence record: verdict, automation policy, account and payment conditions, submission requirements, scope rules, rejection vocabulary, deadline policy, skills, tool keys and source citations |
+| Verified catalog | `src/mission/earning/platform-catalog.ts` | 22 venues the owner named or that the mission needs, each with a dated evidence record: verdict, automation policy, account and payment conditions, submission requirements, scope rules, rejection vocabulary, deadline policy, skills, tool keys and source citations. Every venue is mapped onto an **existing** `OPPORTUNITY_REGISTRY` class (`bug_bounties`, `contests_challenges`, `github_issue_bounties`, `software_development`, `open_source_sponsorship`, `microtasks_labeling`) rather than a private taxonomy, so the engine's eligibility, autonomy and payout-verifiability model keeps applying to it |
 | Assignment + ladder | `src/mission/earning/specialist-fleet.ts` | 1:1 platform assignment, profile materialization from venue rules, the readiness state machine, priority queue ranking, outcome and rejection recording, fleet refresh, owner report |
 | Evaluation | `src/mission/earning/specialist-evaluation.ts` | Per-venue suites of 16 graders that run the **production engines** (scope gate, claim classifier, evidence digest, venue board screening, payout verification, class contracts), with critical graders that a good score cannot outweigh |
 | Operator CLI | `scripts/mission-fleet-specialize.ts` (`npm run mission:fleet:specialize`) | `--apply-catalog`, `--priority`, `--assign`, `--certify`, `--rank`, `--state`, `--release`, `--refresh`, `--report`, `--json` |
@@ -151,6 +151,10 @@ production, and not the dashboard's database:
   not the gate loosened;
 * `--rank=all`: every queue returned `registry_empty` for this scratch database, which is the truth
   (no discovery had been run into it) and is reported as such rather than padded;
+* the report also *reads* the existing adapter registry for the assigned venues — 5 of 7 have an
+  adapter row, each in status `unavailable_public_source`, which is the honest description of what
+  the fleet can do there today (read a public source, not submit). The fleet creates and mutates no
+  adapter: that table drives background workers, and changing it is an owner decision;
 * `--refresh --report`: 4,001 readiness rows — `SKILLS_VERIFIED=7`, `UNASSIGNED_PLATFORM=3,994`,
   one aggregated owner action covering all 3,994, revenue **0 cents against 0 settlement proofs**;
 * the fleet test suite proves the top of the ladder is reachable when every gate genuinely holds:

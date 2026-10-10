@@ -12,6 +12,7 @@ import { before, after, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { missionDb as db, applyMissionMigrations, type Row } from '../database';
 import { provisionOwner } from '../auth';
+import { OPPORTUNITY_REGISTRY } from './opportunity-registry';
 import {
   AUTHORIZED_ACCOUNT_GROUPS, GMAIL_GROUPS, VERIFIED_PLATFORM_RECORDS, applyPlatformCatalog, catalogSummary,
   evidenceDigestFor, latestEvidence, normalizePlatformId, platformRecordFor, resolvePermissions, resolveToolKeys,
@@ -62,6 +63,18 @@ it('never asserts more than it verified: every active record cites an official s
         `${entry.platformId} claims unverified after a ${entry.verifiedVia} read of the venue itself`);
     }
   }
+});
+
+it('maps every venue onto an existing opportunity class instead of inventing a parallel taxonomy', () => {
+  const known = new Set(OPPORTUNITY_REGISTRY.map(entry => entry.key));
+  for (const entry of VERIFIED_PLATFORM_RECORDS) {
+    assert.ok(known.has(entry.opportunityClass), `${entry.platformId} names a class the registry does not have: ${entry.opportunityClass}`);
+  }
+  // The security venues land on classes the engine already reasons about, and grants on the
+  // sponsorship class rather than a bespoke "grant" label.
+  assert.equal(platformRecordFor('immunefi')!.opportunityClass, 'bug_bounties');
+  assert.equal(platformRecordFor('sherlock')!.opportunityClass, 'contests_challenges');
+  assert.equal(platformRecordFor('gitcoin')!.opportunityClass, 'open_source_sponsorship');
 });
 
 it('keeps platform ids unique and refuses to double-count a program as a platform', () => {

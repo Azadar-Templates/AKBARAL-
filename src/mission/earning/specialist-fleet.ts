@@ -656,6 +656,9 @@ export function fleetReport(): {
   readonly evaluations: { suites: number; passed: number };
   readonly firstExecutable: { agentId: string; platformId: string; opportunityKey: string; title: string; priority: number; rewardUsdCents: number } | null;
   readonly blockers: Record<string, number>;
+  /** Read-only view of the existing adapter surface for the assigned venues. The fleet never
+   *  registers or mutates an adapter: that would change what a background worker does. */
+  readonly adapters: { configured: number; total: number; statuses: Record<string, number>; note: string };
   readonly ownerActions: readonly { action: string; agents: number; platforms: readonly string[] }[];
   readonly revenue: { ledgerRevenueCents: number; settledProofs: number; note: string };
 } {
@@ -688,6 +691,13 @@ export function fleetReport(): {
   }
   const ownerActions = [...actionIndex.values()].sort((a, b) => b.agents - a.agents)
     .map(entry => ({ action: entry.action, agents: entry.agents, platforms: [...entry.platforms].slice(0, 6) }));
+  const assignedPlatforms = (db.all<Row>("SELECT DISTINCT platform_id AS id FROM mission_agent_platform_assignments WHERE status='active'") ?? []).map(row => String(row.id));
+  const adapterRows = assignedPlatforms.length
+    ? (db.all<Row>(`SELECT platform_key, adapter_status, category FROM platform_adapters WHERE platform_key IN (${assignedPlatforms.map(() => '?').join(',')})`, assignedPlatforms) ?? [])
+    : [];
+  const adapterStatuses: Record<string, number> = {};
+  for (const row of adapterRows) adapterStatuses[String(row.adapter_status)] = (adapterStatuses[String(row.adapter_status)] ?? 0) + 1;
+
   const first = db.get<Row>(
     `SELECT o.agent_id AS agentId, o.platform_id AS platformId, o.opportunity_key AS opportunityKey, o.title AS title, o.priority_score AS priority, o.reward_usd_cents AS reward
        FROM mission_specialist_opportunities o JOIN mission_agent_specialists s ON s.agent_id = o.agent_id
@@ -708,6 +718,10 @@ export function fleetReport(): {
     } : null,
     blockers,
     ownerActions: ownerActions.slice(0, 20),
+    adapters: {
+      configured: adapterRows.length, total: assignedPlatforms.length, statuses: adapterStatuses,
+      note: 'Adapters are read from the existing registry; none was created or changed by the fleet.',
+    },
     revenue: { ledgerRevenueCents: revenueCents, settledProofs: proofs, note: 'Ledger revenue and settlement proofs only; advertised venue rewards are never counted here.' },
   };
 }

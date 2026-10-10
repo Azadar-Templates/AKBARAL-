@@ -230,6 +230,7 @@ function main(): void {
     field('unassigned (recorded, not invented)', String(summary.agents.unassigned));
     field('venues in catalog (assignable)', `${summary.platforms.catalog} (${summary.platforms.assignable})`);
     field('verdicts', Object.entries(summary.platforms.byVerdict).map(([key, value]) => `${key}=${value}`).join(' '));
+    field('venue adapters configured', `${summary.adapters.configured} of ${summary.adapters.total} assigned venues (${Object.entries(summary.adapters.statuses).map(([key, value]) => `${key}=${value}`).join(' ') || 'none'}; none created here)`);
     field('specialties', Object.entries(summary.agents.bySpecialty).map(([key, value]) => `${key}=${value}`).join(' '));
     out('');
     out('readiness states');
