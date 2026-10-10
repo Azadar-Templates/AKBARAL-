@@ -24,7 +24,7 @@ import { getPlatform } from './platform-discovery';
 import { listConnectorContracts } from './connector-execution-contracts';
 import { readinessFor, type BlockerCode } from './fleet-readiness';
 import {
-  AUTHORIZED_ACCOUNT_GROUPS, GMAIL_GROUPS, catalogSummary, latestEvidence, platformRecordFor,
+  AUTHORIZED_ACCOUNT_GROUPS, DISCOVERY_CATEGORIES, GMAIL_GROUPS, catalogSummary, latestEvidence, platformRecordFor,
   resolvePermissions, resolveRegistryPlatformId, resolveToolKeys,
   type GmailGroup, type PlatformRecord,
 } from './platform-catalog';
@@ -724,6 +724,40 @@ export function fleetReport(): {
     },
     revenue: { ledgerRevenueCents: revenueCents, settledProofs: proofs, note: 'Ledger revenue and settlement proofs only; advertised venue rewards are never counted here.' },
   };
+}
+
+/**
+ * What the discovery registry actually covers, per opportunity family. The fleet is meant to keep
+ * all seven families fresh, so coverage is reported from the stored evidence rather than asserted
+ * from the constant: a family with no venue, or with venues whose readings have gone stale, shows
+ * up here as a gap instead of being hidden by the list of categories.
+ */
+export function registryCoverage(options: { readonly now?: () => Date; readonly maxAgeDays?: number } = {}): {
+  readonly categories: { category: string; how: string; venues: number; assignable: number; stale: number }[];
+  readonly uncovered: readonly string[];
+} {
+  const maxAgeDays = options.maxAgeDays ?? EVIDENCE_MAX_AGE_DAYS;
+  // The injected clock reaches the staleness check itself, so a test can move "today" instead of
+  // merely observing whatever the summary happened to compute.
+  const now = options.now ?? (() => new Date());
+  const summary = catalogSummary({ maxAgeDays, now }).rows;
+  const assignable = new Set(summary.filter(row => row.assignable).map(row => row.catalogId));
+  const categories = DISCOVERY_CATEGORIES.map(entry => {
+    const rows = summary.filter(row => {
+      const evidence = latestEvidence(row.catalogId);
+      if (!evidence) return false;
+      const facts = parse<{ category?: string }>(evidence.facts_json as string, {});
+      return facts.category === entry.category;
+    });
+    return {
+      category: entry.category,
+      how: entry.how,
+      venues: rows.length,
+      assignable: rows.filter(row => assignable.has(row.catalogId)).length,
+      stale: rows.filter(row => row.blockingReasons.includes('verification_stale')).length,
+    };
+  });
+  return { categories, uncovered: categories.filter(entry => entry.assignable === 0).map(entry => entry.category) };
 }
 
 /** Agents whose venue is verified but whose account grouping the owner has not authorized. */

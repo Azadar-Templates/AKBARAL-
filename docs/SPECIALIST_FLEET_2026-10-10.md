@@ -17,7 +17,7 @@ passes.
 | Assignment + ladder | `src/mission/earning/specialist-fleet.ts` | 1:1 platform assignment, profile materialization from venue rules, the readiness state machine, priority queue ranking, outcome and rejection recording, fleet refresh, owner report |
 | Evaluation | `src/mission/earning/specialist-evaluation.ts` | Per-venue suites of 16 graders that run the **production engines** (scope gate, claim classifier, evidence digest, venue board screening, payout verification, class contracts), with critical graders that a good score cannot outweigh |
 | Operator CLI | `scripts/mission-fleet-specialize.ts` (`npm run mission:fleet:specialize`) | `--apply-catalog`, `--priority`, `--assign`, `--certify`, `--rank`, `--state`, `--release`, `--refresh`, `--report`, `--json` |
-| Tests | `src/mission/earning/{platform-catalog,specialist-evaluation,specialist-fleet}.test.ts` | 42 tests: 12 catalog-integrity, 14 evaluation (non-vacuity in both directions), 16 fleet (assignment, ladder, gates, owner-only actions, full walk to `WORKING`) |
+| Tests | `src/mission/earning/{platform-catalog,specialist-evaluation,specialist-fleet}.test.ts` | 44 tests: 13 catalog-integrity, 14 evaluation (non-vacuity in both directions), 17 fleet (assignment, ladder, gates, owner-only actions, registry coverage, and a full walk to `WORKING`) |
 
 Nothing in `fleet-readiness.ts`, the mission dashboard, the wallet, the ledger or the payout
 controls was modified: the fleet module *consumes* `readinessFor()` so the dashboard and the state
@@ -161,6 +161,23 @@ production, and not the dashboard's database:
   it satisfies credential, contract, grant, provider readiness, verified payout slot and the owner
   policy, and walks to `WORKING` — then shows the state is taken away again by the kill switch.
 
+Coverage is reported per opportunity family from the stored evidence, not from a list of intentions:
+
+| Family | Venues | Assignable today | Refreshed from |
+| --- | --- | --- | --- |
+| `github_engineering` | 1 | 1 | live GitHub search for funded issues in candidate repositories |
+| `agent_native_marketplace` | 1 | 1 | machine-readable venue boards with per-item claim gates |
+| `smart_contract_security` | 9 | 1 | venue contest listings and program pages, re-read before assignment |
+| `web_vulnerability_disclosure` | 6 | 4 | platform program directories with per-program scope and automation terms |
+| `ai_eval_data_competition` | 1 | **0** | competition listings filtered to monetary awards, because medals are not revenue |
+| `hackathon_grant` | 3 | **0** | the machine-readable hackathon tracker plus organizer pages for deadlines and sponsor payouts |
+| `other` | 1 | **0** | reviewed candidates only; nothing enters as active-looking without a record |
+
+Three of the seven families have **no assignable venue today** — AI/eval competitions, hackathons
+and grants. That is stated instead of being covered by the *existence* of the category list:
+`uncovered = ai_eval_data_competition, hackathon_grant, other`. Closing it means reading those
+venues at event level (and, for grants, accepting that payment timing is the sponsor's, not ours).
+
 ## 8. Owner actions outstanding
 
 1. **Authorize or reassign the `gmail-4` grouping.** YesWeHack, Intigriti, Patchstack and Wordfence
@@ -176,7 +193,12 @@ production, and not the dashboard's database:
 5. **Re-verify at 30 days.** Evidence older than `EVIDENCE_MAX_AGE_DAYS` blocks assignment on its
    own — a venue's status is a reading with a date, not a permanent property.
 6. For scale, the constraint is venue verification, not agent registration: 3,994 agents wait on
-   venues that can be proven open, permitted and payable.
+   venues that can be proven open, permitted and payable — and three of the seven opportunity
+   families currently have no assignable venue at all.
+7. **Adapter decision, if any venue should gain more than read-only capability.** Five of the seven
+   assigned venues have an existing `platform_adapters` row and all five report
+   `unavailable_public_source`; the fleet reads that status and changes nothing, because that table
+   drives background workers.
 
 ## 9. What this build does not claim
 

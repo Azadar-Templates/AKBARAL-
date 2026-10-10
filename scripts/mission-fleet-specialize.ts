@@ -32,7 +32,7 @@ import { applyMissionMigrations, missionDb, type Row } from '../src/mission/data
 import type { MoneyActor } from '../src/mission/money';
 import { GMAIL_GROUPS, applyPlatformCatalog, catalogSummary, platformRecordFor } from '../src/mission/earning/platform-catalog';
 import {
-  certifyAgents, evaluateGates, fleetReport, groupingGaps, rankOpportunityQueue,
+  certifyAgents, evaluateGates, fleetReport, groupingGaps, rankOpportunityQueue, registryCoverage,
   refreshFleetStates, releaseAssignment, setSpecialistState, specializeAgent,
   type FleetState, type SpecialistState,
 } from '../src/mission/earning/specialist-fleet';
@@ -235,6 +235,13 @@ function main(): void {
     out('');
     out('readiness states');
     for (const [state, count] of Object.entries(summary.states).sort((a, b) => b[1] - a[1])) field(state, String(count));
+    out('');
+    out('discovery coverage by opportunity family (from stored evidence, not from the list)');
+    for (const entry of registryCoverage().categories) {
+      out(`  ${entry.category.padEnd(28)} venues=${String(entry.venues).padStart(2)} assignable=${entry.assignable}${entry.stale ? ` stale=${entry.stale}` : ''}`);
+      out(`  ${''.padEnd(28)} ${entry.how}`);
+    }
+    if (registryCoverage().uncovered.length) out(`  no assignable venue today for: ${registryCoverage().uncovered.join(', ')}`);
     out('');
     out('blockers');
     for (const [code, count] of Object.entries(summary.blockers).sort((a, b) => b[1] - a[1]).slice(0, 12)) field(code, String(count));

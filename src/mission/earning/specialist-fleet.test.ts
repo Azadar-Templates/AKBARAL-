@@ -20,7 +20,7 @@ import { ensurePayoutSlots } from '../treasury';
 import { applyPlatformCatalog } from './platform-catalog';
 import {
   STATE_LADDER, assignOpportunity, certifyAgents, evaluateGates, fleetReport, groupingGaps, rankOpportunityQueue,
-  recordOutcome, refreshFleetStates, releaseAssignment, setSpecialistState, specializeAgent,
+  recordOutcome, refreshFleetStates, registryCoverage, releaseAssignment, setSpecialistState, specializeAgent,
 } from './specialist-fleet';
 import { runSpecialistEvaluation, profileRulesDigest } from './specialist-evaluation';
 
@@ -290,6 +290,19 @@ it('records every unassigned agent as UNASSIGNED_PLATFORM instead of padding the
   assert.ok(reasons.join(' ').includes('no_unassigned_verifiable_platform_left') || reasons.join(' ').includes('not_yet_mapped'), JSON.stringify(reasons));
   assert.equal(db.get<Row>("SELECT COUNT(*) AS c FROM mission_agent_specialists s JOIN mission_agent_platform_assignments a ON a.agent_id=s.agent_id AND a.status='active' WHERE a.slot_type='primary'")!.c,
     Number(db.get<Row>('SELECT COUNT(*) AS c FROM mission_agent_specialists')!.c), 'no profile may exist without an active assignment');
+});
+
+it('reports discovery coverage per opportunity family from the evidence rows, not from a constant', () => {
+  const coverage = registryCoverage();
+  assert.equal(coverage.categories.length, 7, 'the registry is meant to refresh seven opportunity families');
+  for (const entry of coverage.categories) {
+    assert.ok(entry.venues >= 1, `no venue carries current evidence for the ${entry.category} family`);
+    assert.match(entry.how, /./);
+  }
+  const github = coverage.categories.find(entry => entry.category === 'github_engineering')!;
+  assert.ok(github.assignable >= 1 && github.stale === 0, JSON.stringify(github));
+  // Each family states where it is refreshed from, so coverage can be audited rather than trusted.
+  for (const entry of coverage.categories) assert.ok(entry.how.trim().length > 20, `${entry.category} has no stated refresh source`);
 });
 
 it('releases a pairing on owner request and frees the venue for the next agent', () => {
