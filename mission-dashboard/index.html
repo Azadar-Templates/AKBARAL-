@@ -55,7 +55,11 @@
         <section data-panel="overview" id="panel-overview" class="panel">
           <div class="section-head">
             <h2>Mission</h2>
-            <span id="head-read-only-state" class="pill info">Read-only head agent</span>
+            <!-- Marked hidden because the markup cannot know who is looking: this claim is about the
+                 session, so app.js applies it from the session (applySessionMode). A default-visible
+                 label here used to mean that any owner whose Overview failed to load was reported to
+                 themselves as a read-only head agent. -->
+            <span id="head-read-only-state" class="pill info" hidden>Read-only head agent</span>
           </div>
           <div class="cards" id="overview-cards"></div>
         </section>

@@ -1543,6 +1543,13 @@ export function sweepAgentDailyTarget(agentId: string, actorId: string | null = 
   return agentDailyTargetStatus(agentId, status.day);
 }
 
+/**
+ * Sweep every active agent's daily-target row and persist it.
+ *
+ * This is a WRITE over the whole fleet — one read plus one upsert per agent — so it belongs to the
+ * owner's explicit refresh command and to nothing that answers a page load. The Overview used to call
+ * it, which is what made the console blank at fleet scale; see `agentDailyTargetsFleetSummary`.
+ */
 export function sweepAllAgentDailyTargets(actorId: string | null = null): { day: string; swept: number; met: number } {
   const day = utcDay();
   const agents = missionDb.all<Row>('SELECT id FROM mission_agents WHERE status = ?', ['active']);
@@ -1554,6 +1561,71 @@ export function sweepAllAgentDailyTargets(actorId: string | null = null): { day:
   // Also sweep global daily target
   sweepDailyTarget(actorId);
   return { day, swept: agents.length, met };
+}
+
+/**
+ * How the fleet stands against its per-agent daily target today, counted in ONE read.
+ *
+ * Same figures the per-agent sweep produces — verified received revenue per agent for one UTC day,
+ * against that agent's configured target (BILLIONAIRE_DAILY_TARGET_CENTS when the agent has none) —
+ * but aggregated by the database instead of by one client round trip per agent, and without writing a
+ * row per agent. The fleet-size version of this used to cost ~24,000 statements and 4,001 upserts
+ * inside `GET /api/overview`: measured on this commit at 4,001 active agents at 2.1 s on an in-process
+ * SQLite file and 28.0 s on the PostgreSQL engine the deployment runs on, which is past the mission
+ * gateway's 15 s upstream budget (src/app/mission-gateway/mission-session.ts:51). The gateway aborted
+ * the Overview, the console received nothing, and the panel stayed blank.
+ *
+ * Nothing is estimated here: an agent with no verified receipt for the day counts as zero progress,
+ * not as met, and `met` can only ever be a subset of `agents`.
+ */
+export function agentDailyTargetsFleetSummary(day = utcDay()): { day: string; agents: number; configured: number; met: number; persisted: number; basis: string } {
+  const realizedForDay = `SELECT agent_id, SUM(amount_cents) AS realized FROM mission_revenue
+        WHERE status = 'received' AND verifier IS NOT NULL
+          AND substr(COALESCE(received_at, created_at), 1, 10) = ?
+        GROUP BY agent_id`;
+  let row: Row | undefined;
+  let targetsConfigured = true;
+  try {
+    row = missionDb.get<Row>(
+      `SELECT COUNT(*) AS agents,
+              SUM(CASE WHEN chosen.target > 0 THEN 1 ELSE 0 END) AS configured,
+              COALESCE(SUM(CASE WHEN chosen.target > 0 AND COALESCE(earned.realized, 0) >= chosen.target THEN 1 ELSE 0 END), 0) AS met
+         FROM (
+           SELECT id, CASE WHEN daily_target_cents IS NULL OR daily_target_cents <= 0 THEN ? ELSE daily_target_cents END AS target
+             FROM mission_agents WHERE status = 'active'
+         ) AS chosen
+         LEFT JOIN (${realizedForDay}) AS earned ON earned.agent_id = chosen.id`,
+      [BILLIONAIRE_DAILY_TARGET_CENTS, day],
+    );
+  } catch {
+    // Before migration 0008 the per-agent target columns do not exist; every active agent then carries
+    // the policy default, which is what agentDailyTargetCents itself returns for a missing column.
+    targetsConfigured = false;
+    row = missionDb.get<Row>(
+      `SELECT COUNT(*) AS agents,
+              COALESCE(SUM(CASE WHEN COALESCE(earned.realized, 0) >= ? THEN 1 ELSE 0 END), 0) AS met
+         FROM (SELECT id FROM mission_agents WHERE status = 'active') AS chosen
+         LEFT JOIN (${realizedForDay}) AS earned ON earned.agent_id = chosen.id`,
+      [BILLIONAIRE_DAILY_TARGET_CENTS, day],
+    );
+  }
+  const agents = Number(row?.agents ?? 0);
+  let persisted = 0;
+  try {
+    persisted = Number(missionDb.get<Row>('SELECT COUNT(*) AS c FROM mission_agent_daily_targets WHERE day = ?', [day])?.c ?? 0);
+  } catch {
+    persisted = 0; // no materialised rows exist because the table does not — reported as such below
+  }
+  return {
+    day,
+    agents,
+    configured: targetsConfigured ? Number(row?.configured ?? agents) : agents,
+    met: Number(row?.met ?? 0),
+    // How many agents' rows the last explicit sweep materialised. Reported beside the live counts so an
+    // owner can see whether the persisted view has fallen behind today without anyone having to guess.
+    persisted,
+    basis: 'counted live from stored rows for this UTC day; the read itself writes nothing, so per-agent rows are materialised by the owner sweep command (POST /api/targets/sweep)',
+  };
 }
 
 export function listAgentDailyTargets(day = utcDay(), limit = 100): AgentDailyTargetStatus[] {

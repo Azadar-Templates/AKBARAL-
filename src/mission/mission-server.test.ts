@@ -102,6 +102,8 @@ const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/policy', { autonomousEnabled: true }],
   ['/api/credentials', { provider: 'x', label: 'y', kind: 'oauth_token', value: 'synthetic-never-logged' }],
   ['/api/targets', { label: 'target', amountCents: 100_000 }],
+  // The owner-only fleet sweep command: fleet-wide work by definition, so it is a command and not a read.
+  ['/api/targets/sweep', {}],
   ['/api/bounty/programs', { platform: 'x', programHandle: 'y', scopeUrl: 'https://scope.invalid', programTermsHash: 'a'.repeat(64) }],
 ];
 
@@ -127,6 +129,39 @@ test('every private route refuses anonymous callers', async () => {
   const missing = await api('/api/does-not-exist');
   assert.equal(missing.status, 404);
   assert.equal(missing.body.error.code, 'not_found');
+});
+
+test('reading the target board is a read, and the owner sweep command is what writes the fleet rows', async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  missionDb.run('DELETE FROM mission_agent_daily_targets WHERE day = ?', [day]);
+  // Two active agents of this test's own, so the pin does not depend on another test having seeded a fleet.
+  for (const suffix of ['board-a', 'board-b']) {
+    missionDb.run(
+      "INSERT OR IGNORE INTO mission_agents (id, slug, name, role_key, depth, generation, status, mission_role, origin_platform, capabilities) VALUES (?,?,?,'specialist',0,'custom','active','worker','mission','[]')",
+      [`agt_board_${suffix}`, `board-${suffix}`, `Target board agent ${suffix}`],
+    );
+  }
+  const countActive = () => Number(missionDb.get<Row>("SELECT COUNT(*) AS c FROM mission_agents WHERE status = 'active'")?.c ?? 0);
+  const activeAgents = countActive();
+  assert.ok(activeAgents >= 2, `non-vacuity: the board is measured against a fleet that exists (saw ${activeAgents})`);
+  const board = await owner('/api/targets');
+  assert.equal(board.status, 200, 'the board answers the owner session');
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS c FROM mission_agent_daily_targets WHERE day = ?', [day])?.c ?? 0), 0,
+    'reading the board must not rewrite the fleet: one upsert per agent per page load is what outran the gateway budget and left the console blank');
+  const dailyTargets = board.body?.billionaireDaily?.dailyTargets;
+  assert.ok(dailyTargets, 'the fleet figures are still on the response, counted live from stored rows');
+  assert.equal(dailyTargets.agents, activeAgents, 'the fleet count is the stored active fleet');
+  assert.equal(dailyTargets.persisted, 0, 'and it says plainly that no per-agent rows have been materialised today');
+  assert.ok(typeof dailyTargets.basis === 'string' && /writes nothing/.test(dailyTargets.basis), 'the response states what a read does and does not do');
+  const swept = await owner('/api/targets/sweep', { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(swept.status, 200, 'the owner-only command is the thing that materialises the rows');
+  assert.equal(swept.body?.dailyTargets?.swept, countActive(), 'it reports the fleet it walked');
+  assert.equal(Number(missionDb.get<Row>('SELECT COUNT(*) AS c FROM mission_agent_daily_targets WHERE day = ?', [day])?.c ?? 0), activeAgents,
+    'and the rows exist afterwards — one per active agent, which is what makes met_at and the met announcement auditable');
+  const after = await owner('/api/targets');
+  assert.equal(after.body?.billionaireDaily?.dailyTargets.persisted, activeAgents, 'the board then reports the persisted count it read');
+  const trail = missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_audit WHERE action = 'target.daily_sweep'`)?.c ?? 0;
+  assert.ok(Number(trail) >= 1, 'an owner command that touches every agent is recorded in the audit trail');
 });
 
 test('the four stripped sections and the specialist record answer the owner with the shape the panels render', async () => {

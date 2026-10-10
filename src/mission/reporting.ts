@@ -9,7 +9,7 @@ import {
   listRevenue,
   listExpenses,
   agentDailyTargetStatus,
-  sweepAllAgentDailyTargets,
+  agentDailyTargetsFleetSummary,
   listAgentDailyTargets,
   BILLIONAIRE_DAILY_TARGET_CENTS,
   BILLIONAIRE_PERSISTENT_OBJECTIVE,
@@ -477,7 +477,12 @@ export interface MissionOverview {
     persistentObjective: string;
     globalDailyTarget: ReturnType<typeof import('./treasury').dailyTargetStatus>;
     todayPerAgent: Array<ReturnType<typeof import('./treasury').agentDailyTargetStatus>>;
-    sweep: { day: string; swept: number; met: number };
+    /**
+     * Today's state for the whole fleet, counted from stored rows in one read. Named `dailyTargets`
+     * rather than `sweep` because the Overview does not sweep anything: a page load must not write one
+     * row per agent, and the numbers it shows are read live from the revenue and agent tables.
+     */
+    dailyTargets: ReturnType<typeof agentDailyTargetsFleetSummary>;
     note: string;
   };
   selfManagement: ReturnType<typeof selfManagementSnapshot>;
@@ -624,8 +629,13 @@ export function buildMissionOverview(): MissionOverview {
     // best-effort — reporting must not crash if catalog tables missing
   }
 
-  // Billionaire daily per-agent objective — sweep all agents for today, then list top progress
-  const billionaireSweep = sweepAllAgentDailyTargets();
+  // Billionaire daily per-agent objective. This USED to call sweepAllAgentDailyTargets(), which walks
+  // the whole fleet and writes one row per agent — 24,000 statements and 4,001 upserts inside a GET at
+  // fleet scale, which is what made the deployed Overview blank (it outran the gateway's 15 s upstream
+  // budget, the console got a 502 instead of an Overview, and every panel downstream of it stayed empty
+  // — see src/mission/treasury.ts:1546). The same figures are now counted by the database in a bounded
+  // read, and persisting per-agent rows stays where it belongs: the owner's refresh command.
+  const billionaireSweep = agentDailyTargetsFleetSummary();
   const todayPerAgent = listAgentDailyTargets(billionaireSweep.day, 50);
   let globalDaily: ReturnType<typeof import('./treasury').dailyTargetStatus>;
   try {
@@ -773,7 +783,7 @@ export function buildMissionOverview(): MissionOverview {
       persistentObjective: BILLIONAIRE_PERSISTENT_OBJECTIVE,
       globalDailyTarget: globalDaily,
       todayPerAgent,
-      sweep: billionaireSweep,
+      dailyTargets: billionaireSweep,
       note: 'Owner-defined aspirational $1B verified revenue per day per agent. Resets daily UTC. Progress counts ONLY verified received revenue (status=received + verifier). Never guarantee, never fabricated. Agents pursue legitimate opportunities continuously and aggressively within resources, laws, ToS, platform rules.',
     },
     selfManagement: snapshot,

@@ -69,7 +69,7 @@ function consoleFixture(options: { hash?: string; signedIn?: 'owner' | 'link' | 
     return new Response(JSON.stringify(responses[String(url).split('?')[0]] ?? {}), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   dom.window.eval(`${source}
-window.nav = { boot, wire, state, activateTab, applyTabChrome, routeFromHash, groupOfView, subSection, loadTab, gateHidesNavEntry, viewLabel, PRIMARY_TABS, TAB_GROUPS, TAB_PARENT, TAB_VIEWS, TAB_COVIEW, TAB_ROUTE_ALIASES };`);
+window.nav = { boot, wire, state, activateTab, applyTabChrome, routeFromHash, groupOfView, subSection, loadTab, gateHidesNavEntry, viewLabel, applySessionMode, isReadOnlySession, isOwnerSession, PRIMARY_TABS, TAB_GROUPS, TAB_PARENT, TAB_VIEWS, TAB_COVIEW, TAB_ROUTE_ALIASES };`);
   const nav = dom.window.nav as NavInternals;
   const mode = options.signedIn ?? 'owner';
   if (mode === 'owner') nav.state.owner = { id: 'own_1', email: 'owner@example.test', role: 'owner' };
@@ -135,6 +135,9 @@ interface NavInternals {
   groupOfView: (view: string) => string | null;
   subSection: (view: string) => HTMLDetailsElement | null;
   loadTab: (view: string) => Promise<void>;
+  applySessionMode: () => void;
+  isReadOnlySession: () => boolean;
+  isOwnerSession: () => boolean;
   gateHidesNavEntry: (button: Element) => boolean;
   viewLabel: (view: string) => string;
   PRIMARY_TABS: string[];
@@ -272,16 +275,21 @@ it('the access gates still decide visibility: a read-only link reaches nothing n
       await linkFixture.go(`#/${view}`);
       assert.ok(linkFixture.visiblePanels().includes(view === 'money' ? 'money' : (linkFixture.nav.groupOfView(view) ?? '')), `${view} stays reachable for a read-only link`);
     }
-    // The read-only pill is set by the same render that paints the overview, so both sessions visit
-    // it before the claim is checked: an owner must not be told they are read-only, and a link must
-    // never be left thinking it is looking as an owner.
+    // The read-only label is a session fact and nothing else: applySessionMode() decides it, with no
+    // request in the path. It used to be a line at the end of renderOverview, which meant the claim was
+    // only ever applied if the Overview happened to render — a slow or failed fleet read left a signed-in
+    // owner standing under "Read-only head agent". So the claim is checked straight off the session.
     for (const entry of [ownerFixture, linkFixture]) {
-      (entry.nav.state as { loadedTabs?: Set<string> }).loadedTabs?.delete('overview');
-      await entry.nav.loadTab('overview');
-      await settle(8);
+      entry.nav.applySessionMode();
+      await settle(4);
     }
     assert.equal(ownerFixture.doc.querySelector('#head-read-only-state')?.hasAttribute('hidden'), true, 'an owner session hides the read-only pill');
     assert.equal(linkFixture.doc.querySelector('#head-read-only-state')?.hasAttribute('hidden'), false, 'a scoped link shows it');
+    assert.equal(ownerFixture.nav.isReadOnlySession(), false, 'and the predicate the label follows agrees with the server: a token session can mutate');
+    assert.equal(linkFixture.nav.isReadOnlySession(), true, 'while a link session cannot');
+    await linkFixture.nav.loadTab('overview');
+    await settle(8);
+    assert.equal(linkFixture.doc.querySelector('#head-read-only-state')?.hasAttribute('hidden'), false, 'rendering the Overview for a link session changes nothing about the label');
   } finally { ownerFixture.close(); linkFixture.close(); }
 });
 

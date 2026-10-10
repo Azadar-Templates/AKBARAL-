@@ -198,6 +198,7 @@ import {
   agentDailyTargetStatus,
   sweepAgentDailyTarget,
   sweepAllAgentDailyTargets,
+  agentDailyTargetsFleetSummary,
   listAgentDailyTargets,
   setAgentDailyTarget,
   BILLIONAIRE_DAILY_TARGET_CENTS,
@@ -2462,25 +2463,39 @@ async function handleApi(
     case 'targets': {
       requireRead(context);
       if (method === 'GET') {
-        // The daily sweep is idempotent and records the day's progress; it is
-        // part of reading the target board so the owner always sees fresh
-        // numbers and a met day is announced exactly once.
-        // Also sweep per-agent billionaire $1B/day targets.
-        const allSweep = sweepAllAgentDailyTargets(context.session?.owner.id ?? null);
+        // The GLOBAL daily sweep is idempotent, costs a handful of statements and records the day's
+        // progress, so it stays part of reading the board: the owner sees fresh numbers and a met day is
+        // announced exactly once. The per-agent sweep does not: it wrote one row per agent, which at
+        // fleet scale turned a target board into 24,000 statements and thousands of upserts inside a GET
+        // and blew the mission gateway's upstream budget (the same failure that blanked the Overview).
+        // The per-agent figures below are counted live from stored rows instead; materialising every
+        // agent's row stays the owner refresh command's job.
+        const dailyTargets = agentDailyTargetsFleetSummary();
         json(res, 200, {
           targets: listTargets(),
           daily: sweepDailyTarget(context.session?.owner.id ?? null),
           billionaireDaily: {
             perAgentTargetCents: BILLIONAIRE_DAILY_TARGET_CENTS,
             persistentObjective: BILLIONAIRE_PERSISTENT_OBJECTIVE,
-            sweep: allSweep,
-            todayPerAgent: listAgentDailyTargets(allSweep.day, 100),
+            dailyTargets,
+            todayPerAgent: listAgentDailyTargets(dailyTargets.day, 100),
           },
           note: 'Owner-defined aspirational $1B/day per agent. Targets are KPIs. Progress counts verified realized revenue only and a target is never reported as an achievement, never guarantee.',
         });
         return true;
       }
       const session = requireOwner(context, true);
+      // The one command that materialises a row per agent for today. It is owner-only and explicit, because
+      // it is fleet-wide work: it reads and rewrites one row per active agent, so it belongs to a command an
+      // owner runs (or a worker schedules), never to a page load. Until this existed the per-agent sweep rode
+      // inside `GET /api/targets` and `GET /api/overview`, which is what made the console blank at fleet
+      // scale — the read stopped answering inside the mission gateway's upstream budget.
+      if (method === 'POST' && rest[0] === 'sweep') {
+        const swept = sweepAllAgentDailyTargets(session.owner.id);
+        appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'target.daily_sweep', subjectType: 'target', subjectId: swept.day, detail: { swept: swept.swept, met: swept.met } });
+        json(res, 200, { dailyTargets: swept });
+        return true;
+      }
       if (rest.length === 0 && method === 'POST') {
         json(res, 201, {
           target: createTarget({

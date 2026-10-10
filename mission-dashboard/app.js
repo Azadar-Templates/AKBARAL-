@@ -48,6 +48,13 @@ const state = {
   verifyingSlot: null,
 };
 
+/**
+ * What the console prints for a field the API response does not carry. `0`, `—` and an empty panel all
+ * read as a result on a mission dashboard; this does not, and the difference is the point: an owner can
+ * tell "not measured" from "measured as nothing".
+ */
+const MISSING = 'MISSING';
+
 // ── tiny DOM helpers ────────────────────────────────────────────────────────
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -366,6 +373,31 @@ function isOwnerSession() {
   return Boolean(state.token && state.owner && state.owner.role === 'owner');
 }
 
+/**
+ * Whether this tab is looking through a read-only link rather than the owner's own session.
+ *
+ * The server's rule, stated once here so every affordance agrees with it: an access link can read and
+ * cannot change anything (`canMutate()`), and a signed-in session whose mission role is not `owner` is
+ * refused every mutation (`requireOwner`). Anything else that carries a token is the owner's session and
+ * must never be labelled read-only — including when an old link token is still sitting in this tab's
+ * session storage, which is what used to make a fully authorised owner look like a head agent.
+ */
+function isReadOnlySession() {
+  if (state.token) return Boolean(state.owner) && state.owner.role !== 'owner';
+  return Boolean(state.link);
+}
+
+/** Session facts, applied together and independently of any panel's data: who is looking, and what they
+ *  can do about it. Nothing in here may depend on a network response, or a slow endpoint would be free
+ *  to leave a wrong statement about the owner on screen. */
+function applySessionMode() {
+  showIdentity();
+  const signOutButton = $('#signout');
+  if (signOutButton) signOutButton.hidden = !canMutate();
+  const pillNode = $('#head-read-only-state');
+  if (pillNode) pillNode.hidden = !isReadOnlySession();
+}
+
 function guardMutation() {
   if (canMutate()) return true;
   banner('This access link is read-only. Sign in as the mission owner to make changes.', 'error');
@@ -398,8 +430,7 @@ function signOut(notify = true) {
   sessionStorage.removeItem(TOKEN_KEY);
   $('#app').hidden = true;
   $('#login-panel').hidden = false;
-  $('#signout').hidden = true;
-  $('#identity').textContent = 'not signed in';
+  applySessionMode();
   if (notify) banner('Signed out.', 'ok');
 }
 
@@ -407,8 +438,10 @@ async function login(email, password) {
   const payload = await api('/session/login', { method: 'POST', body: { email, password } });
   state.token = payload.token;
   state.owner = payload.owner;
-  showIdentity();
   state.link = '';
+  // Applied after the link is dropped, so the label describes the session that just started and not the
+  // access link this tab happened to arrive on.
+  applySessionMode();
   sessionStorage.setItem(TOKEN_KEY, payload.token);
   sessionStorage.removeItem(LINK_KEY);
   await start();
@@ -417,21 +450,29 @@ async function login(email, password) {
 async function start() {
   $('#login-panel').hidden = true;
   $('#app').hidden = false;
-  $('#signout').hidden = !canMutate();
+  // Who is looking is a session fact, not a data fact, so it is applied here — before the first request
+  // and whatever it returns.
+  applySessionMode();
   // Gate rules, visible panels and the sub-section row are one computation,
   // so a consolidated view can never be shown without its family (or hidden
   // while its panel stays on screen).
   applyTabChrome(state.activeTab);
   // Identify the operator from the session state we already hold, before any
   // network round-trip: a signed-in person must never see "not signed in".
-  showIdentity();
+  const loaded = state.loadedTabs || (state.loadedTabs = new Set());
   try {
     const overview = await api('/overview');
     state.overview = overview;
-    showIdentity();
     renderOverview(overview);
+    // This load has already paid for the Overview; `activateTab` below must not fetch and render the same
+    // endpoint a second time before the owner has seen anything.
+    loaded.add('overview');
   } catch (error) {
     if (error.status !== 401) banner(error.message, 'error');
+    // Same treatment as loadTab gives a failed panel: the tab counts as attempted, and the panel says
+    // what is missing rather than staying blank.
+    loaded.add('overview');
+    renderOverviewUnavailable(error);
   }
   await activateTab(state.activeTab);
   if (canMutate()) {
@@ -516,73 +557,164 @@ function renderOwnerActivationPath(overview) {
   );
 }
 
+/**
+ * The five cards an owner opens this console for, plus the read-only tables under them.
+ *
+ * Every figure is the payload's own. A field the payload does not carry renders `MISSING` instead of a
+ * zero: on this console a zero reads like a measurement, and a fleet whose readiness was never counted
+ * must not look like a fleet with nothing ready. Each block renders on its own for the same reason — one
+ * panel that cannot be read says so on its own line instead of taking the rest of the Overview (and the
+ * session label beside it) down with it.
+ */
 function renderOverview(overview) {
-  const cards = $('#overview-cards');
-  const fleet = overview.fleet || {};
-  const currency = overview.treasury.currency;
-  cards.innerHTML = '';
-  cards.append(
-    card('Fleet', fleet.registered ?? overview.agents.total, `${fleet.withPlatform ?? 0} paired with a verified venue · ${overview.agents.registry} from the registry`),
-    card('Ready to work', fleet.ready ?? 0, 'EXECUTION_READY or WORKING — every gate green'),
-    card('Blocked', (fleet.blocked ?? 0) + (fleet.needsOwnerAction ?? 0), `${fleet.blocked ?? 0} blocked/inactive · ${fleet.needsOwnerAction ?? 0} awaiting the owner`),
-    card('Earned', money(fleet.earnedCents ?? 0, currency), `${fleet.settledProofs ?? 0} verified settlement proof(s); advertised rewards are never counted`),
-    card('Next action', fleet.nextAction || 'none recorded', 'the single thing that moves the fleet forward'),
-  );
-  renderOwnerActivationPath(overview);
-  // The read-only pill says who is looking, because a link sees fewer controls.
-  const pillNode = $('#head-read-only-state');
-  if (pillNode) pillNode.hidden = !state.link || isOwnerSession();
-  $('#revenue-honesty').textContent = overview.honesty.noFabrication;
+  const source = overview && typeof overview === 'object' ? overview : {};
+  const fleet = source.fleet || {};
+  const agents = source.agents || {};
+  const currency = source.treasury && source.treasury.currency ? source.treasury.currency : MISSING;
 
-  replace('#revenue-realized', table([
+  const stale = $('#overview-unavailable');
+  if (stale) stale.remove();
+
+  const cards = $('#overview-cards');
+  if (cards) {
+    cards.innerHTML = '';
+    cards.append(
+      card('Fleet', countOf(fleet.registered, agents.total), `${countOf(fleet.withPlatform)} paired with a verified venue · ${countOf(agents.registry)} from the registry`),
+      card('Ready to work', countOf(fleet.ready), 'EXECUTION_READY or WORKING — every gate green'),
+      card('Blocked', bothNumbered(fleet.blocked, fleet.needsOwnerAction), `${countOf(fleet.blocked)} blocked/inactive · ${countOf(fleet.needsOwnerAction)} awaiting the owner`),
+      card('Earned', centsOf(fleet.earnedCents, currency), `${countOf(fleet.settledProofs)} verified settlement proof(s); advertised rewards are never counted`),
+      card('Next action', typeof fleet.nextAction === 'string' ? (fleet.nextAction || 'none recorded') : MISSING, 'the single thing that moves the fleet forward'),
+    );
+  }
+  renderOwnerActivationPath(source);
+
+  block('#revenue-honesty', () => {
+    const node = $('#revenue-honesty');
+    if (!node) return null;
+    node.textContent = source.honesty && source.honesty.noFabrication ? String(source.honesty.noFabrication) : MISSING;
+    return null;
+  });
+
+  block('#revenue-realized', () => table([
     { label: 'Source', key: 'source' },
     { label: 'Receipts', key: 'count' },
     { label: 'Amount', render: (row) => money(row.cents, currency) },
-  ], overview.revenue.bySource, 'No verified receipts yet — nothing has been earned, so nothing is shown.'));
+  ], rowsOf(source.revenue && source.revenue.bySource, 'revenue.bySource'), 'No verified receipts yet — nothing has been earned, so nothing is shown.'));
 
-  const pending = overview.revenue.recent.filter((row) => row.status !== 'received');
-  replace('#revenue-pending', table([
-    { label: 'Recorded', render: (row) => when(row.created_at) },
-    { label: 'Status', render: (row) => pill(String(row.status), 'warn') },
-    { label: 'Amount', render: (row) => money(row.amount_cents, currency) },
-    { label: 'Work', render: (row) => row.work_id || '—' },
-    { label: 'Reference', render: (row) => row.external_ref || '—' },
-  ], pending, 'No contracted or expected amounts recorded.'));
+  block('#revenue-pending', () => {
+    const pending = rowsOf(source.revenue && source.revenue.recent, 'revenue.recent').filter((row) => row.status !== 'received');
+    return table([
+      { label: 'Recorded', render: (row) => when(row.created_at) },
+      { label: 'Status', render: (row) => pill(String(row.status), 'warn') },
+      { label: 'Amount', render: (row) => money(row.amount_cents, currency) },
+      { label: 'Work', render: (row) => row.work_id || '—' },
+      { label: 'Reference', render: (row) => row.external_ref || '—' },
+    ], pending, 'No contracted or expected amounts recorded.');
+  });
 
-  replace('#targets', table([
+  block('#targets', () => table([
     { label: 'Target', key: 'label' },
     { label: 'Period', key: 'period' },
     { label: 'Goal', render: (row) => money(row.amountCents, currency) },
     { label: 'Verified progress', render: (row) => `${money(row.actualCents, currency)} (${row.progressPct}%)` },
     { label: 'Kind', render: () => pill('target', 'warn') },
-  ], overview.targets, 'No targets configured.'));
+  ], rowsOf(source.targets, 'targets'), 'No targets configured.'));
 
-  replace('#expenses', table([
+  block('#expenses', () => table([
     { label: 'Category', key: 'category' },
     { label: 'Entries', key: 'count' },
     { label: 'Paid', render: (row) => money(row.cents, currency) },
-  ], overview.expenses.byCategory, 'No expenses paid yet.'));
+  ], rowsOf(source.expenses && source.expenses.byCategory, 'expenses.byCategory'), 'No expenses paid yet.'));
 
-  replace('#costs', table([
+  block('#costs', () => table([
     { label: 'Cost category (30 days)', key: 'category' },
     { label: 'Entries', key: 'count' },
     { label: 'Spend', render: (row) => money(row.cents, currency) },
-  ], overview.costs.byCategory, 'No operating spend recorded in the last 30 days.'));
+  ], rowsOf(source.costs && source.costs.byCategory, 'costs.byCategory'), 'No operating spend recorded in the last 30 days.'));
 
-  replace('#integrity', table([
+  block('#integrity', () => table([
     { label: 'Chain', render: (row) => row.name },
-    { label: 'State', render: (row) => (row.ok ? pill('verified', 'ok') : pill('broken', 'bad')) },
+    { label: 'State', render: (row) => (row.ok === MISSING ? pill(MISSING, 'warn') : row.ok ? pill('verified', 'ok') : pill('broken', 'bad')) },
     { label: 'Entries', render: (row) => row.count },
   ], [
-    { name: 'Audit trail', ok: overview.audit.ok, count: overview.audit.rows },
-    { name: 'Ledger', ok: overview.integrity.ledger.ok, count: overview.integrity.ledger.rows },
+    { name: 'Audit trail', ok: verifiedOf(source.audit && source.audit.ok), count: countOf(source.audit && source.audit.rows) },
+    { name: 'Ledger', ok: verifiedOf(source.integrity && source.integrity.ledger && source.integrity.ledger.ok), count: countOf(source.integrity && source.integrity.ledger && source.integrity.ledger.rows) },
   ]));
 
-  replace('#activation', table([
+  block('#activation', () => table([
     { label: 'Provider', key: 'provider' },
     { label: 'Required external action', key: 'action', wrap: true },
     { label: 'Why', key: 'why', wrap: true },
-  ], overview.honesty.externalActivationPending, 'Nothing pending.'));
+  ], rowsOf(source.honesty && source.honesty.externalActivationPending, 'honesty.externalActivationPending'), 'Nothing pending.'));
+}
+
+/** One Overview block, rendered independently: unreadable data becomes a MISSING line, never a blank panel. */
+function block(selector, build) {
+  try {
+    const node = build();
+    if (node) replace(selector, node);
+  } catch (error) {
+    replace(selector, missingNote(error && error.message ? error.message : 'the Overview payload could not be read'));
+  }
+}
+
+function missingNote(reason) {
+  return el('p', { class: 'muted small', style: 'padding:12px', text: `${MISSING} — ${reason}. Nothing here was estimated to fill the gap.` });
+}
+
+/** A list the payload does not carry is not the same claim as a list that is empty. */
+function rowsOf(rows, path) {
+  if (Array.isArray(rows)) return rows;
+  throw new Error(`${path} is not in the Overview payload`);
+}
+
+/** The first field that actually carries a number; `MISSING` when none of them does. */
+function countOf(...fields) {
+  for (const field of fields) {
+    if (typeof field === 'number' && Number.isFinite(field)) return String(field);
+  }
+  return MISSING;
+}
+
+/** A sum of two stored counts, reported only when both were actually counted. */
+function bothNumbered(left, right) {
+  const hasLeft = typeof left === 'number' && Number.isFinite(left);
+  const hasRight = typeof right === 'number' && Number.isFinite(right);
+  return hasLeft && hasRight ? String(left + right) : MISSING;
+}
+
+function centsOf(cents, currency) {
+  return typeof cents === 'number' && Number.isFinite(cents) ? money(cents, currency) : MISSING;
+}
+
+function verifiedOf(value) {
+  return value === undefined || value === null ? MISSING : Boolean(value);
+}
+
+/**
+ * The Overview when the Overview never arrived.
+ *
+ * A failed, timed-out or refused request used to leave the panel exactly as the markup shipped it: an
+ * empty grid, no reason, and — because the read-only label was decided at the end of the render that
+ * never happened — a session claim the owner never earned. The five cards are rendered anyway with
+ * `MISSING` and the reason under them. The figures themselves are never invented to fill the hole.
+ */
+function renderOverviewUnavailable(error) {
+  const reason = error && error.message ? String(error.message) : 'the Overview request failed';
+  const status = error && error.status ? ` (HTTP ${error.status})` : '';
+  const cards = $('#overview-cards');
+  if (cards) {
+    cards.innerHTML = '';
+    for (const label of ['Fleet', 'Ready to work', 'Blocked', 'Earned', 'Next action']) {
+      cards.append(card(label, MISSING, 'the Overview did not load, so nothing was measured for it'));
+    }
+  }
+  let note = $('#overview-unavailable');
+  if (!note && cards) {
+    note = el('p', { class: 'muted small', id: 'overview-unavailable' });
+    cards.after(note);
+  }
+  if (note) note.textContent = `${MISSING} — the mission Overview could not be read${status}: ${reason}. Reload this page to try again; no figure on this panel was filled in by hand.`;
 }
 
 // History tables inside the agent report are budgeted; see MAX_REPORT_ROWS.

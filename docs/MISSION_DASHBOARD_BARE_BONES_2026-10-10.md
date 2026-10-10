@@ -252,3 +252,58 @@ that stops the fleet with `cleared` measured from live rows and, for each open o
 printed by `npm run fleet:readiness`, included in `npm run fleet:readiness -- --json`, and rendered in
 the Overview under the five cards. A test asserts those citations resolve to real, non-blank lines in
 the cited files, so "the control exists" cannot rot into a comment that no longer matches the markup.
+
+## 9. The blank Overview, and the read-only label that lied (same day, after deployment)
+
+Deployed symptom, reported by the owner: the Overview rendered nothing — `#overview-cards` empty,
+`#overview-owner-path` never created — while the header said "signed in as
+<owner>@gmail.com" *and* the pill beside the title said "Read-only head agent".
+
+What the repro showed, in order, before anything was changed:
+
+* `index.html:58` (as shipped, now `:62`) carried that pill with **no `hidden` attribute**, and the only line in the client that
+  ever sets `hidden` sat at the **end of `renderOverview`** (`app.js:532-533`). `start()` wraps the
+  Overview fetch and render in one `try`, whose `catch` shows a banner for six seconds and nothing else.
+  So any failure of that one render leaves an empty grid *and* the markup's default label — one cause,
+  two symptoms. Reproduced in jsdom against the real bundle: a 502, a 500, or a payload missing
+  `treasury`/`agents` each produced `#overview-cards` children = 0, no owner path, pill visible.
+* `/api/overview` was the **only** route doing fleet-sized work: `buildMissionOverview()` called
+  `sweepAllAgentDailyTargets()`, which reads *and upserts* one row per active agent. Measured on this
+  commit at 4,001 agents: 2,240 ms on an in-process SQLite file, **27,976 ms on the PostgreSQL engine**
+  the deployment uses (`scripts/pg-test-server.mjs`, real wire protocol). The scaling is linear at
+  0.494–0.529 ms/agent on SQLite. The gateway aborts an upstream request at `UPSTREAM_TIMEOUT_MS =
+  15_000` (`src/app/mission-gateway/mission-session.ts:51`) and answers 502 — and the browser then shows
+  exactly the pair the owner reported. The console also asked for the Overview **twice per load**
+  (`start()` and `loadTab('overview')`), and `GET /api/targets` carried the same sweep.
+* The classification itself was **not** wrong: `GET /api/session/me` answers through `requireOwner`, so a
+  tab that prints an owner email has `owner.role === 'owner'`, and `isOwnerSession()` would have hidden
+  the pill — it never got the chance. The defect was that a session fact was decided by a data render.
+* `renderOverview` also zero-filled whatever the payload did not carry (`fleet.ready ?? 0`,
+  `fleet.earnedCents ?? 0`, `(fleet.blocked ?? 0) + (fleet.needsOwnerAction ?? 0)`), so a partial read
+  rendered as measurements of zero rather than as an absent field.
+
+What was changed, and nothing else:
+
+| root cause | fix |
+| --- | --- |
+| a fleet-wide write inside a page load | `agentDailyTargetsFleetSummary()` (`src/mission/treasury.ts:1581`) counts the same figures in three aggregate statements and writes nothing; `buildMissionOverview()` and `GET /api/targets` both use it. **After:** 485–1,123 ms on PostgreSQL at 4,001 agents (was 27,976 ms), 312–536 ms over HTTP on a 16,004-agent database, 0 rows written per read (was 4,001). |
+| the sweep had no home once reads stopped doing it | `POST /api/targets/sweep` — owner-only, audited as `target.daily_sweep`, the one thing that materialises `mission_agent_daily_targets`. A refused link mutation is pinned in `OWNER_ONLY_MUTATIONS`. |
+| a label about authority riding on a data render | `applySessionMode()` + `isReadOnlySession()` (`mission-dashboard/app.js:385-401`) decide the pill, the identity line and the sign-out affordance together from the session, called before the first request and from `login()`/`signOut()`; the markup ships the pill `hidden`. A stale `#link=` token left in a tab no longer brands an owner read-only. |
+| a partial payload rendering as zeroes | the five cards render `MISSING` for any field the payload does not carry, each block renders independently and says `MISSING — <field> is not in the Overview payload`, and a failed Overview renders the five cards as `MISSING` with the reason on `#overview-unavailable` instead of blanking. |
+| two fleet reads per load | `start()` marks the tab loaded, so the Overview is fetched once (pinned by a request-count test). |
+
+Pinned by `src/mission/mission-dashboard-owner-overview.test.ts` (11) and
+`src/mission/mission-overview-read-path.test.ts` (5), plus `scripts/verify-mission-dashboard.mjs` now
+measuring the live server: the Overview inside the 15 s budget, the cards against the payload field by
+field, and two fault-injected boots (a half-empty payload, a 502) that assert `MISSING`, the reason, and
+that the read-only label did not move. Sensitivity, reverting one file at a time and counting failures:
+`app.js` 19, `treasury.ts` 9, `reporting.ts` 4, the nav test 1, `server.ts` and `index.html` 0 until the
+two pins named above were added.
+
+**Not verified, and not claimed:** the deployment itself. This sandbox has no route to
+`akbaral-production.up.railway.app` (every probe returned `status=000`), so the failing response was never
+captured from production — the mechanism above was established on this commit, at production fleet scale, on
+the engine the deployment runs, and from the client bundle the gateway serves. Whether the deployed
+Overview timed out for exactly this reason is therefore inferred from the measured cost curve, not
+observed. After this ships, an Overview that still fails is no longer silent: the panel says `MISSING` and
+prints the status, and the pill stops claiming anything it was not told.

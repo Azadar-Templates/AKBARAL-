@@ -46,7 +46,12 @@ function ownerCredentials() {
   return match.email && match.password ? match : null;
 }
 
-async function bootConsole(initialToken = '') {
+/**
+ * `overviewFault`, when given, replaces the live server's Overview answer for this boot only. That is how
+ * the two shapes an owner must never be left guessing at are measured against the real client and the
+ * real server: a payload that carries part of the fleet readout, and no payload at all.
+ */
+async function bootConsole(initialToken = '', overviewFault = null) {
   const html = await (await fetch(`${BASE}/`)).text();
   const errors = [];
   const virtualConsole = new VirtualConsole();
@@ -60,7 +65,12 @@ async function bootConsole(initialToken = '') {
   // The page must talk to the real mission server.
   window.fetch = (input, init = {}) => {
     const raw = typeof input === 'string' ? input : input.url;
-    return fetch(raw.startsWith('/') ? `${BASE}${raw}` : raw, init);
+    const upstream = fetch(raw.startsWith('/') ? `${BASE}${raw}` : raw, init);
+    if (!overviewFault || !raw.endsWith('/api/overview')) return upstream;
+    return upstream.then(async (response) => {
+      const answer = await overviewFault(await response.json().catch(() => null));
+      return new Response(JSON.stringify(answer.body), { status: answer.status ?? 200, headers: { 'content-type': 'application/json' } });
+    });
   };
   window.scrollTo = () => {};
   window.eval(fs.readFileSync(path.resolve(process.cwd(), 'mission-dashboard/app.js'), 'utf8'));
@@ -142,6 +152,79 @@ async function main() {
   record('no activation line can carry a credential',
     !/Bearer\s|ghp_|github_pat_|-----BEGIN|password/i.test(activationText), `${activationText.length} chars scanned`);
 
+  // ── 3b. the Overview, measured the way the deployed console measures it ──────
+  //
+  // This block exists because of one specific failure: `GET /api/overview` used to recompute every
+  // agent's daily-target row inside the request, so the read grew with the fleet and stopped answering
+  // in time. The gateway then handed the browser a 502, no Overview reached `renderOverview`, the five
+  // cards stayed empty — and the read-only label beside them, whose only hider lived at the end of that
+  // same render, stayed at its markup default and told a signed-in owner they were a read-only head
+  // agent. Everything below is measured against the live server, on the fleet this database actually
+  // holds, with no fixture in between.
+  const overviewToken = win.sessionStorage.getItem('za_mission_token');
+  const overviewStartedAt = Date.now();
+  const overviewResponse = await fetch(`${BASE}/api/overview`, { headers: { authorization: `Bearer ${overviewToken}` } });
+  const overviewPayload = await overviewResponse.json().catch(() => null);
+  const overviewMs = Date.now() - overviewStartedAt;
+  const gatewayUpstreamBudgetMs = 15000;
+  const fleetAgents = Number(overviewPayload?.agents?.total ?? 0);
+  record(`the Overview answers inside the gateway's ${gatewayUpstreamBudgetMs} ms upstream budget`,
+    overviewResponse.status === 200 && overviewMs < gatewayUpstreamBudgetMs,
+    `${overviewMs} ms for ${fleetAgents} agents at HTTP ${overviewResponse.status}`);
+  const cardValueOf = (label) => {
+    const node = [...doc.querySelectorAll('#overview-cards .card')].find((card) => card.querySelector('.label')?.textContent === label);
+    return node ? String(node.querySelector('.value')?.textContent ?? '').trim() : null;
+  };
+  const renderedCards = ['Fleet', 'Ready to work', 'Blocked', 'Earned', 'Next action'].map((label) => ({ label, value: cardValueOf(label) }));
+  record('every Overview card carries a value the server actually sent',
+    renderedCards.length === 5 && renderedCards.every((card) => card.value && card.value !== 'MISSING'),
+    renderedCards.map((card) => `${card.label}=${String(card.value).slice(0, 16)}`).join(', '));
+  const fleetPayload = overviewPayload?.fleet ?? {};
+  const currency = overviewPayload?.treasury?.currency;
+  record('the fleet card is the payload’s own count, not a rounded or invented one',
+    cardValueOf('Fleet') === String(fleetPayload.registered),
+    `rendered ${cardValueOf('Fleet')} for fleet.registered=${fleetPayload.registered}`);
+  const expectedEarned = typeof fleetPayload.earnedCents === 'number'
+    ? `${(fleetPayload.earnedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
+    : 'MISSING';
+  record('the earned card restates the payload’s settlement figure exactly',
+    cardValueOf('Earned') === expectedEarned,
+    `rendered ${cardValueOf('Earned')} expected ${expectedEarned}`);
+  // What the panel owes the owner when a read answers only partly, or not at all: the five cards stay,
+  // each saying MISSING where the payload carries nothing, the reason on screen, and the read-only label
+  // — a session fact — untouched either way. Both cases are driven through a real boot of the served
+  // console against the live server, with only the Overview answer doctored.
+  const probeValues = (document) => [...document.querySelectorAll('#overview-cards .card')].map((card) => ({
+    label: card.querySelector('.label')?.textContent,
+    value: card.querySelector('.value')?.textContent,
+  }));
+  const partialBoot = await bootConsole(overviewToken, async (payload) => ({ status: 200, body: { fleet: { registered: payload?.fleet?.registered } } }));
+  await waitFor(() => (partialBoot.document.querySelectorAll('#overview-cards .card').length === 5 ? 'cards' : ''), 'the partial Overview to render', 6000).catch(() => '');
+  const partialCards = probeValues(partialBoot.document);
+  record('a partial fleet readout renders MISSING in the cards it cannot answer, never a zero',
+    partialCards.length === 5
+      && partialCards[0]?.value === String(fleetPayload.registered)
+      && partialCards.slice(1).every((card) => card.value === 'MISSING'),
+    partialCards.map((card) => `${card.label}=${card.value}`).join(', '));
+  record('and one unreadable block is reported on its own line instead of blanking the Overview',
+    /MISSING/.test(String(partialBoot.document.querySelector('#revenue-realized')?.textContent ?? '')),
+    `revenue block: ${String(partialBoot.document.querySelector('#revenue-realized')?.textContent).replace(/\s+/g, ' ').trim().slice(0, 58)}`);
+  record('a half-empty Overview does not change what the session is allowed to do',
+    partialBoot.document.querySelector('#head-read-only-state')?.hidden === true
+      && /signed in as /.test(String(partialBoot.document.querySelector('#identity')?.textContent ?? '')),
+    `pill hidden=${partialBoot.document.querySelector('#head-read-only-state')?.hidden}, identity="${String(partialBoot.document.querySelector('#identity')?.textContent).trim()}"`);
+  const deadBoot = await bootConsole(overviewToken, async () => ({ status: 502, body: { error: 'mission service is unavailable' } }));
+  await waitFor(() => (deadBoot.document.querySelectorAll('#overview-cards .card').length === 5 ? 'cards' : ''), 'the failed Overview state to render', 6000).catch(() => '');
+  const deadCards = probeValues(deadBoot.document);
+  record('a failed Overview still renders the five cards, each MISSING with the reason',
+    deadCards.length === 5 && deadCards.every((card) => card.value === 'MISSING')
+      && /HTTP 502/.test(String(deadBoot.document.querySelector('#overview-unavailable')?.textContent ?? '')),
+    `${deadCards.filter((card) => card.value === 'MISSING').length}/5 MISSING · ${String(deadBoot.document.querySelector('#overview-unavailable')?.textContent).replace(/\s+/g, ' ').trim().slice(0, 58)}`);
+  record('a failed Overview is never reported as a read-only session',
+    deadBoot.document.querySelector('#head-read-only-state')?.hidden === true,
+    `the owner's own label survived the failure: hidden=${deadBoot.document.querySelector('#head-read-only-state')?.hidden}`);
+  record('and a failed Overview leaves no uncaught error behind',
+    deadBoot.errors.length === 0, deadBoot.errors.slice(0, 2).join(' | ') || 'none');
   const tokenInSession = win.sessionStorage.getItem('za_mission_token');
   const tokenInLocal = win.localStorage.getItem('za_mission_token');
   record('the session token is kept for the tab only', Boolean(tokenInSession) && !tokenInLocal,
