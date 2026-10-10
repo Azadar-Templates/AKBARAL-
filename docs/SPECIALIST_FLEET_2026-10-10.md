@@ -178,6 +178,27 @@ and grants. That is stated instead of being covered by the *existence* of the ca
 `uncovered = ai_eval_data_competition, hackathon_grant, other`. Closing it means reading those
 venues at event level (and, for grants, accepting that payment timing is the sponsor's, not ours).
 
+## 7b. Rehearsal against production-shaped data, not just a clean database
+
+A second temporary database was migrated, seeded, and then had the **existing** connector seed run
+(`seedPlatforms()` 58 venue rows, `seedConnectorContracts()` 34 contracts) before the catalog was
+applied — the shape the production volume has today, where the seeded venues already carry raw ids
+such as `github_issue_bounties` and statuses `ACTIVE` / `QUALIFIED` / `PERMITTED`:
+
+* `mission_platforms` grew from 58 to 73 rows: the catalog **reused** the twelve venues whose raw id
+  it shares (`bugcrowd`, `hackerone`, `immunefi`, `intigriti`, `yeswehack`, `layer3`, `kaggle`,
+  `devpost`, `github_issue_bounties`, `patchstack`, `wordfence`, `gitcoin`) and inserted only the
+  genuinely new ones — it did not create a parallel copy of an existing venue under a normalized
+  spelling;
+* 0 evidence rows are orphaned from `mission_platforms` (checked with a join), so every dated reading
+  is reachable from the venue the assignments point at;
+* the seven assignments landed on the raw ids the production registry uses, `--certify` produced
+  7 passing deterministic suites, and the fleet states are identical to the clean-database run:
+  `SKILLS_VERIFIED` 7, `UNASSIGNED_PLATFORM` 3,994.
+
+That is the difference between "the migration applies to an empty file" and "the migration applies to
+the file that is actually running". The live database is still untouched by choice.
+
 ## 8. Owner actions outstanding
 
 1. **Authorize or reassign the `gmail-4` grouping.** YesWeHack, Intigriti, Patchstack and Wordfence
