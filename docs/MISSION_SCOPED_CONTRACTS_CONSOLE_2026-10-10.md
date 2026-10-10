@@ -291,3 +291,45 @@ Pinned set: `mission-agent-contracts-console`, `earning/agent-class-contracts`,
 
 All nine files restored (`ALL RESTORED`, sha256-verified per file), re-stated tree **141 tests, 0
 failing**.
+
+---
+
+## 6. What the owner clicks (production, in order)
+
+1. Mission console → **Approvals** → expand **Scoped agent contracts — prepare, then approve (owner
+   only)**. The header line states the live blocker and the registry counts, so it is checkable before
+   touching anything.
+2. Class: `bounty_research`. Up to: `200` (the field's maximum; `25` is the default). Press **Prepare
+   contracts**. Expect one batch of pending proposals, each showing exactly `report.submit` and a zero
+   budget — the smallest surface in the registry, and the one that covers 17 of the 22 verified venues.
+3. Read the class row, then press **Approve all** and confirm the surface digest the panel displays.
+   This is the only step that writes `mission_agent_contracts` rows, and it cannot run without the
+   digest that was just shown on screen.
+4. `no_scoped_contract` is now cleared globally (the readiness gate is "≥ 1 active unexpired
+   contract"); the per-agent list shrinks by exactly the number of agents approved. To cover the whole
+   registered fleet at 200 per batch: 21 cycles for the 4,001 agents production reports, 81 for the
+   16,004 local fixture. Nothing caps the fleet — the queue guard only says one unreviewed batch per
+   class at a time.
+5. For `bounty_execution` (the other 5 venues) the same two clicks are necessary but **not
+   sufficient**: that class is also gated by `no_execution_backend`, because no pinned OCI image is
+   configured. The block says so in the class row's blockers rather than letting the owner prepare 200
+   contracts that could never execute.
+6. Payout slot: production slot 1 is already verified (owner-confirmed), so nothing is needed there.
+   Locally — and in this fixture — `0 of 5` slots are verified, and that number must not be read as
+   production state. `verifyPayoutSlot` needs `slot.provider_ref` from the provider; that stays an
+   owner action.
+
+## 7. Deliberately not done
+
+- **No auto-approval anywhere**, and no background job that prepares or approves on a timer. Granting
+  stays a human act by design.
+- **The stale batch task** (§4) is not patched here: it predates this change and belongs in
+  `agent-class-contracts.ts` where both the CLI and the console share the fix. Related gap worth
+  noting: there is no HTTP route for `mission_human_action_tasks` at all, so the owner cannot close a
+  review task from the console — a separate slice, not a contract concern.
+- **No public-app surface** was touched. Every changed path is mission-only:
+  `src/mission/**`, `mission-dashboard/**`, `scripts/verify-mission-dashboard.mjs`, `docs/`. The
+  pinned assertions that the unauthenticated dashboard shell and static assets never contain the
+  private mission identifier stay green (`mission-server.test.ts:479`, `:481`).
+- **No dependency, no paid service, no production write.** Production was never contacted by any of
+  the measuring above; the write demo ran against a copy in `/tmp` and was destroyed with it.
