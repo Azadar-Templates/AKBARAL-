@@ -17,12 +17,15 @@ import { missionDb as db, applyMissionMigrations, missionId, nowIso, type Row } 
 import { provisionOwner } from '../auth';
 import { updatePolicy, setKillSwitch } from '../policy';
 import { ensurePayoutSlots } from '../treasury';
-import { applyPlatformCatalog } from './platform-catalog';
+import { applyPlatformCatalog, platformRecordFor } from './platform-catalog';
 import {
-  STATE_LADDER, assignOpportunity, certifyAgents, evaluateGates, fleetReport, groupingGaps, rankOpportunityQueue,
-  recordOutcome, refreshFleetStates, registryCoverage, releaseAssignment, setSpecialistState, specializeAgent,
+  STATE_LADDER, assignOpportunity, certifyAgents, evaluateGates, fleetReport, groupingGaps, listSpecialistRecords,
+  rankOpportunityQueue, recordOutcome, refreshFleetStates, registryCoverage, releaseAssignment, setSpecialistState,
+  specializeAgent, specialistRecord,
 } from './specialist-fleet';
+import { SPECIALIST_SPECIALTIES } from './specialty-registry';
 import { runSpecialistEvaluation, profileRulesDigest } from './specialist-evaluation';
+import { discoverOpportunity } from './earning-engine';
 
 const keepAlive = setInterval(() => {}, 1000);
 let ownerId = '';
@@ -356,4 +359,129 @@ it('opens all the way to WORKING when every gate is genuinely satisfied', () => 
   const report = fleetReport();
   assert.ok(report.states.WORKING >= 1, 'the recorded state survives until the next refresh');
   assert.ok(profileRulesDigest(profileView(agent)).length === 64);
+});
+
+// ── the specialty is a gate, not a label ─────────────────────────────────────────────────────
+// One venue per agent is enforced fleet-wide, so these tests take whichever assignable venue an
+// earlier test has not claimed and assert against that venue's own catalog record. That keeps the
+// proofs about the specialty gate rather than about test ordering.
+const ASSIGNABLE_VENUE_IDS = ['bugcrowd', 'hackerone', 'immunefi', 'intigriti', 'yeswehack', 'frantic_agent_marketplace', 'github_issue_bounties'];
+const ALL_OPPORTUNITY_CLASSES = ['github_issue_bounties', 'bug_bounties', 'contests_challenges', 'microtasks_labeling', 'software_development', 'open_source_sponsorship'];
+
+function holderOf(platformId: string): string | null {
+  const row = db.get<Row>(
+    "SELECT agent_id FROM mission_agent_platform_assignments WHERE platform_id IN (?, ?) AND slot_type='primary' AND status='active'",
+    [platformId, platformId.replace(/_/g, '-')],
+  );
+  return row ? String(row.agent_id) : null;
+}
+
+function freeVenue(): { platformId: string; label: string; opportunityClass: string; specialtyKey: string; mismatchClass: string } {
+  let platformId = ASSIGNABLE_VENUE_IDS.find(entry => !holderOf(entry));
+  if (!platformId) {
+    // Every assignable venue is held by an earlier test in this file, whose assertions have already
+    // run. Releasing the first one is an audited release of a scratch agent, which is cheaper than
+    // teaching these tests to assume a fleet with free slots.
+    platformId = ASSIGNABLE_VENUE_IDS[0];
+    releaseAssignment({ actor: owner(), agentId: holderOf(platformId)!, reason: 'specialty tests reuse the venue on a scratch database' });
+  }
+  {
+    const record = platformRecordFor(platformId);
+    assert.ok(record, `the catalog must carry ${platformId}`);
+    const classes = SPECIALIST_SPECIALTIES[record!.specialtyKey].classes;
+    const mismatchClass = ALL_OPPORTUNITY_CLASSES.find(entry => !classes.includes(entry));
+    assert.ok(mismatchClass, `${record!.specialtyKey} covers every class, so it cannot prove a refusal`);
+    return { platformId, label: record!.label, opportunityClass: record!.opportunityClass, specialtyKey: record!.specialtyKey, mismatchClass: mismatchClass! };
+  }
+  throw new Error('every assignable venue is held by an earlier test');
+}
+
+function seedRankedOpportunity(agent: string, venue: { label: string }, reward: number): string {
+  const key = `mop_gate_${slugSeed}_${randomUUID().slice(0, 8)}`;
+  db.run(`INSERT INTO mission_opportunities (id, platform, opportunity_type, title, category, skills, payout_max_cents, automation_permission, country_eligibility, source_url, dedup_hash, status, risk_level)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+    key, venue.label, 'remote_job', 'Specialty gate candidate', 'security_review', JSON.stringify(['typescript', 'testing', 'security']),
+    reward, 'permitted', JSON.stringify(['US', 'PK']), `https://example.invalid/venues/${key.slice(-6)}`, `dedup-gate-${key.slice(-8)}`, 'verified', 'low',
+  ] as never);
+  return rankOpportunityQueue({ actor: owner(), agentId: agent, limit: 5 }).rows.find(entry => entry.key === key && !entry.blockers.length)?.key ?? '';
+}
+
+it('labels each ranked row with the class of the paired venue, taken from the catalog', () => {
+  const venue = freeVenue();
+  const agent = makeAgent('specclass');
+  specializeAgent({ actor: owner(), agentId: agent, platformId: venue.platformId });
+  const key = seedRankedOpportunity(agent, venue, 40_000);
+  assert.ok(key, `a clean candidate should exist: ${JSON.stringify(rankOpportunityQueue({ actor: owner(), agentId: agent, limit: 5 }).rows.map(row => row.blockers))}`);
+  const stored = db.get<Row>('SELECT opportunity_class, state FROM mission_specialist_opportunities WHERE agent_id=? AND opportunity_key=?', [agent, key]);
+  assert.equal(String(stored!.opportunity_class), venue.opportunityClass, 'the class comes from the verified catalog record, not the opportunity wording');
+  assert.equal(String(stored!.state), 'candidate', 'a specialty that covers its own venue class adds no blocker');
+});
+
+it('refuses an assignment whose class the registered specialty does not cover', () => {
+  const venue = freeVenue();
+  const agent = makeAgent('specgate');
+  specializeAgent({ actor: owner(), agentId: agent, platformId: venue.platformId });
+  const key = seedRankedOpportunity(agent, venue, 45_000);
+  assert.ok(key, 'the fitting case has to be assignable up to the state gates');
+  db.run(`UPDATE mission_specialist_opportunities SET opportunity_class=? WHERE agent_id=? AND opportunity_key=?`, [venue.mismatchClass, agent, key]);
+  assert.throws(() => assignOpportunity({ actor: owner(), agentId: agent, opportunityKey: key }), /specialist_specialty_mismatch/);
+  // A row with no recorded class is refused too: an unproven fit is no fit.
+  db.run(`UPDATE mission_specialist_opportunities SET opportunity_class=NULL WHERE agent_id=? AND opportunity_key=?`, [agent, key]);
+  assert.throws(() => assignOpportunity({ actor: owner(), agentId: agent, opportunityKey: key }), /specialist_opportunity_unclassified/);
+  // Restoring the class removes the specialty refusal — which proves the gate is specific. The next
+  // refusal is the readiness ladder, which this agent has not climbed.
+  db.run(`UPDATE mission_specialist_opportunities SET opportunity_class=? WHERE agent_id=? AND opportunity_key=?`, [venue.opportunityClass, agent, key]);
+  assert.throws(() => assignOpportunity({ actor: owner(), agentId: agent, opportunityKey: key }), /specialist_not_execution_ready/);
+  const untouched = db.get<Row>('SELECT state FROM mission_specialist_opportunities WHERE agent_id=? AND opportunity_key=?', [agent, key]);
+  assert.equal(String(untouched!.state), 'candidate', 'a refused assignment leaves the queue exactly as it was');
+});
+
+it('rolls up the per-agent record — specialty, work, evidence, verified and earnings — from stored rows', () => {
+  const venue = freeVenue();
+  const agent = makeAgent('specrecord');
+  specializeAgent({ actor: owner(), agentId: agent, platformId: venue.platformId });
+  const definition = SPECIALIST_SPECIALTIES[venue.specialtyKey];
+  const first = specialistRecord(agent);
+  assert.equal(first.specialtyKey, venue.specialtyKey);
+  assert.deepEqual([...first.workKinds], [...definition.does], 'the record reads the same config the gate enforces');
+  assert.equal(first.specialtyLabel, definition.label);
+  assert.equal(first.state, 'PLATFORM_ASSIGNED');
+  assert.equal(first.earningsCents, 0, 'a pairing is not income');
+
+  const key = seedRankedOpportunity(agent, venue, 30_000);
+  assert.ok(key, 'the seeded opportunity is ranked for this agent');
+  const ranked = specialistRecord(agent);
+  assert.ok(ranked.work.ranked >= 1, 'the ranked count follows the queue table');
+  assert.equal(ranked.evidence.gradedSuites, 0, 'no suite has been graded for this agent');
+  assert.equal(ranked.evidence.venueRejections, 0, 'no rejection has been recorded against this venue');
+
+  // Delivered work without a settlement record still pays nothing; a verified settlement does.
+  db.run(`UPDATE mission_specialist_opportunities SET state='delivered' WHERE agent_id=? AND opportunity_key=?`, [agent, key]);
+  // A settlement proof is keyed to an earning-engine opportunity, so the test creates one through
+  // the real discovery path rather than inventing a foreign key the schema would reject.
+  const engineOpportunity = discoverOpportunity({
+    registryKey: 'paid_research_data', provider: 'Specialty Record Ltd', platform: 'Direct Client Research',
+    grossCents: 30_000, expectedFeesCents: 0, expectedCostsCents: 0, paymentMethod: 'wise', settlementEvidence: 'statement',
+    opportunityExpiry: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+    evidenceJson: { lawfulPurposeRef: `client-research-approval-${slugSeed}`, datasetSha256: 'e'.repeat(64), evidenceUrl: `https://example.invalid/evidence/${slugSeed}`, nonSensitiveDataOnly: true, dataRightsReviewed: true },
+  });
+  db.run(`INSERT INTO mission_settlement_verifications (id, execution_id, opportunity_id, rail, external_id, provider_ref, verified, verification_detail, created_at, verified_at)
+       VALUES (?, NULL, ?, 'wire', 'venue-reference-pending', NULL, 0, 'awaiting the platform statement', ?, NULL)`, [missionId('setl'), String(engineOpportunity.id), nowIso()]);
+  const proof = db.get<Row>("SELECT id FROM mission_settlement_verifications WHERE external_id='venue-reference-pending'", []);
+  assert.ok(proof, 'the settlement row exists before it is verified');
+  assert.equal(specialistRecord(agent).earningsCents, 0, 'an unverified settlement is not earnings');
+  assert.equal(specialistRecord(agent).verified.paymentProofs, 0, 'nor is it a proof');
+  db.run("UPDATE mission_settlement_verifications SET verified=1, external_id='payout-txn-verified', verified_at=? WHERE id=?", [nowIso(), String(proof!.id)]);
+  // The link the record depends on is the one recordOutcome writes: the reference on the opportunity.
+  db.run(`UPDATE mission_specialist_opportunities SET payment_reference='payout-txn-verified' WHERE agent_id=? AND opportunity_key=?`, [agent, key]);
+  const paid = specialistRecord(agent);
+  assert.equal(paid.earningsCents, 30_000, 'verified settlement evidence moves the number, and only that');
+  assert.equal(paid.verified.paymentProofs, 1);
+  assert.match(paid.earningsBasis, /verified settlement/i);
+
+  const roster = listSpecialistRecords({ limit: 400 });
+  const listed = roster.records.find(entry => entry.agentId === agent);
+  assert.ok(listed, 'the roster includes the agent the record was built for');
+  assert.ok(listed!.earningsCents >= 30_000);
+  assert.ok(roster.total >= 1, 'the roster counts the whole fleet, not the page');
 });

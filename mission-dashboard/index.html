@@ -44,208 +44,32 @@
 
       <section id="app" hidden>
         <nav class="tabs" id="tabs" aria-label="Mission sections">
-          <button data-tab="overview" class="tab active">Overview</button>
-          <button data-tab="bounties" data-owner-only="true" class="tab">Bug bounty</button>
-          <button data-tab="agents" class="tab">Agents</button>
-          <button data-tab="approvals" class="tab">Approvals</button>
-          <button data-tab="earnings" data-head-agent="true" class="tab">Earnings</button>
-          <button data-tab="policy" class="tab">Policy &amp; audit</button>
-          <!--
-            Consolidated navigation. Nothing here is deleted or renamed: the 13
-            views below are the same views that used to crowd the top row, each
-            still addressed by its own stable id and its own hash route
-            ( #/<id> ), each still gated by the same owner / head-agent rules.
-            A hidden view is one click away here, or directly linkable, and it
-            opens on back/forward exactly like a primary tab does.
-            Audit is deliberately rendered beside Policy on one screen rather
-            than buried in a menu — it is a compliance control.
-          -->
-          <div class="subtabs" id="subtabs" role="group" aria-label="Sections in the current tab" hidden>
-            <button data-tab="resources-expiry" data-group="overview" data-head-agent="true" class="tab subtab">Resources &amp; expiry</button>
-            <button data-tab="tools" data-group="overview" class="tab subtab">Tools &amp; credentials</button>
-            <button data-tab="guide" data-group="overview" data-head-agent="true" class="tab subtab">Guide</button>
-            <button data-tab="head-chat" data-group="agents" data-head-agent="true" class="tab subtab">Chat</button>
-            <button data-tab="knowledge" data-group="agents" data-owner-only="true" class="tab subtab">Knowledge</button>
-            <button data-tab="playbooks" data-group="agents" data-owner-only="true" class="tab subtab">Playbooks</button>
-            <button data-tab="lessons" data-group="agents" data-owner-only="true" class="tab subtab">Lessons</button>
-            <button data-tab="money" data-group="earnings" class="tab subtab">Verified cash</button>
-            <button data-tab="treasury" data-group="earnings" class="tab subtab">Legacy accounting &amp; destinations</button>
-            <button data-tab="withdraw" data-group="earnings" class="tab subtab">Withdraw</button>
-            <button data-tab="customer-work" data-group="earnings" class="tab subtab">Customers &amp; work</button>
-            <button data-tab="publishing" data-group="earnings" class="tab subtab">Publishing</button>
-            <button data-tab="audit" data-group="policy" class="tab subtab">Audit trail</button>
-          </div>
+          <button data-tab="overview" class="tab active" aria-controls="panel-overview">Overview</button>
+          <button data-tab="bounties" class="tab" data-owner-only="true" aria-controls="panel-bounties">Bounty</button>
+          <button data-tab="approvals" class="tab" aria-controls="panel-approvals">Approvals</button>
+          <button data-tab="money" class="tab" aria-controls="panel-money">Money</button>
         </nav>
 
         <div id="banner" class="banner" hidden></div>
 
-        <section data-panel="earnings" class="panel" hidden>
-          <div class="head-agent-heading">
-            <div>
-              <span class="eyebrow">Read-only head agent</span>
-              <h2>Verified earnings</h2>
-            </div>
-            <span class="pill info">Owner view · no actions</span>
-          </div>
-          <p class="muted">Realized revenue is reported only from received records with a non-empty verifier. Contracted and expected amounts remain separate and are not earnings.</p>
-          <div id="head-earnings-summary" class="cards"></div>
-          <div id="head-earnings-realized" class="table-wrap"></div>
-          <h3>Contracted / expected — not earned</h3>
-          <div id="head-earnings-expected" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="resources-expiry" class="panel" hidden>
-          <div class="head-agent-heading">
-            <div>
-              <span class="eyebrow">Owner inventory</span>
-              <h2>Resources &amp; expiry</h2>
-            </div>
-            <span class="pill info">Read-only</span>
-          </div>
-          <p class="muted">Tracked resources are an owner inventory, separate from agent-bound resources. Costs without evidence are explicitly unverified. The head agent flags expiry; it does not renew, buy or change anything.</p>
-          <div id="head-resources" class="table-wrap"></div>
-          <h3>Alerts</h3>
-          <div id="head-alerts" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="guide" class="panel" hidden>
-          <div class="head-agent-heading">
-            <div>
-              <span class="eyebrow">How this works</span>
-              <h2>Head-agent guide</h2>
-            </div>
-            <span class="pill info">Cited, no execution</span>
-          </div>
-          <div id="head-guide" class="guide-grid">
-            <article class="card"><h3>What it can do</h3><p>Read mission records, summarize current state, list human approvals, flag recorded expiries, explain provider readiness, and answer cited questions.</p></article>
-            <article class="card"><h3>What it cannot do</h3><p>It cannot spend, purchase, create accounts, submit work or PRs, approve requests, call providers, or perform any external action. Every decision stays with the human owner.</p></article>
-            <article class="card"><h3>Money truth</h3><p>Verified realized revenue requires a received record and a non-empty verifier. Discovery, quotes, contracted and expected amounts are never presented as earnings.</p></article>
-            <article class="card"><h3>Notifications</h3><p>Dashboard notifications poll the read-only alert endpoint. Email and WhatsApp delivery: <strong>UNKNOWN / VERIFY REQUIRED</strong>.</p></article>
-          </div>
-          <div id="head-info-records" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="head-chat" class="panel" hidden>
-          <div class="head-agent-heading">
-            <div>
-              <span class="eyebrow">Cited read-only chat</span>
-              <h2>Ask the head agent</h2>
-            </div>
-            <span class="pill info">No tools · no provider calls</span>
-          </div>
-          <p class="muted">Ask about approvals, verified earnings, expiry, provider readiness, payout queue state, agents or discovery records. Answers cite mission records and never execute an action.</p>
-          <form id="head-chat-form" class="inline-form">
-            <input id="head-chat-question" name="question" maxlength="2000" placeholder="What approvals or expiry alerts need my review?" required />
-            <button type="submit">Ask</button>
-          </form>
-          <div id="head-chat-status" class="muted small" role="status"></div>
-          <div id="head-chat-answer" class="chat-answer" hidden></div>
-        </section>
-
-        <section data-panel="customer-work" class="panel" hidden>
-          <h2>Real customer → real work → verified USD</h2>
-          <p class="muted">Private owner workbench. Offers are unpublished capabilities, inquiries are owner declarations, and quotes are not revenue. No automatic outreach, account creation or payments.</p>
-          <div id="customer-work"></div>
-          <div id="customer-detail"></div>
-        </section>
-
-        <section data-panel="overview" class="panel">
-          <div class="head-agent-overview">
-            <div class="head-agent-heading">
-              <div><span class="eyebrow">Mission awareness</span><h2>Owner overview</h2></div>
-              <span id="head-read-only-state" class="pill info">Read-only head agent</span>
-            </div>
-            <p id="head-overview-note" class="muted small">The head agent reports current persisted evidence only. It never acts on your behalf.</p>
-            <div id="head-overview-cards" class="cards"></div>
-            <div id="head-overview-alerts" class="alert-list"></div>
-            <div class="grid-2">
-              <div><h3>Provider readiness</h3><div id="head-provider-readiness" class="table-wrap"></div></div>
-              <div><h3>Payout queue evidence</h3><div id="head-payout-queue" class="table-wrap"></div></div>
-            </div>
-            <h3>Discovery evidence — not revenue</h3>
-            <div id="head-opportunities" class="table-wrap"></div>
+        <section data-panel="overview" id="panel-overview" class="panel">
+          <div class="section-head">
+            <h2>Mission</h2>
+            <span id="head-read-only-state" class="pill info">Read-only head agent</span>
           </div>
           <div class="cards" id="overview-cards"></div>
-          <h2>Revenue — realized only</h2>
-          <p class="muted small" id="revenue-honesty"></p>
-          <h2>Owner-defined aspirational — $1B/day per agent (resets daily UTC)</h2>
-          <p class="muted small" id="billionaire-note"></p>
-          <div class="cards" id="billionaire-cards"></div>
-          <div id="billionaire-daily" class="table-wrap"></div>
-          <div class="grid-2">
-            <div>
-              <h3>Realized (verified receipts)</h3>
-              <div id="revenue-realized" class="table-wrap"></div>
-              <h3>Contracted / expected (not earned)</h3>
-              <div id="revenue-pending" class="table-wrap"></div>
-            </div>
-            <div>
-              <h3>Targets (KPIs — never achievements)</h3>
-              <div id="targets" class="table-wrap"></div>
-              <form id="target-form" class="inline-form">
-                <input name="label" placeholder="Target label" required />
-                <select name="period">
-                  <option value="day">day</option>
-                  <option value="week">week</option>
-                  <option value="month">month</option>
-                  <option value="quarter">quarter</option>
-                </select>
-                <input name="amountCents" type="number" min="1" step="1" placeholder="minor units" required />
-                <button type="submit">Add target</button>
-              </form>
-            </div>
-          </div>
-          <h2>Expenses &amp; costs</h2>
-          <div class="grid-2">
-            <div id="expenses" class="table-wrap"></div>
-            <div id="costs" class="table-wrap"></div>
-          </div>
-          <h2>Integrity &amp; external activation</h2>
-          <div class="grid-2">
-            <div id="integrity" class="table-wrap"></div>
-            <div id="activation" class="table-wrap"></div>
-          </div>
         </section>
 
-        <section data-panel="agents" class="panel" hidden>
-          <form id="agent-search" class="inline-form">
-            <input name="q" placeholder="Search agents by name or slug" />
-            <button type="submit">Search</button>
-          </form>
-
-          <details class="control-block" id="create-agent-block">
-            <summary>Create a mission agent (owner)</summary>
-            <form id="create-agent-form" class="stack-form">
-              <label>Name <input name="name" required maxlength="160" placeholder="Field Operations Lead" /></label>
-              <label>Specialisation <input name="specialization" placeholder="operations" /></label>
-              <label>Activity
-                <select name="activity" id="create-agent-activity"></select>
-              </label>
-              <label>Mission role
-                <select name="missionRole">
-                  <option value="director">director</option>
-                  <option value="supervisor">supervisor</option>
-                  <option value="worker">worker</option>
-                </select>
-              </label>
-              <label>Authorised budget (minor units) <input name="budgetCents" type="number" min="0" step="1" value="0" /></label>
-              <button type="submit">Create agent</button>
-              <p class="muted small">Creation is policy-gated (depth, children, agent cap, activity) and recorded with a contract and a wallet.</p>
-            </form>
-          </details>
-
-          <div id="agent-list" class="table-wrap"></div>
-          <div id="agent-report"></div>
-        </section>
-
-        <section data-panel="bounties" class="panel" hidden>
-          <div class="head-agent-heading">
+        <section data-panel="bounties" id="panel-bounties" class="panel" hidden>
+                    <div class="head-agent-heading">
             <div><span class="eyebrow">Authorized security testing only</span><h2>Bug bounty control plane</h2></div>
             <span class="pill warn">Owner approval required</span>
           </div>
           <p class="muted">The configured program scope file and allowlist are the only source of truth. No program or target is seeded. Unlisted targets hard-block before any external call; submissions are never automatic.</p>
           <h3>Programs</h3>
           <div id="bounty-programs" class="table-wrap"></div>
+          <details class="sub" data-view="bounty-registration" data-owner-only="true">
+            <summary>Register a bounty program and its first scope rows (owner only)</summary>
           <section id="bounty-registration" class="stack-form" data-owner-only="true" aria-labelledby="bounty-registration-heading">
             <h3 id="bounty-registration-heading">Register a bounty program</h3>
             <p class="muted small">Owner-only registration. The program is created inactive, then explicit scope rows are saved before any optional activation.</p>
@@ -275,6 +99,10 @@
               <p id="bounty-registration-status" class="muted small" role="status"></p>
             </form>
           </section>
+          </details>
+
+          <details class="sub" data-view="bounty-scope" data-owner-only="true">
+            <summary>Scope allowlist entries and scope-gate decisions (owner only)</summary>
           <form id="bounty-scope-form" class="stack-form">
             <h3>Explicit scope allowlist / denylist — owner</h3>
             <label>Program ID <input name="programId" required /></label>
@@ -284,12 +112,13 @@
             <label class="checkbox-label"><input name="authRequired" type="checkbox" /> Requires owner-provided authorization</label>
             <button type="submit">Save scope entry</button>
           </form>
-          <h3>Registered capability agents</h3>
-          <div id="bounty-agent-registry" class="table-wrap"></div>
-          <h3>Findings and quality-gate state</h3>
-          <div id="bounty-findings" class="table-wrap"></div>
           <h3>Scope-gate events</h3>
           <div id="bounty-scope-events" class="table-wrap"></div>
+          </details>
+          <h3>Findings and quality-gate state</h3>
+          <div id="bounty-findings" class="table-wrap"></div>
+          <details class="sub" data-view="bounty-catalogs" data-owner-only="true">
+            <summary>Provider catalog, platforms, reputation and lessons</summary>
           <h3>Providers</h3>
           <div id="bounty-providers" class="table-wrap"></div>
           <h3>Platforms</h3>
@@ -298,34 +127,126 @@
           <div id="bounty-reputation" class="table-wrap"></div>
           <h3>Lessons</h3>
           <div id="bounty-lessons" class="table-wrap"></div>
+          </details>
+          <details class="sub" data-view="agents"><summary>Agents, pairing and the selected agent report</summary>
+                      <h3>Registered capability agents</h3>
+                      <div id="bounty-agent-registry" class="table-wrap"></div>
+                      <form id="agent-search" class="inline-form">
+                        <input name="q" placeholder="Search agents by name or slug" />
+                        <button type="submit">Search</button>
+                      </form>
+
+                      <details class="control-block" id="create-agent-block">
+                        <summary>Create a mission agent (owner)</summary>
+                        <form id="create-agent-form" class="stack-form">
+                          <label>Name <input name="name" required maxlength="160" placeholder="Field Operations Lead" /></label>
+                          <label>Specialisation <input name="specialization" placeholder="operations" /></label>
+                          <label>Activity
+                            <select name="activity" id="create-agent-activity"></select>
+                          </label>
+                          <label>Mission role
+                            <select name="missionRole">
+                              <option value="director">director</option>
+                              <option value="supervisor">supervisor</option>
+                              <option value="worker">worker</option>
+                            </select>
+                          </label>
+                          <label>Authorised budget (minor units) <input name="budgetCents" type="number" min="0" step="1" value="0" /></label>
+                          <button type="submit">Create agent</button>
+                          <p class="muted small">Creation is policy-gated (depth, children, agent cap, activity) and recorded with a contract and a wallet.</p>
+                        </form>
+                      </details>
+
+                      <div id="agent-list" class="table-wrap"></div>
+                      <div id="agent-report"></div>
+          </details>
+          <details class="sub" data-view="specialist-records"><summary>Specialist records — work, evidence, verified, earnings</summary>
+                      <div id="specialist-records" class="table-wrap"></div>
+          </details>
+          <details class="sub" data-view="customer-work"><summary>Customer work</summary>
+                      <h3>Real customer → real work → verified USD</h3>
+                      <p class="muted">Private owner workbench. Offers are unpublished capabilities, inquiries are owner declarations, and quotes are not revenue. No automatic outreach, account creation or payments.</p>
+                      <div id="customer-work"></div>
+                      <div id="customer-detail"></div>
+          </details>
+          <details class="sub" data-view="customer-intake"><summary>Prepare a listing, preview or recorded request</summary>
+                      <div id="customer-intake"></div>
+          </details>
         </section>
 
-        <section data-panel="knowledge" class="panel" hidden>
-          <div class="head-agent-heading"><div><span class="eyebrow">Curated detection guidance</span><h2>Knowledge</h2></div><span class="pill info">Owner-only · pinned versions</span></div>
-          <p class="muted">Seeded guidance improves speed and consistency; it does not replace engineering judgement. References are provenance-checked and unknown references stay unverified.</p>
-          <p id="knowledge-freshness" class="muted small" role="status"></p>
-          <div id="knowledge-summary" class="cards"></div>
-          <div id="knowledge-table" class="table-wrap"></div>
-          <div id="knowledge-usage-table" class="table-wrap"></div>
+        <section data-panel="approvals" id="panel-approvals" class="panel" hidden>
+                    <div class="head-agent-heading">
+            <div><span class="eyebrow">Human decision queue</span><h2>Approvals</h2></div>
+            <span class="pill warn">Head agent cannot approve</span>
+          </div>
+          <p id="head-approvals-note" class="muted small"></p>
+          <div id="head-approvals" class="table-wrap"></div>
+          <h3>Pending approvals</h3>
+          <p class="muted small">
+            Spend above the approval threshold, new resources, upgrades, tool access and every payout
+            wait here. Nothing is approved automatically.
+          </p>
+          <div id="approvals" class="table-wrap"></div>
+          <h3>Expense requests</h3>
+          <div id="expense-requests" class="table-wrap"></div>
+          <h3>Upgrades</h3>
+          <div id="upgrades" class="table-wrap"></div>
+          <details class="sub" data-view="policy"><summary>Policy, limits and kill switch</summary>
+                      <h3>Mission policy</h3>
+                      <div id="policy" class="table-wrap"></div>
+                      <form id="policy-form" class="inline-form">
+                        <input name="maxDailySpendCents" type="number" min="1" placeholder="daily spend ceiling" />
+                        <input name="requireApprovalAboveCents" type="number" min="1" placeholder="approval threshold" />
+                        <input name="maxPayoutCents" type="number" min="1" placeholder="payout ceiling" />
+                        <button type="submit">Update policy</button>
+                      </form>
+                      <h3>Kill switch</h3>
+                      <p class="muted small">
+                        Engaging the kill switch suspends every mission activity immediately — including work the
+                        policy otherwise enables — until it is released.
+                      </p>
+                      <div class="inline-form">
+                        <button id="kill-on" class="danger">Engage kill switch</button>
+                        <button id="kill-off">Release kill switch</button>
+                      </div>
+                      <h3>Prohibited activity (compiled in)</h3>
+                      <div id="prohibitions" class="table-wrap"></div>
+          </details>
+          <details class="sub" data-view="tools"><summary>Tool catalog, credential vault and resources</summary>
+                      <h3>Approved tool catalog</h3>
+                      <p class="muted small">
+                        Default is deny: a tool that is not approved here cannot be used. Unrestricted card or
+                        bank APIs are permanently blocked — agents never hold those credentials.
+                      </p>
+                      <div id="tools" class="table-wrap"></div>
+                      <h3>Credentials (values are never displayed)</h3>
+                      <div id="credentials" class="table-wrap"></div>
+                      <div class="grid-2">
+                        <form id="credential-form" class="stack-form">
+                          <h3>Store a provider credential</h3>
+                          <label>Provider <input name="provider" placeholder="google" required /></label>
+                          <label>Label <input name="label" placeholder="gemini key" required /></label>
+                          <label>Local model permission <select name="scope"><option value="">No model-call permission</option><option value="model.call">Allow model.call (does not activate a provider)</option></select></label>
+                          <label>Value <input name="secret" type="password" placeholder="stored encrypted, never shown again" required /></label>
+                          <label>Expires at <input name="expiresAt" type="date" /></label>
+                          <label>Environment variable <input name="envVar" placeholder="GOOGLE_API_KEY" /></label>
+                          <button type="submit">Store encrypted</button>
+                        </form>
+                        <div>
+                          <h3>Resources, services &amp; renewals</h3>
+                          <div id="resources" class="table-wrap"></div>
+                          <div id="resource-provision"></div>
+                          <div id="resource-credential"></div>
+                          <div id="resource-calls"></div>
+                          <div id="resource-periods"></div>
+                          <div id="services" class="table-wrap"></div>
+                        </div>
+                      </div>
+          </details>
         </section>
 
-        <section data-panel="playbooks" class="panel" hidden>
-          <div class="head-agent-heading"><div><span class="eyebrow">Ordered operating guidance</span><h2>Playbooks</h2></div><span class="pill info">Owner-only</span></div>
-          <p class="muted">Agent playbooks are bounded checklists. Platform playbooks show <strong>needs_owner_confirmation</strong> until current public requirements are verified by the owner.</p>
-          <p id="playbooks-freshness" class="muted small" role="status"></p>
-          <h3>Agent playbooks</h3><div id="agent-playbooks-table" class="table-wrap"></div>
-          <h3>Platform playbooks</h3><div id="platform-playbooks-table" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="lessons" class="panel" hidden>
-          <div class="head-agent-heading"><div><span class="eyebrow">Owner outcome loop</span><h2>Lessons</h2></div><span class="pill warn">Approval required</span></div>
-          <p class="muted">Only owner feedback, platform outcomes and quality-gate outcomes can propose changes. Pending improvements never affect retrieval until approved.</p>
-          <p id="lessons-freshness" class="muted small" role="status"></p>
-          <div id="pending-lessons-table" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="money" class="panel" hidden>
-          <h2>Provider-verified mission cash</h2>
+        <section data-panel="money" id="panel-money" class="panel" hidden>
+                    <h2>Provider-verified mission cash</h2>
           <p>No opening balance is imported from legacy accounting. Missing opportunities and providers remain blocked. A ledger is not a bank or a payment connection.</p>
           <div id="verified-cash-summary" class="cards"></div>
           <div id="verified-cash-operations" class="table-wrap"></div>
@@ -341,221 +262,197 @@
           </form>
           <p id="money-command-result" role="status"></p>
           <details><summary>Full cash accounts, grants, opportunities and audit integrity</summary><pre id="verified-cash-data"></pre></details>
-        </section>
-        <section data-panel="treasury" class="panel" hidden>
-          <h2>Legacy owner-reported accounting — not verified available funds</h2>
-          <div id="treasury-summary" class="cards"></div>
-          <h2>AKBARAL! Payments</h2>
-          <div class="card">
-            <p><strong>Customer-revenue ledger — separate system of record</strong></p>
-            <p class="muted small">Customer invoices and processor payments remain in the public customer-platform owner dashboard and customer database. They are never imported into mission revenue, agent wallets, or the five payout destinations. This mission console does not infer or duplicate customer-payment totals.</p>
-          </div>
-          <h2>Payout destinations (five configurable slots)</h2>
-          <p class="muted small">
-            Slots can be labelled now and completed later. A slot must be verified before any payout
-            can target it, and every payout needs an owner approval plus a provider settlement
-            reference.
-          </p>
-          <div id="payout-slots" class="table-wrap"></div>
-          <div id="slot-verification"></div>
-          <div class="grid-2">
-            <form id="slot-form" class="stack-form">
-              <h3>Configure a slot</h3>
-              <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
-              <label>Label <input name="label" placeholder="Primary business account" /></label>
-              <label>Destination type
-                <select name="destinationType">
-                  <option value="bank">bank</option>
-                  <option value="wallet">wallet</option>
-                  <option value="payment_provider">payment_provider</option>
-                  <option value="other">other</option>
-                </select>
-              </label>
-              <label>Holder name <input name="holderName" placeholder="account holder" /></label>
-              <label>Provider reference
-                <input name="providerRef" placeholder="payout-provider account id (preferred)" />
-              </label>
-              <label>Masked account
-                <input name="maskedAccount" placeholder="****1234 — full numbers are refused" />
-              </label>
-              <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
-              <button type="submit">Save slot</button>
-            </form>
-            <div>
-              <h3>Payouts</h3>
-              <form id="payout-form" class="inline-form">
-                <input name="slot" type="number" min="1" max="5" placeholder="slot" required />
-                <input name="amountCents" type="number" min="1" placeholder="amount (minor units)" required />
-                <input name="memo" placeholder="memo" />
-                <button type="submit">Request payout</button>
-              </form>
-              <div id="payouts" class="table-wrap"></div>
-            </div>
-          </div>
-          <h2>Wallets &amp; ledger</h2>
-          <div id="wallets" class="table-wrap"></div>
-          <div id="ledger" class="table-wrap"></div>
-        </section>
+          <details class="sub" data-view="earnings" data-head-agent="true"><summary>Earnings — realized, contracted, expected</summary>
+                      <div class="head-agent-heading">
+                        <div>
+                          <span class="eyebrow">Read-only head agent</span>
+                          <h3>Verified earnings</h3>
+                        </div>
+                        <span class="pill info">Owner view · no actions</span>
+                      </div>
+                      <p class="muted">Realized revenue is reported only from received records with a non-empty verifier. Contracted and expected amounts remain separate and are not earnings.</p>
+                      <div id="head-earnings-summary" class="cards"></div>
+                      <div id="head-earnings-realized" class="table-wrap"></div>
+                      <h3>Contracted / expected — not earned</h3>
+                      <div id="head-earnings-expected" class="table-wrap"></div>
+            <h3>Revenue — realized only</h3>
+            <p class="muted small" id="revenue-honesty"></p>
+            <div class="grid-2">
+                        <div>
+                          <h3>Realized (verified receipts)</h3>
+                          <div id="revenue-realized" class="table-wrap"></div>
+                          <h3>Contracted / expected (not earned)</h3>
+                          <div id="revenue-pending" class="table-wrap"></div>
+                        </div>
+                        <div>
+                          <h3>Targets (KPIs — never achievements)</h3>
+                          <div id="targets" class="table-wrap"></div>
+                          <form id="target-form" class="inline-form">
+                            <input name="label" placeholder="Target label" required />
+                            <select name="period">
+                              <option value="day">day</option>
+                              <option value="week">week</option>
+                              <option value="month">month</option>
+                              <option value="quarter">quarter</option>
+                            </select>
+                            <input name="amountCents" type="number" min="1" step="1" placeholder="minor units" required />
+                            <button type="submit">Add target</button>
+                          </form>
+                        </div>
+                      </div>
+          </details>
+          <details class="sub" data-view="treasury"><summary>Payout slots, payouts, wallets and ledger</summary>
+                      <h3>Legacy owner-reported accounting — not verified available funds</h3>
+                      <div id="treasury-summary" class="cards"></div>
+                      <h3>AKBARAL! Payments</h3>
+                      <div class="card">
+                        <p><strong>Customer-revenue ledger — separate system of record</strong></p>
+                        <p class="muted small">Customer invoices and processor payments remain in the public customer-platform owner dashboard and customer database. They are never imported into mission revenue, agent wallets, or the five payout destinations. This mission console does not infer or duplicate customer-payment totals.</p>
+                      </div>
+                      <h3>Payout destinations (five configurable slots)</h3>
+                      <p class="muted small">
+                        Slots can be labelled now and completed later. A slot must be verified before any payout
+                        can target it, and every payout needs an owner approval plus a provider settlement
+                        reference.
+                      </p>
+                      <div id="payout-slots" class="table-wrap"></div>
+                      <div id="slot-verification"></div>
+                      <div class="grid-2">
+                        <form id="slot-form" class="stack-form">
+                          <h3>Configure a slot</h3>
+                          <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
+                          <label>Label <input name="label" placeholder="Primary business account" /></label>
+                          <label>Destination type
+                            <select name="destinationType">
+                              <option value="bank">bank</option>
+                              <option value="wallet">wallet</option>
+                              <option value="payment_provider">payment_provider</option>
+                              <option value="other">other</option>
+                            </select>
+                          </label>
+                          <label>Holder name <input name="holderName" placeholder="account holder" /></label>
+                          <label>Provider reference
+                            <input name="providerRef" placeholder="payout-provider account id (preferred)" />
+                          </label>
+                          <label>Masked account
+                            <input name="maskedAccount" placeholder="****1234 — full numbers are refused" />
+                          </label>
+                          <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
+                          <button type="submit">Save slot</button>
+                        </form>
+                        <div>
+                          <h3>Payouts</h3>
+                          <form id="payout-form" class="inline-form">
+                            <input name="slot" type="number" min="1" max="5" placeholder="slot" required />
+                            <input name="amountCents" type="number" min="1" placeholder="amount (minor units)" required />
+                            <input name="memo" placeholder="memo" />
+                            <button type="submit">Request payout</button>
+                          </form>
+                          <div id="payouts" class="table-wrap"></div>
+                        </div>
+                      </div>
+                      <h3>Wallets &amp; ledger</h3>
+                      <div id="wallets" class="table-wrap"></div>
+                      <div id="ledger" class="table-wrap"></div>
+          </details>
+          <details class="sub" data-view="withdraw"><summary>Withdrawal</summary>
+                      <h3>Withdraw — verified balance only</h3>
+                      <p class="muted">
+                        No payout account is required at setup. Verified earnings accumulate internally while payout slots
+                        remain unconfigured. When you are ready to withdraw, add or select a payout destination here — only a
+                        <strong>verified</strong> slot can receive funds. Every withdrawal needs owner approval and a provider
+                        settlement reference. The requested amount is <strong>atomically reserved (deducted/frozen)</strong> on
+                        approval to prevent double withdrawal; if the provider reports failure the reservation is safely restored.
+                      </p>
+                      <p class="muted small">
+                        Destination storage: only masked account (e.g. <code>****1234</code>) or provider reference (e.g. Stripe
+                        <code>ba_…</code> / Payoneer account id) — raw banking credentials are never stored. Withdrawals of
+                        unverified, expected, contracted or synthetic revenue are refused; only <code>received + verifier</code>
+                        counts.
+                      </p>
+                      <div id="withdraw-summary" class="cards"></div>
+                      <div id="withdraw-notice" class="banner" hidden></div>
 
-        <section data-panel="withdraw" class="panel" hidden>
-          <h2>Withdraw — verified balance only</h2>
-          <p class="muted">
-            No payout account is required at setup. Verified earnings accumulate internally while payout slots
-            remain unconfigured. When you are ready to withdraw, add or select a payout destination here — only a
-            <strong>verified</strong> slot can receive funds. Every withdrawal needs owner approval and a provider
-            settlement reference. The requested amount is <strong>atomically reserved (deducted/frozen)</strong> on
-            approval to prevent double withdrawal; if the provider reports failure the reservation is safely restored.
-          </p>
-          <p class="muted small">
-            Destination storage: only masked account (e.g. <code>****1234</code>) or provider reference (e.g. Stripe
-            <code>ba_…</code> / Payoneer account id) — raw banking credentials are never stored. Withdrawals of
-            unverified, expected, contracted or synthetic revenue are refused; only <code>received + verifier</code>
-            counts.
-          </p>
-          <div id="withdraw-summary" class="cards"></div>
-          <div id="withdraw-notice" class="banner" hidden></div>
+                      <h3>Payout destinations — up to 5 provider-tokenized slots (none required now)</h3>
+                      <p class="muted small">
+                        Slots can be labelled now and completed later. A slot must be verified (all control checks + 40-char
+                        attestation) before it becomes payable. Configure a destination at withdrawal time if none is verified yet.
+                      </p>
+                      <div id="withdraw-slots" class="table-wrap"></div>
+                      <div id="withdraw-slot-verification"></div>
 
-          <h3>Payout destinations — up to 5 provider-tokenized slots (none required now)</h3>
-          <p class="muted small">
-            Slots can be labelled now and completed later. A slot must be verified (all control checks + 40-char
-            attestation) before it becomes payable. Configure a destination at withdrawal time if none is verified yet.
-          </p>
-          <div id="withdraw-slots" class="table-wrap"></div>
-          <div id="withdraw-slot-verification"></div>
+                      <div class="grid-2">
+                        <form id="withdraw-slot-form" class="stack-form">
+                          <h3>Add / select payout destination</h3>
+                          <p class="muted small">Store only masked details / provider reference; full numbers are refused.</p>
+                          <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
+                          <label>Label <input name="label" placeholder="Primary business account" /></label>
+                          <label>Destination type
+                            <select name="destinationType">
+                              <option value="bank">bank</option>
+                              <option value="wallet">wallet</option>
+                              <option value="payment_provider">payment_provider</option>
+                              <option value="other">other</option>
+                            </select>
+                          </label>
+                          <label>Holder name <input name="holderName" placeholder="account holder" /></label>
+                          <label>Provider reference <input name="providerRef" placeholder="payout-provider account id (preferred)" /></label>
+                          <label>Masked account <input name="maskedAccount" placeholder="****1234 — full numbers are refused" /></label>
+                          <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
+                          <button type="submit">Save destination (masked only)</button>
+                        </form>
+                        <div>
+                          <h3>Request withdrawal</h3>
+                          <p class="muted small" id="withdraw-balance-hint"></p>
+                          <form id="withdraw-form" class="stack-form">
+                            <label>Verified payout slot <input name="slot" type="number" min="1" max="5" placeholder="1–5" required /></label>
+                            <label>Amount (minor units, verified balance only) <input name="amountCents" type="number" min="1" placeholder="e.g. 50000" required /></label>
+                            <label>Memo <input name="memo" placeholder="optional reference" /></label>
+                            <button type="submit">Request withdrawal — needs approval</button>
+                          </form>
+                          <p class="muted small">Status: <code>REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID</code> or <code>FAILED</code> (restore). No synthetic money is created; only verified <code>received</code> revenue can be withdrawn.</p>
+                        </div>
+                      </div>
 
-          <div class="grid-2">
-            <form id="withdraw-slot-form" class="stack-form">
-              <h3>Add / select payout destination</h3>
-              <p class="muted small">Store only masked details / provider reference; full numbers are refused.</p>
-              <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
-              <label>Label <input name="label" placeholder="Primary business account" /></label>
-              <label>Destination type
-                <select name="destinationType">
-                  <option value="bank">bank</option>
-                  <option value="wallet">wallet</option>
-                  <option value="payment_provider">payment_provider</option>
-                  <option value="other">other</option>
-                </select>
-              </label>
-              <label>Holder name <input name="holderName" placeholder="account holder" /></label>
-              <label>Provider reference <input name="providerRef" placeholder="payout-provider account id (preferred)" /></label>
-              <label>Masked account <input name="maskedAccount" placeholder="****1234 — full numbers are refused" /></label>
-              <label>Minimum payout (minor units) <input name="minPayoutCents" type="number" min="0" value="0" /></label>
-              <button type="submit">Save destination (masked only)</button>
-            </form>
-            <div>
-              <h3>Request withdrawal</h3>
-              <p class="muted small" id="withdraw-balance-hint"></p>
-              <form id="withdraw-form" class="stack-form">
-                <label>Verified payout slot <input name="slot" type="number" min="1" max="5" placeholder="1–5" required /></label>
-                <label>Amount (minor units, verified balance only) <input name="amountCents" type="number" min="1" placeholder="e.g. 50000" required /></label>
-                <label>Memo <input name="memo" placeholder="optional reference" /></label>
-                <button type="submit">Request withdrawal — needs approval</button>
-              </form>
-              <p class="muted small">Status: <code>REQUESTED → VERIFYING → APPROVED → PROCESSING → PAID</code> or <code>FAILED</code> (restore). No synthetic money is created; only verified <code>received</code> revenue can be withdrawn.</p>
-            </div>
-          </div>
+                      <details class="control-block">
+                        <summary>Withdrawal lifecycle, wallets and the ledger — the same records Treasury and the audit trail show</summary>
+                      <p class="muted small">REQUESTED (pending_approval) → VERIFYING (destination checks) → APPROVED (atomically debited <code>payout:reserve</code>) → PROCESSING (sent) → PAID (settled) or FAILED (refund <code>payout:refund</code> + restore). All transitions audited and idempotent.</p>
+                      <div id="withdrawals" class="table-wrap"></div>
 
-          <h3>Withdrawals — lifecycle</h3>
-          <p class="muted small">REQUESTED (pending_approval) → VERIFYING (destination checks) → APPROVED (atomically debited <code>payout:reserve</code>) → PROCESSING (sent) → PAID (settled) or FAILED (refund <code>payout:refund</code> + restore). All transitions audited and idempotent.</p>
-          <div id="withdrawals" class="table-wrap"></div>
+                      <h3>Wallets &amp; ledger — wallet architecture</h3>
+                      <p class="muted small">Per-agent wallets (4000+), central Mission Treasury, and reinvestment reserve. Separate from public-platform customer funds (different database, different auth). Balances never go negative; ledger is hash-chained (seq + prev_hash) and idempotent.</p>
+                      <div id="withdraw-wallets" class="table-wrap"></div>
+                      <div id="withdraw-ledger" class="table-wrap"></div>
+                      </details>
+          </details>
+          <details class="sub" data-view="expenses"><summary>Expenses, costs and integrity</summary>
+            <h3>Expenses &amp; costs</h3>
+                      <div class="grid-2">
+                        <div id="expenses" class="table-wrap"></div>
+                        <div id="costs" class="table-wrap"></div>
+                      </div>
 
-          <h3>Wallets &amp; ledger — wallet architecture</h3>
-          <p class="muted small">Per-agent wallets (4000+), central Mission Treasury, and reinvestment reserve. Separate from public-platform customer funds (different database, different auth). Balances never go negative; ledger is hash-chained (seq + prev_hash) and idempotent.</p>
-          <div id="withdraw-wallets" class="table-wrap"></div>
-          <div id="withdraw-ledger" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="approvals" class="panel" hidden>
-          <div class="head-agent-heading">
-            <div><span class="eyebrow">Human decision queue</span><h2>Approvals</h2></div>
-            <span class="pill warn">Head agent cannot approve</span>
-          </div>
-          <p id="head-approvals-note" class="muted small"></p>
-          <div id="head-approvals" class="table-wrap"></div>
-          <h2>Pending approvals</h2>
-          <p class="muted small">
-            Spend above the approval threshold, new resources, upgrades, tool access and every payout
-            wait here. Nothing is approved automatically.
-          </p>
-          <div id="approvals" class="table-wrap"></div>
-          <h2>Expense requests</h2>
-          <div id="expense-requests" class="table-wrap"></div>
-          <h2>Upgrades</h2>
-          <div id="upgrades" class="table-wrap"></div>
-        </section>
-
-        <section data-panel="tools" class="panel" hidden>
-          <h2>Approved tool catalog</h2>
-          <p class="muted small">
-            Default is deny: a tool that is not approved here cannot be used. Unrestricted card or
-            bank APIs are permanently blocked — agents never hold those credentials.
-          </p>
-          <div id="tools" class="table-wrap"></div>
-          <h2>Credentials (values are never displayed)</h2>
-          <div id="credentials" class="table-wrap"></div>
-          <div class="grid-2">
-            <form id="credential-form" class="stack-form">
-              <h3>Store a provider credential</h3>
-              <label>Provider <input name="provider" placeholder="google" required /></label>
-              <label>Label <input name="label" placeholder="gemini key" required /></label>
-              <label>Local model permission <select name="scope"><option value="">No model-call permission</option><option value="model.call">Allow model.call (does not activate a provider)</option></select></label>
-              <label>Value <input name="secret" type="password" placeholder="stored encrypted, never shown again" required /></label>
-              <label>Expires at <input name="expiresAt" type="date" /></label>
-              <label>Environment variable <input name="envVar" placeholder="GOOGLE_API_KEY" /></label>
-              <button type="submit">Store encrypted</button>
-            </form>
-            <div>
-              <h3>Resources, services &amp; renewals</h3>
-              <div id="resources" class="table-wrap"></div>
-              <div id="resource-provision"></div>
-              <div id="resource-credential"></div>
-              <div id="resource-calls"></div>
-              <div id="resource-periods"></div>
-              <div id="services" class="table-wrap"></div>
-            </div>
-          </div>
-        </section>
-
-        <section data-panel="publishing" class="panel" hidden>
-          <h2>Publishing connections</h2>
-          <p class="muted small">
-            Content publishing (YouTube / Instagram / TikTok) is prepared, not simulated: each platform
-            needs its own OAuth app registered against this deployment, and a connection is reported as
-            connected only after the platform itself issued a token. No engagement figure is ever
-            invented — metrics come from the platform's API or not at all.
-          </p>
-          <div id="social-connections"></div>
-          <div id="social-setup"></div>
-        </section>
-
-        <section data-panel="policy" class="panel" hidden>
-          <h2>Mission policy</h2>
-          <div id="policy" class="table-wrap"></div>
-          <form id="policy-form" class="inline-form">
-            <input name="maxDailySpendCents" type="number" min="1" placeholder="daily spend ceiling" />
-            <input name="requireApprovalAboveCents" type="number" min="1" placeholder="approval threshold" />
-            <input name="maxPayoutCents" type="number" min="1" placeholder="payout ceiling" />
-            <button type="submit">Update policy</button>
-          </form>
-          <h2>Kill switch</h2>
-          <p class="muted small">
-            Engaging the kill switch suspends every mission activity immediately — including work the
-            policy otherwise enables — until it is released.
-          </p>
-          <div class="inline-form">
-            <button id="kill-on" class="danger">Engage kill switch</button>
-            <button id="kill-off">Release kill switch</button>
-          </div>
-          <h2>Prohibited activity (compiled in)</h2>
-          <div id="prohibitions" class="table-wrap"></div>
+            <h3>Integrity &amp; external activation</h3>
+            <div class="grid-2">
+                        <div id="integrity" class="table-wrap"></div>
+                        <div id="activation" class="table-wrap"></div>
+                      </div>
+          </details>
+          <details class="sub" data-view="evidence"><summary>Provider readiness, payout queue and discovery evidence</summary>
+            <div class="grid-2">
+                          <div><h3>Provider readiness</h3><div id="head-provider-readiness" class="table-wrap"></div></div>
+                          <div><h3>Payout queue evidence</h3><div id="head-payout-queue" class="table-wrap"></div></div>
+                        </div>
+            <h3>Discovery evidence — not revenue</h3>
+                        <div id="head-opportunities" class="table-wrap"></div>
+          </details>
+          <details class="sub" data-view="audit"><summary>Immutable audit trail</summary>
+                      <h3>Immutable audit trail</h3>
+                      <div id="audit-verification" class="table-wrap"></div>
+                      <div id="audit" class="table-wrap"></div>
+          </details>
         </section>
 
-        <section data-panel="audit" class="panel" hidden>
-          <h2>Immutable audit trail</h2>
-          <div id="audit-verification" class="table-wrap"></div>
-          <div id="audit" class="table-wrap"></div>
-        </section>
       </section>
     </main>
 

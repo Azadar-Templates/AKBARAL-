@@ -20,6 +20,23 @@ if ('serviceWorker' in navigator) {
 const TOKEN_KEY = 'za_mission_token';
 const LINK_KEY = 'za_mission_link';
 
+/** Rendered rows per table: a section must fit one screen, and this is the one place that decides it. */
+const MAX_TABLE_ROWS = 8;
+/**
+ * The agent report is a drill-down that lives in the Bounty section's collapsed Agents block, and that
+ * section has a three-screen budget whatever the API returns — so the report's history tables render
+ * fewer rows than a section table does. Nothing is taken from the owner: the note under each table
+ * counts what was left out, and every row stays in the API response and the database.
+ */
+const MAX_REPORT_ROWS = 3;
+/** The roster in the same block is a picker, not a page: five agents is a screen of real choices. */
+const MAX_PICKER_ROWS = 5;
+/** A phone's viewport, and the row budget that keeps a folded section inside three screens there. */
+const NARROW_VIEWPORT_PX = 500;
+const MAX_PHONE_ROWS = 2;
+/** Targets drawn on a program card before the card says "and N more in the allowlist". */
+const MAX_TARGET_LINES = 4;
+
 const state = {
   token: sessionStorage.getItem(TOKEN_KEY) || '',
   link: sessionStorage.getItem(LINK_KEY) || '',
@@ -68,14 +85,23 @@ function when(value) {
   return date.toISOString().replace('T', ' ').slice(0, 16);
 }
 
-function table(columns, rows, emptyMessage) {
+function table(columns, rows, emptyMessage, options = {}) {
   const wrap = el('div', { class: 'table-wrap' });
   if (!rows || rows.length === 0) {
     wrap.appendChild(el('p', { class: 'muted small', style: 'padding:12px', text: emptyMessage || 'No data yet.' }));
     return wrap;
   }
+  // A section has to stay inside one screen whatever the API returns, so the table primitive bounds
+  // what renders instead of every caller having to remember to. The rows are not hidden from the
+  // owner — they stay in the response, and the line below says how many were left out.
+  // The caller can ask for a tighter budget than the section default (the agent report does), and a
+  // phone gets a tighter default still: at 390px wide every wrapped cell costs several lines, so
+  // eight rows is four screens of one table. The rows are not hidden from anyone — the line under the
+  // table counts what was left out and the API and the database keep all of them.
+  const cap = options.maxRows || (window.innerWidth <= NARROW_VIEWPORT_PX ? MAX_PHONE_ROWS : MAX_TABLE_ROWS);
+  const shown = rows.length > cap ? rows.slice(0, cap) : rows;
   const thead = el('thead', {}, el('tr', {}, columns.map((column) => el('th', { text: column.label }))));
-  const tbody = el('tbody', {}, rows.map((row) => el('tr', {}, columns.map((column) => {
+  const tbody = el('tbody', {}, shown.map((row) => el('tr', {}, columns.map((column) => {
     const cell = el('td', { class: column.wrap ? 'wrap' : '' });
     const content = column.render ? column.render(row) : row[column.key];
     if (content instanceof Node) cell.appendChild(content);
@@ -83,6 +109,9 @@ function table(columns, rows, emptyMessage) {
     return cell;
   }))));
   wrap.appendChild(el('table', {}, [thead, tbody]));
+  if (rows.length > shown.length) {
+    wrap.appendChild(el('p', { class: 'muted small', style: 'padding:6px 12px 0', text: `${rows.length - shown.length} more row(s) not rendered; the full list is in the API response and the database.` }));
+  }
   return wrap;
 }
 
@@ -124,20 +153,23 @@ function banner(message, kind = 'ok') {
  * the policy it evidences — reachable in a single click from the primary row
  * and still separately linkable as #/audit — rather than buried a level deeper.
  */
-const PRIMARY_TABS = ['overview', 'bounties', 'agents', 'approvals', 'earnings', 'policy'];
+const PRIMARY_TABS = ['overview', 'bounties', 'approvals', 'money'];
 
-/** The consolidated views, keyed by the family that now hosts them. */
+/**
+ * The collapsed sub-sections, keyed by the section that holds them. Each entry is a
+ * `<details class="sub" data-view="…">` inside that section — not a hidden page: the
+ * markup and every host id it contains are the same ones the old tab rendered, so the
+ * loaders, the access gates and the deep links below did not have to change shape.
+ */
 const TAB_GROUPS = {
-  overview: ['resources-expiry', 'tools', 'guide'],
-  bounties: [],
-  agents: ['head-chat', 'knowledge', 'playbooks', 'lessons'],
-  approvals: [],
-  earnings: ['money', 'treasury', 'withdraw', 'customer-work', 'publishing'],
-  policy: ['audit'],
+  bounties: ['bounty-registration', 'bounty-scope', 'bounty-catalogs', 'agents', 'specialist-records', 'customer-work', 'customer-intake'],
+  approvals: ['policy', 'tools'],
+  money: ['earnings', 'treasury', 'withdraw', 'expenses', 'evidence', 'audit'],
 };
 
-/** Views that share a screen, so neither sits one click behind the other. */
-const TAB_COVIEW = { policy: ['policy', 'audit'], audit: ['policy', 'audit'] };
+/** Views that share a screen. The 2026-10 strip left none: each sub-section is its own
+ *  collapsed block, so nothing renders twice and no screen stacks two unrelated tables. */
+const TAB_COVIEW = {};
 
 const TAB_PARENT = {};
 const TAB_VIEWS = PRIMARY_TABS.slice();
@@ -149,12 +181,11 @@ for (const family of Object.keys(TAB_GROUPS)) {
 }
 
 /**
- * Redirects. View ids never moved, so nothing here is load-bearing for links
- * this dashboard generated itself: these are the label-derived spellings a
- * person would type or paste, plus the pre-routing "#<id>" form (handled by the
- * optional slash below). They resolve to the canonical #/<id> and the address
- * bar is rewritten, so an old or guessed link lands on the right view instead
- * of silently falling back to Overview.
+ * Redirects for routes this console has actually emitted, plus the label spellings a
+ * person would type. The seven views the owner stripped (guide, chat, knowledge,
+ * playbooks, lessons, resources & expiry, publishing) are deliberately absent: their
+ * routes fall through to Overview rather than being kept alive as aliases to a screen
+ * that no longer exists, and every route a script or a saved link still needs resolves.
  */
 const TAB_ROUTE_ALIASES = {
   'bug-bounty': 'bounties',
@@ -163,19 +194,25 @@ const TAB_ROUTE_ALIASES = {
   'cash': 'money',
   'legacy-accounting': 'treasury',
   'accounting': 'treasury',
-  'destinations': 'treasury',
+  destinations: 'treasury',
   'payout-destinations': 'treasury',
-  'resources': 'resources-expiry',
-  'expiry': 'resources-expiry',
-  'credentials': 'tools',
+  resources: 'tools',
+  expiry: 'tools',
+  credentials: 'tools',
   'tools-credentials': 'tools',
   customers: 'customer-work',
   work: 'customer-work',
-  chat: 'head-chat',
   'audit-trail': 'audit',
   withdrawal: 'withdraw',
   'legacy-withdraw': 'withdraw',
+  revenue: 'earnings',
+  expenses: 'expenses',
 };
+
+/** The collapsed block for a view, when it is one. */
+function subSection(view) {
+  return document.querySelector(`details.sub[data-view="${view}"]`);
+}
 
 function groupOfView(view) {
   return PRIMARY_TABS.includes(view) ? view : (TAB_PARENT[view] || null);
@@ -187,7 +224,13 @@ function tabButton(view) {
 
 function viewLabel(view) {
   const button = tabButton(view);
-  return (button && button.textContent.trim()) || view;
+  if (button) return button.textContent.trim();
+  const details = subSection(view);
+  if (details) {
+    const summary = details.querySelector('summary');
+    if (summary) return summary.textContent.trim();
+  }
+  return view;
 }
 
 /**
@@ -213,30 +256,37 @@ function routeFromHash(hash) {
   return TAB_VIEWS.includes(view) ? view : null;
 }
 
-/** Paints buttons, the sub-section row and the visible panels. Loads nothing. */
+/**
+ * Paints the four sections and the open/closed state of their collapsed blocks. Loads
+ * nothing. A sub-view is on screen exactly when its family is shown and its own
+ * `<details>` is open, so "reachable in two clicks" is a property of the markup rather
+ * than of a menu that has to be hovered.
+ */
 function applyTabChrome(view) {
   const family = groupOfView(view) || view;
-  const shown = TAB_COVIEW[view] || [view];
+  const shown = TAB_COVIEW[view] || [family];
   state.activeTab = view;
-  for (const panel of $$('[data-panel]')) panel.hidden = !shown.includes(panel.getAttribute('data-panel'));
+  for (const panel of $$('[data-panel]')) {
+    const name = panel.getAttribute('data-panel');
+    panel.hidden = !shown.includes(name);
+    for (const details of $$('details.sub', panel)) {
+      // A block in a hidden section closes, so a section never reopens with three
+      // tables stacked from whatever was last visited.
+      if (panel.hidden) { details.open = false; continue; }
+      const sub = details.getAttribute('data-view');
+      const gated = gateHidesNavEntry(details);
+      details.hidden = gated;
+      details.open = !gated && sub === view;
+    }
+  }
   for (const button of $$('#tabs .tab')) {
     const entry = button.getAttribute('data-tab');
     button.hidden = gateHidesNavEntry(button);
-    const active = PRIMARY_TABS.includes(entry)
-      ? entry === family
-      : shown.includes(entry) && groupOfView(entry) === family;
+    const active = entry === family || (shown.includes(entry) && entry === view);
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  const bar = $('#subtabs');
-  if (!bar) return;
-  const children = $$('.subtab', bar);
-  for (const button of children) {
-    button.hidden = button.getAttribute('data-group') !== family || gateHidesNavEntry(button);
-  }
-  // A family with no children (or only gated-away ones) shows no empty row.
-  bar.hidden = !children.some((button) => !button.hidden);
 }
 
 function writeRoute(view) {
@@ -268,14 +318,17 @@ async function activateTab(view, options = {}) {
   // well as a sub-view. The caller falls back to its family, or to Overview,
   // with the reason on the banner; the private panel is never rendered. The
   // server still guards the data independently, as it always did.
-  const button = tabButton(target);
-  if (button && gateHidesNavEntry(button)) {
+  const entry = tabButton(target) || subSection(target);
+  if (entry && gateHidesNavEntry(entry)) {
     banner(`${viewLabel(target)} needs the mission owner session.`, 'error');
     target = TAB_PARENT[target] || 'overview';
   }
   applyTabChrome(target);
   if (options.navigate) writeRoute(target);
-  await loadTab(target);
+  // A family opens with every block closed; a sub-view opens its own block only.
+  const family = groupOfView(target) || target;
+  await loadTab(family === target ? target : family);
+  if (target !== family) await loadTab(target);
   for (const sibling of (TAB_COVIEW[target] || [])) {
     if (sibling !== target) await loadTab(sibling);
   }
@@ -425,55 +478,19 @@ function card(label, value, note) {
 
 function renderOverview(overview) {
   const cards = $('#overview-cards');
-  cards.innerHTML = '';
+  const fleet = overview.fleet || {};
   const currency = overview.treasury.currency;
-  const treasury = overview.treasury.totals;
+  cards.innerHTML = '';
   cards.append(
-    card('Agents', overview.agents.total, `${overview.agents.custom} created in-mission · ${overview.agents.registry} from the registry`),
-    card('Hierarchy depth', overview.agents.maxDepth, `cap ${overview.policy.maxDepth}`),
-    card('Legacy reported revenue', money(overview.revenue.windows.lifetimeCents, currency), 'verified receipts only'),
-    card('Treasury balance', money(treasury.totalBalanceCents, currency), `${overview.treasury.wallets.length} wallets`),
-    card('Today (verified)', money(overview.revenue.windows.todayCents, currency)),
-    card('Last 30 days', money(overview.revenue.windows.last30DaysCents, currency)),
-    card('Contracted (not earned)', money(overview.revenue.contractedCents, currency)),
-    card('Expected (not earned)', money(overview.revenue.expectedCents, currency)),
-    card('Expenses paid', money(overview.expenses.paidCents, currency), `${money(overview.expenses.pendingCents, currency)} awaiting decision`),
-    card('Committed monthly cost', money(overview.costs.monthlyCommittedCents, currency), 'active resources'),
-    card('Spend today', money(overview.costs.spendTodayCents, currency), `cap ${money(overview.costs.dailyCapCents, currency)}`),
-    card('Pending approvals', overview.approvals.pending, `${overview.upgrades.requested} upgrade requests`),
+    card('Fleet', fleet.registered ?? overview.agents.total, `${fleet.withPlatform ?? 0} paired with a verified venue · ${overview.agents.registry} from the registry`),
+    card('Ready to work', fleet.ready ?? 0, 'EXECUTION_READY or WORKING — every gate green'),
+    card('Blocked', (fleet.blocked ?? 0) + (fleet.needsOwnerAction ?? 0), `${fleet.blocked ?? 0} blocked/inactive · ${fleet.needsOwnerAction ?? 0} awaiting the owner`),
+    card('Earned', money(fleet.earnedCents ?? 0, currency), `${fleet.settledProofs ?? 0} verified settlement proof(s); advertised rewards are never counted`),
+    card('Next action', fleet.nextAction || 'none recorded', 'the single thing that moves the fleet forward'),
   );
-
-  // Billionaire daily per-agent $1B/day
-  if (overview.billionaireDaily) {
-    const bd = overview.billionaireDaily;
-    const noteEl = $('#billionaire-note');
-    if (noteEl) noteEl.textContent = bd.note || bd.persistentObjective || 'Owner-defined aspirational $1B/day per agent — resets daily UTC, verified revenue only, never guarantee.';
-    const bCards = $('#billionaire-cards');
-    if (bCards) {
-      bCards.innerHTML = '';
-      const globalDaily = bd.globalDailyTarget || bd.todayPerAgent?.[0];
-      bCards.append(
-        card('Per-agent daily target', money(bd.perAgentTargetCents, bd.perAgentCurrency), 'owner-defined aspirational, configurable, $1B/day'),
-        card('Global daily target', globalDaily ? money(globalDaily.targetCents, globalDaily.currency) : '—', globalDaily ? `${globalDaily.progressPct}% — ${money(globalDaily.realizedCents, globalDaily.currency)} verified today` : ''),
-        card('Agents swept today', bd.sweep ? `${bd.sweep.swept} agents` : '—', bd.sweep ? `${bd.sweep.met} met target today (verified)` : ''),
-        card('Remaining gap (global)', globalDaily ? money(globalDaily.remainingCents, globalDaily.currency) : '—', 'verified revenue only, resets daily UTC'),
-      );
-    }
-    const bdHost = $('#billionaire-daily');
-    if (bdHost) {
-      const rows = (bd.todayPerAgent || []).slice(0, 50);
-      bdHost.innerHTML = '';
-      bdHost.appendChild(table([
-        { label: 'Agent', render: (row) => row.slug || row.agentId.slice(0, 8) },
-        { label: 'Daily target', render: (row) => money(row.targetCents, row.currency) },
-        { label: 'Verified today', render: (row) => money(row.realizedCents, row.currency) },
-        { label: 'Remaining gap', render: (row) => money(row.remainingCents, row.currency) },
-        { label: 'Progress', render: (row) => `${row.progressPct}% ${row.met ? '✓ met' : ''}` },
-        { label: 'Objective', render: (row) => el('span', { class: 'muted small', text: (row.persistentObjective || '').slice(0, 80) + '…' }) },
-      ], rows, 'No active agents yet — every agent initialized at $1B/day when created.'));
-    }
-  }
-
+  // The read-only pill says who is looking, because a link sees fewer controls.
+  const pillNode = $('#head-read-only-state');
+  if (pillNode) pillNode.hidden = !state.link || isOwnerSession();
   $('#revenue-honesty').textContent = overview.honesty.noFabrication;
 
   replace('#revenue-realized', table([
@@ -527,6 +544,9 @@ function renderOverview(overview) {
   ], overview.honesty.externalActivationPending, 'Nothing pending.'));
 }
 
+// History tables inside the agent report are budgeted; see MAX_REPORT_ROWS.
+function reportTable(columns, rows, emptyMessage) { return table(columns, rows, emptyMessage, { maxRows: MAX_REPORT_ROWS }); }
+
 function renderAgentReport(report) {
   const currency = state.overview ? state.overview.treasury.currency : 'USD';
   const host = $('#agent-report');
@@ -534,7 +554,8 @@ function renderAgentReport(report) {
   const revenue = report.revenue;
   const dailyTarget = report.dailyTarget || report.agent.dailyTarget;
 
-  host.appendChild(el('h2', { text: `Agent — ${report.agent.name}` }));
+  // h3, not h2: the agent report renders inside a collapsed block, under the section's own title.
+  host.appendChild(el('h3', { text: `Agent — ${report.agent.name}` }));
   host.appendChild(el('div', { class: 'cards' }, [
     card('Slug', report.agent.slug),
     card('Role', report.agent.role),
@@ -563,12 +584,26 @@ function renderAgentReport(report) {
     host.appendChild(renderAgentControls(report));
   }
 
+  // The thread is rendered by the function the strip had removed with the head-agent chat panel; it
+  // belongs to the per-agent report, so it is restored there rather than duplicated here.
+  // The correspondence is opened, not stacked: an owner reading a report is usually reading the
+  // controls, and the thread (plus its reply settings) is one click away either way.
+  const thread = el('details', { class: 'control-block' });
+  thread.appendChild(el('summary', { text: 'Owner ↔ agent messages and automatic replies' }));
+  host.appendChild(thread);
   const conversation = el('section', { class: 'control-block', 'aria-label': 'Private agent messages' });
-  host.appendChild(conversation);
+  thread.appendChild(conversation);
   void renderAgentMessages(conversation, report.agent.slug);
 
-  host.appendChild(el('h3', { text: 'Children (delegation)' }));
-  host.appendChild(table([
+  // Nine read-only lists, and every one of them has a real owner-visible purpose — so they are not
+  // deleted and not truncated into meaninglessness: they sit in a disclosure the owner opens once per
+  // agent. The section's screen budget is what this pays for, and `table()` still counts for itself
+  // when a list is longer than the row budget.
+  const history = el('details', { class: 'control-block' });
+  history.appendChild(el('summary', { text: 'The record — children, revenue, receipts, work, expenses, resources and services' }));
+  host.appendChild(history);
+  history.appendChild(el('h3', { text: 'Children (delegation)' }));
+  history.appendChild(reportTable([
     { label: 'Slug', key: 'slug' },
     { label: 'Name', key: 'name' },
     { label: 'Role', key: 'role' },
@@ -576,15 +611,15 @@ function renderAgentReport(report) {
     { label: 'Status', render: (row) => pill(String(row.status), row.status === 'active' ? 'ok' : 'warn') },
   ], report.agent.children ?? [], 'This agent has not delegated any work yet.'));
 
-  host.appendChild(el('h3', { text: 'Revenue by source (realized)' }));
-  host.appendChild(table([
+  history.appendChild(el('h3', { text: 'Revenue by source (realized)' }));
+  history.appendChild(reportTable([
     { label: 'Source', key: 'source' },
     { label: 'Receipts', key: 'count' },
     { label: 'Amount', render: (row) => money(row.cents, currency) },
   ], revenue.bySource, 'No verified revenue for this agent.'));
 
-  host.appendChild(el('h3', { text: 'Receipts' }));
-  host.appendChild(table([
+  history.appendChild(el('h3', { text: 'Receipts' }));
+  history.appendChild(reportTable([
     { label: 'When', render: (row) => when(row.receivedAt) },
     { label: 'Amount', render: (row) => money(row.amountCents, currency) },
     { label: 'Status', render: (row) => pill(String(row.status), row.status === 'received' ? 'ok' : 'warn') },
@@ -592,8 +627,8 @@ function renderAgentReport(report) {
     { label: 'Reference', render: (row) => row.externalRef || '—' },
   ], revenue.entries, 'No revenue recorded for this agent.'));
 
-  host.appendChild(el('h3', { text: 'Work that produced it' }));
-  host.appendChild(table([
+  history.appendChild(el('h3', { text: 'Work that produced it' }));
+  history.appendChild(reportTable([
     { label: 'Title', key: 'title', wrap: true },
     { label: 'Activity', key: 'category' },
     { label: 'Status', key: 'status' },
@@ -602,8 +637,8 @@ function renderAgentReport(report) {
     { label: 'Created', render: (row) => when(row.createdAt) },
   ], report.work, 'No approved work recorded yet.'));
 
-  host.appendChild(el('h3', { text: 'Expenses' }));
-  host.appendChild(table([
+  history.appendChild(el('h3', { text: 'Expenses' }));
+  history.appendChild(reportTable([
     { label: 'When', render: (row) => when(row.createdAt) },
     { label: 'Category', key: 'category' },
     { label: 'Provider', key: 'provider' },
@@ -611,28 +646,28 @@ function renderAgentReport(report) {
     { label: 'Status', key: 'status' },
   ], report.expenses.entries, 'No expenses recorded for this agent.'));
 
-  host.appendChild(el('h3', { text: 'Resources, credentials, services & upgrades' }));
-  host.appendChild(table([
+  history.appendChild(el('h3', { text: 'Resources, credentials, services & upgrades' }));
+  history.appendChild(reportTable([
     { label: 'Kind', key: 'kind' },
     { label: 'Provider', key: 'provider' },
     { label: 'Status', key: 'status' },
     { label: 'Monthly cost', render: (row) => money(row.monthlyCostCents, currency) },
     { label: 'Expires', render: (row) => when(row.expiresAt) },
   ], report.resources, 'No resources assigned.'));
-  host.appendChild(table([
+  history.appendChild(reportTable([
     { label: 'Provider', key: 'provider' },
     { label: 'Label', key: 'label' },
     { label: 'Status', render: (row) => pill(String(row.status), row.urgency === 'critical' ? 'warn' : 'info') },
     { label: 'Expires', render: (row) => when(row.expiresAt) },
   ], report.credentials, 'No credentials stored.'));
-  host.appendChild(table([
+  history.appendChild(reportTable([
     { label: 'Service', key: 'name' },
     { label: 'Kind', key: 'kind' },
     { label: 'Health', key: 'status' },
     { label: 'Source', render: (row) => row.healthSource || '—' },
     { label: 'Checked', render: (row) => when(row.lastCheckedAt) },
   ], report.services, 'No services assigned.'));
-  host.appendChild(table([
+  history.appendChild(reportTable([
     { label: 'Capability', key: 'capability', wrap: true },
     { label: 'Status', key: 'status' },
     { label: 'Cost', render: (row) => money(row.costCents, currency) },
@@ -640,6 +675,17 @@ function renderAgentReport(report) {
   ], report.upgrades, 'No upgrades requested.'));
 }
 
+function headAmount(value) {
+  if (!value) return '—';
+  const status = String(value.status || 'unverified');
+  if (value.cents === null || value.cents === undefined) return status;
+  return `${money(value.cents, value.currency || 'USD')} · ${status}`;
+}
+
+// The per-agent report owns its own private correspondence and reply configuration: the head-agent
+// chat panel was stripped from the console, but an owner must still be able to message an agent they
+// opened, read what is actually stored, and turn automatic replies on or off. Nothing here is a
+// capability the strip was allowed to remove.
 async function renderAgentChatControls(host, slug) {
   if (!canMutate()) return;
   const base = `/agents/${encodeURIComponent(slug)}`;
@@ -765,13 +811,6 @@ async function renderAgentMessages(host, slug) {
   await load();
 }
 
-function headAmount(value) {
-  if (!value) return '—';
-  const status = String(value.status || 'unverified');
-  if (value.cents === null || value.cents === undefined) return status;
-  return `${money(value.cents, value.currency || 'USD')} · ${status}`;
-}
-
 function citationLabel(row) {
   const source = row && row.citation;
   return source ? `${source.label} · cite ${source.recordId}` : '—';
@@ -781,22 +820,6 @@ function renderHeadAgent(data) {
   state.headAgent = data;
   const status = data.missionStatus || {};
   const agentStatus = status.agents || { total: 0, byStatus: {} };
-  replace('#head-overview-cards', el('div', { class: 'cards' }, [
-    card('Agents', agentStatus.total, JSON.stringify(agentStatus.byStatus || {})),
-    card('Pending approvals', status.pendingApprovals ?? 0, 'human owner decision required'),
-    card('Open alerts', status.openAlerts ?? 0, 'read-only notifications'),
-    card('Tracked resources', status.trackedResources ?? 0, 'owner inventory'),
-    card('Provider records', status.providerReadinessRecords ?? 0, 'readiness evidence'),
-    card('Discovery records', status.discoveredOpportunities ?? 0, 'not revenue'),
-  ]));
-  const alerts = (data.alerts || []).slice(0, 8);
-  replace('#head-overview-alerts', alerts.length
-    ? el('div', { class: 'alert-list' }, alerts.map((alert) => el('div', { class: `notification-row ${alert.severity || 'info'}` }, [
-      pill(String(alert.kind || 'alert'), alert.severity === 'critical' ? 'bad' : alert.severity === 'warning' ? 'warn' : 'info'),
-      el('strong', { text: String(alert.title) }),
-      el('span', { class: 'muted small', text: `${String(alert.message)} · ${citationLabel(alert)}` }),
-    ])))
-    : el('p', { class: 'muted small', text: 'No open head-agent alerts. No action was taken.' }));
   const realized = data.earnings?.realized;
   const expected = data.earnings?.contractedExpected;
   replace('#head-earnings-summary', el('div', { class: 'cards' }, [
@@ -818,22 +841,6 @@ function renderHeadAgent(data) {
     { label: 'Source', key: 'source' },
     { label: 'Citation', render: citationLabel },
   ], expected?.records || [], 'No contracted or expected records.'));
-  replace('#head-resources', table([
-    { label: 'Label', key: 'label' },
-    { label: 'Category', key: 'category' },
-    { label: 'Provider', key: 'provider' },
-    { label: 'Expiry', render: (row) => row.expiresAt ? `${when(row.expiresAt)}${row.daysUntilExpiry === null ? '' : ` (${row.daysUntilExpiry}d)`}` : '—' },
-    { label: 'Cost', render: (row) => headAmount(row.cost) },
-    { label: 'Status', render: (row) => pill(row.status, row.status === 'expired' ? 'bad' : row.status === 'expiring' ? 'warn' : 'info') },
-    { label: 'Citation', render: citationLabel },
-  ], data.resources || [], 'No owner-tracked resources. Agent-bound resources remain in the existing resource surface.'));
-  replace('#head-alerts', table([
-    { label: 'Severity', render: (row) => pill(row.severity, row.severity === 'critical' ? 'bad' : row.severity === 'warning' ? 'warn' : 'info') },
-    { label: 'Kind', key: 'kind' },
-    { label: 'Message', render: (row) => `${row.title}: ${row.message}`, wrap: true },
-    { label: 'State', key: 'status' },
-    { label: 'Citation', render: citationLabel },
-  ], data.alerts || [], 'No open alerts.'));
   replace('#head-provider-readiness', table([
     { label: 'Provider', key: 'label' },
     { label: 'Kind', key: 'kind' },
@@ -869,14 +876,7 @@ function renderHeadAgent(data) {
     { label: 'State', key: 'status' },
     { label: 'Citation', render: citationLabel },
   ], data.approvals || [], 'No approval records.'));
-  const infoRows = (data.info || []).map((row) => ({ ...row, sourceText: row.source?.endpoint || '—' }));
-  replace('#head-info-records', table([
-    { label: 'Topic', key: 'topic' },
-    { label: 'Title', key: 'title' },
-    { label: 'Information', key: 'body', wrap: true },
-    { label: 'Source', key: 'sourceText', wrap: true },
-  ], infoRows, 'No durable owner info records have been entered. The guide above is the built-in boundary.'));
-  const note = $('#head-overview-note');
+  const note = $('#head-approvals-note');
   if (note) note.textContent = `Updated ${when(data.generatedAt)}. Read-only and notify-only; email/WhatsApp delivery is ${data.notificationDelivery || 'UNKNOWN / VERIFY REQUIRED'}.`;
 }
 
@@ -898,40 +898,9 @@ async function loadHeadAgentNotifications() {
     if (state.headAgent && Array.isArray(data.alerts)) {
       state.headAgent.alerts = data.alerts;
       state.headAgent.missionStatus.openAlerts = data.unreadCount;
-      const alertsHost = $('#head-overview-alerts');
-      if (alertsHost) replace('#head-overview-alerts', data.alerts.length
-        ? el('div', { class: 'alert-list' }, data.alerts.slice(0, 8).map((alert) => el('div', { class: `notification-row ${alert.severity || 'info'}` }, [
-          pill(String(alert.kind || 'alert'), alert.severity === 'critical' ? 'bad' : alert.severity === 'warning' ? 'warn' : 'info'),
-          el('strong', { text: String(alert.title) }),
-          el('span', { class: 'muted small', text: `${String(alert.message)} · ${citationLabel(alert)}` }),
-        ])))
-        : el('p', { class: 'muted small', text: 'No open head-agent alerts. No action was taken.' }));
     }
   } catch (error) {
     if (error.status !== 401) console.warn('head-agent notification poll failed', error);
-  }
-}
-
-async function loadHeadAgentChat(question) {
-  const status = $('#head-chat-status');
-  const answerHost = $('#head-chat-answer');
-  if (status) status.textContent = 'Reading mission evidence…';
-  try {
-    const result = await api('/mission/head-agent/chat', { method: 'POST', body: { question } });
-    answerHost.replaceChildren(
-      el('p', { class: 'chat-answer-text', text: result.answer }),
-      el('h3', { text: 'Citations' }),
-      table([
-        { label: 'Source', render: (row) => `${row.label} (${row.recordId})` },
-        { label: 'Fact', key: 'fact', wrap: true },
-        { label: 'Read-only endpoint', key: 'endpoint', wrap: true },
-      ], result.citations || [], 'No matching record citation. The answer is an empty-state explanation, not an estimate.'),
-    );
-    answerHost.hidden = false;
-    if (status) status.textContent = `Read-only answer · ${result.notificationDelivery || 'UNKNOWN / VERIFY REQUIRED'}`;
-  } catch (error) {
-    if (status) status.textContent = error.message;
-    answerHost.hidden = true;
   }
 }
 
@@ -998,7 +967,13 @@ function bountyProgramCard(program, scope) {
   const targets = (scope || []).filter((row) => row.inScope === true || Number(row.in_scope) === 1);
   const card = el('article', { class: 'card bounty-program-card' });
   const title = el('div', { class: 'bounty-card-title' }, [el('strong', { text: `${program.platform} / ${program.programHandle}` }), pill(program.active ? 'active' : 'inactive', program.active ? 'ok' : 'warn')]);
-  const targetList = targets.length ? el('ul', { class: 'bounty-card-targets' }, targets.map((row) => el('li', { text: `${row.target} (${row.targetType || row.target_type || 'unknown'})` }))) : el('p', { class: 'muted small', text: 'No in-scope targets saved. Activation is disabled.' });
+  const listed = targets.slice(0, MAX_TARGET_LINES);
+  const targetList = targets.length
+    ? el('ul', { class: 'bounty-card-targets' }, [
+      ...listed.map((row) => el('li', { text: `${row.target} (${row.targetType || row.target_type || 'unknown'})` })),
+      ...(targets.length > listed.length ? [el('li', { class: 'muted', text: `${targets.length - listed.length} more in scope — the allowlist form below is the full record` })] : []),
+    ])
+    : el('p', { class: 'muted small', text: 'No in-scope targets saved. Activation is disabled.' });
   const actions = el('div', { class: 'action-stack' });
   const toggle = el('button', { type: 'button', class: program.active ? 'ghost' : '', text: program.active ? 'Deactivate' : 'Activate' });
   toggle.disabled = !program.active && targets.length === 0;
@@ -1019,11 +994,15 @@ async function renderBountyPrograms(programs) {
   if (!host) return;
   host.replaceChildren();
   if (!programs || programs.length === 0) { host.appendChild(el('p', { class: 'empty-state muted', text: 'No bounty programs registered yet. The worker stays idle until a program is active with at least one in-scope target.' })); return; }
-  const cards = await Promise.all(programs.map(async (program) => {
+  const visible = programs.slice(0, MAX_TABLE_ROWS);
+  const cards = await Promise.all(visible.map(async (program) => {
     try { const result = await api(`/bounty/programs/${encodeURIComponent(program.id)}/scope`); return bountyProgramCard(program, result.scope || []); }
     catch (error) { return el('article', { class: 'card', children: [], text: `${program.platform} / ${program.programHandle}: ${error.message}` }); }
   }));
   host.append(...cards);
+  if (programs.length > visible.length) {
+    host.appendChild(el('p', { class: 'muted small', text: `${programs.length - visible.length} more registered program(s) not shown; they remain active and auditable through the API.` }));
+  }
 }
 
 async function loadBountyControl() {
@@ -1067,88 +1046,26 @@ async function loadBountyControl() {
   ], lessons.summary || [], 'No rejection lessons recorded.'));
 }
 
-async function loadKnowledgePanel() {
-  const freshness = $('#knowledge-freshness');
-  try {
-    const [catalog, usage] = await Promise.all([api('/bounty/knowledge'), api('/bounty/knowledge/usage')]);
-    const rows = catalog.knowledge || [];
-    const usageRows = usage.usage || [];
-    const categories = [...new Set(rows.map((row) => row.category))].sort();
-    replace('#knowledge-summary', el('div', { class: 'cards' }, [
-      el('div', { class: 'card' }, [el('div', { class: 'label', text: 'Vulnerability classes' }), el('div', { class: 'value', text: String(rows.length) }), el('div', { class: 'note', text: categories.length ? categories.join(' · ') : 'No seeded classes' })]),
-      el('div', { class: 'card' }, [el('div', { class: 'label', text: 'FP-pattern lists' }), el('div', { class: 'value', text: String(rows.filter((row) => (row.commonFalsePositives || []).length).length) }), el('div', { class: 'note', text: 'Known noise is reviewed before quality gating.' })]),
-      el('div', { class: 'card' }, [el('div', { class: 'label', text: 'Never used' }), el('div', { class: 'value', text: String(usageRows.filter((row) => row.neverUsed).length) }), el('div', { class: 'note', text: 'Candidates for owner pruning.' })]),
-    ]));
-    replace('#knowledge-table', table([
-      { label: 'Class', key: 'vulnClass' }, { label: 'Category', key: 'category' }, { label: 'Version', key: 'version' },
-      { label: 'Provenance', render: (row) => `${row.sourceType} · ${row.referenceStatus}` }, { label: 'False positives', render: (row) => (row.commonFalsePositives || []).length },
-      { label: 'Updated', render: (row) => when(row.updatedAt) },
-    ], rows, 'No vulnerability knowledge is seeded. Generic analysis remains fail-closed.'));
-    replace('#knowledge-usage-table', table([
-      { label: 'Usage', key: 'vulnClass' }, { label: 'Consulted', key: 'consultedCount' }, { label: 'Used in finding', key: 'usedInFinding' },
-      { label: 'Hit rate', render: (row) => `${Math.round(Number(row.hitRate || 0) * 100)}%` }, { label: 'Last consulted', render: (row) => when(row.lastConsultedAt) },
-    ], usageRows, 'No knowledge consultations recorded yet.'));
-    if (freshness) freshness.textContent = `Freshness: catalog and usage read at ${when(new Date().toISOString())}.`;
-  } catch (error) {
-    replace('#knowledge-table', el('p', { class: 'error', text: `Knowledge unavailable: ${error.message}` }));
-    if (freshness) freshness.textContent = 'Freshness unavailable; no cached values are shown.';
-    throw error;
-  }
-}
-
-async function loadPlaybooksPanel() {
-  const freshness = $('#playbooks-freshness');
-  try {
-    const data = await api('/bounty/playbooks');
-    replace('#agent-playbooks-table', table([
-      { label: 'Role', key: 'agentRole' }, { label: 'Steps', render: (row) => (row.orderedSteps || []).length },
-      { label: 'Handoff', key: 'handoffTo' }, { label: 'Knowledge classes', render: (row) => (row.vulnClasses || []).length }, { label: 'Source', key: 'sourceType' },
-    ], data.agents || [], 'No agent playbooks are registered.'));
-    replace('#platform-playbooks-table', table([
-      { label: 'Platform', key: 'platformKey' }, { label: 'Status', render: (row) => pill(row.status || 'unverified', row.status === 'verified' ? 'ok' : 'warn') },
-      { label: 'Required fields', render: (row) => (row.requiredFields || []).length ? row.requiredFields.join(', ') : 'unverified' },
-      { label: 'Format limits', render: (row) => row.status === 'verified' ? JSON.stringify(row.formatLimits || {}) : 'unverified' },
-      { label: 'Updated', render: (row) => when(row.updatedAt) },
-    ], data.platforms || [], 'No platform playbooks are registered.'));
-    if (freshness) freshness.textContent = `Freshness: playbooks read at ${when(new Date().toISOString())}.`;
-  } catch (error) {
-    replace('#agent-playbooks-table', el('p', { class: 'error', text: `Playbooks unavailable: ${error.message}` }));
-    if (freshness) freshness.textContent = 'Freshness unavailable; no cached values are shown.';
-    throw error;
-  }
-}
-
-async function loadLessonsPanel() {
-  const freshness = $('#lessons-freshness');
-  try {
-    const data = await api('/bounty/lessons/pending');
-    const host = $('#pending-lessons-table');
-    replace('#pending-lessons-table', table([
-      { label: 'Improvement', key: 'id', wrap: true }, { label: 'Class', key: 'vulnClass' }, { label: 'Change', key: 'changeType' },
-      { label: 'Detail', key: 'changeDetail', wrap: true }, { label: 'Evidence', render: (row) => row.evidence?.source ? `${row.evidence.source}: ${row.evidence.reasonCode}` : 'unverified', wrap: true },
-      { label: 'Action', render: (row) => el('div', { class: 'action-stack' }, [el('button', { class: 'kb-action', type: 'button', 'data-improvement-action': 'approve', 'data-improvement-id': row.id, text: 'Approve' }), el('button', { class: 'kb-action danger', type: 'button', 'data-improvement-action': 'reject', 'data-improvement-id': row.id, text: 'Reject' })]) },
-    ], data.improvements || [], 'No pending improvements. Unapproved lessons are not consulted.'));
-    host?.addEventListener('click', async (event) => {
-      const button = event.target.closest('button[data-improvement-action]');
-      if (!button) return;
-      button.disabled = true;
-      try {
-        const action = button.getAttribute('data-improvement-action');
-        const id = button.getAttribute('data-improvement-id');
-        await api(`/bounty/lessons/${action}`, { method: 'POST', body: { improvementId: id, reason: action === 'reject' ? 'owner rejected from mission dashboard' : undefined } });
-        await loadLessonsPanel();
-        banner(`Knowledge improvement ${action}d.`, 'ok');
-      } catch (error) { banner(error.message, 'error'); button.disabled = false; }
-    }, { once: true });
-    if (freshness) freshness.textContent = `Freshness: pending lessons read at ${when(new Date().toISOString())}.`;
-  } catch (error) {
-    replace('#pending-lessons-table', el('p', { class: 'error', text: `Lessons unavailable: ${error.message}` }));
-    if (freshness) freshness.textContent = 'Freshness unavailable; no cached values are shown.';
-    throw error;
-  }
+async function loadSpecialistRecords() {
+  const data = await api('/specialists?limit=50');
+  const rows = data.records || [];
+  replace('#specialist-records', table([
+    { label: 'Agent', key: 'agentId' },
+    { label: 'Specialty', render: (row) => `${row.specialtyLabel}${(row.workKinds || []).length ? ` — ${row.workKinds.join(', ')}` : ''}`, wrap: true },
+    { label: 'Venue', key: 'platformId' },
+    { label: 'State', render: (row) => pill(String(row.state ?? 'unassigned'), row.state === 'WORKING' || row.state === 'EXECUTION_READY' ? 'ok' : 'warn') },
+    { label: 'Skill', render: (row) => `${row.skillLevel}/100` },
+    { label: 'Work', render: (row) => `ranked ${row.work.ranked} · assigned ${row.work.assigned} · delivered ${row.work.delivered} · dropped ${row.work.dropped}` },
+    { label: 'Evidence', render: (row) => `${row.evidence.passedSuites}/${row.evidence.gradedSuites} suites · ${row.evidence.transitions} transitions` },
+    { label: 'Verified', render: (row) => `${row.verified.accepted} accepted · ${row.verified.paymentVerified} paid` },
+    { label: 'Earnings', render: (row) => money(row.earningsCents, 'USD') },
+  ], rows, 'No specialist is paired yet. Assign a verified venue — do not create a placeholder row to fill this table.'));
 }
 
 async function loadTab(tab) {
+  const loaded = state.loadedTabs || (state.loadedTabs = new Set());
+  if (loaded.has(tab)) return;
+  loaded.add(tab);
   try {
     if (tab === 'overview') {
       const overview = await api('/overview');
@@ -1157,21 +1074,22 @@ async function loadTab(tab) {
       if (canMutate()) await loadHeadAgentOverview();
     }
     if (tab === 'agents') {
-      if (canMutate()) await loadHeadAgentOverview();
       await loadAgents();
+      // The per-agent specialist record is its own collapsed block, so each screen stays inside its
+      // height budget; opening either of them refreshes both, because the roster and the record are
+      // read from the same rows and must never disagree on screen.
+      await loadSpecialistRecords();
     }
-    if (tab === 'bounties') await loadBountyControl();
-    if (tab === 'knowledge') await loadKnowledgePanel();
-    if (tab === 'playbooks') await loadPlaybooksPanel();
-    if (tab === 'lessons') await loadLessonsPanel();
-    if (tab === 'customer-work') await loadCustomerWork();
+    if (tab === 'specialist-records') await loadSpecialistRecords();
+    // The Bounty section's three collapsed blocks are parts of the same screen as the section: the
+    // one bounty loader fills all of their hosts, so opening a block loads the family's data.
+    if (['bounties', 'bounty-registration', 'bounty-scope', 'bounty-catalogs'].includes(tab)) await loadBountyControl();
+    // The intake block and the workbench block are the same screen read two ways: one loader, one
+    // refresh, so a saved request never shows up in one and not the other.
+    if (tab === 'customer-work' || tab === 'customer-intake') await loadCustomerWork();
     if (tab === 'money') await loadVerifiedCash();
-    if (tab === 'earnings' || tab === 'resources-expiry' || tab === 'guide' || tab === 'head-chat') {
-      if (canMutate()) await loadHeadAgentOverview();
-    }
     if (tab === 'treasury') await loadTreasury();
     if (tab === 'withdraw') await loadWithdraw();
-    if (tab === 'publishing') await loadPublishing();
     if (tab === 'approvals') {
       if (canMutate()) await loadHeadAgentOverview();
       await loadApprovals();
@@ -1180,10 +1098,27 @@ async function loadTab(tab) {
     if (tab === 'policy') await loadPolicy();
     if (tab === 'audit') await loadAudit();
   } catch (error) {
+    loaded.delete(tab);
     banner(error.message, 'error');
   }
 }
 
+/** Opening a collapsed block is a navigation event: it loads that block's data once. */
+function wireSubSections(root = document) {
+  for (const details of $$('details.sub[data-view]', root)) {
+    details.addEventListener('toggle', () => {
+      const view = details.getAttribute('data-view');
+      if (details.open) {
+        void loadTab(view);
+        // The open block is the view, so the URL says so: a reload, a shared link and the back
+        // button all land on the same thing the owner is looking at.
+        writeRoute(view);
+      } else if (state.activeTab === view) {
+        writeRoute(groupOfView(view) || view);
+      }
+    });
+  }
+}
 
 /**
  * Owner controls on a single agent: pause / resume / retire, and the wallet
@@ -1331,7 +1266,9 @@ async function loadAgents(query = '') {
     { label: 'Depth', key: 'depth' },
     { label: 'Status', key: 'status' },
     { label: '', render: (row) => row.open },
-  ], rows, 'No agents match.');
+  // The picker budget applies because the roster lives in a folded block whose section must fit three
+  // screens; the button indices below still line up, since the capped rows are the first rows.
+  ], rows, 'No agents match.', { maxRows: MAX_PICKER_ROWS });
   $$('button', node).forEach((button, index) => {
     const agent = rows[index];
     button.addEventListener('click', async () => {
@@ -1403,81 +1340,6 @@ function renderSlotVerification(slotsPayload) {
 }
 
 /** Publishing connections: honest per-platform state, with the exact setup steps. */
-async function loadPublishing() {
-  const payload = await api('/social/connections');
-  const currency = 'USD';
-  void currency;
-  const rows = payload.platforms.map((platform) => ({
-    ...platform,
-    appLabel: platform.appConfigured ? pill('app registered', 'ok') : pill('app not registered', 'warn'),
-    connectionLabel: platform.connected ? pill('connected', 'ok') : pill(platform.status.replace('_', ' '), 'warn'),
-    expiry: platform.expiresAt ? `${platform.expiresAt.slice(0, 10)} (${platform.daysUntilExpiry} d)` : '—',
-    actions: el('span', {}, [
-      canMutate() && platform.appConfigured && !platform.connected
-        ? el('button', { class: 'small', text: 'Connect', 'data-platform': platform.id, 'data-action': 'connect' }) : null,
-      canMutate() && platform.connected
-        ? el('button', { class: 'small', text: 'Disconnect', 'data-platform': platform.id, 'data-action': 'disconnect' }) : null,
-    ]),
-  }));
-  replace('#social-connections', table([
-    { label: 'Platform', key: 'label' },
-    { label: 'App', render: (row) => row.appLabel },
-    { label: 'Connection', render: (row) => row.connectionLabel },
-    { label: 'Account', render: (row) => row.accountLabel || '—' },
-    { label: 'Token expires', key: 'expiry' },
-    { label: 'Scopes', render: (row) => (row.scopes || []).join(', ') },
-    { label: 'Actions', render: (row) => row.actions },
-  ], rows, 'Publishing platforms unavailable.'));
-
-  const setupItems = payload.setup || [];
-  const setupHost = $('#social-setup');
-  setupHost.innerHTML = '';
-  setupHost.appendChild(el('h3', { text: 'Setup required (owner action, outside this dashboard)' }));
-  if (setupItems.length === 0) {
-    setupHost.appendChild(el('p', { class: 'muted small', text: 'Every platform app is registered. Connect each account when you are ready.' }));
-  } else {
-    const list = el('ul', { class: 'muted small' });
-    for (const item of setupItems) {
-      list.appendChild(
-        el('li', {
-          text: `${item.label}: register an app, add the redirect URI ${item.redirectUri}, then set ${item.requireEnvKeys.join(' and ')}.`,
-        }),
-      );
-    }
-    setupHost.appendChild(list);
-  }
-  if (payload.guaranteedEngagement === false) {
-    setupHost.appendChild(
-      el('p', {
-        class: 'muted small',
-        text: 'No engagement is synthesized anywhere in this system: metrics are read back from the platform API after publishing, or they are absent.',
-      }),
-    );
-  }
-
-  $$('#social-connections button[data-action]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      if (!guardMutation()) return;
-      const platform = button.getAttribute('data-platform');
-      try {
-        if (button.getAttribute('data-action') === 'connect') {
-          const started = await api(`/social/oauth/${platform}/start`, { method: 'POST', body: {} });
-          banner(`Approve the ${platform} scopes in the window that opens; the callback stores the connection.`, 'ok');
-          window.open(started.authorizeUrl, '_blank', 'noopener');
-        } else {
-          const reason = window.prompt('Reason for disconnecting (stored in the audit trail)?');
-          if (!reason) return;
-          const result = await api(`/social/connections/${platform}`, { method: 'POST', body: { reason } });
-          banner(result.providerRevoked ? 'Disconnected and the provider revoked the token.' : `Disconnected locally. ${result.providerRevokeResult}`, 'ok');
-        }
-        await loadPublishing();
-      } catch (error) {
-        banner(error.message, 'error');
-      }
-    });
-  });
-}
-
 async function loadTreasury() {
   const [treasury, slots, payouts, ledger, wallets] = await Promise.all([
     api('/treasury'), api('/payout-slots'), api('/payouts'), api('/ledger?limit=50'), api('/wallets'),
@@ -2335,15 +2197,7 @@ function wire() {
     } catch (error) { banner(error.message, 'error'); }
   });
 
-  $('#head-chat-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!canMutate()) { banner('Head-agent chat requires the mission owner session.', 'error'); return; }
-    const input = $('#head-chat-question');
-    const button = event.target.querySelector('button');
-    button.disabled = true;
-    try { await loadHeadAgentChat(input.value.trim()); } finally { button.disabled = false; }
-  });
-
+  wireSubSections();
   $('#tabs').addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-tab]');
     if (!button) return;
@@ -2637,20 +2491,27 @@ function customerField(form,label,name,type='text',options=[]) {
 }
 function customerOutput(host,value){const box=el('textarea',{'aria-label':'Prepared artifact — not sent',readonly:'readonly',rows:'12'});box.value=typeof value==='string'?value:JSON.stringify(value,null,2);host.appendChild(box);}
 function customerForm(host,title,command,setup,toBody,after){
-  const form=el('form',{class:'control-block','aria-label':title});form.appendChild(el('h3',{text:title}));setup(form);const button=el('button',{type:'submit',text:title});form.appendChild(button);host.appendChild(form);
+  // Each intake form is a disclosure of its own: the block lists the three things an owner can do here,
+  // and the fields for the one they picked are what takes the screen. The title is the summary, so the
+  // heading inside the form went away rather than being printed twice.
+  const shell=el('details',{class:'control-block'});shell.appendChild(el('summary',{text:title}));
+  const form=el('form',{class:'control-block','aria-label':title});setup(form);const button=el('button',{type:'submit',text:title});form.appendChild(button);shell.appendChild(form);host.appendChild(shell);
   form.addEventListener('submit',async event=>{event.preventDefault();if(!guardMutation())return;button.disabled=true;try{const result=await api(`/customer-work/${command}`,{method:'POST',body:toBody(new FormData(form))});await after(result.result);}catch(error){banner(error.message,'error');}finally{button.disabled=false;}});return form;
 }
 async function loadCustomerWork(){
   const host=$('#customer-work');host.replaceChildren();$('#customer-detail').replaceChildren();
+  // The three intake forms are the tall part of this screen, so they render into their own collapsed
+  // block: the section keeps its record tables on one screen and an owner opens the form they need.
+  const intake=$('#customer-intake');if(intake)intake.replaceChildren();
   if(!canMutate()){host.appendChild(el('p',{text:'Owner sign-in required. Access links cannot view customer briefs.'}));return;}
   const data=await api('/customer-work');host.appendChild(el('p',{text:data.note}));
   host.appendChild(table([{label:'Capability (not a live offer)',key:'title'},{label:'Customer need',key:'customer',wrap:true},{label:'Deliverables',key:'deliverables',wrap:true},{label:'Limits',key:'limit'}],data.offers));
   host.appendChild(el('h3',{text:'Reviewed customer-acquisition mechanisms — not acquired leads'}));
   host.appendChild(table([{label:'Category',key:'category'},{label:'Where customers come from',key:'customerOrigin',wrap:true},{label:'Value to deliver',key:'value',wrap:true},{label:'Actual payment event',key:'paymentGeneration',wrap:true},{label:'Settlement gate',key:'settlement',wrap:true},{label:'Human ownership / approval',key:'human',wrap:true},{label:'Automation boundary',key:'automation',wrap:true}],data.channelInventory??[],'No channel inventory loaded.'));
   const services=data.offers.map(x=>x.id);
-  customerForm(host,'Prepare unpublished listing','listing',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Owner-proposed USD cents — not earnings','quoteCents','number');},f=>({serviceId:f.get('serviceId'),quoteCents:Number(f.get('quoteCents'))}),result=>customerOutput(host,result.text));
-  customerForm(host,'Preview on my own authorized sample','preview',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Non-sensitive sample input','input','textarea');const config=customerField(form,'Configuration JSON: required fields + uniqueKey, or null for HTML','configuration','textarea');config.value='null';customerField(form,'I have the data rights','dataRightsReviewed','checkbox');customerField(form,'This sample contains no sensitive data','nonSensitiveDataOnly','checkbox');},f=>({serviceId:f.get('serviceId'),input:f.get('input'),configuration:JSON.parse(f.get('configuration')),dataRightsReviewed:f.has('dataRightsReviewed'),nonSensitiveDataOnly:f.has('nonSensitiveDataOnly')}),result=>{customerOutput(host,result.classification);customerOutput(host,result.artifact);});
-  customerForm(host,'Record an explicit customer request','record',form=>{
+  customerForm(intake,'Prepare unpublished listing','listing',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Owner-proposed USD cents — not earnings','quoteCents','number');},f=>({serviceId:f.get('serviceId'),quoteCents:Number(f.get('quoteCents'))}),result=>customerOutput(host,result.text));
+  customerForm(intake,'Preview on my own authorized sample','preview',form=>{customerField(form,'Service','serviceId','select',services);customerField(form,'Non-sensitive sample input','input','textarea');const config=customerField(form,'Configuration JSON: required fields + uniqueKey, or null for HTML','configuration','textarea');config.value='null';customerField(form,'I have the data rights','dataRightsReviewed','checkbox');customerField(form,'This sample contains no sensitive data','nonSensitiveDataOnly','checkbox');},f=>({serviceId:f.get('serviceId'),input:f.get('input'),configuration:JSON.parse(f.get('configuration')),dataRightsReviewed:f.has('dataRightsReviewed'),nonSensitiveDataOnly:f.has('nonSensitiveDataOnly')}),result=>{customerOutput(host,result.classification);customerOutput(host,result.artifact);});
+  customerForm(intake,'Record an explicit customer request','record',form=>{
     form.appendChild(el('p',{text:'Owner-reviewed declarations only, not independently verified demand. Use the originating platform customer ID; never import scraped contacts. For direct referrals, use your actual contact reference; map it to the authenticated Contra client only after an owner identity review.'}));
     customerField(form,'Service','serviceId','select',services);customerField(form,'Original channel','origin','select',['direct','fiverr','upwork','contra']);
     for(const [label,name] of [['Customer reference (not credentials)','customerRef'],['Actual incoming request reference','sourceRef'],['Human review reference','reviewRef']])customerField(form,label,name);

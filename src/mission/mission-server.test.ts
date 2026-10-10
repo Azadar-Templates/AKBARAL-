@@ -88,14 +88,99 @@ test('health is reachable without auth and exposes no secrets', async () => {
   assert.ok(!/password|token_hash|csrf/i.test(serialized), 'no credential material in the health payload');
 });
 
+/**
+ * The dashboard was stripped to four sections; the API surface was not. Every route the workers, the
+ * fleet and the remaining panels use has to keep answering, and a route that only a deleted view
+ * called is still an honest read surface rather than a hole. This list is what "unchanged owner
+ * checks" is measured against after the strip.
+ */
+const DASHBOARD_ROUTES = ['/api/overview', '/api/agents', '/api/approvals', '/api/policy', '/api/audit', '/api/treasury', '/api/ledger', '/api/payouts', '/api/payout-slots', '/api/withdraw', '/api/wallets', '/api/revenue', '/api/expenses', '/api/credentials', '/api/tools', '/api/resources', '/api/services', '/api/upgrades', '/api/work', '/api/reinvestment', '/api/specialists', '/api/self-management', '/api/reports', '/api/targets', '/api/bounty/programs', '/api/opportunity-catalog'];
+const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
+  ['/api/kill-switch', { engage: true }],
+  ['/api/policy', { maxDepth: 9 }],
+  ['/api/credentials', { provider: 'x', label: 'y', kind: 'oauth_token', value: 'synthetic-never-logged' }],
+  ['/api/targets', { label: 'target', amountCents: 100_000 }],
+];
+
 test('every private route refuses anonymous callers', async () => {
-  for (const path of ['/api/overview', '/api/agents', '/api/treasury', '/api/ledger', '/api/audit', '/api/policy', '/api/payouts', '/api/credentials', '/api/targets', '/api/approvals', '/api/self-management', '/api/reports']) {
+  for (const path of DASHBOARD_ROUTES) {
     const { status } = await api(path);
     assert.equal(status, 401, `${path} requires authentication`);
   }
   const missing = await api('/api/does-not-exist');
   assert.equal(missing.status, 404);
   assert.equal(missing.body.error.code, 'not_found');
+});
+
+test('the four stripped sections and the specialist record answer the owner with the shape the panels render', async () => {
+  const expectations: Record<string, (body: any) => string> = {
+    '/api/overview': (body) => (body.fleet && typeof body.fleet.registered === 'number' ? '' : 'Overview needs the fleet roll-up: registered, ready, blocked, earned, next action'),
+    '/api/specialists': (body) => (Array.isArray(body.records) && typeof body.total === 'number' ? '' : 'the specialist roster must be a bounded page plus a total'),
+    '/api/approvals': (body) => (Array.isArray(body.pending) && Array.isArray(body.all) ? '' : 'the approval queue must arrive as pending plus the full list'),
+    // The compiled prohibitions are surfaced by /api/overview (asserted below and in the sibling
+    // test); the policy route itself answers with the live policy plus the activity catalog.
+    '/api/policy': (body) => (body.policy && Array.isArray(body.categories) && body.categories.length >= 1 ? '' : 'the policy panel needs the live policy and the activity catalog'),
+    '/api/payout-slots': (body) => (Array.isArray(body.slots) && Array.isArray(body.checks) ? '' : 'a payout slot must arrive with the verification checks that gate it'),
+    '/api/audit': (body) => (Array.isArray(body.entries ?? body.rows ?? body.events) || typeof body.ok === 'boolean' ? '' : 'the audit trail must return entries or a chain verdict'),
+    '/api/bounty/programs': (body) => (Array.isArray(body.programs) ? '' : 'programs must be a list: the Bounty section renders one bounded card row per program'),
+
+  };
+  for (const [path, check] of Object.entries(expectations)) {
+    const { status, body } = await owner(path);
+    assert.equal(status, 200, `${path} answers the owner session`);
+    assert.equal(check(body), '', `${path} shape`);
+  }
+  // Pair one agent for real, so the roster is asserted against stored fleet state rather than an
+  // empty table: the route must report the specialty the catalog assigns and nothing invented.
+  const ownerId = String((await owner('/api/session/me')).body.owner.id);
+  const actor = { kind: 'owner' as const, id: ownerId };
+  const { applyPlatformCatalog } = await import('./earning/platform-catalog');
+  const { specializeAgent } = await import('./earning/specialist-fleet');
+  applyPlatformCatalog(actor);
+  const specialistAgentId = `agt_roster_${Date.now().toString(36)}`;
+  missionDb.run("INSERT INTO mission_agents (id,slug,name,role_key,depth,generation,status,mission_role,origin_platform,capabilities) VALUES (?,?,?,'specialist',0,'custom','active','worker','akbaral-registry',?)",
+    [specialistAgentId, `roster-${specialistAgentId.slice(-6)}`, 'Roster fixture specialist', JSON.stringify(['coding'])]);
+  const paired = specializeAgent({ actor, agentId: specialistAgentId, platformId: 'github_issue_bounties' });
+  assert.equal(paired.state, 'PLATFORM_ASSIGNED', JSON.stringify(paired));
+
+  const specialists = await owner('/api/specialists?limit=3');
+  assert.ok(specialists.body.total >= 1, 'the roster counts the whole fleet, not the page');
+  assert.ok(specialists.body.records.length <= 3, 'and the page stays bounded');
+  const listed = specialists.body.records.find((record: any) => record.agentId === specialistAgentId);
+  assert.ok(listed, 'the paired specialist appears in the roster');
+  assert.equal(listed.specialtyKey, 'github_bounty_engineer');
+  assert.equal(listed.earningsCents, 0, 'a pairing is not income, so the roster must report zero');
+  assert.deepEqual(listed.work, { ranked: 0, assigned: 0, delivered: 0, dropped: 0 });
+  for (const record of specialists.body.records) {
+    assert.ok(typeof record.specialtyKey === 'string' || record.specialtyKey === null, 'specialty is a name from the config, never a guess');
+    assert.deepEqual(Object.keys(record.work).sort(), ['assigned', 'delivered', 'dropped', 'ranked']);
+    assert.deepEqual(Object.keys(record.evidence).sort(), ['gradedSuites', 'passedSuites', 'transitions', 'venueRejections']);
+    assert.deepEqual(Object.keys(record.verified).sort(), ['accepted', 'paymentProofs']);
+    assert.match(record.earningsBasis, /verified settlement/i);
+  }
+  const serialized = JSON.stringify(specialists.body);
+  assert.ok(!/ciphertext|"token"|Bearer|password/i.test(serialized), 'the roster never carries credential material');
+});
+
+test('an access link can read the specialist record but cannot reach a single owner control', async () => {
+  const read = createAccessLink({ label: 'specialist read', scope: 'dashboard:read', expiresInHours: 1, createdBy: 'owner' });
+  const headers = { 'x-mission-link': read.token };
+  const got = await api('/api/specialists?limit=5', { headers });
+  assert.equal(got.status, 200, 'a scoped link may read the roster');
+  assert.ok(Array.isArray(got.body.records));
+  for (const [path, body] of OWNER_ONLY_MUTATIONS) {
+    const refused = await api(path, { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.ok([401, 403].includes(refused.status), `${path} must refuse a link mutation, got ${refused.status}`);
+    assert.notEqual(refused.status, 200, `${path} is not writable by a link`);
+  }
+  // A link that was never issued is refused before it can reach a handler: the guard is the session
+  // check, not the shape of the body.
+  const forged = await api('/api/kill-switch', { method: 'POST', headers: { 'x-mission-link': 'zal_forged_link' }, body: '{"engage":true}' });
+  assert.equal(forged.status, 401, 'an unknown link is not a caller');
+  const policyRead = await api('/api/policy', { headers });
+  assert.equal(policyRead.status, 200, 'the same link can still read the policy it cannot change');
+  const unknownWrite = await api('/api/specialists', { method: 'POST', headers: { authorization: `Bearer ${ownerToken}` }, body: '{}' });
+  assert.equal(unknownWrite.status, 405, 'the roster is read-only even for the owner: specialists are assigned through the fleet API');
 });
 
 test('owner login issues a session; wrong passwords and unknown accounts are refused', async () => {

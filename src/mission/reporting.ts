@@ -16,6 +16,7 @@ import {
 } from './treasury';
 import { expiringCredentials, listTools, listServices, selfManagementSnapshot, listUpgrades } from './self-management';
 import { identityLockStatus } from './identity-lock';
+import { fleetReport } from './earning/specialist-fleet';
 
 /**
  * MISSION REPORTING — every agent can account for its own operation, and the
@@ -472,6 +473,21 @@ export interface MissionOverview {
   selfManagement: ReturnType<typeof selfManagementSnapshot>;
   audit: ReturnType<typeof verifyMissionAudit>;
   integrity: { ledger: ReturnType<typeof verifyLedger> };
+  /**
+   * The whole Overview screen. Five numbers the owner can act on, computed from the fleet's own
+   * state table — never from an advertised reward, never from a target. `nextAction` is the first
+   * outstanding owner action because nothing past ACCESS_READY can move without the owner.
+   */
+  fleet: {
+    registered: number;
+    withPlatform: number;
+    ready: number;
+    blocked: number;
+    needsOwnerAction: number;
+    earnedCents: number;
+    settledProofs: number;
+    nextAction: string;
+  };
   opportunityCatalog?: {
     total: number;
     verified: number;
@@ -619,8 +635,40 @@ export function buildMissionOverview(): MissionOverview {
     };
   }
 
+  const fleet = (() => {
+    const empty = { registered: 0, withPlatform: 0, ready: 0, blocked: 0, needsOwnerAction: 0, earnedCents: 0, settledProofs: 0, nextAction: '' };
+    try {
+      const report = fleetReport();
+      const states = report.states as Record<string, number>;
+      const ready = (states.EXECUTION_READY ?? 0) + (states.WORKING ?? 0);
+      const blocked = (states.BLOCKED ?? 0) + (states.INACTIVE ?? 0);
+      const ownerAction = (report.ownerActions ?? [])[0];
+      return {
+        registered: report.agents.total,
+        withPlatform: report.agents.assigned,
+        ready,
+        blocked,
+        needsOwnerAction: states.NEEDS_OWNER_ACTION ?? 0,
+        earnedCents: report.revenue.ledgerRevenueCents,
+        settledProofs: report.revenue.settledProofs,
+        nextAction: report.firstExecutable
+          ? `assign ${report.firstExecutable.opportunityKey} to ${report.firstExecutable.agentId}`
+          : typeof ownerAction === 'string'
+            ? ownerAction
+            : ownerAction
+              ? String((ownerAction as { action?: string }).action ?? JSON.stringify(ownerAction).slice(0, 160))
+              : 'run discovery for the assigned venues',
+      };
+    } catch {
+      // Fail closed with zeros and say why, rather than fabricating a fleet picture or 500ing the
+      // whole overview for every owner.
+      return { ...empty, nextAction: 'apply the mission migrations — the specialist fleet schema is not present' };
+    }
+  })();
+
   return {
     generatedAt: nowIso(),
+    fleet,
     isolation: {
       database: process.env.ZA141251SA_DATABASE_URL ?? 'file:./mission.db',
       platformLedger: 'not read, not written — AKBARAL! customer revenue is a different database and treasury',

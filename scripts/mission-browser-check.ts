@@ -88,17 +88,18 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(page.locator('#app')).toBeVisible();
     await expect(page.locator('#identity')).toContainText('signed in as');
     checkpoint(name, 'real owner sign-in');
-    // Verified cash sits inside the Earnings family now (consolidated nav), so
-    // the family row is opened before the sub-section is clicked.
-    await page.locator('[data-tab="earnings"]').click();
+    // Verified cash sits inside Money's collapsed Earnings block, so the section is opened and then
+    // the block — the same two clicks the owner makes.
     await page.locator('[data-tab="money"]').click();
+    await page.locator('details.sub[data-view="earnings"] > summary').click();
     await expect(page.locator('#verified-cash-summary')).toContainText('Verified available');
     await expect(page.locator('#verified-cash-summary')).toContainText('0.00 USD');
     await expect(page.locator('#money-command-form')).toBeVisible();
     await page.screenshot({path:path.join(evidenceDir,`${name}-verified-cash.png`),fullPage:true});
     checkpoint(name,'verified cash dashboard shows zero real funds; owner controls render without provider calls');
     await page.locator('[data-tab="overview"]').click();
-    await page.locator('[data-tab="tools"]').click();
+    await page.locator('[data-tab="approvals"]').click();
+    await page.locator('details.sub[data-view="tools"] > summary').click();
     const credentialForm = page.locator('#credential-form');
     await expect(credentialForm.locator('[name="scope"]')).toHaveValue('');
     const credentialLabel = `Synthetic ${name} scoped UI credential`;
@@ -169,8 +170,14 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     assert.equal(getWallet(f.walletId)!.balanceCents, 75, 'explicit free period creates no additional charge');
     checkpoint(name, 'evidenced renewal preserves prior usage and starts explicit new counters');
     await page.screenshot({ path: path.join(evidenceDir, `${name}-resource-calls.png`), fullPage: true });
-    await page.locator('[data-tab="agents"]').click();
+    await page.locator('[data-tab="bounties"]').click();
+    await page.locator('details.sub[data-view="agents"] > summary').click();
     await page.locator('#agent-list tr').filter({ hasText: f.agentId }).getByRole('button', { name: 'Open report' }).click();
+    // Both drill-down layers of the report are collapsed by default (that is what keeps the section
+    // inside its screen budget), so the harness opens them the way an owner does before using them.
+    for (const disclosure of ['The record', 'Owner ↔ agent messages']) {
+      await page.locator('#agent-report details.control-block').filter({ hasText: disclosure }).locator('> summary').click();
+    }
     await page.locator(`[data-chat-config="${f.agentId}"]`).click();
     const settings = page.getByRole('region', { name: 'Automatic reply configuration' });
     await expect(settings.getByLabel('Automatic replies enabled')).toHaveValue('false');
@@ -192,6 +199,88 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     checkpoint(name, 'explicit chat opt-in and durable message/job display');
     const dimensions = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }));
     assert.ok(dimensions.content <= dimensions.viewport + 1, `page overflows viewport: ${JSON.stringify(dimensions)}`);
+    // One screen per section is a measured property, not a claim: every section is walked in the
+    // browser, closed and with each collapsed block open, and its real scroll height is compared
+    // with three viewports. scripts/mission-dashboard-heights.ts prints the before/after table.
+    const heights = await page.evaluate(async () => {
+      const out: Record<string, number | string> = {};
+      for (const section of ['overview', 'bounties', 'approvals', 'money']) {
+        document.querySelector<HTMLElement>(`#tabs [data-tab="${section}"]`)!.dispatchEvent(new Event('click', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        for (const details of Array.from(document.querySelectorAll('details.sub')) as HTMLDetailsElement[]) details.open = false;
+        // Nested disclosures (the report's own layers) are measured closed: that is what the owner
+        // sees when they land on the section. The fully-open figure is recorded beside it, not
+        // asserted, so the report's worst case is still on the record.
+        for (const inner of Array.from(document.querySelectorAll('details.control-block')) as HTMLDetailsElement[]) inner.open = false;
+        const panel = document.querySelector<HTMLElement>(`[data-panel="${section}"]`)!;
+        out[`${section}:closed`] = panel.scrollHeight;
+        // Per-child heights are recorded for the closed state so that a breach names the block that
+        // causes it instead of leaving the reader to guess: this is what turns 'bounties is 4250px'
+        // into 'the roster table is 1200px of it'.
+        const parts: Record<string, number> = {};
+        for (const child of Array.from(panel.children) as HTMLElement[]) {
+          const key = child.id || child.tagName.toLowerCase();
+          parts[key] = (parts[key] ?? 0) + child.offsetHeight;
+        }
+        out[`${section}:closed-detail`] = Object.entries(parts)
+          .sort((a, b) => b[1] - a[1]).map(([key, px]) => `${key}=${px}px`).join(' ');
+        for (const details of Array.from(panel.querySelectorAll('details.sub')) as HTMLDetailsElement[]) {
+          details.open = true;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          const view = details.getAttribute('data-view');
+          out[`${section}:${view}`] = panel.scrollHeight;
+          // Same diagnostic for the open block: which of its own children is the tall one.
+          const blockParts: Record<string, number> = {};
+          for (const child of Array.from(details.children) as HTMLElement[]) {
+            const key = child.id || child.tagName.toLowerCase();
+            blockParts[key] = (blockParts[key] ?? 0) + child.offsetHeight;
+            // One more level for a child that is itself the tall thing, so a breach is actionable.
+            if (child.offsetHeight > 600) {
+              for (const inner of Array.from(child.children) as HTMLElement[]) {
+                const innerKey = `${key}>${inner.id || inner.tagName.toLowerCase()}`;
+                blockParts[innerKey] = (blockParts[innerKey] ?? 0) + inner.offsetHeight;
+              }
+            }
+          }
+          out[`${section}:${view}:parts`] = Object.entries(blockParts)
+            .sort((a, b) => b[1] - a[1]).map(([key, px]) => `${key}=${px}px`).join(' ');
+          details.open = false;
+        }
+      }
+      return out;
+    });
+    const widest = await page.evaluate(async () => {
+      for (const inner of Array.from(document.querySelectorAll('details.control-block')) as HTMLDetailsElement[]) inner.open = true;
+      let worst = 0;
+      let where = '';
+      for (const section of ['overview', 'bounties', 'approvals', 'money']) {
+        document.querySelector<HTMLElement>(`#tabs [data-tab="${section}"]`)!.dispatchEvent(new Event('click', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        for (const details of Array.from(document.querySelectorAll('details.sub')) as HTMLDetailsElement[]) {
+          details.open = true;
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          const px = document.querySelector<HTMLElement>(`[data-panel="${section}"]`)!.scrollHeight;
+          if (px > worst) { worst = px; where = `${section}:${details.getAttribute('data-view')}`; }
+          details.open = false;
+        }
+      }
+      return { worst, where };
+    });
+    heights['everything-open:worst'] = widest.worst;
+    heights['everything-open:where'] = widest.where;
+    const heightLimit = 3 * (await page.evaluate(() => innerHeight));
+    // The evidence is written first: a run that fails the budget is exactly the run whose numbers are
+    // needed to fix it.
+    fs.writeFileSync(path.join(evidenceDir, `section-heights-${name}.json`), JSON.stringify(heights, null, 2));
+    // Every breach is reported in one go: fixing them one run at a time on a 40-second harness is how
+    // a screen budget turns into an afternoon.
+    const over = Object.entries(heights).filter(([key, px]) => typeof px === 'number' && !key.startsWith('everything-open') && (px as number) > heightLimit);
+    if (over.length > 0) {
+      const detail = over.map(([key, px]) => `${key} is ${px}px (limit ${heightLimit}px); closed-section parts: ${heights[`${key.split(':')[0]}:closed-detail`]}; block parts: ${heights[`${key}:parts`] ?? 'n/a'}`).join('\n');
+      throw new Error(`${over.length} section state(s) exceed three screens at ${name}:
+${detail}`);
+    }
+    checkpoint(name, `every section fits three screens (${heightLimit}px): ${Object.entries(heights).map(([key, px]) => `${key}=${px}px`).join(' ')}`);
     assert.equal(errors.length, 0, errors.join('\n'));
     await page.screenshot({ path: path.join(evidenceDir, `${name}-chat-controls.png`), fullPage: true });
     checkpoint(name, 'responsive document and no JavaScript page errors');
@@ -203,7 +292,8 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await expect(readPage.locator('#identity')).toContainText('read-only access link');
     assert.equal(new URL(readPage.url()).hash, '');
     await readPage.locator('[data-tab="overview"]').click();
-    await readPage.locator('[data-tab="tools"]').click();
+    await readPage.locator('[data-tab="approvals"]').click();
+    await readPage.locator('details.sub[data-view="tools"] > summary').click();
     await expect(readPage.locator('[data-resource-calls], [data-bind-credential], [data-resource-periods]')).toHaveCount(0);
     await expect(readPage.locator('#credential-form')).toBeHidden();
     assert.equal(await readPage.evaluate(async resourceId => (await fetch(`/api/resources/${resourceId}/calls`)).status, f.resourceId), 401);

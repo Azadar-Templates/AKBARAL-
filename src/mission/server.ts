@@ -1561,6 +1561,19 @@ async function handleApi(
       json(res, 200, buildMissionOverview());
       return true;
     }
+    // The per-agent specialist record: specialty, work done, evidence, verified outcomes and
+    // earnings, all counted from stored rows. Read-only — it grants no capability, and the
+    // earnings figure follows verified settlement, never an advertised reward.
+    case 'specialists': {
+      requireRead(context);
+      if (method !== 'GET') throw new HttpProblem(405, 'the specialist roster is read-only; specialists are assigned through the fleet API', 'method_not_allowed');
+      const { listSpecialistRecords } = await import('./earning/specialist-fleet');
+      const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') ?? 50) || 50));
+      const roster = listSpecialistRecords({ limit });
+      json(res, 200, { records: roster.records, total: roster.total, note: 'Counts come from stored fleet rows. Earnings require a verified settlement record; nothing is inferred from an advertised bounty.' });
+      return true;
+    }
+
     case 'treasury': {
       requireRead(context);
       try{ ensureMissionTreasury(); ensureAgentWallets(); }catch{}

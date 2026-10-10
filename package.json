@@ -78,6 +78,7 @@
     "mission:bounty:dry-run": "DRY_RUN=true tsx scripts/mission-bounty-dry-run.ts",
     "mission:chat-worker": "tsx scripts/mission-chat-worker.ts",
     "mission:browser-check": "tsx scripts/mission-browser-check.ts",
+    "mission:dashboard:heights": "tsx scripts/mission-dashboard-heights.ts",
     "mission:sync-registry": "tsx scripts/mission-sync-registry.ts",
     "fleet:readiness": "tsx scripts/mission-fleet-readiness.ts",
     "board:frantic": "tsx scripts/mission-frantic-board.ts",

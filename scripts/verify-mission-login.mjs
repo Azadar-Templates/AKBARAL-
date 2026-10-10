@@ -139,7 +139,14 @@ async function main() {
   record('the configured owner signs in and the console opens', identity.includes(email), `identity="${identity}"`);
 
   const cards = await waitFor(() => (freshDoc.querySelector('#overview-cards').children.length > 0 ? freshDoc.querySelector('#overview-cards') : null), 'the overview cards', 10000);
-  record('the signed-in dashboard renders real overview data', cards.children.length >= 6, `${cards.children.length} cards, first="${cards.children[0].textContent.slice(0, 60)}"`);
+  // The overview is one screen by contract: exactly the five readouts the owner named, in that order,
+  // each filled from the mission API — not a card wall. A sixth card is a regression, so the count is
+  // asserted as an equality and the labels are checked by name.
+  const cardText = [...cards.children].map((node) => node.textContent.replace(/\s+/g, ' ').trim());
+  const expectedHeads = ['Fleet', 'Ready to work', 'Blocked', 'Earned', 'Next action'];
+  const headsMatch = expectedHeads.every((head, index) => (cardText[index] ?? '').startsWith(head));
+  record('the overview shows exactly the five readouts, in order, from live data', cardText.length === 5 && headsMatch,
+    `${cardText.length} cards${headsMatch ? '' : ', unexpected order or labels'}, first="${cardText[0]?.slice(0, 60) ?? ''}"`);
 
   const storedToken = fresh.window.sessionStorage.getItem('za_mission_token');
   record('the session token is stored for the tab only (not localStorage)', Boolean(storedToken) && !fresh.window.localStorage.getItem('za_mission_token'), `sessionStorage=${Boolean(storedToken)}`);
@@ -172,7 +179,7 @@ async function main() {
     `${activitySelect.options.length} activities`,
   );
   const tabs = Array.from(reloadedDoc.querySelectorAll('#tabs .tab')).map((node) => node.textContent.trim());
-  record('every mission section is reachable from the navigation', tabs.length >= 7, tabs.join(' / '));
+  record('the navigation offers exactly the four mission sections', tabs.length === 4, tabs.join(' / '));
 
   // ── 7. signing out clears the session ───────────────────────────────────
   reloadedDoc.querySelector('#signout').dispatchEvent(new reloaded.window.Event('click', { bubbles: true }));

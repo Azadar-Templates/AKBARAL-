@@ -65,12 +65,22 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .tab { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
 .tab.active { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
-/* Consolidated navigation: the sub-section row of the active family. Same
+
+/* Collapsed sub-sections. A block is a disclosure, not a page: only the summary row
+   shows until the owner opens it, so a section stays inside one screen while every
+   control it hides stays one click away. Existing tokens only — no new colour, no
+   new font. */
+details.sub { border: 1px solid var(--line); border-radius: var(--radius); margin: 10px 0; background: var(--panel); }
+details.sub > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; color: var(--accent-bright); list-style: none; }
+details.sub > summary::-webkit-details-marker { display: none; }
+details.sub > summary::before { content: '\203A'; margin-right: 8px; color: var(--muted); }
+details.sub[open] > summary::before { content: '\2304'; }
+details.sub[hidden] { display: none; }
+details.sub > :not(summary) { padding: 0 12px 12px; }
+details.sub h3 { font-size: 15px; margin: 12px 0 6px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
    tokens and the same .tab chip as the primary row, on its own wrapped line —
    the primary row itself never scrolls sideways at any width. */
-.subtabs { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin: -2px 0 4px; padding-top: 7px; border-top: 1px dashed var(--line); }
-.subtabs[hidden] { display: none; }
-.tab.subtab { font-size: 12.5px; padding: 5px 9px; }
 
 .banner { padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--line); }
 .banner.error { border-color: var(--bad); color: #ffd0d0; background: #2a1416; }
@@ -86,7 +96,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .card .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } .guide-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
 
 h1 { font-size: 20px; margin: 0 0 6px; }
 h2 { font-size: 16px; margin: 22px 0 8px; }
@@ -139,17 +149,10 @@ td.wrap { white-space: normal; max-width: 460px; }
 .control-block p { margin: 6px 0 0; }
 
 /* ── Read-only head-agent surface ─────────────────────────────────────────── */
-.head-agent-overview { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 18px; }
 .head-agent-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .head-agent-heading h2 { margin-top: 4px; }
 .eyebrow { color: var(--accent-bright); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
 .alert-list { display: grid; gap: 8px; margin: 10px 0; }
-.notification-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
-.notification-row.warning { border-color: #5c4620; }
-.notification-row.critical { border-color: #5c2020; }
-.guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.chat-answer { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-top: 12px; }
-.chat-answer-text { font-size: 16px; margin-top: 0; }
 
 /* ── Responsive pass
 : 320 → 1440+ without horizontal overflow ─────────────── */
@@ -160,8 +163,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
      wrapping inside the viewport, never scrolling sideways. */
   .tabs { gap: 4px; margin-bottom: 12px; }
   .tab { padding: 7px 10px; font-size: 13px; }
-  .tab.subtab { font-size: 12px; padding: 5px 8px; }
-  .subtabs { gap: 4px; padding-top: 6px; }
 }
 
 @media (max-width: 720px) {
@@ -307,18 +308,12 @@ pre, code { white-space: pre-wrap; word-break: break-word; }
 
 .card,
 .control-block,
-.head-agent-overview,
-.chat-answer,
-.notification-row,
 .stack-form { border-color: var(--glass-border); }
 
 /* The glass tint is a background IMAGE over the existing opaque panel
    colour, so every value, label and number keeps its contrast. */
 .card,
 .control-block,
-.head-agent-overview,
-.chat-answer,
-.notification-row,
 .stack-form {
   background-image: linear-gradient(var(--glass-surface), var(--glass-surface));
   box-shadow: inset 0 1px 0 var(--glass-inset-highlight), var(--glass-shadow-soft);
@@ -327,9 +322,6 @@ pre, code { white-space: pre-wrap; word-break: break-word; }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .card,
   .control-block,
-  .head-agent-overview,
-  .chat-answer,
-  .notification-row,
   .stack-form,
   .topbar {
     -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(1.15);
@@ -390,3 +382,14 @@ th {
 .bounty-card-targets { margin: 0; padding-left: 20px; color: var(--muted); }
 .empty-state { padding: 12px; }
 @media (max-width: 560px) { .bounty-registration-form .inline-form, .bounty-target-row { grid-template-columns: 1fr; } .bounty-target-row button { width: 100%; } }
+
+/* On a phone the console keeps the same controls, so nothing is dropped to fit three screens: an open
+   folded block becomes a scroll region of its own instead of stacking five screens of tables inside the
+   section. Same rows, same fields, same theme — the section stays the thing that fits on screen, and
+   the block is where the detail is read. */
+@media (max-width: 500px) {
+  details.sub[open] {
+    max-height: 58vh;
+    overflow: auto;
+  }
+}

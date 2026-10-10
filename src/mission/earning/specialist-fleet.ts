@@ -29,6 +29,7 @@ import {
   type GmailGroup, type PlatformRecord,
 } from './platform-catalog';
 import { profileRulesDigest, runSpecialistEvaluation, skillVerificationState, suiteFor, type SpecialistProfileView } from './specialist-evaluation';
+import { describeSpecialty, isSpecialtyFit, specialtyFor } from './specialty-registry';
 
 function deny(code: string, detail?: string): never {
   throw new MoneyError(code, detail ? `${code}: ${detail}` : code);
@@ -485,6 +486,9 @@ export interface RankedOpportunity {
   readonly key: string; readonly title: string; readonly url: string | null;
   readonly reward_usd_cents: number; readonly funding_verified: boolean; readonly priority: number;
   readonly factors: Record<string, number | string | null>; readonly blockers: string[];
+  /** The registry opportunity class of the paired venue, recorded so the specialty gate can be
+   *  re-checked later without re-deriving it from the venue label. */
+  readonly opportunity_class: string | null;
 }
 
 /**
@@ -498,7 +502,12 @@ export function rankOpportunityQueue(input: { readonly actor: MoneyActor; readon
   const specialist = db.get<Row>('SELECT platform_id, specialty_key FROM mission_agent_specialists WHERE agent_id=?', [input.agentId]);
   if (!specialist) deny('specialist_profile_missing', input.agentId);
   const platformId = String(specialist!.platform_id);
+  const specialtyKey = String(specialist!.specialty_key);
   const record = platformRecordFor(platformId);
+  // The class comes from the verified catalog record for the paired venue, never from the
+  // opportunity's own wording: a specialist may only be ranked into work its specialty covers.
+  const opportunityClass = record?.opportunityClass ?? null;
+  const fitsSpecialty = isSpecialtyFit(specialtyKey, opportunityClass);
   const limit = input.limit ?? 25;
   const registry = db.all<Row>(
     `SELECT * FROM mission_opportunities WHERE platform=? AND status IN ('pending_review','verified') ORDER BY created_at DESC LIMIT ?`,
@@ -518,6 +527,7 @@ export function rankOpportunityQueue(input: { readonly actor: MoneyActor; readon
     const fitScore = record ? Math.min(25, skills.length * 5) : 0;
     const eligibility = parse<string[]>(opportunity.country_eligibility as string, []).length ? 'declared' : 'unknown';
     if (eligibility === 'unknown') blockers.push('eligibility_unread');
+    if (!fitsSpecialty) blockers.push(`specialty_mismatch: ${describeSpecialty(specialtyKey)} does not cover ${opportunityClass ?? 'an unclassified venue'}`);
     const rewardWeight = Math.min(35, Math.round((Math.min(reward, 500_000) / 500_000) * 35));
     const priority = (fundingVerified ? 30 : 0) + rewardWeight + fitScore + (automation === 'allowed' ? 5 : 0);
     rows.push({
@@ -525,6 +535,7 @@ export function rankOpportunityQueue(input: { readonly actor: MoneyActor; readon
       url: opportunity.source_url ? String(opportunity.source_url) : null,
       reward_usd_cents: reward, funding_verified: fundingVerified, priority,
       factors: { funding_verified: fundingVerified ? 1 : 0, reward_weight: rewardWeight, fit: fitScore, automation, competition: 'unmeasured', deadline: null, effort: String(opportunity.risk_level ?? 'unknown') },
+      opportunity_class: opportunityClass,
       blockers,
     });
   }
@@ -534,11 +545,11 @@ export function rankOpportunityQueue(input: { readonly actor: MoneyActor; readon
   let rank = 1;
   for (const row of top) {
     db.run(`INSERT OR REPLACE INTO mission_specialist_opportunities
-      (id,agent_id,platform_id,opportunity_key,title,url,reward_usd_cents,funding_verified,eligibility,deadline_at,competition,effort,fit_score,priority_score,factors_json,rank,state,blockers_json,ranked_at,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      (id,agent_id,platform_id,opportunity_key,title,url,reward_usd_cents,funding_verified,eligibility,deadline_at,competition,effort,fit_score,priority_score,factors_json,rank,state,blockers_json,opportunity_class,ranked_at,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
       missionId('sopp'), input.agentId, platformId, row.key, row.title, row.url, row.reward_usd_cents, row.funding_verified ? 1 : 0,
       String(row.factors.eligibility ?? 'unknown'), null, String(row.factors.competition), String(row.factors.effort), Number(row.factors.fit ?? 0), row.priority,
-      json(row.factors), rank, row.blockers.length ? 'blocked' : 'candidate', json(row.blockers), now, now, now,
+      json(row.factors), rank, row.blockers.length ? 'blocked' : 'candidate', json(row.blockers), row.opportunity_class, now, now, now,
     ] as SqlValue[]);
     rank++;
   }
@@ -554,10 +565,26 @@ export function rankOpportunityQueue(input: { readonly actor: MoneyActor; readon
 /** Only the owner may put work onto a specialist's plate; that is the assignment gate. */
 export function assignOpportunity(input: { readonly actor: MoneyActor; readonly agentId: string; readonly opportunityKey: string }): { assigned: boolean; blockers: string[] } {
   if (input.actor.kind !== 'owner') deny('specialist_assignment_owner_only', 'placing work on a specialist is an owner decision');
-  const row = db.get<Row>('SELECT id, blockers_json FROM mission_specialist_opportunities WHERE agent_id=? AND opportunity_key=?', [input.agentId, input.opportunityKey]);
+  const row = db.get<Row>(
+    `SELECT o.id, o.blockers_json, o.opportunity_class AS opportunityClass, s.specialty_key AS specialtyKey
+       FROM mission_specialist_opportunities o
+       LEFT JOIN mission_agent_specialists s ON s.agent_id = o.agent_id
+      WHERE o.agent_id=? AND o.opportunity_key=?`,
+    [input.agentId, input.opportunityKey],
+  );
   if (!row) deny('specialist_opportunity_unranked', input.opportunityKey);
   const blockers = parse<string[]>(row!.blockers_json as string, []);
   if (blockers.length) deny('specialist_opportunity_blocked', blockers.join('; '));
+  // Specialty is not decoration: an agent may only be handed work its registered specialty
+  // covers. A missing class is refused rather than waved through, so a row ranked before the
+  // class was recorded has to be re-ranked instead of quietly assigned.
+  const specialtyKey = row!.specialtyKey ? String(row!.specialtyKey) : null;
+  if (!specialtyKey) deny('specialist_profile_missing', input.agentId);
+  const opportunityClass = row!.opportunityClass ? String(row!.opportunityClass) : null;
+  if (!opportunityClass) deny('specialist_opportunity_unclassified', 'rank the queue again so the venue class is recorded; no class, no fit check');
+  if (!isSpecialtyFit(specialtyKey, opportunityClass)) {
+    deny('specialist_specialty_mismatch', `${describeSpecialty(specialtyKey)} cannot be assigned ${opportunityClass} work`);
+  }
   // Checked at EXECUTION_READY, not WORKING: being handed an opportunity is what makes the
   // WORKING state reachable, so requiring it here would deadlock the sequence.
   const gates = evaluateGates(input.agentId, 'EXECUTION_READY');
@@ -591,7 +618,11 @@ export function recordOutcome(input: {
   }
   const now = nowIso();
   const state = input.outcome === 'accepted' || input.outcome === 'payment_verified' ? 'delivered' : (REJECTION_OUTCOMES.includes(input.outcome) ? 'dropped' : 'delivered');
-  db.run('UPDATE mission_specialist_opportunities SET state=?, updated_at=? WHERE id=?', [state, now, String(row!.id)] as SqlValue[]);
+  // The verified settlement reference is stored on the opportunity, so the per-agent record can be
+  // rebuilt from evidence years later instead of trusting a metric written at the same moment.
+  const reference = input.outcome === 'payment_verified' ? String(input.evidenceRef ?? '').trim() : null;
+  db.run('UPDATE mission_specialist_opportunities SET state=?, payment_reference=COALESCE(?, payment_reference), updated_at=? WHERE id=?',
+    [state, reference, now, String(row!.id)] as SqlValue[]);
 
   let lessonRecorded = false;
   if (REJECTION_OUTCOMES.includes(input.outcome)) {
@@ -758,6 +789,86 @@ export function registryCoverage(options: { readonly now?: () => Date; readonly 
     };
   });
   return { categories, uncovered: categories.filter(entry => entry.assignable === 0).map(entry => entry.category) };
+}
+
+/**
+ * The per-agent record the owner asked for: specialty, work done, evidence, verified outcomes and
+ * earnings — every number counted from stored rows, none remembered from a prompt. `earningsCents`
+ * only ever moves with a verified settlement record, so an agent that completed work but was not
+ * paid shows the work and $0.
+ */
+export function specialistRecord(agentId: string): {
+  readonly agentId: string;
+  readonly specialtyKey: string | null;
+  readonly specialtyLabel: string;
+  readonly workKinds: readonly string[];
+  readonly platformId: string | null;
+  readonly state: string | null;
+  readonly skillLevel: number;
+  readonly work: { readonly ranked: number; readonly assigned: number; readonly delivered: number; readonly dropped: number };
+  readonly evidence: { readonly gradedSuites: number; readonly passedSuites: number; readonly transitions: number; readonly venueRejections: number };
+  readonly verified: { readonly accepted: number; readonly paymentProofs: number };
+  readonly earningsCents: number;
+  readonly earningsBasis: string;
+} {
+  const specialist = db.get<Row>(
+    'SELECT platform_id, specialty_key, skill_level, state, metrics_json FROM mission_agent_specialists WHERE agent_id=?',
+    [agentId],
+  );
+  const specialtyKey = specialist ? String(specialist.specialty_key) : null;
+  const definition = specialtyFor(specialtyKey);
+  const metrics = parse<Record<string, number>>(specialist?.metrics_json as string, {});
+  const counts = (sql: string, params: SqlValue[] = [agentId]) => Number(db.get<Row>(sql, params)?.c ?? 0);
+  const work = {
+    ranked: counts('SELECT COUNT(*) AS c FROM mission_specialist_opportunities WHERE agent_id=?'),
+    assigned: counts("SELECT COUNT(*) AS c FROM mission_specialist_opportunities WHERE agent_id=? AND state='assigned'"),
+    delivered: counts("SELECT COUNT(*) AS c FROM mission_specialist_opportunities WHERE agent_id=? AND state='delivered'"),
+    dropped: counts("SELECT COUNT(*) AS c FROM mission_specialist_opportunities WHERE agent_id=? AND state='dropped'"),
+  };
+  const platformId = specialist ? String(specialist.platform_id) : null;
+  const evidence = {
+    gradedSuites: counts("SELECT COUNT(*) AS c FROM mission_specialist_evaluations WHERE agent_id=? AND mode!='fixture'"),
+    passedSuites: counts("SELECT COUNT(*) AS c FROM mission_specialist_evaluations WHERE agent_id=? AND passed=1 AND mode!='fixture'"),
+    transitions: counts('SELECT COUNT(*) AS c FROM mission_agent_state_transitions WHERE agent_id=?'),
+    venueRejections: counts('SELECT COUNT(*) AS c FROM bounty_rejection_lessons WHERE platform_key=?', [platformId ?? ''] as SqlValue[]),
+  };
+  // A payment counts once, and only through the reference `recordOutcome` refused to invent: the
+  // settlement row has to exist and be verified. Anything else stays zero.
+  const proofSql = `SELECT COUNT(*) AS c FROM mission_specialist_opportunities o
+                      WHERE o.agent_id=? AND o.payment_reference IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM mission_settlement_verifications v
+                                     WHERE v.external_id = o.payment_reference AND v.verified = 1)`;
+  const verified = { accepted: Number(metrics.accepted ?? 0), paymentProofs: counts(proofSql) };
+  const earnings = Number(db.get<Row>(`SELECT COALESCE(SUM(o.reward_usd_cents),0) AS c FROM mission_specialist_opportunities o
+                     WHERE o.agent_id=? AND o.state='delivered' AND o.payment_reference IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM mission_settlement_verifications v
+                                    WHERE v.external_id = o.payment_reference AND v.verified = 1)`, [agentId] as SqlValue[])?.c ?? 0);
+  return {
+    agentId,
+    specialtyKey,
+    specialtyLabel: definition?.label ?? 'unassigned specialty',
+    workKinds: definition ? [...definition.does] : [],
+    platformId,
+    state: specialist ? String(specialist.state) : null,
+    skillLevel: Number(specialist?.skill_level ?? 0),
+    work,
+    evidence,
+    verified,
+    earningsCents: earnings,
+    earningsBasis: 'sum of rewards on delivered opportunities whose recorded payment reference has a verified settlement row; advertised rewards and self-declared outcomes never count',
+  };
+}
+
+/** Every specialist with a pairing, oldest pairing first — the owner's roster view. */
+export function listSpecialistRecords(input: { readonly limit?: number } = {}): {
+  readonly records: readonly ReturnType<typeof specialistRecord>[];
+  readonly total: number;
+} {
+  const rows = db.all<Row>(
+    'SELECT agent_id AS id FROM mission_agent_specialists ORDER BY created_at ASC, agent_id ASC LIMIT ?',
+    [input.limit ?? 50] as SqlValue[],
+  ) ?? [];
+  return { records: rows.map(row => specialistRecord(String(row.id))), total: Number(db.get<Row>('SELECT COUNT(*) AS c FROM mission_agent_specialists')?.c ?? 0) };
 }
 
 /** Agents whose venue is verified but whose account grouping the owner has not authorized. */
