@@ -22,6 +22,9 @@ export interface GithubBountyCycleResult {
   policyChecked: number;
   policyAllowed: number;
   policyBanned: number;
+  claimsChecked: number;
+  claimsPayable: number;
+  claimsBlocked: number;
   assigned: number;
   prReviewAttempted: number;
   prReviewed: number;
@@ -57,7 +60,8 @@ function markAttempted(table: string, result: string) {
 
 export async function runGithubBountyCycle(actor: MoneyActor, workflow: GithubBountyWorkflow): Promise<GithubBountyCycleResult> {
   const empty = {
-    discovered: 0, accepted: 0, rejected: 0, policyChecked: 0, policyAllowed: 0, policyBanned: 0, assigned: 0,
+    discovered: 0, accepted: 0, rejected: 0, policyChecked: 0, policyAllowed: 0, policyBanned: 0,
+    claimsChecked: 0, claimsPayable: 0, claimsBlocked: 0, assigned: 0,
     prReviewAttempted: 0, prReviewed: 0, prMerged: 0, prClosedUnmerged: 0, prReviewsApproved: 0,
     prChangesRequested: 0, prChecksPassing: 0, prChecksFailing: 0, prMonitorFailed: 0,
     executionAttempted: 0, executionQueued: 0, executionVerified: 0, executionDrafted: 0, executionBlocked: 0,
@@ -98,6 +102,7 @@ export async function runGithubBountyCycle(actor: MoneyActor, workflow: GithubBo
       scale = {
         discovered: result.discovered, accepted: result.accepted, rejected: result.rejected,
         policyChecked: result.policyChecked, policyAllowed: result.policyAllowed, policyBanned: result.policyBanned,
+        claimsChecked: result.claimsChecked, claimsPayable: result.claimsPayable, claimsBlocked: result.claimsBlocked,
         assigned: result.assigned, executionAttempted: completed.length, executionQueued: queued.length,
         executionVerified: completed.length, executionDrafted: completed.length, executionBlocked: blocked.length,
         executionReason: blocked.length ? blocked[0].reason : null, maxConcurrency: result.maxConcurrency,

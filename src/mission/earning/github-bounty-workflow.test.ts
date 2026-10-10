@@ -17,6 +17,10 @@ const { updatePolicy, setKillSwitch } = require('../policy') as typeof import('.
 const owner = { kind: 'owner' as const, id: 'fixture-owner' }, agent = 'fixture-agent', other = 'fixture-other';
 const REPO = 'acme/widget', LOGIN = 'fixture-bot', FORK = `${LOGIN}/widget`;
 let banned = false, mergedState: 'open' | 'merged' | 'closed_unmerged' = 'open';
+// Live-issue fixture: the claim recheck reads these, so a test can flip an issue from
+// "open and unclaimed" to "already handed to someone else" without touching the workflow.
+let issueState = 'open', issueAssignees: Array<{ login: string }> = [], issueComments = 0;
+let issueBody = 'Bounty: $100 for a tested fix. The existing suite should pass after the change.';
 let reviewState: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' = 'APPROVED';
 let checkConclusion: 'success' | 'failure' = 'success';
 const json = (body: unknown, status = 200) => new Response(body === null ? '' : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -28,6 +32,12 @@ function client() {
       const q = url.searchParams.get('q') ?? '';
       if (q.startsWith('label:bounty')) return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test $100', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
       return json({ items: [] });
+    }
+    if (p === `/repos/${REPO}/issues/7` && method === 'GET') {
+      return json({ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test', body: issueBody, state: issueState, labels: [{ name: 'bounty' }], assignees: issueAssignees, comments: issueComments, updated_at: '2026-01-01T00:00:00Z' });
+    }
+    if (p === `/repos/${REPO}/issues/7/comments` && method === 'GET') {
+      return json(Array.from({ length: issueComments }, (_, index) => ({ body: `Comment ${index}: no claim here.` })));
     }
     if (p === `/repos/${REPO}/contents/CONTRIBUTING.md`) {
       const text = banned ? 'We do not accept AI-generated pull requests. Humans only.' : 'Contributions welcome, AI-assisted PRs allowed with disclosure.';
@@ -48,6 +58,14 @@ function client() {
     assert.fail(`unsupported fixture endpoint: ${method} ${p}`);
   };
   return new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport });
+}
+
+/** Records a real, evidence-backed payable verdict for every lead this fixture discovered.
+ * Assignment requires it: discovery acceptance is not payability. */
+async function payableOpportunities(workflow: unknown) {
+  const rows = db.all<{ id: string }>('SELECT id FROM mission_bounty_opportunities');
+  for (const row of rows) await (workflow as { recheckEligibility(actor: unknown, id: string): Promise<unknown> }).recheckEligibility(owner, row.id);
+  return rows.length;
 }
 
 const tables = [...SCOPE_TABLES, 'mission_bounty_api_requests', 'mission_bounty_api_cooldown', 'mission_bounty_events', 'mission_bounty_candidates', 'mission_bounty_assignments', 'mission_bounty_policy', 'mission_bounty_opportunities', 'mission_earning_jobs', 'mission_money_receipts', 'mission_cash_liabilities', 'mission_cash_entries', 'mission_money_transfers', 'mission_money_operations', 'mission_money_grants', 'mission_money_opportunities', 'mission_cash_accounts', 'mission_opportunity_roi'];
@@ -71,6 +89,7 @@ after(() => { try { db.close(); } finally { clearInterval(testLiveness); } });
 async function draftCandidate() {
   const opps = await w.discover(owner);
   await w.checkPolicy(owner, String(opps[0].id));
+  await payableOpportunities(w);
   const a = w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) });
   return w.draft(owner, String(a.id), { key: 'k1', baseBranch: 'main', branchName: 'fix-flaky', filePath: 'src/x.ts', fileContent: 'export const x = 1;', commitMessage: 'Fix flaky test', prTitle: 'Fix flaky test', prBody: 'This fixes issue #7.' });
 }
@@ -106,6 +125,7 @@ it('refuses assignment before a policy check has ever run', async () => {
 it('enforces exclusive one-agent-per-bounty assignment', async () => {
   const opps = await w.discover(owner);
   await w.checkPolicy(owner, String(opps[0].id));
+  await payableOpportunities(w);
   w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) });
   assert.throws(() => w.assign(owner, { agentId: other, opportunityId: String(opps[0].id) }), /exclusive_assignment_conflict/);
 });
@@ -296,4 +316,46 @@ it('passively records GitHub review/check evidence and follows a merge without o
   const third = await w.refreshSubmittedPullRequests(owner);
   assert.equal(third.attempted, 0, 'terminal pull requests are not re-polled or double-counted');
   assert.equal(db.get<any>("SELECT successes FROM mission_opportunity_roi WHERE registry_key='github_issue_bounties'")?.successes, 1);
+});
+
+it('refuses to bind an agent to a lead whose claim was never rechecked', async () => {
+  const opps = await w.discover(owner);
+  await w.checkPolicy(owner, String(opps[0].id));
+  assert.throws(() => w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) }), /claim_not_verified/);
+});
+
+it('refuses assignment when the maintainers already handed the bounty to someone else', async () => {
+  issueAssignees = [{ login: 'other-contributor' }];
+  try {
+    const opps = await w.discover(owner);
+    await w.checkPolicy(owner, String(opps[0].id));
+    const verdict = await w.recheckEligibility(owner, String(opps[0].id));
+    assert.equal(verdict.claim_state, 'not_payable');
+    assert.equal(verdict.claim_reason, 'claimed_by_other_party');
+    assert.match(String(verdict.claim_evidence_json), /other-contributor/);
+    assert.throws(() => w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) }), /claim_not_payable/);
+  } finally { issueAssignees = []; }
+});
+
+it('treats a prose claim in the issue body as a competing claim even with no assignee set', async () => {
+  const original = issueBody;
+  issueBody = 'Bounty: $100 for a tested fix. This is a bounty that we have reviewed and assigned to @samiyadev786.';
+  try {
+    const opps = await w.discover(owner);
+    await w.checkPolicy(owner, String(opps[0].id));
+    const verdict = await w.recheckEligibility(owner, String(opps[0].id));
+    assert.equal(verdict.claim_state, 'not_payable');
+    assert.equal(verdict.claim_reason, 'maintainer_assigned_claimant');
+  } finally { issueBody = original; }
+});
+
+it('never lets a stale verdict authorize work, and re-verifying clears it', async () => {
+  const opps = await w.discover(owner);
+  await w.checkPolicy(owner, String(opps[0].id));
+  await payableOpportunities(w);
+  db.run("UPDATE mission_bounty_opportunities SET claim_checked_at=? WHERE id=?", [new Date(Date.now() - 30 * 86400000).toISOString(), String(opps[0].id)]);
+  assert.throws(() => w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) }), /claim_check_stale/);
+  await w.recheckEligibility(owner, String(opps[0].id));
+  const a = w.assign(owner, { agentId: agent, opportunityId: String(opps[0].id) });
+  assert.equal(String(a.state), 'eligible');
 });

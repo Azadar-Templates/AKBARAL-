@@ -43,6 +43,10 @@ export interface ParallelBountyResult {
   policyChecked: number;
   policyAllowed: number;
   policyBanned: number;
+  /** Live claim recheck: an accepted lead is not yet payable work. */
+  claimsChecked: number;
+  claimsPayable: number;
+  claimsBlocked: number;
   availableViableIssues: number;
   availableAgents: number;
   assigned: number;
@@ -205,7 +209,26 @@ export async function runParallelBountyCycle(actor: MoneyActor, workflow: Github
     if (result.checked) policyChecked++;
     if (result.allowed) policyAllowed++; else if (result.checked && !result.error) policyBanned++;
   }
-  const viable = policyResults.filter(result => result.allowed).map(result => result.opportunity);
+  const policyPassed = policyResults.filter(result => result.allowed).map(result => result.opportunity);
+  // A bounty label is not a grant. Between the search hit and this line a maintainer can
+  // have handed the issue to a contributor — which is exactly what the last two "accepted"
+  // leads turned out to be — so the live issue is re-read before any agent is bound, and
+  // anything not provably payable to us is dropped from the cycle instead of executed.
+  let claimsChecked = 0, claimsPayable = 0, claimsBlocked = 0;
+  const claimResults = await mapLimit(policyPassed, maxConcurrency, async opportunity => {
+    try {
+      const verdict = await workflow.recheckEligibility(actor, String(opportunity.id));
+      return { opportunity, payable: String(verdict.claim_state) === 'payable' };
+    } catch {
+      // An unreadable issue is an unknown claim, and unknown never means "go ahead".
+      return { opportunity, payable: false };
+    }
+  });
+  for (const result of claimResults) {
+    claimsChecked += 1;
+    if (result.payable) claimsPayable += 1; else claimsBlocked += 1;
+  }
+  const viable = claimResults.filter(result => result.payable).map(result => result.opportunity);
   const agents = availableAgentRows();
   const assignmentCount = Math.min(viable.length, agents.length, maxConcurrency);
   const runs: Row[] = [];
@@ -222,7 +245,7 @@ export async function runParallelBountyCycle(actor: MoneyActor, workflow: Github
   const idleIssues = Math.max(0, viable.length - assignmentCount);
   return {
     maxConcurrency, discovered: opportunities.length, accepted: accepted.length, rejected: rejected.length,
-    policyChecked, policyAllowed, policyBanned, availableViableIssues: viable.length,
+    policyChecked, policyAllowed, policyBanned, claimsChecked, claimsPayable, claimsBlocked, availableViableIssues: viable.length,
     availableAgents: agents.length, assigned: runs.length, idleIssues,
     // The bounded pass intentionally leaves the remainder idle for the next
     // discovery window; it is not an assignment failure or a fabricated

@@ -30,10 +30,12 @@ before(() => {
     db.run("INSERT INTO mission_money_opportunities (id,title,evidence_url,activity,provider,approved_by,created_at) VALUES (?,?,'https://github.com/acme/widget/issues/1','software_development','github-bounty-settlement',?,?)", [moneyId, `Fixture bounty ${index}`, owner.id, now.toISOString()]);
     db.run("INSERT INTO mission_bounty_opportunities (id,repo_full_name,issue_number,issue_url,title,issue_body,labels_json,hinted_amount_cents,state,observed_at,risk_state,risk_reason,repo_stars,repo_created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [opportunityId, `acme/widget-${index}`, index, `https://github.com/acme/widget-${index}/issues/${index}`, `Fix ${index}`, 'Bounty: $100 for a tested fix.', '[]', 10000, 'discovered', now.toISOString(), 'accepted', null, 100, '2018-01-01T00:00:00.000Z']);
   }
+  db.run("UPDATE mission_bounty_opportunities SET claim_state='payable', claim_checked_at=?", [now.toISOString()]);
   issueRows = db.all<Row>('SELECT * FROM mission_bounty_opportunities ORDER BY issue_number');
   const fake = {
     discover: async () => issueRows,
     checkPolicy: async () => ({ ai_contributions_allowed: true }),
+    recheckEligibility: async (_actor: unknown, opportunityId: string) => db.get<Row>('SELECT * FROM mission_bounty_opportunities WHERE id=?', [opportunityId])!,
     assign: (_actor: unknown, input: { agentId: string; opportunityId: string }) => {
       const op = db.get<Row>('SELECT * FROM mission_bounty_opportunities WHERE id=?', [input.opportunityId])!;
       const id = missionId('parallel-assignment');
@@ -56,6 +58,23 @@ it('deduplicates assignment state by issue and caps 100 viable issues at configu
   assert.equal(db.get<Row>('SELECT COUNT(*) AS n FROM mission_bounty_assignments')?.n, 8);
   assert.equal(db.get<Row>("SELECT COUNT(*) AS n FROM mission_bounty_runs WHERE state='blocked'")?.n, 8);
   assert.equal(new Set(db.all<Row>('SELECT opportunity_id FROM mission_bounty_assignments').map(row => String(row.opportunity_id))).size, 8);
+});
+
+it('never binds an agent to a lead the live claim check says is not payable to us', async () => {
+  // A freshly seeded, in-scope, policy-clean lead — the only thing between it and an
+  // assignment is the claim verdict, so this pins the gate itself rather than the fixture.
+  for (const table of ['mission_bounty_runs', 'mission_bounty_execution_jobs', 'mission_bounty_candidates', 'mission_bounty_assignments']) db.run(`DELETE FROM ${table}`);
+  db.run("UPDATE mission_bounty_opportunities SET claim_state='not_payable', claim_reason='claimed_by_other_party', claim_checked_at=? WHERE id='parallel-opportunity-1'", [now.toISOString()]);
+  const claimed = db.get<Row>("SELECT * FROM mission_bounty_opportunities WHERE id='parallel-opportunity-1'")!;
+  assert.equal(claimed.risk_state, 'accepted', 'the lead is otherwise clean: only the claim verdict stands in the way');
+  const w = { ...workflow, discover: async () => [claimed] } as unknown as GithubBountyWorkflow;
+  const result = await runParallelBountyCycle(owner, w, { maxConcurrency: 8, now: () => now });
+  assert.equal(result.claimsChecked, 1, 'the policy-clean lead gets a live claim verdict recorded');
+  assert.equal(result.claimsPayable, 0);
+  assert.equal(result.claimsBlocked, 1);
+  assert.equal(result.availableViableIssues, 0, 'a claimed bounty is not viable work, however well labelled it is');
+  assert.equal(result.assigned, 0);
+  assert.equal(db.get<Row>('SELECT COUNT(*) AS n FROM mission_bounty_assignments')?.n, 0, 'no assignment, no money opportunity, no wasted spend');
 });
 
 it('releases an expired lease and makes the agent available without duplicating the issue', () => {

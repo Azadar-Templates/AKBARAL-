@@ -28,7 +28,7 @@ function client() {
     if (p === '/search/issues') return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Correct escaped query handling $100 bounty', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });
     if (p === `/repos/${REPO}/contents/CONTRIBUTING.md`) return json({ content: Buffer.from('AI-assisted changes are allowed if disclosed.').toString('base64'), encoding: 'base64' });
     if (p.startsWith(`/repos/${REPO}/contents/`)) return json({}, 404);
-    if (p === `/repos/${REPO}/issues/7`) return json({ number: 7, html_url: `https://github.com/${REPO}/issues/7`, state: 'open', title: 'Correct escaped query handling', body: 'The parser should preserve a backslash in escaped query values.', labels: [{ name: 'bounty' }] });
+    if (p === `/repos/${REPO}/issues/7`) return json({ number: 7, html_url: `https://github.com/${REPO}/issues/7`, state: 'open', title: 'Correct escaped query handling', body: 'Bounty: $100 for a tested fix. The parser should preserve a backslash in escaped query values.', labels: [{ name: 'bounty' }], assignees: [], comments: 0, updated_at: '2026-01-01T00:00:00Z' });
     if (p === `/repos/${REPO}`) return json({ stargazers_count: 42, forks_count: 3, open_issues_count: 5, created_at: '2018-01-01T00:00:00Z', archived: false, fork: false, default_branch: 'main' });
     if (p === `/repos/${REPO}/tarball/main`) return new Response(new Uint8Array([31, 139, 8, 0]), { status: 200, headers: { 'content-length': '4' } });
     assert.fail(`unsupported fixture endpoint ${p}`);
@@ -72,6 +72,8 @@ after(() => { try { db.close(); } finally { clearInterval(liveness); } });
 async function assigned() {
   const opportunity = (await workflow.discover(owner))[0];
   await workflow.checkPolicy(owner, String(opportunity.id));
+  // Assignment and execution both require a live, evidence-backed claim verdict.
+  await workflow.recheckEligibility(owner, String(opportunity.id));
   return workflow.assign(owner, { agentId: agent, opportunityId: String(opportunity.id) });
 }
 

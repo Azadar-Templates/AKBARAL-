@@ -22,6 +22,8 @@ const json = (body: unknown, status = 200) => new Response(body === null ? '' : 
 function client() {
   const transport: typeof fetch = async (input) => {
     const url = new URL(String(input)); const p = url.pathname;
+    if (p === `/repos/${REPO}/issues/7`) return json({ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test', body: 'Bounty: $100 for a tested fix. The existing suite should pass.', state: 'open', labels: [{ name: 'bounty' }], assignees: [], comments: 0, updated_at: '2026-01-01T00:00:00Z' });
+    if (p === `/repos/${REPO}/issues/7/comments`) return json([]);
     if (p === '/search/issues') {
       const q = url.searchParams.get('q') ?? '';
       if (q.startsWith('label:bounty')) return json({ items: [{ number: 7, html_url: `https://github.com/${REPO}/issues/7`, title: 'Fix flaky test', body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${REPO}` }] });

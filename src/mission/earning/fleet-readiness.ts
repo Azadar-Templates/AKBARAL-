@@ -23,6 +23,8 @@ import { missionDb as db, missionId, nowIso, appendMissionAudit, type Row, type 
 import { currentPolicy } from '../policy';
 import { createHumanActionTask, HUMAN_ACTION_TYPES, type HumanActionType } from '../human-action-gate';
 import { listProviderReadiness, seedProviderReadiness } from './provider-capability-registry';
+import { executionBackendConfigured } from './agent-class-contracts';
+import { chatDispatchReadiness } from '../chat-provider';
 
 export type BlockerCode =
   | 'autonomy_disabled'
@@ -82,6 +84,19 @@ export interface FleetSummary {
   tooling: { registered: number; executable: number; restricted: number; blocked: number; detail: Array<{ key: string; status: string; requiredPermission: string }> };
   connectors: { total: number; ready: number; notConfigured: number; blocked: number; restricted: number; degraded: number };
   blockers: BlockerSpec[];
+  /** The execution gates at configuration level, beside the agent counts, so "0 ready
+   * agents" is never mistaken for "0 agents exist": a fully provisioned fleet with nowhere
+   * to run and no model permit is still a fleet that cannot earn. */
+  execution: {
+    backendConfigured: boolean;
+    sandboxImagePinned: boolean;
+    sandboxMode: string;
+    modelDispatchable: boolean;
+    modelMode: string;
+    modelBlockers: string[];
+    githubCredentialPresent: boolean;
+  };
+  contracts: { scopedActive: number; preparedProposals: number };
   gates: { policy: { autonomousEnabled: boolean; killSwitch: boolean; maxAgents: number; dailySpendCapCents: number; requireOwnerForPayout: boolean }; payoutSlots: { total: number; verified: number } };
   note: string;
 }
@@ -248,7 +263,7 @@ export function fleetSummary(): FleetSummary {
     if (n > 0) {
       const meta: Record<string, { label: string; ownerAction: HumanActionType; freePath: string }> = {
         no_active_money_grant: { label: 'No active money grant', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Registry sync already grants zero-spend authority; a grant with spend_limit_cents>0 is only needed for paid work.' },
-        no_scoped_contract: { label: 'No approved scoped agent contract', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Owner/parent approves a contract per agent class via POST /agents/{id}/contract — free, and it is what bounds permissions.' },
+        no_scoped_contract: { label: 'No approved scoped agent contract', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Prepare least-privilege contracts per class with `npm run fleet:readiness -- --contracts <class>`, then approve each with --contracts-approve=<id>. Granting stays an owner action: nothing self-approves, and classes no agent may hold (submission, payout release) are never offered.' },
         owner_action_pending: { label: 'A human-action task is open for this agent', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Owner clears the pending task in the approvals queue.' },
       };
       blockers.push({ code, scope: 'agent', agentsAffected: n, ...meta[code] });
@@ -288,6 +303,20 @@ export function fleetSummary(): FleetSummary {
       detail: toolStatuses.map(t => ({ key: String(t.key), status: String(t.status), requiredPermission: String(t.required_permission) })),
     },
     connectors,
+    execution: {
+      backendConfigured: executionBackendConfigured(),
+      sandboxImagePinned: /^sha256:[a-f0-9]{64}$/.test(String(process.env.ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST ?? '').trim()),
+      sandboxMode: (process.env.ZA141251SA_BOUNTY_SANDBOX_MODE ?? 'auto').trim().toLowerCase() || 'auto',
+      ...(() => {
+        const readiness = chatDispatchReadiness();
+        return { modelDispatchable: readiness.dispatchable, modelMode: readiness.mode, modelBlockers: readiness.blockers };
+      })(),
+      githubCredentialPresent: Boolean(String(process.env.ZA141251SA_GITHUB_TOKEN ?? '').trim()),
+    },
+    contracts: {
+      scopedActive: count("SELECT COUNT(*) AS c FROM mission_agent_contracts WHERE status='active' AND (expires_at IS NULL OR expires_at>?)", [nowIso()]),
+      preparedProposals: count("SELECT COUNT(*) AS c FROM mission_agent_contract_proposals WHERE status='pending'"),
+    },
     blockers,
     gates: {
       policy: {

@@ -239,6 +239,100 @@ Two things changed in the execution loop itself:
   not committable. `ZA141251SA_BOUNTY_SCOPE_REPOS` (default 10, ceiling 50) only widens
   how many already-allowlisted repositories one discovery pass searches.
 
+## 6f. Execution prerequisites: four gates, then a pilot (added 2026-10-10)
+
+Registering work is easy; running it honestly is not. Before an agent can execute an
+earning task, four backends have to be genuinely present, and each one is *reported from
+a live probe*, never from a config file wish. `src/mission/earning/execution-backends.ts`
+aggregates them and derives `blocked[]`, so the readiness view says which gate is missing
+instead of assuming the next one works:
+
+```bash
+npm run fleet:readiness -- --backends          # sandbox · model · GitHub · payout, probed now
+npm run fleet:readiness -- --contracts         # per agent-class readiness + pending proposals
+npm run fleet:readiness -- --contracts=bounty_execution
+npm run fleet:readiness -- --contracts-approve=<proposalId>
+npm run fleet:readiness -- --pilot=<opportunityId>   # durable chain for one real execution
+npm run fleet:readiness -- --discover           # search + a live claim recheck per accepted lead
+```
+
+**Gate 1 — sandbox.** Two backends sit behind one `BountySandboxRunner`. The digest-pinned
+OCI image (`.github/workflows/bounty-sandbox-publish.yml`) is preferred whenever a pinned
+image is configured; where no container runtime exists, the fallback is a
+user-namespace jail (`namespace-bounty-sandbox.ts`) that is only selected after
+`probeNamespaceSandbox()` actually passes (util-linux ≥ 2.36, `max_user_namespaces` > 0,
+a real namespace smoke test). It stages its own rootfs by ELF soname, denies `/etc`,
+gets its own PID namespace and no network egress, records a per-run rootfs digest, and
+refuses an unpinned rootfs when `requirePinnedRootfs` is set. Neither backend ever
+accepts an image, path or archive chosen by repository content or model output, and
+secrets are never placed in a child environment. `--backends` reports the OCI runner as
+unavailable in an environment with no runtime rather than claiming a sandbox it cannot run.
+
+**Gate 2 — model.** `chatDispatchReadiness()` (in `src/mission/chat-provider.ts`) reports
+mode, model, dispatchability and blockers. A zero-cost deployment is enforced, not
+encouraged: `assertVerifiedChatBillingConfigured` requires the free-tier flag, a model in
+`FREE_TIER_MODELS` and a `free[- ]tier` cost basis, and refuses with
+`verified_vendor_billing_not_configured` otherwise. Fallback selection already exists
+(`priority` dispatch plus a `fallback` call status), so this gate reports eligibility
+rather than inventing providers or credentials.
+
+**Gate 3 — GitHub.** `githubBackendReport` checks credential *presence* only (the token is
+never read back or logged) and attaches `GITHUB_SUBMISSION_REQUIREMENTS`: a fix is worth
+nothing until something can be forked, committed and opened as a pull request. A token
+that can only read third-party repositories therefore leaves submission as an owner
+action, which is exactly what the readiness output says. Discovery-side, the archive
+download now follows GitHub's `302` hop to `codeload` by hand (`ARCHIVE_REDIRECT_HOSTS`,
+`ARCHIVE_MAX_HOPS`), because `redirect:'error'` made every archive fetch fail for every
+repository and `redirect:'follow'` would forward the `Authorization` header to a CDN.
+Each hop is validated against the allowlist and sent without credentials.
+
+**Gate 4 — payout.** `payoutBackendReport` states the supported rails
+(`bank · wallet · payment_provider · other`), the two accepted verification methods
+(`owner_attestation`, `provider_reference`), the evidence each check must satisfy
+(`destination_controlled`, `details_match`, `not_third_party`,
+`provider_identity_verified`, `no_instrument_credentials_stored`), and the expiry sweep
+(`ZA141251SA_PAYOUT_VERIFICATION_DAYS`, default 180). Only a provider reference and a
+masked account are stored. No code path moves money or marks a payout settled.
+
+**Least-privilege contracts are prepared, never granted en masse.**
+`src/mission/earning/agent-class-contracts.ts` defines five classes —
+`bounty_research`, `bounty_execution` (which additionally requires a configured sandbox),
+`evidence_verification`, `owner_submission` and `payout_release`; the last two are
+owner-only and cannot be auto-granted. Preparation writes a proposal to
+`mission_agent_contract_proposals` (migration 0047) with the class's exact permission
+allowlist, spend ceiling and resource limits; the owner's `--contracts-approve` turns it
+into the live row in `mission_agent_contracts` after re-checking the proposal against the
+current class definition, so a widened permission is rejected (`proposal_permissions_widened`).
+`mission_agent_contracts` stays the only money-grant authority, proposals expire after 14
+days, one `manual_approval` task is filed per batch, and the fleet's `scopedContract`
+count deliberately stays 0 while a proposal is pending — readiness reflects what is true,
+not what has been requested. Eligibility of the four non-owner classes is checked per
+agent (sandbox, model dispatch, credential, contract status), so an agent that lacks a
+prerequisite is reported as blocked rather than launched.
+
+**Execution is refused without a fresh, payable claim.** `github-bounty-eligibility.ts`
+resolves every lead to `payable`, `not_payable` or `unverifiable` — fail-closed — and
+`assign`, `queueExecution`, `executeJob` and `submit` each call `requirePayableClaim()`,
+which denies a stale verdict. Being *accepted by discovery* is not the same as being
+payable: the claim recheck re-reads the issue's live state, its assignees and the
+comments that carry the maintainer's hand-out, because a bounty already promised to
+someone else is not ours to work. `no:assignee` in a search query is only an efficiency
+pre-filter; it never substitutes for that recheck.
+
+What this has actually been demonstrated on: the jail was probed and run here (node
+executes inside it, host `/etc/passwd` is denied, egress is blocked, a deliberately wrong
+fix fails verification and the correct fix passes); the fleet report ran against a live
+copy of the mission database; and an operator-authored repository check was executed
+against the real published archive of this repository through the jail, end to end —
+download, bounded body read, inspection, staged patch, in-jail test run — with the
+archive sha256, inspection digest and verification digest recorded. That harness *refused*
+a first version of the check whose assertion failed, which is the behaviour a verification
+gate has to have. It is an operator-authored check, not model-generated work, and the
+repository's own test suite cannot run inside the dependency-free jail; both are stated
+rather than hidden. No submission was made, because no legitimate unclaimed payable
+GitHub bounty existed in the pool at the time of writing — the pipeline's correct output
+for that pool is a refusal.
+
 ## 7. What still needs an external action
 
 Nothing in this system fabricates accounts, credentials, payments or results.
@@ -250,6 +344,8 @@ The mission dashboard lists the outstanding activations (`requiresExternalActiva
 | Search provider | Set `TAVILY_API_KEY` / `BRAVE_SEARCH_API_KEY` / `SERPER_API_KEY`, or `AKBARAL_SEARCH_ENDPOINT` | Without a key the keyless fallback may be unavailable |
 | Payments | Connect the payment provider and set its webhook secret | Revenue may only be recorded as received against a verified provider/webhook reference |
 | Payouts | Configure **and verify** at least one of the four slots (dashboard → Treasury & payouts → *Verify / re-verify*: confirm every control check and sign the attestation) | Payouts are refused until an evidence-backed, unexpired verification exists; agents cannot perform this step |
+| GitHub submission | A token that can fork, write contents and open pull requests: either flip **Administration → Forks → Allow fork privileges** on the target repository and grant `Contents: read/write` + `Pull requests: read/write` on the fork, or issue a classic token with `public_repo` | Reading issues, policies and archives works today; submitting a fix is refused without it, and the system will not submit under the owner's read-only credential |
+| Bounty sandbox image | Publish (or point `ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST` at) the digest-pinned image from `.github/workflows/bounty-sandbox-publish.yml` | Without a container runtime or a pinned image the jail fallback is used; an unpinned image is refused rather than trusted |
 | Social platforms | Register one OAuth app per platform (dashboard → Publishing shows the exact redirect URI `https://<domain>/api/social/oauth/<platform>/callback` and the variables), then *Connect* | Publishing returns `provider_not_configured` until then; a connection is reported only after a real token exchange, and engagement metrics are only ever read from the platform API |
 
 ## 8. Operations
@@ -272,6 +368,11 @@ The mission dashboard lists the outstanding activations (`requiresExternalActiva
   never starts work, spends money or writes a completion record. Add `--reconcile` to
   file the open blockers into the owner's human-action queue (one task per blocker,
   re-running creates nothing new while the same blocker stays open).
+* **Read one execution's chain:** `npm run fleet:readiness -- --pilot=<opportunityId>`
+  prints the durable record for a bounty execution — archive digest, inspection report,
+  proposal and verification digests from `mission_bounty_execution_jobs` plus every
+  `mission_bounty_events` row — so a claim about a run can be checked against the bytes
+  that were produced, not against a status column.
 * **Check a paid claim against its proof:** `mission_execution_evidence` holds the
   content-addressed output per assignment and `mission_result_verifications` holds who
   reviewed which bytes; an opportunity with no evidence row stays `executing`.

@@ -28,6 +28,8 @@ import { assertMoneyOwner, grant, cashAccount, approveOpportunity, MoneyError, t
 import { currentPolicy, checkActivity } from '../policy';
 import { GithubBountyClient, GithubBountyError, classifyRepoPolicy, classifyLeadRisk, detectDuplicateTitles, configuredGithubBountyClient, type BountyLeadRaw, type PullRequestReviewSnapshotRaw } from './github-bounty-client';
 import { OciBountySandboxRunner, type BountySandboxRunner } from './github-bounty-sandbox';
+import { CompositeBountySandboxRunner, NamespaceBountySandboxRunner } from './namespace-bounty-sandbox';
+import { classifyClaimEligibility, isClaimFresh, type ClaimVerdict } from './github-bounty-eligibility';
 import { BountyScopeError } from './bug-bounty-system';
 import { allowlistedRepoNames, decideRepoScope, filterInScopeRepos, gateGithubRepo, recordNoActiveProgram } from './github-bounty-scope-gate';
 import { GoogleBountySolutionProvider, type BountySolutionProvider } from './github-bounty-solution-provider';
@@ -61,7 +63,7 @@ function executionFailureCode(error: unknown): string {
   // Only our finite internal reasons become durable evidence. Never store raw
   // provider, GitHub, Docker, repository, or model error text.
   const message = error instanceof Error ? error.message : '';
-  const known = new Set(['sandbox_unavailable', 'sandbox_timeout', 'sandbox_runner_failed', 'sandbox_inspection_failed', 'sandbox_tests_failed', 'repository_not_execution_eligible', 'model_resource_not_ready', 'model_resource_not_configured', 'model_prompt_exceeds_configured_bound', 'model_proposal_not_strict_json', 'proposal_out_of_bounds', 'verification_out_of_bounds', 'issue_snapshot_out_of_bounds']);
+  const known = new Set(['claim_not_verified', 'claim_not_payable', 'claim_unverifiable', 'claim_check_stale', 'live_issue_unreadable', 'claim_comments_unreadable', 'sandbox_unavailable', 'sandbox_timeout', 'sandbox_runner_failed', 'sandbox_inspection_failed', 'sandbox_tests_failed', 'repository_not_execution_eligible', 'model_resource_not_ready', 'model_resource_not_configured', 'model_prompt_exceeds_configured_bound', 'model_proposal_not_strict_json', 'proposal_out_of_bounds', 'verification_out_of_bounds', 'issue_snapshot_out_of_bounds']);
   return known.has(message) ? message : 'execution_step_failed';
 }
 function get(table: string, id: string): Row {
@@ -74,6 +76,14 @@ function event(subject: string, state: string, ref: string) {
   appendMissionAudit({ actorType: 'system', actorId: null, action: `bounty.${state}`, subjectType: 'github_bounty', subjectId: subject, detail: { evidenceRef: ref } });
 }
 const MANDATORY_DISCLOSURE = '\n\n---\n_Disclosure: this change was researched and drafted with AI assistance and reviewed/approved by the repository-authorized submitter before being opened._';
+
+/** Labels the deployment treats as a bounty marker. Empty falls back to the module defaults. */
+function configuredBountyLabels(): string[] {
+  return (process.env.ZA141251SA_BOUNTY_LABELS ?? '').split(',').map(label => label.trim().toLowerCase()).filter(Boolean).slice(0, 10);
+}
+function configuredClaimantLogins(): string[] {
+  return (process.env.ZA141251SA_GITHUB_LOGINS ?? '').split(',').map(login => login.trim().toLowerCase()).filter(Boolean).slice(0, 10);
+}
 
 export interface GithubBountyWorkflowOptions { dryRun?: boolean }
 
@@ -100,6 +110,73 @@ export class GithubBountyWorkflow {
   private assignment(id: string) { return get('mission_bounty_assignments', id); }
   private candidate(id: string) { return get('mission_bounty_candidates', id); }
   private opportunity(a: Row) { return get('mission_bounty_opportunities', String(a.opportunity_id)); }
+
+  /**
+   * Re-reads the LIVE issue and records whether the bounty is actually payable to this
+   * mission. This is the step that turns "an open issue with a bounty label" into evidence:
+   * assignees, maintainer prose claims, competing pull requests, program pauses, declared
+   * payment and stated acceptance criteria. Nothing downstream may run without it.
+   */
+  async recheckEligibility(actor: MoneyActor, opportunityId: string): Promise<Row> {
+    this.live(actor);
+    const opportunity = get('mission_bounty_opportunities', opportunityId);
+    const repo = String(opportunity.repo_full_name);
+    const number = Number(opportunity.issue_number);
+    gateGithubRepo(repo, { agentType: 'github_bounty_claim_check' });
+    const unverifiable = (reason: string, evidence: string[] = []): Row => this.recordClaimVerdict(opportunityId, {
+      state: 'unverifiable', payable: false, reason, evidence, checks: ['live_fetch'], ownerActions: ['owner_may_re_run_the_claim_check_later'],
+    });
+    let snapshot: Awaited<ReturnType<GithubBountyClient['fetchIssueSnapshot']>>;
+    try {
+      snapshot = await this.github.fetchIssueSnapshot(repo, number);
+    } catch {
+      // A provider failure is never read as "fine". It is read as "unknown", which denies.
+      return unverifiable('live_issue_unreadable', [`repo=${repo}`, `issue=${number}`]);
+    }
+    // Comments are the usual place a maintainer says "assigned to @x", but reading them
+    // costs a request, so they are only fetched when they can actually change the answer.
+    let commentTexts: string[] = [];
+    const commentsWorthReading = snapshot.comments > 0 && snapshot.assignees.length === 0;
+    if (commentsWorthReading) {
+      try { commentTexts = await this.github.fetchIssueComments(repo, number, 20); } catch { commentTexts = []; }
+    }
+    const verdict = classifyClaimEligibility({
+      repoFullName: repo, issueNumber: number, issueUrl: snapshot.issueUrl,
+      state: snapshot.state, assignees: snapshot.assignees, labels: snapshot.labels,
+      body: snapshot.body, comments: snapshot.comments, commentTexts,
+      ourLogins: configuredClaimantLogins(), bountyLabels: configuredBountyLabels(),
+    });
+    // "Payable" derived while unread comments sit on the issue is not evidence — it is hope.
+    if (verdict.state === 'payable' && snapshot.comments > commentTexts.length) {
+      return unverifiable('claim_comments_unreadable', [`comments=${String(snapshot.comments)}`, `read=${commentTexts.length}`]);
+    }
+    return this.recordClaimVerdict(opportunityId, verdict);
+  }
+
+  /** Persists one verdict. Only this method writes the claim columns, so the audit trail
+   * has exactly one producer and no path for a model or repository to assert eligibility. */
+  private recordClaimVerdict(opportunityId: string, verdict: ClaimVerdict): Row {
+    return db.transaction(() => {
+      db.run(`UPDATE mission_bounty_opportunities SET claim_state=?,claim_reason=?,claim_checked_at=?,claim_evidence_json=?,claim_owner_actions_json=? WHERE id=?`,
+        [verdict.state, verdict.reason, nowIso(),
+          JSON.stringify(verdict.evidence.slice(0, 12)).slice(0, 4000),
+          JSON.stringify(verdict.ownerActions.slice(0, 8)).slice(0, 1200), opportunityId]);
+      event(opportunityId, `claim_${verdict.state}`, verdict.reason ?? 'payable');
+      return get('mission_bounty_opportunities', opportunityId);
+    });
+  }
+
+  /**
+   * The refusal every spend-causing step must pass. Missing verdict, adverse verdict, or a
+   * verdict older than the window all deny: the claim can appear at any moment, so trust
+   * decays rather than persisting forever.
+   */
+  private requirePayableClaim(opportunity: Row, scope: 'assign' | 'execute'): void {
+    const state = String(opportunity.claim_state ?? '');
+    if (!state) deny('claim_not_verified');
+    if (state !== 'payable') deny(`claim_${state}`);
+    if (!isClaimFresh(opportunity.claim_checked_at ? String(opportunity.claim_checked_at) : null, scope)) deny('claim_check_stale');
+  }
 
   overview(actor: MoneyActor) {
     assertMoneyOwner(actor);
@@ -198,6 +275,9 @@ export class GithubBountyWorkflow {
     if (!policyRow) deny('policy_not_checked');
     if (!Number(policyRow.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
     if (Date.now() - Date.parse(String(policyRow.checked_at)) > 7 * 86400000) deny('policy_check_stale');
+    // A bounty label is not a grant. Binding an agent to work someone else already owns
+    // wastes the agent's exclusive slot and creates a money opportunity out of nothing.
+    this.requirePayableClaim(op, 'assign');
     return db.transaction(() => {
       this.live(actor); grant(input.agentId);
       // A prior completed/released assignment is historical and may not block
@@ -229,6 +309,7 @@ export class GithubBountyWorkflow {
       const assignment = this.assignment(assignmentId); this.live(actor, assignment);
       const opportunity = this.opportunity(assignment);
       if (String(opportunity.risk_state) !== 'accepted') deny('lead_risk_rejected');
+      this.requirePayableClaim(opportunity, 'execute');
       const policy = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(opportunity.repo_full_name)]);
       if (!policy || !Number(policy.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
       const prior = db.get<Row>('SELECT * FROM mission_bounty_execution_jobs WHERE assignment_id=?', [assignmentId]);
@@ -266,6 +347,9 @@ export class GithubBountyWorkflow {
       gateGithubRepo(String(opportunity.repo_full_name), { agentType: 'github_bounty_execution', runId: jobId });
       // Fail closed before any repository, issue, archive, or model call.
       if (!(await this.sandbox.available())) throw new Error('sandbox_unavailable');
+      // Claims move fast: a maintainer can hand the bounty to a contributor between queueing
+      // and execution. Re-read the live issue and refuse before the 64 MiB archive fetch.
+      this.requirePayableClaim(await this.recheckEligibility(actor, String(opportunity.id)), 'execute');
       const policy = db.get<Row>('SELECT * FROM mission_bounty_policy WHERE repo_full_name=?', [String(opportunity.repo_full_name)]);
       if (!policy || !Number(policy.ai_contributions_allowed)) deny('repo_policy_prohibits_ai_contributions');
       db.transaction(() => {
@@ -363,6 +447,8 @@ export class GithubBountyWorkflow {
   async executionReadiness(actor: MoneyActor, assignmentId: string): Promise<{ ready: boolean; reason: string | null }> {
     const assignment = this.assignment(assignmentId);
     this.live(actor, assignment);
+    try { this.requirePayableClaim(this.opportunity(assignment), 'execute'); }
+    catch (error) { return { ready: false, reason: error instanceof Error ? error.message : 'claim_check_failed' }; }
     if (!(await this.sandbox.available())) return { ready: false, reason: 'sandbox_unavailable' };
     if (!this.solutions.available(String(assignment.agent_id))) return { ready: false, reason: 'model_resource_not_ready' };
     return { ready: true, reason: null };
@@ -381,6 +467,8 @@ export class GithubBountyWorkflow {
         LEFT JOIN mission_bounty_execution_jobs j ON j.assignment_id=a.id
         WHERE a.state='eligible' AND j.id IS NULL ORDER BY a.created_at,a.id LIMIT 1`);
       if (!assignment) return { attempted: false, queued: false, state: null, reason: 'no_eligible_assignment' };
+      try { this.requirePayableClaim(this.opportunity(assignment), 'execute'); }
+      catch (error) { return { attempted: false, queued: false, state: null, reason: error instanceof Error ? error.message : 'claim_check_failed' }; }
       if (!(await this.sandbox.available())) return { attempted: false, queued: false, state: null, reason: 'sandbox_unavailable' };
       if (!this.solutions.available(String(assignment.agent_id))) return { attempted: false, queued: false, state: null, reason: 'model_resource_not_ready' };
       job = this.queueExecution(actor, String(assignment.id)); queued = true;
@@ -440,6 +528,9 @@ export class GithubBountyWorkflow {
     if (this.dryRun) deny('dry_run_submission_blocked');
     const c = this.candidate(candidateId), a = this.assignment(String(c.assignment_id)); this.live(actor, a);
     if (c.state !== 'eligible' || c.approved_hash !== c.content_hash || !c.approved_by) deny('owner_approval_required');
+    // The last moment anyone can still avoid spamming an already-solved bounty is the
+    // moment before the PR is opened, so the live check runs again here, not only at queue.
+    this.requirePayableClaim(await this.recheckEligibility(actor, String(a.opportunity_id)), 'execute');
     gateGithubRepo(String(c.repo_full_name), { agentType: 'github_bounty_submit', runId: candidateId });
     db.transaction(() => { this.live(actor, this.assignment(String(c.assignment_id))); db.run("UPDATE mission_bounty_candidates SET state='submitting',updated_at=? WHERE id=? AND state='eligible'", [nowIso(), candidateId]); });
     let open = true;
@@ -607,10 +698,24 @@ export function recordGithubBountyCooldown(delayMs: number) {
     else if (String(old.until_at) < until) db.run("UPDATE mission_bounty_api_cooldown SET until_at=? WHERE id='global'", [until]);
   });
 }
+/**
+ * Sandbox backends, strongest first. The OCI runner is preferred whenever the
+ * deployment provisioned a pre-pulled, digest-pinned image; the namespace jail is the
+ * $0 fallback for hosts with no container runtime at all (both are checked, and each
+ * reports its own refusal reason). `ZA141251SA_BOUNTY_SANDBOX_MODE=off` turns execution
+ * back into the strict, sandbox-only-by-OCI behaviour.
+ */
+export function configuredBountySandbox(): BountySandboxRunner {
+  return new CompositeBountySandboxRunner([
+    new OciBountySandboxRunner(),
+    new NamespaceBountySandboxRunner({ requirePinnedRootfs: process.env.ZA141251SA_BOUNTY_SANDBOX_REQUIRE_PINNED_ROOTFS === 'true' }),
+  ]);
+}
+
 export function configuredGithubBountyWorkflow() {
   return new GithubBountyWorkflow(
     configuredGithubBountyClient(process.env, { beforeRequest: reserveGithubBountyRequest, onRateLimit: recordGithubBountyCooldown }),
-    new OciBountySandboxRunner(),
+    configuredBountySandbox(),
     new GoogleBountySolutionProvider(),
     { dryRun: process.env.DRY_RUN === 'true' },
   );

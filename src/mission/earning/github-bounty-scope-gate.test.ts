@@ -35,6 +35,10 @@ function transport(leads: Lead[], calls: string[]): typeof fetch {
       if (!q.startsWith('label:bounty')) return json({ items: [] });
       return json({ items: leads.map(lead => ({ number: lead.number, html_url: `https://github.com/${lead.repo}/issues/${lead.number}`, title: `Fix ${lead.repo} $100`, body: 'Bounty: $100 for a tested fix.', state: 'open', labels: [{ name: 'bounty' }], repository_url: `https://api.github.com/repos/${lead.repo}` })) });
     }
+    const issue = /^\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)$/.exec(p);
+    if (issue) return json({ number: Number(issue[2]), html_url: `https://github.com/${issue[1]}/issues/${issue[2]}`, title: `Fix ${issue[1]}`, body: 'Bounty: $100 for a tested fix. The existing suite should pass.', state: 'open', labels: [{ name: 'bounty' }], assignees: [], comments: 0, updated_at: '2026-01-01T00:00:00Z' });
+    const issueComments = /^\/repos\/([^/]+\/[^/]+)\/issues\/\d+\/comments$/.exec(p);
+    if (issueComments) return json([]);
     const meta = /^\/repos\/([^/]+\/[^/]+)$/.exec(p);
     if (meta) return json({ stargazers_count: 42, forks_count: 3, open_issues_count: 5, created_at: '2018-01-01T00:00:00Z', archived: false, fork: false, default_branch: 'main' });
     const policy = /^\/repos\/([^/]+\/[^/]+)\/contents\/CONTRIBUTING\.md$/.exec(p);
@@ -131,6 +135,16 @@ it('program_not_configured: with no active program, a direct policy check is ref
   assert.equal(calls.length, 0);
 });
 
+it('the claim recheck is scope-gated too: a non-allow-listed repository is refused with no outbound call', async () => {
+  registerFixtureRepoProgram([ALLOWED]);
+  const calls: string[] = [];
+  const w = workflow(calls, []);
+  db.run("INSERT INTO mission_bounty_opportunities (id,repo_full_name,issue_number,issue_url,title,issue_body,labels_json,hinted_amount_cents,state,observed_at,risk_state) VALUES ('opp-claim',?,1,'https://github.com/acme/other/issues/1','t','Bounty: $100','[]',10000,'discovered',?,'accepted')", [OTHER, new Date().toISOString()]);
+  await assert.rejects(w.recheckEligibility(owner, 'opp-claim'), (e: unknown) => e instanceof BountyScopeError && e.reason === 'target_not_allowlisted');
+  assert.equal(outbound(calls, OTHER), 0, 'a claim check may not reach out to a repository that is not in scope');
+  assert.equal(db.get<Record<string, unknown>>("SELECT claim_state FROM mission_bounty_opportunities WHERE id='opp-claim'")?.claim_state, null);
+});
+
 it('an allow-listed repository passes the gate and proceeds through discovery, policy and assignment', async () => {
   registerFixtureRepoProgram([ALLOWED]);
   const calls: string[] = [];
@@ -138,6 +152,7 @@ it('an allow-listed repository passes the gate and proceeds through discovery, p
   const [opportunity] = await w.discover(owner);
   assert.equal(String(opportunity.repo_full_name), ALLOWED);
   await w.checkPolicy(owner, String(opportunity.id));
+  await w.recheckEligibility(owner, String(opportunity.id));
   const assignment = w.assign(owner, { agentId: agent, opportunityId: String(opportunity.id) });
   assert.equal(assignment.state, 'eligible');
   assert.ok(scopeEvents(ALLOWED).some(e => e.decision === 'allowed' && e.reason === 'explicit_allowlist_match'));
@@ -150,6 +165,7 @@ it('a scope-gate block creates no assignment, no draft and no execution job', as
   const w = workflow(calls, [{ repo: ALLOWED, number: 7 }]);
   const [opportunity] = await w.discover(owner);
   await w.checkPolicy(owner, String(opportunity.id));
+  await w.recheckEligibility(owner, String(opportunity.id));
   const assignment = w.assign(owner, { agentId: agent, opportunityId: String(opportunity.id) });
   // Revoke scope after assignment: the later steps must refuse, not proceed.
   updateBountyProgram(programId, { active: false });
@@ -165,6 +181,7 @@ it('a submit after scope is revoked is refused before the candidate changes stat
   const w = workflow(calls, [{ repo: ALLOWED, number: 7 }]);
   const [opportunity] = await w.discover(owner);
   await w.checkPolicy(owner, String(opportunity.id));
+  await w.recheckEligibility(owner, String(opportunity.id));
   const assignment = w.assign(owner, { agentId: agent, opportunityId: String(opportunity.id) });
   const candidate = w.draft(owner, String(assignment.id), { key: 'k-submit', baseBranch: 'main', branchName: 'fix', filePath: 'src/x.ts', fileContent: 'x', commitMessage: 'Fix', prTitle: 'Fix', prBody: 'Fixes it.' });
   w.approveCandidate(owner, String(candidate.id), String(candidate.content_hash));
@@ -182,6 +199,7 @@ it('sandbox unavailable: a queued execution runs nothing and makes no repository
   const w = new GithubBountyWorkflow(new GithubBountyClient({ accessToken: `fixture-only-token-${randomUUID()}` }, { fetch: transport([{ repo: ALLOWED, number: 7 }], calls) }), unavailable);
   const [opportunity] = await w.discover(owner);
   await w.checkPolicy(owner, String(opportunity.id));
+  await w.recheckEligibility(owner, String(opportunity.id));
   const assignment = w.assign(owner, { agentId: agent, opportunityId: String(opportunity.id) });
   const job = w.queueExecution(owner, String(assignment.id));
   const before = calls.length;
