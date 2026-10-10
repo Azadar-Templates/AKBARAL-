@@ -22,6 +22,10 @@ const LINK_KEY = 'za_mission_link';
 
 /** Rendered rows per table: a section must fit one screen, and this is the one place that decides it. */
 const MAX_TABLE_ROWS = 8;
+// The prepare ceiling the module enforces (MAX_PROPOSALS_PER_BATCH) and its default batch. Mirrored
+// here only so the input can offer a sane range; the server's own clamp is what actually bounds a batch.
+const CONTRACTS_PREPARE_MAX = 200;
+const CONTRACTS_PREPARE_DEFAULT = 25;
 /**
  * The agent report is a drill-down that lives in the Bounty section's collapsed Agents block, and that
  * section has a three-screen budget whatever the API returns — so the report's history tables render
@@ -1266,6 +1270,7 @@ async function loadTab(tab) {
     if (tab === 'approvals') {
       if (canMutate()) await loadHeadAgentOverview();
       await loadApprovals();
+      await loadContracts();
     }
     if (tab === 'tools') await loadTools();
     if (tab === 'policy') await loadPolicy();
@@ -1877,6 +1882,235 @@ async function loadApprovals() {
   ], upgrades.upgrades, 'No upgrade requests.'));
 }
 
+/**
+ * The owner's scoped-contract surface, inside Approvals.
+ *
+ * WHY IT IS ITS OWN LOADER. `no_scoped_contract` was clearable only from a shell the owner does not have,
+ * so the console said "run `npm run fleet:readiness -- --contracts <class>`" at a person with no shell and
+ * the fleet stayed stopped. This block is the same two operations through the same module — prepare a
+ * proposal, approve a proposal — with three rules held on screen: preparing never grants, an approval that
+ * would widen anything is refused with its reason *before* the click, and a bulk approval is only accepted
+ * when the owner repeats back the permission surface it is about to create.
+ *
+ * It also renders without its data. A failed or partial response renders `MISSING` rows and the reason,
+ * because an empty block under Approvals reads as "no contracts are needed" — which is the opposite claim.
+ */
+async function loadContracts() {
+  let payload = null;
+  let failure = null;
+  try {
+    payload = await api('/agent-contracts');
+  } catch (error) {
+    failure = error;
+  }
+  renderContracts(payload, failure);
+}
+
+/** A list the response does not carry is a different claim from a list that is empty. */
+function contractList(value, path) {
+  if (Array.isArray(value)) return value;
+  throw new Error(`${path} is not in the contracts response`);
+}
+
+/** Render one host, or say what is missing on its own line — never blank the block out. */
+function contractBlock(selector, build) {
+  const host = $(selector);
+  if (!host) return;
+  try {
+    const node = build();
+    host.innerHTML = '';
+    if (node) host.appendChild(node);
+  } catch (error) {
+    host.innerHTML = '';
+    host.appendChild(missingNote(error && error.message ? error.message : `${selector} could not be rendered`));
+  }
+}
+
+function contractPermissionCell(row) {
+  const parts = [];
+  const plain = contractList(Array.isArray(row.permissionsPlain) ? row.permissionsPlain : null, `${row.agentClass}.permissionsPlain`);
+  for (const line of plain) parts.push(el('div', { class: 'small', text: `· ${line}` }));
+  if (typeof row.never === 'string' && row.never) parts.push(el('div', { class: 'muted small', text: row.never }));
+  const limits = row.resourceLimits && typeof row.resourceLimits === 'object' ? row.resourceLimits : {};
+  parts.push(el('div', {
+    class: 'muted small',
+    text: `spend ceiling ${centsOf(limits.maxSpendCents, 'USD')} · ${countOf(limits.maxChildren)} child agents · depth ${countOf(limits.maxDepth)} · valid ${countOf(row.validityDays)} day(s) after approval`,
+  }));
+  if (row.ownerOnly) parts.push(el('div', { class: 'small', text: 'Owner-only class: no agent may hold it, so nothing here can prepare or approve it. It is listed so the refusal is visible instead of silent.' }));
+  return el('div', {}, parts);
+}
+
+function renderContracts(payload, failure) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  contractBlock('#contracts-blocker', () => {
+    const wrap = el('div', { class: 'table-wrap', style: 'padding:6px 12px' });
+    const blocker = source.blocker && typeof source.blocker === 'object' ? source.blocker : {};
+    const cleared = typeof blocker.cleared === 'boolean' ? blocker.cleared : null;
+    wrap.appendChild(cleared === null
+      ? pill(`${MISSING} — the response carries no gate decision`, 'warn')
+      : pill(cleared ? `gate cleared — ${countOf(blocker.activeContracts)} active contract(s)` : `blocking the fleet — no active scoped contract`, cleared ? 'ok' : 'warn'));
+    wrap.appendChild(el('div', { class: 'muted small', text: typeof blocker.judgement === 'string' && blocker.judgement ? blocker.judgement : `${MISSING} — no judgement text in the response` }));
+    if (failure) wrap.appendChild(el('div', { class: 'small', text: `the contracts list could not be read: ${failure.message}` }));
+    const registry = source.registry && typeof source.registry === 'object' ? source.registry : {};
+    wrap.appendChild(el('div', {
+      class: 'muted small',
+      text: `read at ${when(source.generatedAt)} from stored rows — ${countOf(registry.agents)} active agent(s), ${countOf(registry.withActiveMoneyGrant)} with an active money grant, execution backend ${registry.executionBackendConfigured ? 'configured' : 'NONE'}`,
+    }));
+    return wrap;
+  });
+
+  let classes = [];
+  // If the list could not be read, that is the answer for both hosts and nothing else gets to
+  // overwrite it. "The registry offers no agent class." is a claim about the registry; "MISSING" is a
+  // claim about this response, and only one of them is true when the request failed.
+  let unreadable = false;
+  try {
+    classes = contractList(source.classes, 'classes');
+  } catch (error) {
+    classes = [];
+    unreadable = true;
+    contractBlock('#contracts-classes', () => missingNote(error.message));
+    contractBlock('#contracts-pending', () => missingNote(error.message));
+  }
+
+  if (!unreadable && (classes.length || source.classes === undefined)) {
+    // The select is filled from the same rows the table renders, so the class an owner prepares is never
+    // a different list from the class an owner can read.
+    const select = $('#contracts-prepare-class');
+    if (select) {
+      const grantable = classes.filter((row) => !row.ownerOnly);
+      select.innerHTML = '';
+      if (grantable.length === 0) select.appendChild(el('option', { value: '', text: `${MISSING} — no grantable class in the response` }));
+      for (const row of grantable) {
+        select.appendChild(el('option', {
+          value: String(row.agentClass),
+          text: `${row.agentClass} — ${row.canPrepareNow ? 'grantable' : (row.blockers || []).join(', ') || 'blocked'}`,
+        }));
+      }
+    }
+    const limitInput = $('#contracts-prepare-form input[name="limit"]');
+    if (limitInput) limitInput.max = String((source.limits && source.limits.maxProposalsPerBatch) || CONTRACTS_PREPARE_MAX);
+  }
+
+  if (!unreadable) contractBlock('#contracts-classes', () => table([
+    { label: 'Class', render: (row) => el('div', {}, [el('strong', { text: String(row.label ?? MISSING) }), el('div', { class: 'muted small', text: String(row.agentClass ?? MISSING) })]) },
+    { label: 'Agents that need one', render: (row) => el('div', {}, [el('div', { text: countOf(row.needsIt) }), el('div', { class: 'muted small', text: `${countOf(row.specialistsAssigned)} mapped by the specialist registry` })]) },
+    { label: 'Prepared', render: (row) => countOf(row.pendingProposals) },
+    { label: 'Active', render: (row) => countOf(row.activeContracts) },
+    { label: 'What an approval would grant', render: (row) => contractPermissionCell(row), wrap: true },
+    { label: 'Owner action', render: (row) => {
+      const items = [];
+      if (!canMutate()) items.push(el('span', { class: 'muted small', text: 'read-only session — the owner must approve' }));
+      else {
+        const count = Number(row.pendingProposals);
+        const surface = row.surface && typeof row.surface === 'object' ? row.surface : {};
+        if (!(count > 0)) items.push(el('span', { class: 'muted small', text: 'nothing prepared yet for this class' }));
+        else items.push(el('button', {
+          class: 'small', type: 'button',
+          text: `Approve all ${count} for ${row.agentClass}`,
+          'data-contracts-approve-all': String(row.agentClass),
+          'data-surface': String(surface.surfaceDigest ?? ''),
+        }));
+      }
+      const blockers = Array.isArray(row.blockers) ? row.blockers : [];
+      if (blockers.length > 0) items.push(el('div', { class: 'muted small', text: `not grantable today: ${blockers.join(', ')}` }));
+      return el('div', {}, items);
+    }, wrap: true },
+  ], classes, 'The registry offers no agent class.'));
+
+  const pending = [];
+  for (const row of classes) {
+    for (const proposal of (Array.isArray(row.pending) ? row.pending : [])) pending.push({ ...proposal, agentClass: row.agentClass });
+  }
+  if (!unreadable) {
+    contractBlock('#contracts-pending', () => table([
+      { label: 'Requested', render: (row) => when(row.requestedAt) },
+      { label: 'Class', key: 'agentClass' },
+      { label: 'Agent', render: (row) => row.agentId },
+      { label: 'Permissions', render: (row) => (Array.isArray(row.permissions) ? (row.permissions.length ? row.permissions.join(', ') : el('span', { class: 'small', text: 'none — refused' })) : MISSING) },
+      { label: 'Budget', render: (row) => centsOf(row.budgetCents, state.overview ? state.overview.treasury.currency : 'USD') },
+      { label: 'Expires', render: (row) => `${when(row.expiresAt)}${row.expired ? ' (closed)' : ''}` },
+      { label: 'Decision', render: (row) => {
+        const fault = row.scopeFault && typeof row.scopeFault === 'object' ? row.scopeFault : null;
+        if (fault) return el('div', { class: 'small', text: `refused: ${fault.code} — ${fault.detail}` });
+        if (!canMutate()) return el('span', { class: 'muted small', text: 'read-only session' });
+        return el('button', { class: 'small', type: 'button', text: 'Approve', 'data-contracts-approve': String(row.id) });
+      }, wrap: true },
+    ], pending, 'Nothing is prepared. Preparing is a deliberate click, and it grants nothing on its own.'));
+  }
+
+  bindContractActions(classes);
+}
+
+function bindContractActions(classes) {
+  $$('#contracts-classes button[data-contracts-approve-all]').forEach((button) => button.addEventListener('click', () => {
+    if (!guardMutation()) return;
+    const agentClass = button.getAttribute('data-contracts-approve-all') || '';
+    const row = (classes || []).find((entry) => String(entry.agentClass) === agentClass) || {};
+    const surface = row.surface && typeof row.surface === 'object' ? row.surface : {};
+    showContractsConfirmation({
+      title: `Approve every prepared proposal for ${agentClass}`,
+      lines: [
+        `${countOf(surface.contracts)} contract(s) would become active.`,
+        `permissions granted: ${(Array.isArray(surface.permissions) && surface.permissions.length ? surface.permissions : [MISSING]).join(', ')}`,
+        `total budget across them: ${centsOf(surface.totalBudgetCents, 'USD')}`,
+        `never granted: ${String(surface.never ?? MISSING)}`,
+        'the owner repeats this surface back to the server; if the list changed in between, nothing is approved',
+      ],
+      onConfirm: () => approveAllContracts(agentClass, String(surface.surfaceDigest ?? '')),
+    });
+  }));
+  $$('#contracts-pending button[data-contracts-approve]').forEach((button) => button.addEventListener('click', async () => {
+    if (!guardMutation()) return;
+    const id = button.getAttribute('data-contracts-approve');
+    button.disabled = true;
+    try {
+      const result = await api('/agent-contracts/approve', { method: 'POST', body: { proposalId: id } });
+      const contract = result && result.contract ? result.contract : {};
+      banner(`Contract ${String(contract.id ?? MISSING)} is active for agent ${String(contract.agent_id ?? MISSING)} — a permission grant the owner authorized, not an earning.`, 'ok');
+      await loadContracts();
+    } catch (error) {
+      banner(error.message, 'error');
+      await loadContracts();
+    }
+  }));
+}
+
+/** The explicit confirmation. It is a panel rather than a browser dialog because a dialog cannot show a
+ *  permission surface, cannot be re-read after the fact, and cannot be tested. */
+function showContractsConfirmation(spec) {
+  const host = $('#contracts-confirm');
+  if (!host) return;
+  host.innerHTML = '';
+  const box = el('div', { class: 'table-wrap', style: 'padding:10px 12px;border:1px solid currentColor' });
+  box.appendChild(el('h3', { text: spec.title }));
+  for (const line of spec.lines) box.appendChild(el('p', { class: 'small', text: line }));
+  const actions = el('div', {}, [
+    el('button', { class: 'small', type: 'button', text: 'Confirm and approve', id: 'contracts-confirm-yes' }),
+    el('button', { class: 'small secondary', type: 'button', text: 'Cancel', id: 'contracts-confirm-no' }),
+  ]);
+  box.appendChild(actions);
+  host.hidden = false;
+  host.appendChild(box);
+  $('#contracts-confirm-yes').addEventListener('click', () => spec.onConfirm());
+  $('#contracts-confirm-no').addEventListener('click', () => { host.hidden = true; host.innerHTML = ''; });
+}
+
+async function approveAllContracts(agentClass, surface) {
+  try {
+    const result = await api('/agent-contracts/approve-all', { method: 'POST', body: { agentClass, confirmSurface: surface } });
+    const granted = result && typeof result.granted === 'number' ? result.granted : MISSING;
+    const refused = result && typeof result.refusedCount === 'number' ? result.refusedCount : MISSING;
+    const reasons = Array.isArray(result && result.refused) ? result.refused.map((entry) => `${entry.code}`).join(', ') : '';
+    const host = $('#contracts-confirm');
+    if (host) { host.hidden = true; host.innerHTML = ''; }
+    banner(`${granted} contract(s) approved for ${agentClass}, ${refused} refused${reasons ? ` (${reasons})` : ''}. ${result && result.note ? result.note : ''}`.trim(), refused && refused !== 0 ? 'error' : 'ok');
+    await loadContracts();
+  } catch (error) {
+    banner(error.message, 'error');
+  }
+}
+
 async function loadTools() {
   $('#credential-form').hidden = !canMutate();
   if (!canMutate()) replace('#resource-periods', el('p', { text: 'Owner sign-in is required to review resource billing periods.' }));
@@ -2376,6 +2610,34 @@ function wire() {
       await loadBountyControl();
       banner('Scope entry saved. Only explicit in-scope entries can pass the hard gate.', 'ok');
     } catch (error) { banner(error.message, 'error'); }
+  });
+
+  // Scoped contracts: preparing is the only thing this form does, and it grants nothing. The limit is
+  // clamped here and re-clamped by the module, because a client-side bound is a courtesy.
+  $('#contracts-prepare-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isOwnerSession()) { banner('Preparing scoped contracts requires the mission owner session.', 'error'); return; }
+    const form = event.target;
+    // FormData, not `form.agentClass.value`: named form access is a browser convenience that jsdom does
+    // not implement, and a control this consequential has to be testable in the harness that ships.
+    const data = new FormData(form);
+    const agentClass = String(data.get('agentClass') ?? '').trim();
+    const requested = Number.parseInt(String(data.get('limit') ?? ''), 10);
+    const limit = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, CONTRACTS_PREPARE_MAX) : CONTRACTS_PREPARE_DEFAULT;
+    if (!agentClass) { banner('Choose an agent class first.', 'error'); return; }
+    const submit = $('#contracts-prepare-submit');
+    submit.disabled = true;
+    try {
+      const result = await api('/agent-contracts/prepare', { method: 'POST', body: { agentClass, limit } });
+      const prepared = result && typeof result.prepared === 'number' ? result.prepared : MISSING;
+      const skipped = result && Array.isArray(result.skipped) ? result.skipped.length : MISSING;
+      banner(`${prepared} proposal(s) prepared for ${agentClass} and awaiting your approval — prepared is not granted. ${skipped} skipped.`, 'ok');
+      await loadContracts();
+    } catch (error) {
+      banner(error.message, 'error');
+    } finally {
+      submit.disabled = false;
+    }
   });
 
   wireSubSections();

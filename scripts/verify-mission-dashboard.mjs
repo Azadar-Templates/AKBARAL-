@@ -270,6 +270,58 @@ async function main() {
       `panel hidden=${panel?.hidden}, block open=${node.open}`);
   }
 
+  // ── 3d. the scoped-contract block, read only ───────────────────────────────
+  //
+  // Measured live for two reasons. The block is the console's answer to a gate that could previously only
+  // be cleared from a shell the owner does not have, and its read touches the same fleet-shaped tables the
+  // Overview used to die on (`mission_agents`, `mission_agent_specialists`), so it is exactly the kind of
+  // panel worth timing at real scale. Nothing here clicks Prepare or Approve: this file never mutates a
+  // database, and the write path is pinned in src/mission/mission-agent-contracts-console.test.ts instead.
+  const contractsToken = win.sessionStorage.getItem('za_mission_token');
+  const contractsHeaders = { authorization: `Bearer ${contractsToken}` };
+  const contractsStartedAt = Date.now();
+  const contractsResponse = await fetch(`${BASE}/api/agent-contracts`, { headers: contractsHeaders });
+  const contractsPayload = await contractsResponse.json().catch(() => null);
+  const contractsMs = Date.now() - contractsStartedAt;
+  const declaredClasses = Array.isArray(contractsPayload?.classes) ? contractsPayload.classes : [];
+  const shape = (payload) => (payload?.classes ?? []).map((entry) => `${entry.agentClass}:${entry.pendingProposals}:${entry.activeContracts}`).join('|');
+  const beforeRender = shape(contractsPayload);
+  record('the console can read the scoped-contract surface',
+    contractsResponse.status === 200 && declaredClasses.length >= 3,
+    `${declaredClasses.length} class row(s) at HTTP ${contractsResponse.status}`);
+  record(`reading the contract surface stays inside the gateway's ${gatewayUpstreamBudgetMs} ms budget at ${fleetAgents} agents`,
+    contractsMs < gatewayUpstreamBudgetMs, `${contractsMs} ms`);
+  const refusedContracts = await fetch(`${BASE}/api/agent-contracts`);
+  record('the contract surface is refused to an anonymous caller', refusedContracts.status === 401, `HTTP ${refusedContracts.status}`);
+
+  await clickTab('approvals');
+  const contractRows = doc.querySelectorAll('#contracts-classes tbody tr').length;
+  record('the Approvals panel renders one row per agent class the module declares',
+    contractRows === declaredClasses.length && contractRows > 0, `${contractRows} row(s) rendered of ${declaredClasses.length} declared`);
+  const contractsText = doc.querySelector('#contracts-classes')?.textContent ?? '';
+  record('an owner reads what an approval would grant, in sentences rather than identifiers',
+    /file a work report|ask for a tool to be run|never: create agents/.test(contractsText),
+    `${contractsText.length} characters of plain-language surface rendered`);
+  record('an unreadable gate is reported as blocking, and the block is closed until opened',
+    /blocking the fleet|gate cleared/.test(doc.querySelector('#contracts-blocker')?.textContent ?? '')
+      && doc.querySelector('#contracts-block')?.open === false,
+    `blocker line present, details.open=${doc.querySelector('#contracts-block')?.open}`);
+  // The bulk approval control must exist only where there is something to approve. This run prepared
+  // nothing on purpose (the file performs no writes), so the honest check is the pairing: a class with
+  // pending proposals offers the button, a class without them says so and offers nothing.
+  const bulkButtons = doc.querySelectorAll('#contracts-classes button[data-contracts-approve-all]').length;
+  const classesWithPending = declaredClasses.filter((entry) => Number(entry.pendingProposals) > 0).length;
+  const saysNothingPrepared = (doc.querySelector('#contracts-classes')?.textContent ?? '').includes('nothing prepared yet for this class');
+  record('the owner is offered exactly two writes: prepare, and approve what was prepared',
+    doc.querySelector('#contracts-prepare-submit')?.disabled === false
+      && doc.querySelector('#contracts-confirm')?.hidden === true
+      && bulkButtons === classesWithPending
+      && (classesWithPending > 0 || saysNothingPrepared),
+    `${bulkButtons} bulk control(s) for ${classesWithPending} class(es) with prepared proposals, confirmation panel hidden, "nothing prepared yet" shown=${saysNothingPrepared}`);
+  const afterRender = await (await fetch(`${BASE}/api/agent-contracts`, { headers: contractsHeaders })).json().catch(() => null);
+  record('opening the block wrote nothing: every class count is identical before and after',
+    beforeRender.length > 0 && shape(afterRender) === beforeRender, beforeRender.slice(0, 96));
+
   await clickTab('agents');
   const agentRows = doc.querySelectorAll('#agent-list tr').length;
   record('the agents section lists agents from the mission database', agentRows > 1, `${agentRows - 1} rows`);

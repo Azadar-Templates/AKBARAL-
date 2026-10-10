@@ -12,6 +12,7 @@ import * as CommandCenter from './earning/owner-command-center';
 import * as ProviderReadiness from './earning/provider-capability-registry';
 import * as Eligibility from './earning/opportunity-eligibility';
 import * as ConnectorContracts from './earning/connector-execution-contracts';
+import * as AgentClassContracts from './earning/agent-class-contracts';
 import * as ExecutionPipeline from './earning/execution-pipeline';
 import * as SettlementVerification from './earning/settlement-verification';
 import { earningProviderReadinessReport } from './earning/providers/registry';
@@ -1655,6 +1656,46 @@ async function handleApi(
       }
       json(res, 200, { pending: listApprovals('pending'), all: listApprovals() });
       return true;
+    }
+
+    // ── Scoped agent contracts (owner console) ──────────────────────────────
+    //
+    // WHY THIS ROUTE EXISTS. `no_scoped_contract` is one of the two things the deployment is actually
+    // waiting on, and the only way to clear it was a shell command (`npm run fleet:readiness -- --contracts
+    // <class>`, then `--contracts-approve=<id>`). The owner has no shell on the host, so a blocker whose
+    // remedy was a CLI command was a blocker that could not be cleared — the fleet could not start, and
+    // the console's own activation list said so in prose it could not act on. This route puts the same
+    // two operations on the console, through the same module, with the same owner-only rule and the same
+    // fail-closed scope gate. Nothing here reimplements a contract: every write below is the module's
+    // own `prepareClassContractsForClass` / `approveClassContractProposal`, which the CLI also calls.
+    //
+    // What stays true of it: preparing is not granting. No branch of this route approves anything without
+    // an owner's click, there is no bulk action across classes, and the bulk action that does exist
+    // refuses to grant anything unless the owner repeats back the exact permission surface it is about
+    // to create. A read link can read the list and can change nothing, like every other panel.
+    case 'agent-contracts': {
+      requireRead(context);
+      if (method === 'GET' && rest.length === 0) {
+        json(res, 200, AgentClassContracts.classContractConsoleView());
+        return true;
+      }
+      const session = requireOwner(context, true);
+      const actor = { kind: 'owner' as const, id: session.owner.id };
+      if (method === 'POST' && rest[0] === 'prepare') {
+        const limit = Number.isFinite(Number(body.limit)) ? Number(body.limit) : undefined;
+        json(res, 200, AgentClassContracts.prepareClassContractsForClass(actor, { agentClass: String(param('agentClass', '') ?? ''), limit }));
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'approve') {
+        const contract = AgentClassContracts.approveClassContractProposal(actor, String(param('proposalId', '') ?? ''), String(param('note', '') ?? 'approved from the mission owner console'));
+        json(res, 200, { contract, note: 'A permission grant, authorized by the owner who clicked it. The contract is active until its own expiry; nothing here pays or moves anything.' });
+        return true;
+      }
+      if (method === 'POST' && rest[0] === 'approve-all') {
+        json(res, 200, AgentClassContracts.approveAllClassContractProposals(actor, { agentClass: String(param('agentClass', '') ?? ''), confirmSurface: param('confirmSurface') ?? undefined }));
+        return true;
+      }
+      throw new HttpProblem(404, 'unknown agent-contracts command', 'not_found');
     }
 
     // ── Policy ──────────────────────────────────────────────────────────────

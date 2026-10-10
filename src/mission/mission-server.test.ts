@@ -94,7 +94,7 @@ test('health is reachable without auth and exposes no secrets', async () => {
  * called is still an honest read surface rather than a hole. This list is what "unchanged owner
  * checks" is measured against after the strip.
  */
-const DASHBOARD_ROUTES = ['/api/overview', '/api/agents', '/api/approvals', '/api/policy', '/api/audit', '/api/treasury', '/api/ledger', '/api/payouts', '/api/payout-slots', '/api/withdraw', '/api/wallets', '/api/revenue', '/api/expenses', '/api/credentials', '/api/tools', '/api/resources', '/api/services', '/api/upgrades', '/api/work', '/api/reinvestment', '/api/specialists', '/api/self-management', '/api/reports', '/api/targets', '/api/bounty/programs', '/api/opportunity-catalog'];
+const DASHBOARD_ROUTES = ['/api/overview', '/api/agents', '/api/approvals', '/api/policy', '/api/audit', '/api/treasury', '/api/ledger', '/api/payouts', '/api/payout-slots', '/api/withdraw', '/api/wallets', '/api/revenue', '/api/expenses', '/api/credentials', '/api/tools', '/api/resources', '/api/services', '/api/upgrades', '/api/work', '/api/reinvestment', '/api/specialists', '/api/self-management', '/api/reports', '/api/targets', '/api/bounty/programs', '/api/opportunity-catalog', '/api/agent-contracts'];
 const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/kill-switch', { engage: true }],
   ['/api/policy', { maxDepth: 9 }],
@@ -104,6 +104,12 @@ const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/targets', { label: 'target', amountCents: 100_000 }],
   // The owner-only fleet sweep command: fleet-wide work by definition, so it is a command and not a read.
   ['/api/targets/sweep', {}],
+  // The scoped-contract console path. All three write, so all three must be on this list: a proposal row,
+  // one active contract, and a whole class of contracts. The gate they sit behind is the same
+  // requireOwner(..., true) + assertMoneyOwner pair every other permission grant goes through.
+  ['/api/agent-contracts/prepare', { agentClass: 'bounty_research', limit: 1 }],
+  ['/api/agent-contracts/approve', { proposalId: 'ccp_absent' }],
+  ['/api/agent-contracts/approve-all', { agentClass: 'bounty_research', confirmSurface: 'ffffffffffffffff' }],
   ['/api/bounty/programs', { platform: 'x', programHandle: 'y', scopeUrl: 'https://scope.invalid', programTermsHash: 'a'.repeat(64) }],
 ];
 

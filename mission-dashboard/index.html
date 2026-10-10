@@ -195,6 +195,35 @@
           <div id="expense-requests" class="table-wrap"></div>
           <h3>Upgrades</h3>
           <div id="upgrades" class="table-wrap"></div>
+          <details class="control-block" id="contracts-block">
+            <summary>Scoped agent contracts — prepare, then approve (owner only)</summary>
+            <p class="muted small">
+              A contract is a permission grant, so nothing on this screen grants anything by itself.
+              Preparing writes a proposal with the permissions frozen from its class; approval is a separate
+              click, and a proposal whose permission set is empty or wider than its class is refused with the
+              reason. The operator CLI (<code>npm run fleet:readiness -- --contracts &lt;class&gt;</code>)
+              prepares the same rows through the same module — this block exists because the owner has no
+              shell on the host, not because the CLI was wrong.
+            </p>
+            <p id="contracts-blocker" class="small"></p>
+            <h3>Agent classes</h3>
+            <div id="contracts-classes" class="table-wrap"></div>
+            <form id="contracts-prepare-form" class="stack-form">
+              <h3>Prepare proposals (grants nothing)</h3>
+              <label>Class <select name="agentClass" id="contracts-prepare-class"></select></label>
+              <label>Up to <input name="limit" type="number" min="1" max="200" value="25" /></label>
+              <button type="submit" id="contracts-prepare-submit">Prepare contracts</button>
+              <p class="muted small" id="contracts-prepare-note">
+                Bounded per click (200 at most) and one unreviewed batch per class: an agent that already has
+                a pending proposal or an active contract for that class is skipped, a second click while a
+                batch is waiting is refused rather than allowed to grow the queue, and approving a batch is
+                what unlocks the next one. Nothing here caps how many agents may eventually be granted.
+              </p>
+            </form>
+            <h3>Prepared proposals awaiting the owner</h3>
+            <div id="contracts-pending" class="table-wrap"></div>
+            <div id="contracts-confirm" hidden></div>
+          </details>
           <details class="sub" data-view="policy"><summary>Policy, limits and kill switch</summary>
                       <h3>Mission policy</h3>
                       <div id="policy" class="table-wrap"></div>

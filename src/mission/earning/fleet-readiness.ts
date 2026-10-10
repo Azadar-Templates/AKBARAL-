@@ -306,12 +306,16 @@ export function ownerActivationPath(): OwnerActivationPath {
     {
       code: 'no_scoped_contract', label: 'No approved scoped agent contract',
       cleared: contracts > 0,
-      how: 'CLI command', target: 'npm run fleet:readiness -- --contracts <class>',
+      // It used to say `how: 'CLI command'` because that was true. It is now the wrong kind of true: the
+      // owner reads this list in the browser and has no shell on the host, so a remedy that only exists in
+      // a terminal is, to this reader, no remedy at all — the gate stayed open and the fleet stayed still.
+      how: 'dashboard control',
+      target: '#contracts-block (Approvals → Scoped agent contracts): "Prepare contracts", then "Approve"',
       action: contracts > 0
         ? `already satisfied: ${contracts} active scoped contract(s)`
-        : 'prepare least-privilege contracts, then approve each one with --contracts-approve=<id>. Nothing self-approves',
-      verify: 'npm run fleet:readiness — the scoped contracts line counts "N active"',
-      evidence: 'package.json:83 (fleet:readiness), src/mission/earning/agent-class-contracts.ts (prepare/approve pair)',
+        : 'prepare least-privilege proposals for a class the registry maps agents to, then approve one (or approve all of a class after repeating back the permission surface). Preparing grants nothing; a proposal that is empty or wider than its class is refused with the reason. From a shell the same two steps are `npm run fleet:readiness -- --contracts <class>` then `--contracts-approve=<id>`',
+      verify: 'npm run fleet:readiness — the scoped contracts line counts "N active"; the console block reports the same gate beside its own counts',
+      evidence: 'mission-dashboard/index.html:198 (#contracts-block), src/mission/server.ts:1676 (the owner-only route), src/mission/earning/agent-class-contracts.ts:254 (prepare), :314 (approve), :467 (the empty/over-broad refusal), package.json:83 (fleet:readiness)',
       ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
     },
     {
@@ -476,7 +480,7 @@ export function fleetSummary(): FleetSummary {
     if (n > 0) {
       const meta: Record<string, { label: string; ownerAction: HumanActionType; freePath: string }> = {
         no_active_money_grant: { label: 'No active money grant', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Registry sync already grants zero-spend authority; a grant with spend_limit_cents>0 is only needed for paid work.' },
-        no_scoped_contract: { label: 'No approved scoped agent contract', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Prepare least-privilege contracts per class with `npm run fleet:readiness -- --contracts <class>`, then approve each with --contracts-approve=<id>. Granting stays an owner action: nothing self-approves, and classes no agent may hold (submission, payout release) are never offered.' },
+        no_scoped_contract: { label: 'No approved scoped agent contract', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Prepare least-privilege contracts per class in the console — Approvals → Scoped agent contracts → "Prepare contracts" — and approve them there. `npm run fleet:readiness -- --contracts <class>` with `--contracts-approve=<id>` is the same module for an operator with a shell. Granting stays an owner action: nothing self-approves, and classes no agent may hold (submission, payout release) are never offered.' },
         owner_action_pending: { label: 'A human-action task is open for this agent', ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL, freePath: 'Owner clears the pending task in the approvals queue.' },
       };
       blockers.push({ code, scope: 'agent', agentsAffected: n, ...meta[code] });
