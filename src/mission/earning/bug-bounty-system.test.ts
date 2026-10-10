@@ -9,23 +9,25 @@ process.env.ZA141251SA_DATABASE_URL = `file:${path.join(os.tmpdir(), `mission-bo
 process.env.ZA141251SA_SESSION_SECRET = 'bounty-system-test-session-secret-0123456789';
 process.env.ZA141251SA_CREDENTIAL_KEY = 'bounty-system-test-credential-key-0123456789';
 
-import { applyMissionMigrations, missionDb } from '../database';
+import { applyMissionMigrations, missionDb, type Row } from '../database';
 import { ensurePolicy, setKillSwitch } from '../policy';
 import { login, provisionOwner } from '../auth';
 import { createMissionServer } from '../server';
 import {
-  assertInScope,
   approveFindingForSubmission,
+  assertInScope,
   createBountyFinding,
   createBountyProgram,
   cvss31BaseScore,
   findingFingerprint,
+  getBountyProgram,
   listAgentRegistry,
   listBountyPrograms,
   listScopeAllowlist,
   runBountyAgent,
   runScopedExternalAction,
-  upsertScopeAllowlist,
+  updateBountyProgram,
+  upsertScopeAllowlist
 } from './bug-bounty-system';
 
 let ownerId = '';
@@ -40,9 +42,10 @@ test.before(async () => {
   const ownerEmail = `bounty-${randomUUID()}@test.invalid`;
   ownerId = provisionOwner({ email: ownerEmail, password: 'bounty-system-owner-password' }).id;
   ownerToken = login({ email: ownerEmail, password: 'bounty-system-owner-password' }).token;
-  programId = String(createBountyProgram({ platform: 'TestPlatform', programHandle: `program-${randomUUID()}`, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'a'.repeat(64), active: true }).id);
+  programId = String(createBountyProgram({ platform: 'TestPlatform', programHandle: `program-${randomUUID()}`, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'a'.repeat(64) }).id);
   upsertScopeAllowlist(programId, { target: 'example.com', targetType: 'domain', inScope: true, authRequired: false, rateLimitPerMin: 5 });
   upsertScopeAllowlist(programId, { target: 'admin.example.com', targetType: 'domain', inScope: false, authRequired: true });
+  updateBountyProgram(programId, { active: true });
   server = createMissionServer();
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -129,4 +132,113 @@ test('new HTTP routes are owner-only and the legacy external route is hard-block
   const legacy = await ownerRequest('/api/bounty/discover', { method: 'POST', body: '{}' });
   assert.equal(legacy.status, 409);
   assert.equal(legacy.body.error.code, 'scope_control_plane_required');
+});
+// ── The owner-facing bounty path: register → terms → scope → activate ──────────────────────────
+// These four steps are the whole of what the Bounty section can do today, so each link of the chain
+// is asserted where it is enforced: the row, the HTTP route, and the gate the worker has to pass.
+
+test('registering a program writes the row and the same program is listed back through the route', async () => {
+  const handle = `listed-${randomUUID()}`;
+  const created = await ownerRequest('/api/bounty/programs', {
+    method: 'POST',
+    body: JSON.stringify({ platform: 'TestPlatform', programHandle: handle, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'e'.repeat(64) }),
+  });
+  assert.equal(created.status, 201, 'the owner can register a program');
+  const programId = String(created.body.program.id);
+  assert.equal(created.body.program.programHandle, handle);
+  assert.equal(created.body.program.active, false, 'a registered program starts inactive');
+  assert.equal(created.body.program.programTermsHash, 'e'.repeat(64), 'the terms digest is stored on the program row');
+
+  const persisted = missionDb.get<Row>('SELECT platform, program_handle, scope_url, program_terms_hash, active FROM bounty_programs WHERE id = ?', [programId]);
+  assert.ok(persisted, 'the row exists in the mission database');
+  assert.equal(String(persisted!.program_handle), handle);
+  assert.equal(Number(persisted!.active), 0);
+
+  const listed = await ownerRequest('/api/bounty/programs');
+  assert.equal(listed.status, 200);
+  const found = (listed.body.programs as Array<Record<string, unknown>>).find((row) => row.id === programId);
+  assert.ok(found, 'the program is listed back to the owner');
+  assert.equal(String(found!.scopeUrl), 'https://program.invalid/scope');
+  const audit = missionDb.get<Row>(`SELECT detail FROM mission_audit WHERE action = 'bounty.program_created' AND subject_id = ?`, [programId]);
+  assert.ok(audit, 'registration is recorded in the audit trail');
+  assert.ok(!/token|password|secret/i.test(String(audit!.detail)), 'the audit detail carries no credential material');
+});
+
+test('a program with zero in-scope targets cannot be activated, by either write path', () => {
+  const lonely = createBountyProgram({ platform: 'TestPlatform', programHandle: `lonely-${randomUUID()}`, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'f'.repeat(64) });
+  const lonelyId = String(lonely.id);
+  assert.equal(getBountyProgram(lonelyId)!.active, false, 'it starts inactive');
+
+  assert.throws(
+    () => createBountyProgram({ platform: 'TestPlatform', programHandle: `armed-${randomUUID()}`, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'f'.repeat(64), active: true }),
+    (error: unknown) => (error as { code?: string; statusCode?: number }).code === 'scope_required'
+      && (error as { statusCode?: number }).statusCode === 409,
+    'an active-on-create registration is refused rather than silently downgraded',
+  );
+  assert.throws(
+    () => updateBountyProgram(lonelyId, { active: true }),
+    (error: unknown) => (error as { code?: string }).code === 'scope_required',
+    'activation with no allowlist row is refused',
+  );
+
+  // An out-of-scope row is not a target: the gate the worker obeys would still block everything, so
+  // the row must not be enough to arm the program.
+  upsertScopeAllowlist(lonelyId, { target: `denied-${randomUUID()}.example`, targetType: 'domain', inScope: false });
+  assert.throws(
+    () => updateBountyProgram(lonelyId, { active: true }),
+    (error: unknown) => (error as { code?: string }).code === 'scope_required',
+    'a program whose only row is explicitly out of scope stays unactivatable',
+  );
+  assert.equal(getBountyProgram(lonelyId)!.active, false, 'the refusal left the program inactive');
+});
+
+test('activation after one in-scope target succeeds and puts the program in front of the worker', async () => {
+  const program = createBountyProgram({ platform: 'TestPlatform', programHandle: `armed-${randomUUID()}`, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'a'.repeat(64) });
+  const id = String(program.id);
+  const target = `armed-${randomUUID()}.example`;
+  upsertScopeAllowlist(id, { target, targetType: 'domain', inScope: true });
+
+  const refused = await ownerRequest(`/api/bounty/programs/${encodeURIComponent(id)}/scope`);
+  assert.equal(refused.status, 200, 'the scope list is readable before activation');
+  assert.equal((refused.body.scope as unknown[]).length, 1);
+
+  const armed = await ownerRequest(`/api/bounty/programs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ active: true }) });
+  assert.equal(armed.status, 200, 'one in-scope target is enough to arm the program');
+
+  const listed = listBountyPrograms().find((row) => String(row.id) === id)!;
+  assert.equal(listed.active, true, 'with one in-scope target the program is active');
+  // The scheduler refuses to run at all while no program is active; this is its exact predicate.
+  assert.ok(missionDb.get<Row>('SELECT id FROM bounty_programs WHERE active=1'), 'the worker now has an active program to act on');
+  assert.equal(assertInScope(id, target).target, target, 'the gate lets the in-scope target through');
+  const audit = missionDb.get<Row>(`SELECT detail FROM mission_audit WHERE action = 'bounty.program_activation_changed' AND subject_id = ? ORDER BY seq DESC`, [id]);
+  assert.ok(audit, 'the activation is in the audit trail');
+  assert.match(String(audit!.detail), /"active":true/);
+});
+
+test('a refused activation is recorded, and the refusal carries no credential material', async () => {
+  const program = createBountyProgram({ platform: 'TestPlatform', programHandle: `refused-${randomUUID()}`, scopeUrl: 'https://program.invalid/scope', programTermsHash: 'b'.repeat(64) });
+  const id = String(program.id);
+  const attempted = await ownerRequest(`/api/bounty/programs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ active: true }) });
+  assert.equal(attempted.status, 409);
+  assert.equal(attempted.body.error.code, 'scope_required');
+  assert.match(attempted.body.error.message, /in-scope target/i, 'the message names the fix the owner can perform');
+  const audit = missionDb.get<Row>(`SELECT detail FROM mission_audit WHERE action = 'bounty.program_activation_refused' AND subject_id = ?`, [id]);
+  assert.ok(audit, 'a refusal to arm the worker is itself auditable');
+  const serialized = JSON.stringify([attempted.body, audit!.detail]);
+  assert.ok(!/Bearer|password|private_key|ciphertext|ghp_/i.test(serialized), 'neither the response nor the audit row echoes a credential');
+});
+
+test('a target outside the program scope is refused by the gate that the worker runs through', async () => {
+  const program = getBountyProgram(programId)!;
+  assert.equal(program.active, true, 'the suite program is active with its two allowlist rows');
+  assert.equal(assertInScope(programId, 'example.com').target, 'example.com');
+  // The scope error carries one code (`target_out_of_scope`) and the specific refusal in `reason`, so
+  // the reason is what has to be right — and the status is a 403, never a warning.
+  assert.throws(() => assertInScope(programId, 'anything-else.example'), (error: unknown) => (error as { reason?: string; statusCode?: number }).reason === 'target_not_allowlisted' && (error as { statusCode?: number }).statusCode === 403);
+  assert.throws(() => assertInScope(programId, 'admin.example.com'), (error: unknown) => (error as { reason?: string; statusCode?: number }).reason === 'explicitly_out_of_scope' && (error as { statusCode?: number }).statusCode === 403);
+  const events = missionDb.all<Row>(`SELECT decision, reason FROM scope_gate_events WHERE program_id = ? ORDER BY id DESC LIMIT 3`, [programId]);
+  assert.ok(events.length >= 3, 'the gate records every decision, allowed or blocked');
+  const terms = await ownerRequest('/api/bounty/programs/fetch-terms', { method: 'POST', body: JSON.stringify({ scopeUrl: 'https://user:***@program.invalid/scope' }) });
+  assert.equal(terms.status, 400, 'a scope URL that embeds a credential is refused outright');
+  assert.ok(!/hunter2/.test(JSON.stringify(terms.body)), 'the refused credential is not echoed back');
 });

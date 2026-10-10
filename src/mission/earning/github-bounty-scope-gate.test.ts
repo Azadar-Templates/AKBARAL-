@@ -20,7 +20,7 @@ const m = require('../money') as typeof import('../money');
 const { updatePolicy, setKillSwitch } = require('../policy') as typeof import('../policy');
 
 const owner = { kind: 'owner' as const, id: 'scope-owner' }, agent = 'scope-agent';
-const ALLOWED = 'acme/allowed', OTHER = 'acme/other', BLOCKED_BY_DENY = 'acme/denied';
+const ALLOWED = 'acme/allowed', OTHER = 'acme/other', BLOCKED_BY_DENY = 'acme/denied', DENY_HOLDER = 'acme/deny-holder';
 const json = (body: unknown, status = 200) => new Response(body === null ? '' : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 interface Lead { repo: string; number: number }
@@ -108,7 +108,11 @@ it('target_not_allowlisted: policy fetch and assignment are refused with no outb
 
 it('explicitly_out_of_scope: a deny row in any active program blocks even when another active program allows', async () => {
   registerFixtureRepoProgram([BLOCKED_BY_DENY]);
-  const denyingProgram = registerFixtureRepoProgram([]);
+  // A program whose only row is a deny row can no longer be armed at all — there is nothing it may
+  // act on — so the denying program holds one unrelated allow row to make activation legal. The
+  // assertion this test makes is untouched: a deny row in any active program still blocks a repo that
+  // another active program allows, and the unrelated holder repo is used by no other case here.
+  const denyingProgram = registerFixtureRepoProgram([DENY_HOLDER]);
   upsertScopeAllowlist(denyingProgram, { target: BLOCKED_BY_DENY, targetType: 'repo', inScope: false });
   const calls: string[] = [];
   const w = workflow(calls);

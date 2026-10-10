@@ -1381,7 +1381,24 @@ async function handleApi(
           if (method === 'DELETE' && rest.length === 4) { removeScopeAllowlist(programId, rest[3]); json(res, 200, { removed: true }); return true; }
         }
         if (method === 'GET' && rest.length === 2) { const program = getBountyProgram(programId); if (!program) throw new HttpProblem(404, 'bounty program not found', 'not_found'); json(res, 200, { program }); return true; }
-        if ((method === 'PATCH' || method === 'PUT') && rest.length === 2) { json(res, 200, { program: updateBountyProgram(programId, body as any) }); return true; }
+        if ((method === 'PATCH' || method === 'PUT') && rest.length === 2) {
+          // Arming the worker over a program is an owner act with consequences, so both the change and
+          // the refusal land in the audit trail: "who tried to activate what had no in-scope target"
+          // is exactly the question the trail exists to answer.
+          const previous = getBountyProgram(programId);
+          try {
+            const program = updateBountyProgram(programId, body as any);
+            if (body.active !== undefined) {
+              appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'bounty.program_activation_changed', subjectType: 'bounty_program', subjectId: programId, detail: { active: program.active, previousActive: previous?.active ?? null } });
+            }
+            json(res, 200, { program }); return true;
+          } catch (error) {
+            if (error instanceof BountySystemError && error.code === 'scope_required' && body.active === true) {
+              appendMissionAudit({ actorType: 'owner', actorId: session.owner.id, action: 'bounty.program_activation_refused', subjectType: 'bounty_program', subjectId: programId, detail: { code: error.code, reason: 'no in-scope target in the allowlist' } });
+            }
+            throw error;
+          }
+        }
         if (method === 'DELETE' && rest.length === 2) { deleteBountyProgram(programId); json(res, 200, { deleted: true }); return true; }
       }
       throw new HttpProblem(404, 'unknown bounty program route', 'not_found');

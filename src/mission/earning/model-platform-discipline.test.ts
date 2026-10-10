@@ -12,7 +12,12 @@ import { applyMissionMigrations, missionDb } from '../database';
 import { ensurePolicy } from '../policy';
 import { provisionOwner } from '../auth';
 import { storeCredential } from '../self-management';
-import { createBountyProgram, upsertScopeAllowlist, runBountyAgent } from './bug-bounty-system';
+import {
+  createBountyProgram,
+  runBountyAgent,
+  updateBountyProgram,
+  upsertScopeAllowlist
+} from './bug-bounty-system';
 import {
   createModelProvider, createMissionModelClient, listModelProviders, modelCallObservability, setModelSpendCap,
 } from './model-layer';
@@ -31,9 +36,10 @@ test.before(() => {
   applyMissionMigrations();
   ensurePolicy('USD');
   ownerId = provisionOwner({ email: `model-${randomUUID()}@test.invalid`, password: 'model-platform-owner-password' }).id;
-  programId = String(createBountyProgram({ platform: 'ModelTest', programHandle: `model-${randomUUID()}`, scopeUrl: 'https://scope.invalid', programTermsHash: 'b'.repeat(64), active: true }).id);
+  programId = String(createBountyProgram({ platform: 'ModelTest', programHandle: `model-${randomUUID()}`, scopeUrl: 'https://scope.invalid', programTermsHash: 'b'.repeat(64) }).id);
   upsertScopeAllowlist(programId, { target: 'authorized.example', targetType: 'domain', inScope: true, authRequired: false });
   upsertScopeAllowlist(programId, { target: 'blocked.example', targetType: 'domain', inScope: false, authRequired: false });
+  updateBountyProgram(programId, { active: true });
 });
 
 test.after(() => missionDb.close());

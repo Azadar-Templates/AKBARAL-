@@ -100,6 +100,21 @@ const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/policy', { maxDepth: 9 }],
   ['/api/credentials', { provider: 'x', label: 'y', kind: 'oauth_token', value: 'synthetic-never-logged' }],
   ['/api/targets', { label: 'target', amountCents: 100_000 }],
+  ['/api/bounty/programs', { platform: 'x', programHandle: 'y', scopeUrl: 'https://scope.invalid', programTermsHash: 'a'.repeat(64) }],
+];
+
+/**
+ * The four routes the Bounty section owns. Each one is listed with the method the console uses, so the
+ * authorization assertions below cannot quietly stop covering a route: registering a program, fetching
+ * and hashing its terms, saving an in-scope target, and activating it.
+ */
+const BOUNTY_CONTROL_ROUTES: ReadonlyArray<{ readonly method: string; readonly path: string; readonly body?: unknown }> = [
+  { method: 'GET', path: '/api/bounty/programs' },
+  { method: 'POST', path: '/api/bounty/programs', body: { platform: 'x', programHandle: 'y', scopeUrl: 'https://scope.invalid', programTermsHash: 'a'.repeat(64) } },
+  { method: 'POST', path: '/api/bounty/programs/fetch-terms', body: { scopeUrl: 'https://scope.invalid' } },
+  { method: 'GET', path: '/api/bounty/programs/bpr_absent/scope' },
+  { method: 'POST', path: '/api/bounty/programs/bpr_absent/scope', body: { target: 'x.invalid', targetType: 'domain', inScope: true } },
+  { method: 'PATCH', path: '/api/bounty/programs/bpr_absent', body: { active: true } },
 ];
 
 test('every private route refuses anonymous callers', async () => {
@@ -1020,4 +1035,33 @@ test('the verified-cash reconciliation report is owner-only, auditable, and dete
   missionDb.run("UPDATE mission_cash_accounts SET available_cents = available_cents - 999 WHERE id='treasury'");
   const restored = await owner('/api/money/reconciliation');
   assert.equal(restored.body.reconciliation.ok, true, 'fail-closed is a gate, not a brick: it recovers with the ledger');
+});
+test('every bounty control route refuses an anonymous caller and a scoped link, and returns no credential', async () => {
+  for (const route of BOUNTY_CONTROL_ROUTES) {
+    const anon = await api(route.path, {
+      method: route.method,
+      body: route.body === undefined ? undefined : JSON.stringify(route.body),
+    });
+    assert.equal(anon.status, 401, `${route.method} ${route.path} is not reachable without a session`);
+  }
+  const link = createAccessLink({ label: 'bounty read', scope: 'dashboard:read', expiresInHours: 1, createdBy: 'owner' });
+  for (const route of BOUNTY_CONTROL_ROUTES) {
+    if (route.method === 'GET') continue;
+    const refused = await api(route.path, {
+      method: route.method,
+      headers: { 'x-mission-link': link.token },
+      body: JSON.stringify(route.body ?? {}),
+    });
+    assert.ok([401, 403].includes(refused.status), `${route.method} ${route.path} must refuse a link caller, got ${refused.status}`);
+    assert.notEqual(refused.status, 200, `${route.method} ${route.path} is not writable by a link`);
+  }
+  // The owner can reach them, and what comes back is program data only: no session material, no
+  // credential material, nothing that could be replayed elsewhere.
+  const ownerToken = login({ email: OWNER_EMAIL, password: OWNER_PASSWORD }).token;
+  const list = await api('/api/bounty/programs', { headers: { authorization: `Bearer ${ownerToken}` } });
+  assert.equal(list.status, 200, 'the owner lists their programs');
+  const scope = await api('/api/bounty/programs/bpr_absent/scope', { headers: { authorization: `Bearer ${ownerToken}` } });
+  assert.ok([200, 404].includes(scope.status), 'the scope list is readable or the program does not exist');
+  const serialized = JSON.stringify([list.body, scope.body]);
+  assert.ok(!/Bearer|password|client_secret|ciphertext|ghp_|x-mission-link/i.test(serialized), 'the bounty control plane never returns credential material');
 });

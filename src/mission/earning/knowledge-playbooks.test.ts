@@ -11,7 +11,7 @@ process.env.ZA141251SA_CREDENTIAL_KEY = 'knowledge-test-credential-key-012345678
 import { applyMissionMigrations, missionDb } from '../database';
 import { ensurePolicy } from '../policy';
 import { provisionOwner } from '../auth';
-import { createBountyFinding, createBountyProgram, runBountyAgent, upsertScopeAllowlist } from './bug-bounty-system';
+import { createBountyFinding, createBountyProgram, runBountyAgent, updateBountyProgram, upsertScopeAllowlist } from './bug-bounty-system';
 import { KNOWLEDGE_DEFINITIONS, seedKnowledgeBase, validateKnowledgeReference } from './knowledge-catalog';
 import {
   approveKnowledgeImprovement,
@@ -34,8 +34,9 @@ test.before(() => {
   applyMissionMigrations();
   ensurePolicy('USD');
   ownerId = provisionOwner({ email: `knowledge-${randomUUID()}@test.invalid`, password: 'knowledge-owner-password' }).id;
-  programId = String(createBountyProgram({ platform: 'KnowledgeTest', programHandle: `knowledge-${randomUUID()}`, scopeUrl: 'https://scope.invalid', programTermsHash: 'c'.repeat(64), active: true }).id);
+  programId = String(createBountyProgram({ platform: 'KnowledgeTest', programHandle: `knowledge-${randomUUID()}`, scopeUrl: 'https://scope.invalid', programTermsHash: 'c'.repeat(64) }).id);
   upsertScopeAllowlist(programId, { target: 'authorized.example', targetType: 'domain', inScope: true });
+  updateBountyProgram(programId, { active: true });
 });
 
 test.after(() => missionDb.close());

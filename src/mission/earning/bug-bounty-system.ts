@@ -175,6 +175,24 @@ export function getBountyProgram(id: string): Record<string, unknown> | null {
   return row ? programPublic(row) : null;
 }
 
+/**
+ * Activation is the switch that lets the worker act on a program, so it cannot be a property of the
+ * console that clicked it. A program with no in-scope row in `scope_allowlist` can never satisfy
+ * `assertInScope` — every action it would take is blocked — so an active-but-unscoped program is a
+ * live toggle over an empty target list. Both write paths check here, and the refusal is a 409 that
+ * names the fix instead of a silent no-op. This is a tightening only: `assertInScope` itself is
+ * untouched, and deactivation is never gated.
+ */
+export function assertActivatable(programId: string): void {
+  const id = boundedString(programId, 'programId', 200);
+  const inScope = Number(missionDb.get<Row>(
+    'SELECT COUNT(*) AS c FROM scope_allowlist WHERE program_id = ? AND in_scope = 1', [id],
+  )?.c ?? 0);
+  if (inScope === 0) {
+    throw new BountySystemError('scope_required', 'save at least one in-scope target in the allowlist before activating this program', 409);
+  }
+}
+
 export function createBountyProgram(input: ProgramInput): Record<string, unknown> {
   const platform = boundedString(input.platform, 'platform', 80);
   const programHandle = boundedString(input.programHandle, 'programHandle', 200);
@@ -182,6 +200,14 @@ export function createBountyProgram(input: ProgramInput): Record<string, unknown
   const termsHash = boundedString(input.programTermsHash, 'programTermsHash', 200);
   if (!/^[a-f0-9]{64}$/i.test(termsHash)) throw new BountySystemError('validation_error', 'programTermsHash must be a SHA-256 hex digest', 400);
   const id = missionId('bpr');
+  // A brand-new id has no allowlist rows by definition, so an `active` create is always refused: the
+  // program is registered inactive, its scope is saved, and only then is it activated. The type says
+  // `active?: boolean` and the route casts an untrusted body into it, so this is checked at runtime
+  // rather than trusted to the declaration.
+  const wantsActive = input.active === true;
+  if (wantsActive) {
+    throw new BountySystemError('scope_required', 'a program is registered inactive; save its in-scope targets and activate it in a separate call', 409);
+  }
   const timestamp = nowIso();
   try {
     missionDb.run(
@@ -201,6 +227,7 @@ export function updateBountyProgram(id: string, patch: Partial<ProgramInput> & {
   if (!existing) throw new BountySystemError('not_found', 'program not found', 404);
   const termsHash = patch.programTermsHash ?? String(existing.program_terms_hash);
   if (!/^[a-f0-9]{64}$/i.test(termsHash)) throw new BountySystemError('validation_error', 'programTermsHash must be a SHA-256 hex digest', 400);
+  if (patch.active === true) assertActivatable(String(existing.id));
   const inScope = patch.inScopeAssets === undefined ? String(existing.in_scope_assets_json) : JSON.stringify(stringList(patch.inScopeAssets, 'inScopeAssets'));
   const outScope = patch.outOfScope === undefined ? String(existing.out_of_scope_json) : JSON.stringify(stringList(patch.outOfScope, 'outOfScope'));
   const rate = patch.rateLimitPolicy === undefined ? String(existing.rate_limit_policy_json) : objectJson(patch.rateLimitPolicy, 'rateLimitPolicy');
