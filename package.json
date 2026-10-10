@@ -106,6 +106,7 @@
     "test:status": "node scripts/test-resumable.mjs --status",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
-    "audit:lighthouse": "node scripts/lighthouse-audit.mjs"
+    "audit:lighthouse": "node scripts/lighthouse-audit.mjs",
+    "mission:fleet:specialize": "tsx scripts/mission-fleet-specialize.ts"
   }
 }
