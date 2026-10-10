@@ -184,3 +184,139 @@ NODE_OPTIONS="--use-system-ca" ZA141251SA_GITHUB_TOKEN=… DATA_DIR=/tmp/live2/d
 The jail run in this document used an operator-authored harness; the digests above are the
 ones it recorded, and the repository tree it executed against is the published archive
 whose sha256 is in §3.
+
+## 9. Re-check at 04:50 UTC, after the fleet commit
+
+Every number below was measured in this session; nothing is carried over from §1–§8.
+
+### 9.1 What is actually deployed
+
+```
+GET https://akbaral-production.up.railway.app/api/ready
+{"status":"ready","checks":[{"name":"database","ok":true},{"name":"migrations","ok":true},
+ {"name":"uploads","ok":true},{"name":"execution_queue","ok":true,"detail":"started=true, activeWorkers=0"}],
+ "uptimeSeconds":7726,
+ "build":{"commit":"3eb0ff5152f853e912583bfead76666188d68eee","version":"0.1.0",
+          "builtAt":"2026-10-10T01:51:24.000Z","source":"image-stamp"}}
+```
+
+The live service still reports `3eb0ff51` — the fleet code (`ec5a21c…effdb01`) is **not deployed**.
+There is no deploy path open to this session: no `railway` CLI or `RAILWAY_*` token exists in the
+sandbox, `gh secret list` returns 403 for the Actions token, and no workflow in
+`.github/workflows/` performs a deploy (`docker-publish` only publishes the image; it also
+`paths-ignore`s `docs/**`, which is why the docs-only commit rebuilt nothing). Nothing was changed.
+
+### 9.2 Migration 0048 rehearsed against production-shaped data
+
+A hardlinked copy of the tree at the deployed migration set (0001–0047) was migrated, seeded and
+connector-seeded, then the current tree migrated the **same** database — a real upgrade, not a
+rebuild from empty:
+
+| | before | after |
+| --- | --- | --- |
+| mission migrations recorded | 50 | **51**, including `0048_specialist_platform_fleet.sql` |
+| `mission_platforms` rows | 58 | 58 (untouched) |
+| `mission_owner` / `mission_identity_lock` | 1 / 1 | 1 / 1 |
+| `mission_ledger` rows | 0 | 0 |
+| platform DB `agents` / `agent_tools` | 4,001 / 7,203 | 4,001 / 7,203 |
+| fleet tables created by 0048 | absent | 7 tables, all empty, `PRAGMA foreign_key_check` → no rows |
+
+`npm run mission:fleet:specialize -- --apply-catalog --priority --certify --refresh --report` was
+then run against the upgraded database and produced exactly the clean-database result: 7 venues
+reusing seeded rows (no normalized duplicates), 7 `SKILLS_VERIFIED`, 3,994 `UNASSIGNED_PLATFORM`.
+
+### 9.3 Credential readiness, probed without printing it
+
+| Check | Result |
+| --- | --- |
+| Identity | `Azadar-Templates` (login id 127788045) |
+| Validity | header `Github-Authentication-Token-Expiration: 2026-10-10 12:31:17 UTC` — ~8 h left at probe time |
+| Token class | `X-OAuth-Scopes` empty **and** `GET /applications/grants` → 404 ⇒ not a classic scoped PAT |
+| Our repository | `permissions: admin/maintain/push/pull/triage = true`; issues enabled |
+| `contents: write` on our repository | `POST /git/refs` with an all-zero sha → **422 "Object does not exist"** (authorization passed, nothing created) |
+| `pull_requests: write` on our repository | `POST /pulls` with a nonexistent head → **422 `head invalid`** (authorization passed, nothing created) |
+| Third-party write | same two calls against `tenstorrent/tt-metal` and `highlight/highlight` → **403 "Resource not accessible by integration"** |
+| Production variable | `ZA141251SA_GITHUB_TOKEN` absent here; `githubBackendReport()` → `blockedFor: ["github_credentials_absent"]`, `submissionCapable: "unknown"`. Setting it to any value flips `credentialPresent: true` (measured), value never read or printed |
+
+Conclusion: the rotated credential is real and admin-capable **inside `Azadar-Templates` only**.
+It cannot open a pull request on any repository we do not own, so no GitHub-issue bounty can be
+submitted with it, and a fork was deliberately not attempted because a successful probe would itself
+be the external artifact. The owner action is precise, and `githubBackendReport()` states it:
+fine-grained `Administration: write`, `Contents: read+write` on the account-owned fork,
+`Pull requests: read+write` on the upstream, `Metadata: read`; or a classic token with `public_repo`.
+A token that expires in eight hours is also the wrong shape for a long-running worker.
+
+### 9.4 Backends, as probed now
+
+* **Sandbox — the jail is available here.** `executionBackends({ probeSandbox: true })` returns
+  `mode: auto → backend: namespace`, `probed: true, available: true`, `namespaceSmoke: "NS_OK"`
+  from an actual `unshare -Urn --pid --fork --mount-proc --map-root-user` execution
+  (util-linux 2.38.1 ≥ 2.36, 15,734 user namespaces allowed). Isolation is new user+PID+mount+**NET**
+  namespace, private mount propagation, `--map-root-user`, and rlimits
+  `ulimit -v 786432 -f 262144 -u 96 -t 330`. 8 + 2 isolation tests pass, including
+  *"a refused capability probe is a refusal, never an approximation"* and *"deployment pinning makes
+  an unpinned jail unavailable"*. The **OCI** backend stays unavailable until the owner pins
+  `ZA141251SA_BOUNTY_SANDBOX_IMAGE_DIGEST`; nothing was relaxed to make a task pass. This corrects
+  §2's "no container runtime ⇒ no isolation": docker is still absent, isolation is not.
+* **Model — one flag away, not zero.** `chatDispatchReadiness()` as-is: `mode: blocked`,
+  `agentsWithChatConfig: 0`, `productionAgents: 4001`, blocker
+  `ZA141251SA_CHAT_FREE_TIER is not enabled, and no verified vendor billing adapter is configured`.
+  With `ZA141251SA_CHAT_FREE_TIER=true` (probe only — production settings untouched): `mode: free_tier`,
+  `dispatchable: true`, `model: gemini-3.8-flash`, blockers `[]`. No key was created, bought or
+  enabled, and no model call can be exercised from this sandbox because the egress allowlist has no
+  provider host — that end-to-end check belongs on the deployed host.
+* **Payout** — unchanged: 0 of 5 `mission_payout_slots` verified, so a merged PR still cannot be
+  booked as revenue.
+
+### 9.5 Live opportunity sweep (unauthenticated GitHub search + per-repo verification, 04:34 UTC)
+
+Our own `GithubBountyWorkflow.discover()` returned **0 leads** on a fresh database, which is the
+correct answer: discovery is scoped to `bounty_programs`/`scope_allowlist` rows and there is no
+active program, recorded as such rather than widened by hand. The manual sweep then looked at what
+the labels advertise:
+
+| Query / candidate | Measured | Verdict |
+| --- | --- | --- |
+| `label:"💰 bounty" is:issue is:open no:assignee` | 8 issues total | — |
+| `label:"💎 Bounty" … no:assignee` | 553 open; `bounty` 4,226; `reward` 1,950 | label volume proves nothing |
+| `watney-ai/open-source-bounties#1` "fix typo in BOUNTY.md (€2.00)" | repo contains **only README.md** — the file named in the task does not exist; 6+ PRs, 0 merged; 0 stars; last push 2026-04-28 | **unverifiable bait** |
+| `SecureBananaLabs/bug-bounty` ($430–$1.2k labels) | 9,920 open issues, 939 forks, 320 stars, **0 merged PRs** in the last 100 closed | **PR farm** |
+| `UnsafeLabs/Bounty-Hunters` ($450–$900, "AI only allowed - no humans") | 404 forks, **0 merged PRs** | **PR farm** |
+| `tine1117/oss-hunter-livefire#1` ($50) | description: *"Sandbox fixture for testing an automated OSS bounty-solving workflow"*, 0 merged PRs | **honeypot for agents** |
+| `javelin-anticheat/py-workedtask#4` ($100) | 1 star, created and last pushed the same day, 0 merged PRs | no payout path |
+| `PG-AGI/toingg-jarvis#13` ($5) | real repo, 7 merged PRs — but the issue carries claim comments from three parties ("taking this one", `/attempt #13`) | **claimed by others** |
+| `PG-AGI/toingg-jarvis#82` | open, 0 comments, unclaimed — and **no reward label**; the venue pays via `REWARD_SYSTEM.md`: 1 point = ₹1, minimum redemption 1,000 points, "at maintainer discretion" | not clearly payable; not verifiable by us |
+| Algora (`💎 Bounty` is its label) | `algora.io/bounties` → **404**; homepage is now "Hire the top 1% open source engineers" | the escrowed-bounty feed we assumed no longer exists |
+
+Every rejection above is on the record as an evidence-backed reason, not as an absence of search.
+No candidate satisfies *open ∧ unclaimed ∧ funded ∧ automation-permitted ∧ settlement-verifiable*
+today, so **nothing was claimed, nothing was forked, and no pull request was opened.**
+
+### 9.6 The one venue that is nearly ready, and why it still waits on a person
+
+`GET https://gofrantic.com/v1/board` (04:35 UTC): day 94, `bounties_open: 6`,
+`funded_usd: 802`, `moved_usd: 1302.85`, 1,345 operators, 504 sworn. It is the only venue in the
+catalog that is (a) explicitly built for agents, (b) funded with amounts a stranger can verify on a
+public ledger, and (c) already integrated here (`frantic-board.ts`, `frantic-receipt-ledger.ts`).
+Its six open items: $3, $16, $8, $20, $10-rebate and $20.
+
+* every `claim.state` is `requires_identity`, requiring `agent_kid` + `agent_token` + a
+  **verified email or runx GitHub identity** — a human step we will not fake;
+* the only real-engineering row, **#33 "Publish Sourcey docs for a maintained OSS library" ($20,
+  capacity 1, occupied 0, `funded: true`)**, additionally requires `receipt_ref` from a governed
+  **`runx-cli` ≥ 0.6.13** run. `runx-cli`, `@runx/cli` and `frantic-runx` are all **404 on the
+  public registry** available here, and `sourcey` (3.6.12, AGPL-3.0-only) is a dependency we do not
+  add without approval. So #33 is not deliverable by us yet, and its rules say a submission without
+  a recomputable receipt is returned for revision — preparing one now would be a rejected packet;
+* the citation/outreach items ($8–$16) need third-party publishing accounts, i.e. the same
+  identity gate plus a policy question we should not answer by improvisation.
+
+### 9.7 Highest-priority single action
+
+**Create the Frantic operator identity** (`POST /v1/signup`, verify the email, register the x402 or
+Stripe Connect payout wallet) for one agent — it converts the only automation-permitted,
+publicly-verifiable, already-funded venue from *unreadable* to *claimable*, and it is one action
+rather than five. Everything else (§9.3 credential scope, §9.4 model flag and payout slot, §9.1
+deploy) unblocks a path whose first payable item is still months out or unverifiable.
+Autonomy stays disabled until the gates in §7 are green; `revenue` is **$0.00** with **0** settlement
+proofs, because there is nothing to report, not because nothing was found.
