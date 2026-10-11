@@ -58,6 +58,91 @@ const state = {
  * tell "not measured" from "measured as nothing".
  */
 const MISSING = 'MISSING';
+// ── copy: the one translation layer ──────────────────────────────────────────
+/* The console's human-facing strings are written in English at their source, for two
+ * reasons that outlive translation: they are the anchors of the console's own tests, and
+ * they are the KEYS of design-system/mission-copy.pairs.json — the single translation
+ * authority. What the owner reads is this layer's output. Lookup order is the exact
+ * string, then its normalized form (every dynamic hole as '#'), and the dynamic parts
+ * found in the source are re-injected into the '#' holes of the Roman Urdu value in
+ * order, so an amount, a slot number or a slug still says what it said.
+ *
+ * A string that is not in the dictionary is returned unchanged on purpose: a missing
+ * translation then reads as English in the panel rather than as a hole, and
+ * `node scripts/mission-copy-build.mjs` is what proves none are missing. Machine values
+ * (status codes, ids, env names, file paths, `file:line` citations, API field names) are
+ * never looked up here — the pairs file is derived from an inventory that excludes any
+ * string carrying a code shape, so they cannot be translated by accident.
+ */
+const COPY = typeof window.MISSION_COPY === 'object' && window.MISSION_COPY !== null ? window.MISSION_COPY : {};
+const COPY_HOLES = /\$\{[^{}]*\}|\b\d+(?:[.,]\d+)?\b/g;
+const COPY_ATTRS = new Set(['title', 'aria-label', 'placeholder', 'alt']);
+const COPY_DECODE = (text) => text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const COPY_ENCODE = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function copyKey(text) {
+  return String(text).replace(/\$\{[^{}]*\}/g, '#').replace(/\b\d+(?:[.,]\d+)?\b/g, '#').replace(/\s+/g, ' ').trim();
+}
+
+/** The one copy entry point: the English source string in, the Roman Urdu the owner reads out. */
+function ur(value) {
+  if (typeof value !== 'string' || value.length < 2) return value;
+  const exact = COPY[value];
+  if (typeof exact === 'string') return exact;
+  const holes = String(value).match(COPY_HOLES) || [];
+  const translated = COPY[copyKey(value)];
+  if (typeof translated !== 'string') return value;
+  if (!holes.length) return translated;
+  let next = 0;
+  return translated.replace(/#/g, () => (next < holes.length ? holes[next++] : '#'));
+}
+
+/** For the sinks that assign markup: translate each text run, leave every tag and
+ *  attribute of the source structure where the CSS and the tests expect it. */
+function urHtml(value) {
+  if (typeof value !== 'string' || !value.includes('<')) return ur(value);
+  const out = value.replace(/>([^<>]+)</g, (all, run) => {
+    const text = COPY_DECODE(run);
+    if (!text.trim()) return all;
+    const translated = ur(text);
+    return translated === text ? all : `>${COPY_ENCODE(translated)}<`;
+  });
+  return out.replace(/\b(title|aria-label|placeholder)="([^"]*)"/g, (all, name, run) => {
+    const translated = ur(COPY_DECODE(run));
+    return translated === run ? all : `${name}="${COPY_ENCODE(translated)}"`;
+  });
+}
+
+/** index.html is authored in its own English; the dictionary is applied to it once at
+ *  boot, in the DOM, per text node — so no id, class, route, `data-*` or storage key in
+ *  the markup is edited for the sake of wording, and every selector test keeps holding. */
+function localizeStaticMarkup(root) {
+  const host = root || document.documentElement;
+  let changed = 0;
+  if (!Object.keys(COPY).length || !host) return changed;
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || parent.closest('script,style,textarea')) return NodeFilter.FILTER_REJECT;
+      return node.nodeValue && node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const translated = ur(node.nodeValue);
+    if (translated !== node.nodeValue) { node.nodeValue = translated; changed += 1; }
+  }
+  for (const element of host.querySelectorAll('[title],[aria-label],[placeholder]')) {
+    for (const name of ['title', 'aria-label', 'placeholder']) {
+      const current = element.getAttribute(name);
+      if (current === null) continue;
+      const translated = ur(current);
+      if (translated !== current) { element.setAttribute(name, translated); changed += 1; }
+    }
+  }
+  return changed;
+}
 
 // ── tiny DOM helpers ────────────────────────────────────────────────────────
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -67,13 +152,13 @@ function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (key === 'class') node.className = value;
-    else if (key === 'text') node.textContent = value;
-    else if (key === 'html') node.innerHTML = value;
-    else if (value !== null && value !== undefined) node.setAttribute(key, String(value));
+    else if (key === 'text') node.textContent = ur(value);
+    else if (key === 'html') node.innerHTML = urHtml(value);
+    else if (value !== null && value !== undefined) node.setAttribute(key, COPY_ATTRS.has(key) ? ur(String(value)) : String(value));
   }
   for (const child of [].concat(children)) {
     if (child === null || child === undefined) continue;
-    node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    node.appendChild(typeof child === 'string' ? document.createTextNode(ur(child)) : child);
   }
   return node;
 }
@@ -116,7 +201,7 @@ function table(columns, rows, emptyMessage, options = {}) {
     const cell = el('td', { class: column.wrap ? 'wrap' : '' });
     const content = column.render ? column.render(row) : row[column.key];
     if (content instanceof Node) cell.appendChild(content);
-    else cell.textContent = content === null || content === undefined ? '—' : String(content);
+    else cell.textContent = ur(content === null || content === undefined ? '—' : String(content));
     return cell;
   }))));
   wrap.appendChild(el('table', {}, [thead, tbody]));
@@ -137,7 +222,7 @@ let bannerTimer = null;
 function banner(message, kind = 'ok') {
   const node = $('#banner');
   node.className = `banner ${kind}`;
-  node.textContent = message;
+  node.textContent = ur(message);
   node.hidden = false;
   if (bannerTimer) clearTimeout(bannerTimer);
   bannerTimer = setTimeout(() => { node.hidden = true; }, 6000);
@@ -490,10 +575,10 @@ async function start() {
 /** The identity line, kept true from whatever session state the tab holds. */
 function showIdentity() {
   if (!canMutate()) {
-    $('#identity').textContent = 'read-only access link';
+    $('#identity').textContent = ur('read-only access link');
     return;
   }
-  $('#identity').textContent = state.owner ? `signed in as ${state.owner.email}` : 'signed in — session restored';
+  $('#identity').textContent = ur(state.owner ? `signed in as ${state.owner.email}` : 'signed in — session restored');
 }
 
 /**
@@ -595,7 +680,7 @@ function renderOverview(overview) {
   block('#revenue-honesty', () => {
     const node = $('#revenue-honesty');
     if (!node) return null;
-    node.textContent = source.honesty && source.honesty.noFabrication ? String(source.honesty.noFabrication) : MISSING;
+    node.textContent = ur(source.honesty && source.honesty.noFabrication ? String(source.honesty.noFabrication) : MISSING);
     return null;
   });
 
@@ -718,7 +803,7 @@ function renderOverviewUnavailable(error) {
     note = el('p', { class: 'muted small', id: 'overview-unavailable' });
     cards.after(note);
   }
-  if (note) note.textContent = `${MISSING} — the mission Overview could not be read${status}: ${reason}. Reload this page to try again; no figure on this panel was filled in by hand.`;
+  if (note) note.textContent = ur(`${MISSING} — the mission Overview could not be read${status}: ${reason}. Reload this page to try again; no figure on this panel was filled in by hand.`);
 }
 
 // History tables inside the agent report are budgeted; see MAX_REPORT_ROWS.
@@ -942,7 +1027,7 @@ async function renderAgentMessages(host, slug) {
           { label: 'From', key: 'actor_type' },
           { label: 'Message', key: 'body', wrap: true },
         ], messages, 'No messages yet. No agent response is fabricated.'));
-        refresh.textContent = result.hasMore ? 'Load next page' : 'Refresh messages';
+        refresh.textContent = ur(result.hasMore ? 'Load next page' : 'Refresh messages');
       } catch (error) { banner(error.message, 'error'); }
     })();
     try { await loading; } finally { loading = null; refresh.disabled = false; }
@@ -1054,7 +1139,7 @@ function renderHeadAgent(data) {
     { label: 'Citation', render: citationLabel },
   ], data.approvals || [], 'No approval records.'));
   const note = $('#head-approvals-note');
-  if (note) note.textContent = `Updated ${when(data.generatedAt)}. Read-only and notify-only; email/WhatsApp delivery is ${data.notificationDelivery || 'UNKNOWN / VERIFY REQUIRED'}.`;
+  if (note) note.textContent = ur(`Updated ${when(data.generatedAt)}. Read-only and notify-only; email/WhatsApp delivery is ${data.notificationDelivery || 'UNKNOWN / VERIFY REQUIRED'}.`);
 }
 
 async function loadHeadAgentOverview() {
@@ -1070,7 +1155,7 @@ async function loadHeadAgentNotifications() {
     const badge = $('#head-agent-notification');
     if (badge) {
       badge.hidden = !data.unreadCount;
-      badge.textContent = data.unreadCount ? `${data.unreadCount} alert${data.unreadCount === 1 ? '' : 's'}` : '';
+      badge.textContent = ur(data.unreadCount ? `${data.unreadCount} alert${data.unreadCount === 1 ? '' : 's'}` : '');
     }
     if (state.headAgent && Array.isArray(data.alerts)) {
       state.headAgent.alerts = data.alerts;
@@ -1108,7 +1193,7 @@ function clearTermsResult(message = '') {
   const previewRegion = $('#bounty-terms-preview-region');
   if (previewRegion) previewRegion.hidden = true;
   const status = $('#bounty-terms-status');
-  if (status) status.textContent = message;
+  if (status) status.textContent = ur(message);
 }
 
 function termsHashValid() {
@@ -1130,11 +1215,11 @@ async function fetchBountyTermsForForm() {
   try {
     const result = await api('/bounty/programs/fetch-terms', { method: 'POST', body: { scopeUrl: url } });
     $('#bounty-terms-hash').value = result.sha256 || '';
-    $('#bounty-terms-meta').textContent = `sha256: ${result.sha256} · byteLength: ${result.byteLength} · fetchedAt: ${result.fetchedAt}`;
+    $('#bounty-terms-meta').textContent = ur(`sha256: ${result.sha256} · byteLength: ${result.byteLength} · fetchedAt: ${result.fetchedAt}`);
     $('#bounty-terms-meta').hidden = false;
-    $('#bounty-terms-preview').textContent = result.contentPreview || '';
+    $('#bounty-terms-preview').textContent = ur(result.contentPreview || '');
     $('#bounty-terms-preview-region').hidden = false;
-    status.textContent = 'Terms fetched. Review the preview and scope before registering.';
+    status.textContent = ur('Terms fetched. Review the preview and scope before registering.');
   } catch (error) {
     clearTermsResult(`${error.code || 'error'}: ${error.message}`);
   } finally { button.disabled = false; updateBountySubmitState(); }
@@ -1690,17 +1775,17 @@ async function loadWithdraw() {
     );
   }
   const hint = $('#withdraw-balance-hint');
-  if (hint) hint.textContent = `Verified treasury available for withdrawal: ${money(available, currency)}. Unverified/expected/contracted/synthetic cannot be withdrawn.`;
+  if (hint) hint.textContent = ur(`Verified treasury available for withdrawal: ${money(available, currency)}. Unverified/expected/contracted/synthetic cannot be withdrawn.`);
   const notice = $('#withdraw-notice');
   const hasVerifiedSlot = (slots.verification || []).some((v) => v.verification?.status === 'verified' && v.payable);
   const allUnconfigured = (slots.slots || []).every((s) => String(s.status) === 'unconfigured');
   if (notice) {
     if (allUnconfigured) {
-      notice.textContent = 'No verified payout destination yet — internal verified balance can still accumulate. Configure a destination below (masked/provider reference only) and verify it before withdrawing.';
+      notice.textContent = ur('No verified payout destination yet — internal verified balance can still accumulate. Configure a destination below (masked/provider reference only) and verify it before withdrawing.');
       notice.className = 'banner warn';
       notice.hidden = false;
     } else if (!hasVerifiedSlot) {
-      notice.textContent = 'No payable (verified) slot — add/verify a destination before withdrawing. Balance accumulation continues; no account is required at setup.';
+      notice.textContent = ur('No payable (verified) slot — add/verify a destination before withdrawing. Balance accumulation continues; no account is required at setup.');
       notice.className = 'banner warn';
       notice.hidden = false;
     } else {
@@ -2748,7 +2833,7 @@ function wire() {
       await login($('#email').value.trim(), $('#password').value);
       $('#password').value = '';
     } catch (caught) {
-      error.textContent = caught.message;
+      error.textContent = ur(caught.message);
       error.hidden = false;
     } finally {
       button.disabled = false;
@@ -2771,7 +2856,7 @@ function wire() {
   $('#bounty-terms-hash').addEventListener('input', updateBountySubmitState);
   $('#bounty-terms-hash').addEventListener('blur', () => {
     const status = $('#bounty-terms-status');
-    if ($('#bounty-terms-hash').value && !termsHashValid()) status.textContent = 'Terms hash must be exactly 64 hexadecimal characters.';
+    if ($('#bounty-terms-hash').value && !termsHashValid()) status.textContent = ur('Terms hash must be exactly 64 hexadecimal characters.');
     updateBountySubmitState();
   });
   addBountyTarget();
@@ -2787,10 +2872,10 @@ function wire() {
     const platform = platformSelect === 'other' ? String($('#bounty-other-platform').value || '').trim() : platformSelect;
     const scopeUrl = String($('#bounty-scope-url').value || '').trim();
     const rows = $$('#bounty-registration-targets .bounty-target-row').map((row) => ({ target: String($('input', row).value || '').trim(), targetType: $('select', row).value })).filter((row) => row.target);
-    if (!platform || !scopeUrl || !/^https:\/\/[^\s]+$/i.test(scopeUrl) || !termsHashValid()) { status.textContent = 'Platform, handle, https scope URL, and a valid terms hash are required.'; return; }
-    if ($$('#bounty-registration-targets .bounty-target-row input').some((input) => !input.value.trim())) { status.textContent = 'Remove empty target rows or fill them before saving.'; return; }
+    if (!platform || !scopeUrl || !/^https:\/\/[^\s]+$/i.test(scopeUrl) || !termsHashValid()) { status.textContent = ur('Platform, handle, https scope URL, and a valid terms hash are required.'); return; }
+    if ($$('#bounty-registration-targets .bounty-target-row input').some((input) => !input.value.trim())) { status.textContent = ur('Remove empty target rows or fill them before saving.'); return; }
     submit.disabled = true;
-    status.textContent = 'Saving inactive program…';
+    status.textContent = ur('Saving inactive program…');
     let program;
     const failedTargets = [];
     try {
@@ -2801,22 +2886,22 @@ function wire() {
         catch (error) { failedTargets.push(`${row.target} (${error.code || 'error'}: ${error.message})`); }
       }
       if (failedTargets.length) {
-        status.textContent = `Partial failure: the program was created but these targets failed: ${failedTargets.join('; ')}. The program was NOT activated.`;
+        status.textContent = ur(`Partial failure: the program was created but these targets failed: ${failedTargets.join('; ')}. The program was NOT activated.`);
         banner('Partial failure — program was not activated.', 'error');
         await loadBountyControl();
         return;
       }
       if ($('#bounty-activate-now').checked && rows.length > 0) {
-        status.textContent = 'Activating after all scope rows saved…';
+        status.textContent = ur('Activating after all scope rows saved…');
         await api(`/bounty/programs/${encodeURIComponent(program.id)}`, { method: 'PATCH', body: { active: true } });
       }
       form.reset(); $('#bounty-other-platform-wrap').hidden = true; clearTermsResult(); $('#bounty-registration-targets').replaceChildren(); addBountyTarget(); updateBountySubmitState();
       await loadBountyControl();
-      status.textContent = 'Program registered successfully.';
+      status.textContent = ur('Program registered successfully.');
       banner('Bounty program registered. Scope was saved before activation.', 'ok');
     } catch (error) {
-      if (error.code === 'program_exists') { status.textContent = `${error.code}: ${error.message} Use the existing program card instead. No further requests were sent.`; banner('That program already exists. Use its existing card instead.', 'error'); return; }
-      status.textContent = program ? `Registration failed after program creation: ${error.code || 'error'}: ${error.message}. The program was NOT activated.` : `${error.code || 'error'}: ${error.message}`;
+      if (error.code === 'program_exists') { status.textContent = ur(`${error.code}: ${error.message} Use the existing program card instead. No further requests were sent.`); banner('That program already exists. Use its existing card instead.', 'error'); return; }
+      status.textContent = ur(program ? `Registration failed after program creation: ${error.code || 'error'}: ${error.message}. The program was NOT activated.` : `${error.code || 'error'}: ${error.message}`);
       banner(status.textContent, 'error');
     } finally { submit.disabled = !termsHashValid(); }
   });
@@ -3091,6 +3176,8 @@ function wire() {
 }
 
 async function boot() {
+  // Copy first: the authored markup and everything rendered after this point read from the same one dictionary.
+  localizeStaticMarkup();
   readLinkFromUrl();
   wire();
   // A bookmarked or shared #/<view> opens that view, and an old or
@@ -3136,7 +3223,7 @@ document.addEventListener('DOMContentLoaded', boot);
 async function loadVerifiedCash() {
   const target = $('#verified-cash-summary');
   target.replaceChildren();
-  if (!canMutate()) { target.textContent = 'Verified cash controls require the mission owner session.'; return; }
+  if (!canMutate()) { target.textContent = ur('Verified cash controls require the mission owner session.'); return; }
   const data = await api('/money');
   const accounts = data.accounts || [];
   const currency = accounts[0]?.currency || 'USD';

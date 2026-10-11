@@ -330,7 +330,9 @@ it('the collapsed blocks and the nav row wrap instead of scrolling sideways', ()
   assert.ok(!/\.subtabs\b/.test(css), 'the deleted sub-tab row must not leave stylesheet weight behind');
   const blockRules = /details\.sub\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
   assert.match(blockRules, /border-radius:/, 'a block reads as one surface');
-  assert.match(blockRules, /var\(--panel\)/, 'and uses the existing green-theme tokens, not a new colour');
+  // The block's surface used to come from the mission's own --panel declaration; the shared token
+  // layer is now the only definition of it, so the assertion names the token that carries it.
+  assert.match(blockRules, /var\(--surface-strong\)/, 'and uses the shared surface token, not a new colour');
   const summaryRules = /details\.sub > summary\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
   assert.match(summaryRules, /cursor:\s*pointer/, 'the summary is clickable');
   assert.match(summaryRules, /list-style:\s*none/, 'the disclosure marker is drawn from the marker glyph, not the UA triangle');
@@ -353,6 +355,6 @@ it('the collapsed blocks and the nav row wrap instead of scrolling sideways', ()
 it('the dashboard markup keeps its exact document references so the gateway rebase still holds', () => {
   const html = fs.readFileSync(htmlPath, 'utf8');
   const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map(match => match[1]).sort();
-  assert.deepEqual(refs, ['/app.js', '/manifest.webmanifest', '/styles.css'], 'the stripped nav must add no script/stylesheet/anchor reference');
+  assert.deepEqual(refs, ['/app.js', '/copy.js', '/manifest.webmanifest', '/styles.css', '/tokens.css', '/ui.css'], 'the stripped nav must add no script/stylesheet/anchor reference');
   assert.ok(!/<a\b/.test(html), 'the nav stays button-driven: an <a href> would escape the serving prefix');
 });

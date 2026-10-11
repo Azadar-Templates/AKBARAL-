@@ -94,7 +94,11 @@
   --dur-cinematic: 900ms;
 
   /* Layout */
-  --header-h: 64px;
+  /* The agent sigil's hue band (tokens.agent.sigil.formula): per-agent colours are set
+     inline from the same formula on web, Android and iOS; this is only the default that
+     stands in when no hue is supplied. It used to be a bare literal in the product sheet. */
+  --sigil-hue: 250;
+  --header-h: 68px;
   --content-max: 1200px;
   --nav-gap: 4px;
 
@@ -182,4 +186,82 @@
 
   /* Radii (semantic completion) */
   --radius-pill: 999px;
+
+  /* Console surface layer (design-system/tokens.json → console). EVERY value below
+     is an alias over a primitive declared above — a state token resolves to a palette
+     variable, a size token to a step of the spacing scale, a radius token to the radius
+     ramp. That is what lets the dense mission console and the public app share one
+     visual system without either one owning a private copy of a number. The mission
+     surface used to carry its own --bg/--panel/--good/--warn/--bad hexes; those literals
+     are gone and the aliases below are the only names that survive, so no selector in
+     either stylesheet had to change. */
+  /* State colors — the ONLY ramp any surface may use for good/warning/bad. */
+  --state-good: var(--green);
+  --state-warn: var(--amber);
+  --state-bad: var(--red);
+  --state-info: var(--telemetry);
+  --state-neutral: var(--text-dim);
+  --state-accent: var(--accent);
+  /* Sizes — every one of these is a step of an existing scale, never a fresh number. */
+  --tap-min: 44px;
+  --row-min: 40px;
+  --input-font-min: 16px;
+  --pad-card: var(--space-xl);
+  --pad-panel: var(--space-xl);
+  --pad-control: var(--space-md);
+  --pad-row: var(--space-sm);
+  --gap-row: var(--space-md);
+  --gap-section: var(--space-xxl);
+  --table-cell-x: var(--space-md);
+  --table-cell-y: var(--space-sm);
+  --empty-pad: var(--space-xxl);
+  --banner-pad-x: var(--space-md);
+  --banner-pad-y: var(--space-sm);
+  --modal-pad: var(--space-xl);
+  --label-gap: var(--space-xs);
+  --radius-control: var(--radius);
+  --radius-card: var(--radius-lg);
+  --radius-sheet: var(--radius-xl);
+  /* --radius-pill is already declared above; the console layer only names the steps it needs. */
+  /* Type + layers */
+  --fs-console-body: var(--fs-body);
+  --fs-console-label: var(--fs-xs);
+  --fs-console-micro: var(--fs-micro);
+  --fs-console-table: var(--fs-xs);
+  --fs-console-heading: var(--fs-heading);
+  --z-raised: 10;
+  --z-reticle: 40;
+  --z-sticky: 50;
+  --z-consent: 60;
+  --z-overlay: 90;
+  --z-toast: 120;
+  /* The console layer's own measurements — declared here so no stylesheet repeats one. */
+  --dot-size: 8px;
+  --rail-width: 3px;
+  --badge-height: 22px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 3px;
+  --card-min-width: 180px;
+  --card-min-width-wide: 200px;
+  --table-min-width: 560px;
+  --cell-wrap-max: 460px;
+  --login-max: 460px;
+  --field-min-width: 130px;
+  --action-min-width: 88px;
+  --shell-wide-max: 1360px;
+}
+
+/* Responsive ramps. Both of these used to be a private `:root` inside the public
+   stylesheet — a lighter glass blur under 768px and a micro-type floor under 560px.
+   They are generated here instead, so the dense console and the public app step the same
+   way on a phone and neither one owns a number the other cannot see. */
+@media (max-width: 768px) {
+  :root {
+    --glass-1-blur: 10px;
+    --glass-2-blur: 14px;
+    --glass-3-blur: 18px;
+  }
+}
+@media (max-width: 560px) {
+  :root { --fs-micro: var(--fs-micro-phone); }
 }

@@ -259,7 +259,7 @@ async function relay(upstream: Response): Promise<Response> {
   // ordinary mission API/stream responses remain streamed unchanged.
   if (upstream.ok && (contentType.includes('text/html') || contentType.includes('javascript'))) {
     let text = await upstream.text();
-    if (contentType.includes('text/html')) text = text.replace(/(src|href)="\/(app|styles|manifest\.webmanifest)/g, '$1="/mission-gateway/$2');
+    if (contentType.includes('text/html')) text = text.replace(/(src|href)="\/(app|copy|tokens|ui|styles|manifest\.webmanifest)/g, '$1="/mission-gateway/$2');
     if (contentType.includes('javascript')) text = text.replace("register('/service-worker.js')", "register('/mission-gateway/service-worker.js')").replace('fetch(`/api${path}`', 'fetch(`/mission-gateway/api${path}`');
     return new Response(text, { status: upstream.status, headers: responseHeaders });
   }

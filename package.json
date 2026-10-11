@@ -2,7 +2,7 @@
   "name": "akbaral-master-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "AKBARAL! / MASTER AI \u2014 Master AI operating platform (User Goal -> AI Core -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result).",
+  "description": "AKBARAL! / MASTER AI — Master AI operating platform (User Goal -> AI Core -> Specialist Agents -> Tools/APIs -> Execution -> Verification -> Final Result).",
   "type": "commonjs",
   "engines": {
     "node": ">=22.5"
@@ -79,6 +79,9 @@
     "mission:chat-worker": "tsx scripts/mission-chat-worker.ts",
     "mission:browser-check": "tsx scripts/mission-browser-check.ts",
     "mission:dashboard:heights": "tsx scripts/mission-dashboard-heights.ts",
+    "mission:copy:audit": "node scripts/mission-copy-inventory.mjs",
+    "mission:copy": "node scripts/mission-copy-build.mjs",
+    "mission:copy:check": "node scripts/mission-copy-build.mjs --check",
     "mission:sync-registry": "tsx scripts/mission-sync-registry.ts",
     "fleet:readiness": "tsx scripts/mission-fleet-readiness.ts",
     "board:frantic": "tsx scripts/mission-frantic-board.ts",

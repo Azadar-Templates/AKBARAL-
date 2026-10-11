@@ -58,7 +58,7 @@ describe('browser payload delivery — compressed, cacheable, off the critical p
     assert.match(assetRoute, /stale-while-revalidate/, 'and keep serving while revalidating');
     // An allow-list, not a path join: no traversal, no serving arbitrary files.
     assert.match(assetRoute, /const ASSETS: Record<string, \{ file: string; type: string \}> = \{/, 'the endpoint serves a fixed allow-list of files');
-    for (const file of ['app.js', 'styles.css', 'tokens.css']) {
+    for (const file of ['app.js', 'styles.css', 'tokens.css', 'akbaral-ui.css']) {
       assert.ok(assetRoute.includes(`'${file}'`), `${file} is on the allow-list`);
     }
     assert.ok(!/rewrites[\s\S]{0,400}assets/.test(nextConfig), 'the asset endpoint is not routed through the API rewrite');

@@ -213,3 +213,17 @@ brand name as text, so each instance is `aria-hidden` and the files carry a
 `<title>` for the cases where a logo alone must name itself. The private mission
 dashboard is deliberately unbranded — its header mark reads `Private` /
 `Mission Control` by design, and its asset list is pinned by the gateway tests.
+
+## 2026-10-11 · one shared layer + Roman Urdu for the mission console
+
+`docs/ONE-DESIGN-LAYER-ROMAN-URDU-2026-10-11.md` records the audit (with `file:line`), the
+generated shared layer in `design-system/` (tokens + `ui.css`, copied byte-identically into both
+products), the deletion of every losing duplicate primitive, the literal→token counts, the
+Roman Urdu copy architecture (`design-system/mission-copy.pairs.json` →
+`mission-dashboard/copy.js`, applied at the DOM sinks so no id, class, route or storage key moved),
+the accessibility/responsive results, and the debt that was ratcheted rather than renamed.
+`src/app/single-source.test.ts` and `src/mission/mission-copy-roman-urdu.test.ts` are the guards
+that keep it that way; `npm run mission:copy:check` proves the generated dictionary matches the
+pairs file, and `node scripts/mission-copy-build.mjs` refuses to build while any user-facing
+string is untranslated.
+

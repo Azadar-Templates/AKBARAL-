@@ -125,6 +125,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             src/app/assets/[file]/route.ts for why compression lives there and
             not in next.config.mjs (SSE must stay uncompressed). */}
         <link rel="stylesheet" href="/assets/tokens.css?v=akbaral-ui-reset-1" />
+        {/* The one primitive sheet (design-system/ui.css, copied here by the token build). It loads
+            directly after the tokens and before every route's CSS module, so a product may override a
+            primitive by being more specific but cannot quietly re-invent a card, a button or a badge. */}
+        <link rel="stylesheet" href="/assets/akbaral-ui.css?v=akbaral-ui-reset-1" />
       </head>
       <body>
         {children}

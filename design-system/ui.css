@@ -1,0 +1,381 @@
+/* ============================================================
+   AKBARAL! Design System — the ONE primitive sheet.
+
+   Shipped verbatim to both surfaces (public/akbaral-ui.css and
+   mission-dashboard/ui.css) by design-system/build.mjs. It is not edited in
+   either product directory, and neither product imports the other's copy:
+   the two files are the same bytes from the same source, which is how a
+   private surface shares a visual system without sharing a module graph.
+
+   Three rules hold here:
+     · every value is a token from tokens.css — no hex, no rgb(), no raw px,
+       no font stack, no gradient. The only literal lengths allowed are the
+       1px hairline (tokens.border.hairline) and 0.
+     · one primitive = one declaration list. Where a product arrived at the
+       same thing under a legacy name, that name joins the selector list
+       rather than gaining a second definition.
+     · nothing here is mission-specific or brand-specific. Decoration is not a
+       primitive; depth and state are.
+   ============================================================ */
+
+/* ---------- 1. Card and panel — one surface treatment ---------- */
+.ak-card,
+.ak-panel,
+.card,
+.panel,
+.stat-card {
+  padding: var(--pad-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Panels stack their blocks on one rhythm instead of per-widget margins. */
+.ak-panel,
+.panel {
+  display: grid;
+  gap: var(--gap-row);
+  min-width: 0;
+}
+
+/* ---------- 2. Section head: title, one line of purpose, one action ---------- */
+.ak-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-md);
+  min-width: 0;
+}
+.ak-section-title {
+  margin: 0;
+  font: 650 var(--fs-heading)/1.25 var(--font-sans);
+  letter-spacing: 0;
+  color: var(--text);
+}
+/* PART 4 of the clarity pass: every page and every named block states what it is
+   for in one line, and the line is never decoration — it is read before the data. */
+.ak-section-intro {
+  margin: 2px 0 0;
+  max-width: 74ch;
+  color: var(--text-dim);
+  font: 400 var(--fs-xs)/1.5 var(--font-sans);
+}
+
+/* ---------- 3. Buttons — one shape, four intents ---------- */
+button,
+.ak-btn,
+.ak-btn--primary,
+.ak-btn--secondary,
+.ak-btn--danger,
+.ak-btn--ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-lg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: 600 var(--fs-xs)/1 var(--font-sans);
+  letter-spacing: 0;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.ak-btn--primary {
+  background: var(--accent);
+  border-color: var(--line-accent);
+  color: var(--on-accent);
+}
+.ak-btn--primary:hover:not(:disabled) { background: var(--accent-2); }
+.ak-btn--secondary {
+  border-color: var(--line-strong);
+  color: var(--text-2);
+}
+.ak-btn--secondary:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line-accent); color: var(--text); }
+.ak-btn--danger {
+  /* The fill is the soft tint and the text is the state color, not white on solid red:
+     #ffffff on --red is 3.74:1, which fails AA at button size. This recipe is the same
+     one the status badge uses for an error, so a dangerous action and an error state read
+     as one thing, and both clear AA on the dark foundation. */
+  background: var(--red-soft);
+  border-color: var(--red);
+  color: var(--red);
+}
+.ak-btn--danger:hover:not(:disabled) { background: var(--red); color: var(--on-accent); }
+.ak-btn--ghost,
+button.ghost,
+.btn-ghost {
+  color: var(--text-dim);
+  border-color: var(--line);
+}
+.ak-btn--ghost:hover:not(:disabled) { color: var(--text); background: var(--surface); }
+.ak-btn:disabled,
+button:disabled { opacity: 0.46; cursor: not-allowed; }
+/* Small controls keep the same shape but the compact row rhythm; the touch target
+   stays at --row-min because a dense table row is still a tap target. */
+.ak-btn--small,
+button.small,
+.btn-sm { min-height: var(--row-min); padding: 0 var(--space-md); font-size: var(--fs-micro); }
+
+/* ---------- 4. Badge / status pill — one ramp, driven by tokens.status ---------- */
+.ak-badge,
+.ak-pill,
+.badge,
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 0;
+  min-height: var(--badge-height);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-dim);
+  font: 600 var(--fs-micro)/1.4 var(--font-sans);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.badge::before,
+.pill::before {
+  content: "";
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.ak-badge--good, .badge.good, .pill.good { border-color: var(--line-accent); background: var(--green-soft); color: var(--state-good); }
+.ak-badge--info, .badge.info, .pill.info { border-color: var(--line-strong); background: var(--telemetry-soft); color: var(--state-info); }
+.ak-badge--warn, .badge.warn, .pill.warn, .badge.pending, .pill.pending { border-color: var(--amber); background: var(--amber-soft); color: var(--state-warn); }
+.ak-badge--bad, .badge.bad, .pill.bad, .badge.failed, .pill.failed, .badge.danger { border-color: var(--red); background: var(--red-soft); color: var(--state-bad); }
+/* The mission console spells a few tones differently; they are the SAME state, so
+   they get the same colors rather than a fifth opinion. */
+.pill.draft, .badge.draft { color: var(--text-dim); }
+.pill.live, .badge.verified { color: var(--state-good); }
+
+/* ---------- 5. Banner — one strip, four tones, no gradients ---------- */
+.ak-banner,
+.banner,
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--gap-row);
+  padding: var(--banner-pad-y) var(--banner-pad-x);
+  border: 1px solid var(--line);
+  border-inline-start: var(--rail-width) solid var(--state-info);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+.ak-banner--warn, .banner.warn { border-inline-start-color: var(--state-warn); color: var(--text); }
+.ak-banner--bad, .banner.bad { border-inline-start-color: var(--state-bad); color: var(--text); }
+.ak-banner--good, .banner.good { border-inline-start-color: var(--state-good); color: var(--text-2); }
+.ak-banner > :last-child, .banner > :last-child { margin-inline-end: 0; }
+
+/* ---------- 6. Table — one header, one row rhythm, one overflow contract ---------- */
+.ak-table-wrap,
+.table-wrap,
+.scroll-x {
+  overflow-x: auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.ak-table,
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-console-table);
+  color: var(--text-2);
+}
+.ak-table caption,
+table caption {
+  margin: 0;
+  padding: var(--table-cell-y) var(--table-cell-x);
+  text-align: start;
+  color: var(--text-dim);
+  font: 600 var(--fs-micro)/1.4 var(--font-sans);
+}
+.ak-table th,
+table th {
+  padding: var(--table-cell-y) var(--table-cell-x);
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  font: 700 var(--fs-micro)/1.3 var(--font-sans);
+  text-align: start;
+  white-space: nowrap;
+}
+.ak-table td,
+table td {
+  padding: var(--table-cell-y) var(--table-cell-x);
+  border-bottom: 1px solid var(--line-faint);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ak-table tbody tr,
+table tbody tr { min-height: var(--row-min); }
+.ak-table tbody tr:last-child td,
+table tbody tr:last-child td { border-bottom: 0; }
+.ak-table td.num,
+table td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: end; }
+
+/* ---------- 7. Form field — one label, one input, one error slot ---------- */
+.ak-field,
+.field,
+label {
+  display: grid;
+  gap: var(--label-gap);
+  min-width: 0;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-console-label);
+}
+.ak-field > label:first-child,
+.ak-field > .ak-field-label,
+.field > .ak-field-label { font-weight: 650; color: var(--text-2); }
+.ak-field input,
+.ak-field select,
+.ak-field textarea,
+.ak-field .ak-input {
+  width: 100%;
+  min-height: var(--tap-min);
+  min-width: 0;
+  padding: var(--pad-row) var(--pad-control);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--input-font-min);
+}
+.ak-field input:focus,
+.ak-field select:focus,
+.ak-field textarea:focus { border-color: var(--line-accent); }
+.ak-field small,
+.ak-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+}
+.ak-field .ak-error { color: var(--state-bad); font-size: var(--fs-micro); }
+
+/* ---------- 8. Empty state — the honest sentence plus the one action ---------- */
+.ak-empty,
+.empty,
+.muted-empty {
+  display: grid;
+  gap: var(--space-sm);
+  justify-items: start;
+  padding: var(--empty-pad);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+.ak-empty strong,
+.empty strong { color: var(--text-2); font-weight: 650; }
+.ak-empty .ak-empty-action,
+.empty .ak-empty-action { margin-top: var(--space-xs); }
+
+/* ---------- 9. Modal / dialog — one scrim, one sheet, one header row ---------- */
+.ak-modal,
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg);
+  background: var(--glass-scrim);
+}
+.ak-modal[hidden],
+.modal[hidden] { display: none; }
+.ak-modal .ak-modal-sheet,
+.modal .modal-sheet,
+.modal-box {
+  width: min(100%, 560px);
+  max-height: calc(100dvh - (var(--space-lg) * 2));
+  overflow-y: auto;
+  padding: var(--pad-modal);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sheet);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+/* ---------- 10. One focus ring, one motion rule, one small-screen contract ---------- */
+.ak-btn:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent-bright);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-control);
+}
+:where(a, button, .ak-btn, .ak-btn--primary, .ak-btn--secondary, .ak-btn--danger, .ak-btn--ghost, .ak-field input, .ak-field select, .ak-field textarea):focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (max-width: 414px) {
+  /* A 320px viewport is a supported console width, not an accident: nothing may
+     force sideways motion, and a button row wraps instead of shrinking to nothing. */
+  .ak-card, .ak-panel, .card, .panel, .stat-card { padding: var(--space-lg); }
+  .ak-section-head { flex-direction: column; align-items: stretch; }
+  .ak-btn, .ak-btn--primary, .ak-btn--secondary, .ak-btn--danger, .ak-btn--ghost { width: 100%; }
+  .ak-table th, table th { white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ak-btn, .ak-btn--primary, .ak-btn--secondary, .ak-btn--danger, .ak-btn--ghost { transition: none; }
+}
+
+@media (forced-colors: active) {
+  .ak-btn, .ak-banner, .ak-badge, .ak-empty, .ak-modal .ak-modal-sheet { border-color: CanvasText; }
+}
+
+/* ---------- 11. Atoms the React facade composes (no second definition anywhere) ---------- */
+.ak-eyebrow {
+  color: var(--accent-bright);
+  font: var(--micro-label);
+  letter-spacing: var(--micro-label-tracking);
+  text-transform: uppercase;
+  margin: 0;
+}
+.ak-input,
+.ak-field .ak-input {
+  width: 100%;
+  min-height: var(--tap-min);
+  min-width: 0;
+  padding: var(--pad-row) var(--pad-control);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--input-font-min);
+}
+.ak-modal-sheet,
+.ak-modal .ak-modal-sheet {
+  width: min(100%, var(--cell-wrap-max));
+  max-height: calc(100dvh - (var(--space-lg) * 2));
+  overflow-y: auto;
+  padding: var(--pad-modal);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sheet);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}

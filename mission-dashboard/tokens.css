@@ -1,0 +1,270 @@
+/* ============================================================
+   AKBARAL! Design System — generated design tokens (mission console copy).
+   DO NOT EDIT BY HAND — edit design-system/tokens.json and run:
+     node design-system/build.mjs
+   The private mission console reads these values from THIS file; it is the same
+   generated block as public/tokens.css, byte for byte below the banner. Nothing in
+   mission-dashboard/ may redeclare a color, a radius or a space step.
+   Identity: obsidian foundation · emerald atmosphere ·
+   glass surfaces · cinematic lighting · technical elegance.
+   Version 6.0.0
+   ============================================================ */
+
+:root {
+  --bg-deep: #020617;
+  --bg: #0f172a;
+  --bg-2: #111c32;
+  --bg-3: #17233a;
+  --surface: rgba(248,250,252,0.055);
+  --surface-2: rgba(248,250,252,0.085);
+  --surface-strong: #1e293b;
+  --glass: rgba(2,6,23,0.66);
+  --line: rgba(226,232,240,0.10);
+  --line-strong: rgba(226,232,240,0.18);
+  --line-faint: rgba(226,232,240,0.055);
+  --line-accent: rgba(47,131,72,0.44);
+  --text: #f8fafc;
+  --text-2: #cbd5e1;
+  --text-dim: #94a3b8;
+  --text-faint: #94a3b8;
+  --accent: #2f8348;
+  --accent-2: #286f3d;
+  --accent-bright: #69ad7d;
+  --accent-soft: rgba(47,131,72,0.14);
+  --indigo-soft: rgba(47,131,72,0.16);
+  --on-accent: #ffffff;
+  --ivory: #f8fafc;
+  --on-ivory: #020617;
+  --telemetry: #7dd3fc;
+  --telemetry-soft: rgba(125,211,252,0.12);
+  --green: #22c55e;
+  --green-soft: rgba(34,197,94,0.12);
+  --red: #ef4444;
+  --red-soft: rgba(239,68,68,0.12);
+  --amber: #f59e0b;
+  --amber-soft: rgba(245,158,11,0.12);
+  --blue: #3b82f6;
+  --blue-soft: rgba(59,130,246,0.12);
+}
+
+:root {
+  /* Public primitive aliases — stable contract for React/CSS consumers. */
+  --color-primary-500: #2f8348;
+  --color-primary-600: #286f3d;
+  --color-neutral-900: #0f172a;
+  --color-neutral-800: #1e293b;
+  --color-neutral-700: #334155;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-0: #ffffff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --shadow-glow: 0 0 40px -10px rgb(47 131 72 / 0.4);
+  --gradient-hero: linear-gradient(135deg, #07100b 0%, #102318 50%, #1d4b2b 100%);
+
+  /* Typography (families resolved per-platform; scale semantics in tokens.json) */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  /* Type scale (from typography.scale) — --fs-micro is the legibility floor */
+  --fs-micro: 0.71875rem;
+  --fs-micro-phone: 0.75rem;
+  --fs-floor: 0.72rem;
+  --fs-xs: 0.8125rem;
+  --fs-body: 0.9375rem;
+  --fs-heading: 1.1875rem;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
+
+  /* Shadows & glows */
+  --shadow: 0 30px 80px rgba(0,0,0,0.5);
+  --shadow-soft: 0 12px 36px rgba(0,0,0,0.32);
+  --glow-accent: 0 0 0 1px rgba(47,131,72,0.32), 0 10px 32px rgba(32,91,50,0.22);
+  --glow-telemetry: 0 0 0 1px rgba(105,173,125,0.24), 0 10px 28px rgba(47,131,72,0.14);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22,0.61,0.36,1);
+  --ease-soft: cubic-bezier(0.33,1,0.68,1);
+  --dur-fast: 200ms;
+  --dur-base: 320ms;
+  --dur-slow: 560ms;
+  --dur-cinematic: 900ms;
+
+  /* Layout */
+  /* The agent sigil's hue band (tokens.agent.sigil.formula): per-agent colours are set
+     inline from the same formula on web, Android and iOS; this is only the default that
+     stands in when no hue is supplied. It used to be a bare literal in the product sheet. */
+  --sigil-hue: 250;
+  --header-h: 68px;
+  --content-max: 1200px;
+  --nav-gap: 4px;
+
+  /* Glass material system (3 levels of depth) */
+  --glass-1-fill: rgba(226,240,232,0.045);
+  --glass-1-fallback: #0d1310;
+  --glass-1-border: rgba(226,240,232,0.10);
+  --glass-1-blur: 14px;
+  --glass-1-highlight: rgba(255,255,255,0.06);
+  --glass-1-shadow: 0 10px 30px rgba(0,0,0,0.22);
+  --glass-2-fill: rgba(10,16,13,0.55);
+  --glass-2-fallback: #101812;
+  --glass-2-border: rgba(226,240,232,0.13);
+  --glass-2-blur: 22px;
+  --glass-2-highlight: rgba(255,255,255,0.075);
+  --glass-2-shadow: 0 18px 48px rgba(0,0,0,0.34);
+  --glass-3-fill: rgba(14,22,18,0.74);
+  --glass-3-fallback: #16201a;
+  --glass-3-border: rgba(226,240,232,0.17);
+  --glass-3-blur: 30px;
+  --glass-3-highlight: rgba(255,255,255,0.09);
+  --glass-3-shadow: 0 30px 80px rgba(0,0,0,0.5);
+
+  /* Component tokens (three-layer architecture: primitive → semantic → component) */
+  --btn-h-sm: 40px;
+  --btn-h-md: 44px;
+  --btn-h-lg: 52px;
+  --btn-tracking: 0.13em;
+  --panel-pad: 26px;
+  --panel-pad-m: 20px;
+  --focus-ring: 0 0 0 3px rgba(47,131,72,0.32);
+  --chip-h: 40px;
+
+  /* Atmosphere (layered background fields) */
+  --atmo-base: #050806;
+  --atmo-base-high: #0a100c;
+  --atmo-indigo: rgba(47,131,72,0.13);
+  --atmo-violet: rgba(87,179,120,0.09);
+  --atmo-cyan: rgba(111,181,154,0.05);
+  --atmo-charcoal: rgba(30,42,36,0.30);
+
+  /* ---- Liquid-glass semantic layer -------------------------------------
+     Every value below is DERIVED from a primitive already declared above
+     (glass.level1/level3, color.dark, shadow.dark). No new hue is
+     introduced — see src/app/glass-design-system.test.ts.               */
+  --glass-surface: rgba(255, 255, 255, 0.01);
+  --glass-surface-strong: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-stroke-gradient: linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+  --glass-stroke-gradient-strong: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.2) 80%, rgba(255,255,255,0.5) 100%);
+  --glass-stroke-width: 1.4px;
+  --glass-blur-subtle: 4px;
+  --glass-blur-strong: 50px;
+  --glass-inset-highlight: inset 0 1px 1px rgba(255,255,255,0.1);
+  --glass-inset-highlight-strong: inset 0 1px 1px rgba(255,255,255,0.15);
+  --glass-solid-fallback: #111111;
+  --glass-solid-fallback-strong: #16201a;
+  --glass-shadow-soft: 0 10px 30px rgba(0,0,0,0.22);
+  --glass-shadow-strong: 0 30px 80px rgba(0,0,0,0.5);
+  --glass-scrim: rgba(2,6,23,0.72);
+
+  /* Semantic text ramp (aliases over color.dark) */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+
+  /* Micro-label: mono · uppercase · ~0.15em */
+  --micro-label-font: "JetBrains Mono", "Fira Code", monospace;
+  --micro-label-size: 0.71875rem;
+  --micro-label-weight: 700;
+  --micro-label-tracking: 0.15em;
+  --micro-label-leading: 1;
+  --micro-label: 700 0.71875rem/1 "JetBrains Mono", "Fira Code", monospace;
+
+  /* Space scale (derived from spacing) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 22px;
+  --space-xxl: 30px;
+  --space-xxxl: 44px;
+  --space-section: 96px;
+  --space-hero: 128px;
+
+  /* Radii (semantic completion) */
+  --radius-pill: 999px;
+
+  /* Console surface layer (design-system/tokens.json → console). EVERY value below
+     is an alias over a primitive declared above — a state token resolves to a palette
+     variable, a size token to a step of the spacing scale, a radius token to the radius
+     ramp. That is what lets the dense mission console and the public app share one
+     visual system without either one owning a private copy of a number. The mission
+     surface used to carry its own --bg/--panel/--good/--warn/--bad hexes; those literals
+     are gone and the aliases below are the only names that survive, so no selector in
+     either stylesheet had to change. */
+  /* State colors — the ONLY ramp any surface may use for good/warning/bad. */
+  --state-good: var(--green);
+  --state-warn: var(--amber);
+  --state-bad: var(--red);
+  --state-info: var(--telemetry);
+  --state-neutral: var(--text-dim);
+  --state-accent: var(--accent);
+  /* Sizes — every one of these is a step of an existing scale, never a fresh number. */
+  --tap-min: 44px;
+  --row-min: 40px;
+  --input-font-min: 16px;
+  --pad-card: var(--space-xl);
+  --pad-panel: var(--space-xl);
+  --pad-control: var(--space-md);
+  --pad-row: var(--space-sm);
+  --gap-row: var(--space-md);
+  --gap-section: var(--space-xxl);
+  --table-cell-x: var(--space-md);
+  --table-cell-y: var(--space-sm);
+  --empty-pad: var(--space-xxl);
+  --banner-pad-x: var(--space-md);
+  --banner-pad-y: var(--space-sm);
+  --modal-pad: var(--space-xl);
+  --label-gap: var(--space-xs);
+  --radius-control: var(--radius);
+  --radius-card: var(--radius-lg);
+  --radius-sheet: var(--radius-xl);
+  /* --radius-pill is already declared above; the console layer only names the steps it needs. */
+  /* Type + layers */
+  --fs-console-body: var(--fs-body);
+  --fs-console-label: var(--fs-xs);
+  --fs-console-micro: var(--fs-micro);
+  --fs-console-table: var(--fs-xs);
+  --fs-console-heading: var(--fs-heading);
+  --z-raised: 10;
+  --z-reticle: 40;
+  --z-sticky: 50;
+  --z-consent: 60;
+  --z-overlay: 90;
+  --z-toast: 120;
+  /* The console layer's own measurements — declared here so no stylesheet repeats one. */
+  --dot-size: 8px;
+  --rail-width: 3px;
+  --badge-height: 22px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 3px;
+  --card-min-width: 180px;
+  --card-min-width-wide: 200px;
+  --table-min-width: 560px;
+  --cell-wrap-max: 460px;
+  --login-max: 460px;
+  --field-min-width: 130px;
+  --action-min-width: 88px;
+  --shell-wide-max: 1360px;
+}
+
+/* Responsive ramps. Both of these used to be a private `:root` inside the public
+   stylesheet — a lighter glass blur under 768px and a micro-type floor under 560px.
+   They are generated here instead, so the dense console and the public app step the same
+   way on a phone and neither one owns a number the other cannot see. */
+@media (max-width: 768px) {
+  :root {
+    --glass-1-blur: 10px;
+    --glass-2-blur: 14px;
+    --glass-3-blur: 18px;
+  }
+}
+@media (max-width: 560px) {
+  :root { --fs-micro: var(--fs-micro-phone); }
+}

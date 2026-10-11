@@ -537,8 +537,8 @@ test('dashboard shell URLs stay inside the serving prefix in both modes', () => 
 test('proxy rebase covers every root-absolute asset/API reference in the dashboard', () => {
   // Exact set: any new root-absolute asset reference forces a rebase update.
   const htmlRefs = [...dashboardHtml.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(htmlRefs, ['/app.js', '/manifest.webmanifest', '/styles.css']);
-  for (const ref of htmlRefs) assert.match(ref, /^\/(app|styles|manifest\.webmanifest)/, 'proxy HTML rebase must match this reference');
+  assert.deepEqual(htmlRefs, ['/app.js', '/copy.js', '/manifest.webmanifest', '/styles.css', '/tokens.css', '/ui.css']);
+  for (const ref of htmlRefs) assert.match(ref, /^\/(app|copy|tokens|ui|styles|manifest\.webmanifest)/, 'proxy HTML rebase must match this reference');
   // The dashboard API helper is the single fetch choke point…
   const fetches = [...dashboardJs.matchAll(/fetch\(`([^`]+)`/g)].map((m) => m[1]);
   assert.deepEqual(fetches, ['/api${path}']);

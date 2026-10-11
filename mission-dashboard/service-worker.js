@@ -1,4 +1,4 @@
-const CACHE = 'private-mission-shell-v2';
+const CACHE = 'private-mission-shell-v3';
 // Shell and API URLs are relative to THIS script's location, never
 // origin-rooted: the dashboard is served at origin root over direct loopback
 // (/service-worker.js) but under the owner-only proxy prefix in production
@@ -7,7 +7,7 @@ const CACHE = 'private-mission-shell-v2';
 // and a hardcoded '/api/' bypass would let authenticated mission API
 // responses be cached under the prefix. Relative resolution keeps both
 // serving modes correct with no code fork.
-const SHELL = ['./', './styles.css', './app.js', './manifest.webmanifest'];
+const SHELL = ['./', './styles.css', './tokens.css', './ui.css', './copy.js', './app.js', './manifest.webmanifest'];
 const API_ROOT = new URL('./api/', self.location.href).pathname;
 
 self.addEventListener('install', (event) => {

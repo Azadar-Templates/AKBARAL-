@@ -6,6 +6,8 @@
     <meta name="robots" content="noindex, nofollow, noarchive" />
     <title>Private Mission Control</title>
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/ui.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -53,7 +55,8 @@
         <div id="banner" class="banner" hidden></div>
 
         <section data-panel="overview" id="panel-overview" class="panel">
-          <div class="section-head">
+                    <p class="muted small">This is the whole mission on one screen — progress, agents and money. One action: open Approvals for anything waiting on you.</p>
+<div class="section-head">
             <h2>Mission</h2>
             <!-- Marked hidden because the markup cannot know who is looking: this claim is about the
                  session, so app.js applies it from the session (applySessionMode). A default-visible
@@ -65,7 +68,8 @@
         </section>
 
         <section data-panel="bounties" id="panel-bounties" class="panel" hidden>
-                    <div class="head-agent-heading">
+                              <p class="muted small">This is the bounty program setup, its scope and its findings. One action: register a program with its in-scope targets so the worker may act.</p>
+<div class="head-agent-heading">
             <div><span class="eyebrow">Authorized security testing only</span><h2>Bug bounty control plane</h2></div>
             <span class="pill warn">Owner approval required</span>
           </div>
@@ -179,7 +183,8 @@
         </section>
 
         <section data-panel="approvals" id="panel-approvals" class="panel" hidden>
-                    <div class="head-agent-heading">
+                              <p class="muted small">This is what waits on an owner decision. One action: approve or reject the entry in front of you — nothing here clears by itself.</p>
+<div class="head-agent-heading">
             <div><span class="eyebrow">Human decision queue</span><h2>Approvals</h2></div>
             <span class="pill warn">Head agent cannot approve</span>
           </div>
@@ -309,7 +314,8 @@
         </section>
 
         <section data-panel="money" id="panel-money" class="panel" hidden>
-                    <h2>Provider-verified mission cash</h2>
+                              <p class="muted small">This is verified mission cash, wallets and payouts. One action: request a payout only from a verified slot, then approve it here.</p>
+<h2>Provider-verified mission cash</h2>
           <p>No opening balance is imported from legacy accounting. Missing opportunities and providers remain blocked. A ledger is not a bank or a payment connection.</p>
           <div id="verified-cash-summary" class="cards"></div>
           <div id="verified-cash-operations" class="table-wrap"></div>
@@ -523,6 +529,7 @@
       <span>Private mission system — separate database, authentication and ledger from any customer platform.</span>
     </footer>
 
+    <script src="/copy.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

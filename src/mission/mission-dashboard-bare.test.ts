@@ -76,7 +76,20 @@ const files = {
   html: fs.readFileSync(path.resolve('mission-dashboard/index.html'), 'utf8'),
   js: fs.readFileSync(path.resolve('mission-dashboard/app.js'), 'utf8'),
   css: fs.readFileSync(path.resolve('mission-dashboard/styles.css'), 'utf8'),
+  // The two files the console no longer owns: both are generated from design-system/tokens.json and
+  // design-system/ui.css by `node design-system/build.mjs`. They are read here so the assertions below
+  // can check the console against the shared system rather than against a private copy of it.
+  tokens: fs.readFileSync(path.resolve('mission-dashboard/tokens.css'), 'utf8'),
+  ui: fs.readFileSync(path.resolve('mission-dashboard/ui.css'), 'utf8'),
 };
+
+/** The shared type scale, in px, as the generated token file states it. */
+function tokenPx(css: string, name: string): number {
+  const rem = new RegExp(`${name}:\\s*([\\d.]+)rem`).exec(css);
+  if (rem) return Number(rem[1]) * 16;
+  const px = new RegExp(`${name}:\\s*([\\d.]+)px`).exec(css);
+  return px ? Number(px[1]) : 0;
+}
 
 /**
  * Count what a section would put on screen: one line per block-level text element, one per table
@@ -276,10 +289,15 @@ it('no section needs more than one screen, even when the API floods it', async (
     measured[section] = { closed, worst, worstBlock };
     assert.ok(worst <= MAX_VISIBLE_LINES, `${section} renders ${worst} lines with ${worstBlock} open; the cap is ${MAX_VISIBLE_LINES}`);
   }
-  // 3 screens is derived, not asserted by eye: the sheet sets one line to 21px (font: 14px/1.5),
-  // and scripts/mission-browser-check.ts measures the same sections' real scrollHeight on Chromium.
-  const lineHeight = Number(/font:\s*14px\s*\/\s*1\.5/.test(files.css) ? 21 : 0);
-  assert.ok(lineHeight > 0, 'the base line height is expected to stay 14px/1.5 so this derivation holds');
+  // 3 screens is derived, not asserted by eye. It used to derive from the sheet's own `font: 14px/1.5`;
+  // the console now types itself from the shared scale, so the derivation reads THAT — the budget follows
+  // the design system instead of pinning one private number. scripts/mission-browser-check.ts measures the
+  // same sections' real scrollHeight on Chromium.
+  const baseSize = tokenPx(files.tokens, '--fs-body');
+  assert.ok(baseSize > 0, 'the shared type scale declares --fs-body in the generated token file');
+  assert.match(files.css, /font:\s*400\s+var\(--fs-body\)\/1\.5\s+var\(--font-sans\)/, 'the console body text comes from the shared scale, not a local size');
+  const lineHeight = baseSize * 1.5;
+  assert.ok(lineHeight > 0, `the base line height is derived from --fs-body (${baseSize}px × 1.5) so this derivation holds`);
   for (const [section, result] of Object.entries(measured)) {
     assert.ok(result.worst * lineHeight <= 3 * SCROLL_SCREEN_PX, `${section} is ${(result.worst * lineHeight / SCROLL_SCREEN_PX).toFixed(2)} screens tall`);
   }
@@ -429,9 +447,25 @@ it('the four sections carry no decoration, and the theme was not re-invented', a
     assert.equal(panel?.querySelectorAll('h2').length, 1, `${section} has one title and nothing inside it steals the level`);
   }
   dom.window.close();
-  // No new colours: the console still defines exactly the palette it had before the strip.
-  const rootBlock = files.css.match(/:root\s*\{[\s\S]*?\}/)?.[0] ?? '';
-  assert.ok(rootBlock.includes('--accent'), 'the green theme tokens are the ones already in the sheet');
+  // No new colours — and now not a re-declared set either. The console used to carry its own `:root`
+  // block (its own --bg/#0b0f14, --panel/#121821, --good/#38d39f …) alongside the public palette, which is
+  // how two surfaces calling themselves "the dark green theme" ended up looking unrelated. The block is
+  // gone: the console reads the generated token file, and every var() it names must exist there.
+  assert.ok(!/:root\s*\{/.test(files.css), 'the mission sheet declares no theme of its own');
+  const declared = new Set([...files.tokens.matchAll(/(--[\w-]+):/g)].map((m) => m[1]));
+  const used = new Set([...files.css.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
+  const orphans = [...used].filter((name) => !declared.has(name));
+  assert.deepEqual(orphans, [], 'every token the console styles itself with is declared by the shared system');
+  assert.ok(declared.has('--accent') && /--accent:\s*#2f8348/.test(files.tokens), 'and the brand green it resolves to is the AKBARAL one');
+  // The one allowed shape is a mask: `-webkit-mask: linear-gradient(#000 0 0)` is how a gradient-stroke
+  // border is cut out, and it carries no colour at all — the same exemption the public glass sheet has.
+  const literals = files.css
+    .split('\n')
+    .map((line, index) => ({ line: line.trim(), at: index + 1 }))
+    .filter((row) => !/mask:/i.test(row.line))
+    .filter((row) => /#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(row.line))
+    .map((row) => `${row.at}: ${row.line.slice(0, 60)}`);
+  assert.deepEqual(literals, [], 'and the sheet carries no colour literal of its own to drift');
   const newRules = files.css.split('\n').filter(line => line.includes('details.sub') || line.includes('.section-head'));
   assert.ok(newRules.length >= 8, 'the collapsed blocks are styled from existing tokens');
   for (const line of newRules) {

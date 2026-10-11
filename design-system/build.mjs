@@ -42,6 +42,45 @@ function colorBlock(theme, selector) {
   return `${selector} {\n${lines.join('\n')}\n}`;
 }
 
+
+/* ---------- Console layer (shared by every dense surface, incl. the mission) ---------- */
+const SPACING = tokens.spacing;
+const RADIUS = tokens.radius;
+const RESPONSIVE = tokens.responsive;
+function spaceStep(ref) {
+  const step = String(ref).split('.').pop();
+  if (!(step in SPACING)) throw new Error(`console.size.${step} is not a step of tokens.spacing`);
+  return `var(--space-${step})`;
+}
+function radiusStep(ref) {
+  const step = String(ref).split('.').pop();
+  if (!(step in RADIUS)) throw new Error(`console.radius.${step} is not a step of tokens.radius`);
+  return RADIUS[step] === 999 ? 'var(--radius-pill)' : `var(--radius${step === 'md' ? '' : `-${step}`})`;
+}
+function primitiveVar(name) {
+  const wanted = name.replace(/-([a-z])/g, (_m, c) => c.toUpperCase());
+  const hit = cssColorMap.find(([key]) => key === wanted);
+  if (!hit) throw new Error(`console.state.${name} does not name a declared color primitive (cssColorMap)`);
+  return `var(${hit[1]})`;
+}
+const consoleLayer = [
+  '  /* State colors — the ONLY ramp any surface may use for good/warning/bad. */',
+  ...Object.entries(tokens.console.state).map(([tone, prim]) => `  --state-${tone}: ${primitiveVar(prim)};`),
+  '  /* Sizes — every one of these is a step of an existing scale, never a fresh number. */',
+  `  --tap-min: ${RESPONSIVE.touchTargetMin}px;`,
+  `  --row-min: ${RESPONSIVE.tapRowMin}px;`,
+  `  --input-font-min: ${RESPONSIVE.inputFontSizeMin}px;`,
+  ...Object.entries(tokens.console.size).filter(([k]) => !['tapMin','rowMin','inputFontMin'].includes(k)).map(([k, ref]) => `  --${k.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${spaceStep(ref)};`),
+  '  --label-gap: var(--space-xs);',
+  ...Object.entries(tokens.console.radius).filter(([k]) => k !== 'pill').map(([k, ref]) => `  --radius-${k}: ${radiusStep(ref)};`),
+  '  /* --radius-pill is already declared above; the console layer only names the steps it needs. */',
+  '  /* Type + layers */',
+  ...Object.entries(tokens.console.font).map(([k, ref]) => `  --fs-console-${k}: var(--fs-${ref === 'body' ? 'body' : ref});`),
+  ...Object.entries(tokens.zIndex).map(([k, v]) => `  --z-${k}: ${v};`),
+  '  /* The console layer\'s own measurements — declared here so no stylesheet repeats one. */',
+  ...Object.entries(tokens.console.px).filter(([k]) => k !== 'note').map(([k, v]) => `  --${k.replace(/Px$/, '').replace(/([A-Z])/g, '-$1').toLowerCase()}: ${v}px;`),
+].join('\n');
+
 /* ---------- Web: public/tokens.css ---------- */
 const tokensCss = `/* ============================================================
    AKBARAL! Design System — generated design tokens (web).
@@ -104,6 +143,10 @@ ${colorBlock(DARK, ':root')}
   --dur-cinematic: ${tokens.motion.duration.cinematic}ms;
 
   /* Layout */
+  /* The agent sigil's hue band (tokens.agent.sigil.formula): per-agent colours are set
+     inline from the same formula on web, Android and iOS; this is only the default that
+     stands in when no hue is supplied. It used to be a bare literal in the product sheet. */
+  --sigil-hue: ${tokens.agent.sigil.fallbackHue};
   --header-h: ${tokens.layout.web.headerHeight}px;
   --content-max: ${tokens.layout.web.contentMax}px;
   --nav-gap: 4px;
@@ -192,6 +235,31 @@ ${colorBlock(DARK, ':root')}
 
   /* Radii (semantic completion) */
   --radius-pill: ${tokens.semantic.radius.pill}px;
+
+  /* Console surface layer (design-system/tokens.json → console). EVERY value below
+     is an alias over a primitive declared above — a state token resolves to a palette
+     variable, a size token to a step of the spacing scale, a radius token to the radius
+     ramp. That is what lets the dense mission console and the public app share one
+     visual system without either one owning a private copy of a number. The mission
+     surface used to carry its own --bg/--panel/--good/--warn/--bad hexes; those literals
+     are gone and the aliases below are the only names that survive, so no selector in
+     either stylesheet had to change. */
+${consoleLayer}
+}
+
+/* Responsive ramps. Both of these used to be a private \`:root\` inside the public
+   stylesheet — a lighter glass blur under 768px and a micro-type floor under 560px.
+   They are generated here instead, so the dense console and the public app step the same
+   way on a phone and neither one owns a number the other cannot see. */
+@media (max-width: 768px) {
+  :root {
+    --glass-1-blur: ${tokens.glass.mobile.level1}px;
+    --glass-2-blur: ${tokens.glass.mobile.level2}px;
+    --glass-3-blur: ${tokens.glass.mobile.level3}px;
+  }
+}
+@media (max-width: ${tokens.responsive.microFloorPx}px) {
+  :root { --fs-micro: var(--fs-micro-phone); }
 }
 `;
 
@@ -503,6 +571,28 @@ function write(path, content) {
 
 console.log('AKBARAL! Design System — compiling tokens…');
 write(join(root, 'public', 'tokens.css'), tokensCss);
+/* The mission console is a SEPARATE PRODUCT: it serves its own static files and must
+   never import from public/. It still gets ONE design system, so the exact same
+   generated :root is emitted into its own directory from the exact same source. Both
+   copies are committed (same convention as above) and design-system/single-source.test.ts
+   fails if the two files stop being byte-identical below their banners, or if either
+   drifts from tokens.json. */
+const missionTokens = tokensCss.replace(
+  'AKBARAL! Design System — generated design tokens (web).',
+  'AKBARAL! Design System — generated design tokens (mission console copy).',
+).replace(
+  '   Identity:',
+  `   The private mission console reads these values from THIS file; it is the same
+   generated block as public/tokens.css, byte for byte below the banner. Nothing in
+   mission-dashboard/ may redeclare a color, a radius or a space step.
+   Identity:`,
+);
+write(join(root, 'mission-dashboard', 'tokens.css'), missionTokens);
+/* The one primitive sheet. Hand-authored once, shipped to both surfaces verbatim. */
+const uiSheet = readFileSync(join(root, 'design-system', 'ui.css'), 'utf8');
+const uiBanner = `/* GENERATED — copied verbatim from design-system/ui.css by design-system/build.mjs.\n   Do not edit this copy; edit design-system/ui.css and re-run the build. */\n`;
+write(join(root, 'public', 'akbaral-ui.css'), uiBanner + uiSheet);
+write(join(root, 'mission-dashboard', 'ui.css'), uiBanner + uiSheet);
 write(join(root, 'mobile', 'src', 'theme.ts'), themeTs);
 write(join(root, 'design-system', 'ios', 'AKBARALTheme.swift'), swift);
 console.log('Done. Web, Android and (future) iOS now share one identity.');

@@ -167,9 +167,13 @@ describe('the redesign is applied to every required surface', () => {
   });
 
   it('gives the mission dashboard glass panels, table headers and badges', () => {
+    // The pill radius and the accent are no longer the console's own declarations: the shared
+    // sheet it links sets them (design-system/ui.css + tokens.css, generated). Read the pair —
+    // that is what the browser applies — so "one definition" is what is actually pinned here.
+    const shared = `${read('mission-dashboard/ui.css')}\n${read('mission-dashboard/tokens.css')}`;
     assert.match(missionCss, /th \{[^}]*text-transform:\s*uppercase/);
-    assert.match(missionCss, /\.pill \{[^}]*border-radius:\s*999px/);
-    assert.match(missionCss, /--accent:\s*#2f8348/);
+    assert.match(shared, /\.pill \{[^}]*border-radius:\s*var\(--radius-pill\)/);
+    assert.match(read('mission-dashboard/tokens.css'), /--accent:\s*#2f8348/);
   });
 });
 
@@ -377,9 +381,14 @@ describe('mission stack presence regression', () => {
   });
 
   it('keeps the mission dashboard read-only behaviour markers intact', () => {
-    assert.match(missionCss, /--good:/);
-    assert.match(missionCss, /--warn:/);
-    assert.match(missionCss, /--bad:/);
+    // The three state colours are read by the console and declared once, in the shared ramp
+    // (they were private --good/--warn/--bad hexes in the console's own :root).
+    const sharedTokens = read('mission-dashboard/tokens.css');
+    const consoleSheets = `${missionCss}\n${read('mission-dashboard/ui.css')}`;
+    for (const [oldName, newName] of [['--good', '--state-good'], ['--warn', '--state-warn'], ['--bad', '--state-bad']]) {
+      assert.ok(new RegExp(`${newName.replace(/[-]/g, '\\-')}\\s*:`).test(sharedTokens), `${newName} must exist in the shared sheet`);
+      assert.ok(consoleSheets.includes(`var(${newName})`), `the console must still read its ${oldName} marker`);
+    }
     // The dashboard is a read surface: no new interactive control was added.
     assert.doesNotMatch(missionCss, /cursor:\s*pointer;\s*pointer-events:\s*auto/);
   });

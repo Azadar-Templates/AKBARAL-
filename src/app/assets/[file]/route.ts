@@ -30,11 +30,15 @@ import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { brotliCompressSync, gzipSync, constants as zlibConstants } from 'node:zlib';
 
-/** The only three files this endpoint will ever serve — no traversal, no globs. */
+/** The only four files this endpoint will ever serve — no traversal, no globs. */
 const ASSETS: Record<string, { file: string; type: string }> = {
   'app.js': { file: path.join('public', 'app.js'), type: 'application/javascript; charset=utf-8' },
   'styles.css': { file: path.join('public', 'styles.css'), type: 'text/css; charset=utf-8' },
   'tokens.css': { file: path.join('public', 'tokens.css'), type: 'text/css; charset=utf-8' },
+  // The shared primitive sheet. It is served here rather than linked raw so it gets the same
+  // brotli + immutable-etag treatment as tokens.css, and so one allow-list still covers every
+  // stylesheet the shell loads. Generated: design-system/build.mjs copies design-system/ui.css here.
+  'akbaral-ui.css': { file: path.join('public', 'akbaral-ui.css'), type: 'text/css; charset=utf-8' },
 };
 
 type Encoded = { body: Buffer; encoding: 'br' | 'gzip' | 'identity'; etag: string };

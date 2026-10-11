@@ -46,8 +46,15 @@ test('program cards have honest empty state and zero-target activation guard', (
   assert.match(app, /GET\`?\,?\s*.*\/scope|api\(`\/bounty\/programs\/\$\{encodeURIComponent\(program\.id\)\}\/scope/);
 });
 
-test('service worker uses v2 and removes older private shell caches', () => {
-  assert.match(worker, /private-mission-shell-v2/);
+test('service worker versions its shell cache and removes older private shell caches', () => {
+  // The version is not the point; that a returning owner never renders a stale shell is. The shell
+  // grew /tokens.css, /ui.css and /copy.js in this change, so the number moved with it — and the
+  // precache list must cover every asset the page actually loads, which is what a bump protects.
+  assert.match(worker, /const CACHE = 'private-mission-shell-v\d+';/);
+  const precached = [...worker.matchAll(/'\.\/([\w.-]+)'/g)].map((match) => match[1]);
+  for (const match of html.matchAll(/(?:src|href)="\/([\w.-]+)"/g)) {
+    assert.ok(precached.includes(match[1]), `the shell precache must cover /${match[1]} that index.html loads`);
+  }
   assert.match(worker, /caches\.keys\(\)/);
   assert.match(worker, /key !== CACHE/);
   assert.match(worker, /caches\.delete\(key\)/);

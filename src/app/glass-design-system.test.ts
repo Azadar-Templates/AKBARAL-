@@ -257,15 +257,25 @@ describe('the glass material ships both fallbacks', () => {
 });
 
 describe('mission dashboard uses the AKBARAL! green accent', () => {
+  // The console's palette now comes from the generated shared sheet it links (its own
+  // `:root` ramp — 26 hexes, a duplicated --accent and a second --bg — was deleted), so
+  // these assertions read the file the browser actually applies.
+  const missionTokens = read('mission-dashboard/tokens.css');
+
   it('replaces the hardcoded blue #4da3ff with the brand green', () => {
-    assert.doesNotMatch(missionCss, /#4da3ff/i, 'no hardcoded blue accent remains');
-    assert.match(missionCss, new RegExp(`--accent:\\s*${tokensJson.color.dark.accent}`, 'i'));
+    assert.doesNotMatch(`${missionCss}\n${missionTokens}`, /#4da3ff/i, 'no hardcoded blue accent remains');
+    assert.match(missionTokens, new RegExp(`--accent:\\s*${tokensJson.color.dark.accent}`, 'i'), 'the accent the console applies is the brand green');
   });
 
-  it('keeps every other mission dashboard token untouched', () => {
-    assert.match(missionCss, /--panel:/);
-    assert.match(missionCss, /--good:/);
-    assert.match(missionCss, /--bad:/);
+  it('keeps every other token the console reads, with nothing dangling', () => {
+    const declared = new Set([...missionTokens.matchAll(/^\s*(--[\w-]+)\s*:/gm)].map((match) => match[1]));
+    for (const name of ['--surface-strong', '--state-good', '--state-warn', '--state-bad', '--accent', '--text-dim', '--line']) {
+      assert.ok(declared.has(name), `${name} must still exist for the console — it was one of its private tokens before the shared layer`);
+    }
+    const used = new Set([...missionCss.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]));
+    assert.ok(used.size > 40, `the console is expected to read the shared ramp, it reads ${used.size} tokens`);
+    const dangling = [...used].filter((name) => !declared.has(name) && !name.startsWith('--fallback'));
+    assert.deepEqual(dangling, [], 'the console may not reference a token nothing defines');
   });
 });
 

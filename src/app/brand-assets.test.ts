@@ -523,8 +523,8 @@ describe('brand assets — generated, wired, and serveable', () => {
     assert.doesNotMatch(dashboard, /\/brand\/|akbaral-logo|akbaral-icon/, 'the mission dashboard gains no brand reference');
     assert.deepEqual(
       [...dashboard.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]).sort(),
-      ['/app.js', '/manifest.webmanifest', '/styles.css'],
-      'the relayed asset list is untouched',
+      ['/app.js', '/copy.js', '/manifest.webmanifest', '/styles.css', '/tokens.css', '/ui.css'],
+      'the relayed asset list is the shared sheet, the copy dictionary and the shell itself',
     );
   });
 
