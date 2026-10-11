@@ -13,6 +13,7 @@ import * as ProviderReadiness from './earning/provider-capability-registry';
 import * as Eligibility from './earning/opportunity-eligibility';
 import * as ConnectorContracts from './earning/connector-execution-contracts';
 import * as AgentClassContracts from './earning/agent-class-contracts';
+import * as HumanActionQueue from './human-action-queue';
 import * as ExecutionPipeline from './earning/execution-pipeline';
 import * as SettlementVerification from './earning/settlement-verification';
 import { earningProviderReadinessReport } from './earning/providers/registry';
@@ -1696,6 +1697,49 @@ async function handleApi(
         return true;
       }
       throw new HttpProblem(404, 'unknown agent-contracts command', 'not_found');
+    }
+
+    // ── Human-action queue (owner console) ──────────────────────────────────
+    //
+    // WHY THIS ROUTE EXISTS. `owner_action_pending` is computed from open rows in `mission_human_action_tasks`
+    // (earning/fleet-readiness.ts:179 per agent, :248 globally), and the queue had two writers and no
+    // owner-side reader: `resolveHumanActionTask` was called from a test and nothing else in the mission
+    // server. Production could therefore say "clear the 2 open task(s) in the Approvals queue" at a console
+    // with no queue and no button — a blocker whose remedy was an invisible control. This route is that
+    // control: the list, and the two decisions, through the module that already owns the table.
+    //
+    // Owner-only in both directions of the meaning: a read link can see the queue and change nothing, and no
+    // agent identity can decide an entry at all (`human-action-queue.ts:requireOwnerActor`). There is
+    // deliberately no bulk route, no auto-close, and no write that deletes a task row — its audit trail
+    // outlives it.
+    case 'human-actions': {
+      requireRead(context);
+      if (method === 'GET' && rest.length === 0) {
+        json(res, 200, HumanActionQueue.humanActionQueueView());
+        return true;
+      }
+      if (method === 'GET' && rest[0] === 'all' && rest.length === 1) {
+        json(res, 200, HumanActionQueue.humanActionQueueView({ includeResolved: true }));
+        return true;
+      }
+      const session = requireOwner(context, true);
+      const actor = { kind: 'owner' as const, id: session.owner.id };
+      const taskId = String(rest[0] ?? '');
+      if (method === 'POST' && rest[1] === 'approve') {
+        json(res, 200, HumanActionQueue.approveHumanActionTask(actor, {
+          taskId,
+          confirmSurface: param('confirmSurface') ?? undefined,
+        }));
+        return true;
+      }
+      if (method === 'POST' && rest[1] === 'reject') {
+        json(res, 200, HumanActionQueue.rejectHumanActionTask(actor, {
+          taskId,
+          reason: param('reason') ?? undefined,
+        }));
+        return true;
+      }
+      throw new HttpProblem(404, 'unknown human-actions command', 'not_found');
     }
 
     // ── Policy ──────────────────────────────────────────────────────────────

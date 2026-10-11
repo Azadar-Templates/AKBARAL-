@@ -78,6 +78,10 @@ it('each of the three named blockers names a real, existing control or variable 
     // shell on the host was a dead end written in confident prose. It now names a control, so the control
     // has to exist — the same check the other two dashboard blockers are held to.
     { code: 'no_scoped_contract', how: 'dashboard control', anchor: ['mission-dashboard/index.html', 'id="contracts-block"'] },
+    // The human-action queue: the blocker told the owner to "clear the open task(s) in the Approvals queue"
+    // while the console rendered that queue nowhere and no route could resolve an entry. So this line is
+    // held to the same test as the others — the control it names has to exist and be reachable.
+    { code: 'owner_action_pending', how: 'dashboard control', anchor: ['mission-dashboard/index.html', 'id="human-actions-block"'] },
   ];
   for (const { code, how, anchor } of expected) {
     const entry = byCode.get(code);
@@ -96,6 +100,9 @@ it('each of the three named blockers names a real, existing control or variable 
   assert.ok(read('mission-dashboard/index.html').includes('id="kill-off"'), 'the kill switch release is a real button');
   assert.ok(read('mission-dashboard/index.html').includes('id="contracts-prepare-submit"'), 'preparing a scoped contract is a real button');
   assert.ok(read('src/mission/server.ts').includes("case 'agent-contracts'"), 'and a real route stands behind it');
+  assert.ok(read('mission-dashboard/index.html').includes('id="human-actions-list"'), 'the human-action queue has a real host for its rows');
+  assert.ok(read('src/mission/server.ts').includes("case 'human-actions'"), 'behind a real route');
+  assert.match(read('mission-dashboard/app.js'), /\/human-actions\/\$\{encodeURIComponent\(taskId\)\}\/\$\{decision\}/, 'and both verbs, approve and reject, are wired to it');
   assert.match(read('package.json'), /"fleet:readiness":\s*"tsx scripts\/mission-fleet-readiness\.ts"/);
   assert.match(read('package.json'), /"mission:sync-registry":\s*"tsx scripts\/mission-sync-registry\.ts"/);
   assert.match(read('src/mission/server.ts'), /body\.autonomousEnabled !== undefined/, 'the dashboard control has a server-side handler');

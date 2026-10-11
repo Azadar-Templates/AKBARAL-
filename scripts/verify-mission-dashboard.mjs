@@ -322,6 +322,48 @@ async function main() {
   record('opening the block wrote nothing: every class count is identical before and after',
     beforeRender.length > 0 && shape(afterRender) === beforeRender, beforeRender.slice(0, 96));
 
+  // ── 3e. the human-action queue, read only ─────────────────────────────────
+  //
+  // Same discipline as 3d: this section reads, times and refuses; it never presses Approve or Reject,
+  // because a run of this file must be able to be pointed at any database without deciding anything.
+  // The queue is the one the fleet blocker counts (`owner_action_pending`), so its shape is checked
+  // against what the panel renders, and the render is proven not to write.
+  const queueStartedAt = Date.now();
+  const queueResponse = await fetch(`${BASE}/api/human-actions`, { headers: contractsHeaders });
+  const queuePayload = await queueResponse.json().catch(() => null);
+  const queueMs = Date.now() - queueStartedAt;
+  const queueItems = Array.isArray(queuePayload?.items) ? queuePayload.items : null;
+  const queueShape = (payload) => (payload?.items ?? []).map((entry) => `${entry.taskId}:${entry.actionType}:${entry.subject?.stale === true ? 'stale' : 'open'}`).join('|');
+  const queueBefore = queueShape(queuePayload);
+  record('the console can read the human-action queue',
+    queueResponse.status === 200 && queueItems !== null,
+    `${queueItems?.length ?? 0} open entr(ies) at HTTP ${queueResponse.status}`);
+  record(`reading the queue stays inside the gateway's ${gatewayUpstreamBudgetMs} ms budget at ${fleetAgents} agents`,
+    queueMs < gatewayUpstreamBudgetMs, `${queueMs} ms`);
+  const refusedQueue = await fetch(`${BASE}/api/human-actions`);
+  record('the queue is refused to an anonymous caller', refusedQueue.status === 401, `HTTP ${refusedQueue.status}`);
+  const queueNote = doc.querySelector('#human-actions-note')?.textContent ?? '';
+  record('the block states the number the blocker quotes, and never reads a failure as an empty queue',
+    /owner task\(s\) open|no owner task is open/.test(queueNote) || /MISSING/.test(queueNote),
+    queueNote.slice(0, 96) || 'MISSING — no note rendered at all');
+  const queueRows = doc.querySelectorAll('#human-actions-list tbody tr').length;
+  const queueEmptyCopy = (doc.querySelector('#human-actions-list')?.textContent ?? '').includes('The queue is empty');
+  record('every open entry the API reports renders as a row, and an empty queue says so out loud',
+    queueRows === (queueItems?.length ?? 0) || (queueRows === 0 && queueEmptyCopy),
+    `${queueRows} row(s) for ${queueItems?.length ?? 0} item(s), empty-copy-shown=${queueEmptyCopy}`);
+  const queueStaleRows = [...doc.querySelectorAll('#human-actions-list tbody tr')].filter(row => /stale — closable by the owner, never auto-closed/.test(row.textContent ?? '')).length;
+  record('a stale entry is labelled for the owner to close, never swept by the panel',
+    queueStaleRows === Number(queuePayload?.counts?.stale ?? 0),
+    `${queueStaleRows} stale row(s) rendered of ${queuePayload?.counts?.stale ?? 0} reported`);
+  const queueApprovals = doc.querySelectorAll('#human-actions-list button[data-queue-approve], #human-actions-list button[data-queue-close]').length;
+  const queueActionable = Number(queuePayload?.counts?.actionable ?? 0) + Number(queuePayload?.counts?.stale ?? 0);
+  record('this run pressed nothing: the confirm panel is hidden and the queue is unchanged after the render',
+    doc.querySelector('#human-actions-confirm')?.hidden === true && queueShape(queuePayload) === queueBefore,
+    `${queueApprovals} decision control(s) offered for ${queueActionable} decidable entr(ies), 0 pressed`);
+  const queueAfter = await (await fetch(`${BASE}/api/human-actions`, { headers: contractsHeaders })).json().catch(() => null);
+  record('opening the queue wrote nothing: the same entries, in the same states, after the render',
+    queueShape(queueAfter) === queueBefore, `${queueBefore.slice(0, 96) || 'no open entries in this database'}`);
+
   await clickTab('agents');
   const agentRows = doc.querySelectorAll('#agent-list tr').length;
   record('the agents section lists agents from the mission database', agentRows > 1, `${agentRows - 1} rows`);

@@ -1271,6 +1271,9 @@ async function loadTab(tab) {
       if (canMutate()) await loadHeadAgentOverview();
       await loadApprovals();
       await loadContracts();
+      // The queue agents file, not the queue this app files for them: `owner_action_pending` is counted
+      // from these rows, so an owner who cannot see them cannot clear the blocker it names.
+      await loadHumanActions();
     }
     if (tab === 'tools') await loadTools();
     if (tab === 'policy') await loadPolicy();
@@ -2108,6 +2111,225 @@ async function approveAllContracts(agentClass, surface) {
     await loadContracts();
   } catch (error) {
     banner(error.message, 'error');
+  }
+}
+
+/**
+ * The human-action queue: the entries agents filed because a human-only action stood in their way.
+ *
+ * WHY THIS PANEL EXISTS. `owner_action_pending` is counted from open rows in `mission_human_action_tasks`
+ * and its own action text tells the owner to "clear the open task(s) in the Approvals queue" — a queue the
+ * console did not render and a decision it could not record. The only reader of that table was the public
+ * app's read-only BOSS dashboard, and the only resolver (`resolveHumanActionTask`) was never called by any
+ * route. So the fleet could be blocked by an instruction with no control behind it.
+ *
+ * Three rules this panel keeps:
+ *   · nothing here closes on its own — no expiry, no sweep, no bulk resolve. A stale entry is labelled
+ *     stale and stays open until an owner decides;
+ *   · approving an entry that points at a scoped-contract batch grants that batch through the contract
+ *     module, so the same surface digest is required and the same empty/over-broad refusals still apply.
+ *     Approving anything else is an owner attestation and is recorded as one, not as evidence;
+ *   · rejecting requires a short reason and settles nothing else: the proposals, contracts and money rows
+ *     it may point at are untouched, and that is stated before the click.
+ *
+ * It renders without its data too: a failed read shows `MISSING` and the reason, because an empty queue
+ * block under Approvals reads as "nothing is waiting", which is the opposite claim.
+ */
+async function loadHumanActions() {
+  let payload = null;
+  let failure = null;
+  try {
+    payload = await api('/human-actions');
+  } catch (error) {
+    failure = error;
+  }
+  renderQueue(payload, failure);
+}
+
+function queueSubjectCell(row) {
+  const subject = row.subject && typeof row.subject === 'object' ? row.subject : null;
+  if (!subject) return el('span', { class: 'small', text: `${MISSING} — the response carries no subject for this entry` });
+  if (subject.kind === 'contract-batch') {
+    const ids = Array.isArray(subject.proposalIds) ? subject.proposalIds : [];
+    return el('div', {}, [
+      el('strong', { text: `scoped contracts · ${String(subject.agentClass ?? MISSING)}` }),
+      el('div', { class: 'muted small', text: `${countOf(subject.pending)} proposal(s) pending for that class` }),
+      ids.length ? el('div', { class: 'muted small', text: `ids: ${ids.slice(0, 3).join(', ')}${ids.length > 3 ? ` (+${ids.length - 3} more)` : ''}` }) : null,
+    ].filter(Boolean));
+  }
+  if (subject.kind === 'fleet-gate') {
+    const state = subject.gateCleared === true ? 'cleared' : subject.gateCleared === false ? 'still open' : `${MISSING} (unreadable)`;
+    return el('div', {}, [
+      el('strong', { text: `fleet gate · ${String(subject.gateCode ?? MISSING)}` }),
+      el('div', { class: 'muted small', text: `the gate itself reports: ${state}` }),
+    ]);
+  }
+  return el('div', {}, [
+    el('strong', { text: 'no machine-readable subject' }),
+    el('div', { class: 'muted small', text: 'read the entry text below before deciding' }),
+  ]);
+}
+
+function renderQueue(payload, failure) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const items = Array.isArray(source.items) ? source.items : null;
+  const unreadable = items === null;
+
+  contractBlock('#human-actions-note', () => {
+    const counts = source.counts && typeof source.counts === 'object' ? source.counts : {};
+    const blocker = source.blocker && typeof source.blocker === 'object' ? source.blocker : {};
+    const wrap = el('div', { class: 'table-wrap', style: 'padding:6px 12px' });
+    const open = Number(blocker.openOwnerTasks);
+    wrap.appendChild(Number.isSafeInteger(open)
+      ? pill(open === 0
+        ? 'no owner task is open — the fleet is not waiting on this queue'
+        : `${open} owner task(s) open — this is exactly what owner_action_pending counts`, open === 0 ? 'ok' : 'warn')
+      : pill(`${MISSING} — the response carries no open-owner-task count`, 'warn'));
+    wrap.appendChild(el('div', {
+      class: 'muted small',
+      text: `read at ${when(source.generatedAt)} from stored rows — ${countOf(source.shown)} of ${countOf(source.total)} open entr(ies), ${countOf(counts.actionable)} actionable, ${countOf(counts.stale)} stale, ${countOf(counts.unreadableSubject)} with no linked subject${source.truncated ? ' — the list is capped and more rows exist' : ''}`,
+    }));
+    if (typeof source.note === 'string' && source.note) wrap.appendChild(el('div', { class: 'muted small', text: source.note }));
+    if (failure) wrap.appendChild(el('div', { class: 'small', text: `the queue could not be read: ${failure.message}` }));
+    return wrap;
+  });
+
+  if (unreadable) {
+    contractBlock('#human-actions-list', () => missingNote('the human-action queue is MISSING — the read failed, so nothing here can be claimed about what is or is not waiting'));
+    return;
+  }
+
+  contractBlock('#human-actions-list', () => table([
+    { label: 'Raised', render: (row) => when(row.raisedAt) },
+    { label: 'Kind', render: (row) => el('div', {}, [el('strong', { text: String(row.actionLabel ?? MISSING) }), el('div', { class: 'muted small', text: String(row.actionType ?? MISSING) })]) },
+    { label: 'Agent', render: (row) => el('div', {}, [el('div', { text: String(row.agentId ?? MISSING) }), row.opportunityId ? el('div', { class: 'muted small', text: `opportunity ${String(row.opportunityId)}` }) : null].filter(Boolean)), wrap: true },
+    { label: 'Subject', render: (row) => queueSubjectCell(row), wrap: true },
+    { label: 'What it is waiting for', render: (row) => el('div', {}, [
+      el('div', { class: 'small', text: row.subject && row.subject.waitingFor ? String(row.subject.waitingFor) : `${MISSING}` }),
+      el('div', { class: 'muted small', text: `entry text: ${String(row.reason ?? MISSING)}` }),
+    ]), wrap: true },
+    { label: 'Owner decision', render: (row) => {
+      const bits = [];
+      if (row.subject && row.subject.stale === true) bits.push(pill('stale — closable by the owner, never auto-closed', 'warn'));
+      if (row.subject && row.subject.stale === null) bits.push(pill('subject unreadable — decide only from the text above', 'warn'));
+      if (!canMutate()) {
+        bits.push(el('span', { class: 'muted small', text: 'read-only session — only the owner decides this' }));
+        return el('div', {}, bits);
+      }
+      if (row.actionable) {
+        const surface = row.subject && row.subject.surface && typeof row.subject.surface === 'object' ? row.subject.surface : {};
+        bits.push(el('button', {
+          class: 'small', type: 'button', text: 'Approve and grant the batch',
+          'data-queue-approve': String(row.taskId ?? MISSING),
+          'data-surface': String(surface.surfaceDigest ?? ''),
+        }));
+      } else {
+        bits.push(el('button', { class: 'small secondary', type: 'button', text: 'Close as reviewed', 'data-queue-close': String(row.taskId ?? MISSING) }));
+      }
+      bits.push(el('button', { class: 'small secondary', type: 'button', text: 'Reject with a reason', 'data-queue-reject': String(row.taskId ?? MISSING) }));
+      return el('div', {}, bits);
+    }, wrap: true },
+  ], items, 'The queue is empty: no agent is waiting on an owner decision. An empty queue is a measured fact here, not a guess — a failed read renders MISSING instead.'));
+
+  bindQueueActions(items);
+}
+
+function bindQueueActions(items) {
+  const byTask = new Map((items || []).map((row) => [String(row.taskId), row]));
+  $$('#human-actions-list button[data-queue-approve]').forEach((button) => button.addEventListener('click', () => {
+    if (!guardMutation()) return;
+    const row = byTask.get(String(button.getAttribute('data-queue-approve'))) || {};
+    const subject = row.subject && typeof row.subject === 'object' ? row.subject : {};
+    const surface = subject.surface && typeof subject.surface === 'object' ? subject.surface : {};
+    showQueueConfirmation({
+      title: `Approve ${String(subject.agentClass ?? MISSING)} — ${countOf(subject.pending)} scoped contract proposal(s)`,
+      lines: [
+        `${countOf(surface.contracts)} contract(s) would become active.`,
+        `permissions granted: ${(Array.isArray(surface.permissions) && surface.permissions.length ? surface.permissions : [MISSING]).join(', ')}`,
+        ...((Array.isArray(surface.permissionsPlain) ? surface.permissionsPlain : []).map((line) => `· ${line}`)),
+        `total budget across them: ${centsOf(surface.totalBudgetCents, 'USD')}`,
+        `never granted: ${String(surface.never ?? MISSING)}`,
+        'this is the same approval as "Approve all" in the Scoped agent contracts block, reached from the queue entry that pointed at it',
+        'you repeat this surface back to the server; if the list changed in between, nothing is approved and the entry stays open',
+      ],
+      onConfirm: () => decideQueue('approve', String(row.taskId ?? ''), { confirmSurface: String(surface.surfaceDigest ?? '') }),
+    });
+  }));
+  $$('#human-actions-list button[data-queue-close]').forEach((button) => button.addEventListener('click', () => {
+    if (!guardMutation()) return;
+    const row = byTask.get(String(button.getAttribute('data-queue-close'))) || {};
+    const subject = row.subject && typeof row.subject === 'object' ? row.subject : {};
+    showQueueConfirmation({
+      title: 'Close this entry as reviewed',
+      lines: [
+        subject.waitingFor ? String(subject.waitingFor) : `${MISSING} — no subject text`,
+        'nothing is granted, cancelled or refunded by this click; no contract row is written',
+        row.actionType ? `recorded against the ${String(row.actionType)} entry an agent filed for ${String(row.agentId ?? MISSING)}` : '',
+        'this is an owner attestation and the audit trail says so — it is not evidence that anything outside this system happened',
+      ].filter(Boolean),
+      onConfirm: () => decideQueue('approve', String(row.taskId ?? ''), {}),
+    });
+  }));
+  $$('#human-actions-list button[data-queue-reject]').forEach((button) => button.addEventListener('click', () => {
+    if (!guardMutation()) return;
+    const row = byTask.get(String(button.getAttribute('data-queue-reject'))) || {};
+    const subject = row.subject && typeof row.subject === 'object' ? row.subject : {};
+    const host = $('#human-actions-confirm');
+    if (!host) return;
+    host.innerHTML = '';
+    const form = el('form', { id: 'human-actions-reject-form', class: 'stack-form' });
+    form.appendChild(el('h3', { text: 'Reject this entry' }));
+    form.appendChild(el('p', { class: 'small', text: subject.kind === 'contract-batch'
+      ? `the ${countOf(subject.pending)} pending proposal(s) for ${String(subject.agentClass ?? MISSING)} stay pending and untouched — a rejection here settles nothing about them, and the fleet stays blocked on them`
+      : 'nothing except this entry changes' }));
+    form.appendChild(el('label', {}, [el('span', { text: 'Reason (recorded, 4–500 characters)' }), el('input', { name: 'reason', maxlength: '500', required: 'true', placeholder: 'why this entry is cancelled' })]));
+    form.appendChild(el('div', {}, [
+      el('button', { class: 'small', type: 'submit', text: 'Record the rejection' }),
+      el('button', { class: 'small secondary', type: 'button', text: 'Cancel', id: 'human-actions-reject-no' }),
+    ]));
+    host.hidden = false;
+    host.appendChild(form);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      await decideQueue('reject', String(row.taskId ?? ''), { reason: String(data.get('reason') ?? '').trim() });
+    });
+    $('#human-actions-reject-no').addEventListener('click', () => { host.hidden = true; host.innerHTML = ''; });
+  }));
+}
+
+/** The queue's confirmation panel. A dialog cannot show a permission surface and cannot be tested, so it
+ *  is a panel — the same reason the contracts block does this. */
+function showQueueConfirmation(spec) {
+  const host = $('#human-actions-confirm');
+  if (!host) return;
+  host.innerHTML = '';
+  const box = el('div', { class: 'table-wrap', style: 'padding:10px 12px;border:1px solid currentColor' });
+  box.appendChild(el('h3', { text: spec.title }));
+  for (const line of spec.lines) box.appendChild(el('p', { class: 'small', text: line }));
+  box.appendChild(el('div', {}, [
+    el('button', { class: 'small', type: 'button', text: 'Confirm and record the decision', id: 'human-actions-confirm-yes' }),
+    el('button', { class: 'small secondary', type: 'button', text: 'Cancel', id: 'human-actions-confirm-no' }),
+  ]));
+  host.hidden = false;
+  host.appendChild(box);
+  $('#human-actions-confirm-yes').addEventListener('click', () => spec.onConfirm());
+  $('#human-actions-confirm-no').addEventListener('click', () => { host.hidden = true; host.innerHTML = ''; });
+}
+
+async function decideQueue(decision, taskId, body) {
+  const host = $('#human-actions-confirm');
+  try {
+    const result = await api(`/human-actions/${encodeURIComponent(taskId)}/${decision}`, { method: 'POST', body });
+    if (host) { host.hidden = true; host.innerHTML = ''; }
+    const note = result && result.note ? ` ${result.note}` : '';
+    banner(`Entry ${taskId}: ${result && result.effect ? result.effect : MISSING}.${note}`, 'ok');
+    await loadHumanActions();
+    await loadContracts();
+  } catch (error) {
+    if (host) { host.hidden = true; host.innerHTML = ''; }
+    banner(error.message, 'error');
+    await loadHumanActions();
   }
 }
 

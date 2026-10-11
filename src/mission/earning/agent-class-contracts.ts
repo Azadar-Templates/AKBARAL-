@@ -284,6 +284,15 @@ export function prepareClassContractsForClass(actor: MoneyActor, input: { agentC
   if (prepared.length > 0) {
     // Put the review in the owner's queue once per class, not once per agent, so a batch of
     // 200 prepared contracts produces one task rather than 200 notifications.
+    // Two things a reader must not get wrong about this row (measured 2026-10-11, see
+    // docs/MISSION_HUMAN_ACTION_QUEUE_2026-10-11.md): (1) this module never resolves it — there is no
+    // resolveHumanActionTask call here on purpose, so the owner-side queue in src/mission/human-action-queue.ts
+    // stays the single place a decision on the *entry* is recorded, whether that decision grants the batch or
+    // closes it as stale after an approval made elsewhere; (2) the entry does not share the proposals' TTL.
+    // The proposals expire after PROPOSAL_TTL_DAYS and this row never does — nothing writes 'expired' for it —
+    // so an unreviewed batch leaves an open entry whose subject has gone, which the console labels `stale` for
+    // an owner to close rather than quietly dropping. The reason text below still tells the owner to "let it
+    // expire", which is true of the proposals and was written before the queue had any reader at all.
     createHumanActionTask({
       agentId: prepared.length ? (db.get<Row>('SELECT agent_id FROM mission_agent_contract_proposals WHERE id=?', [prepared[0]])?.agent_id as string) : '',
       opportunityId: null,

@@ -94,7 +94,7 @@ test('health is reachable without auth and exposes no secrets', async () => {
  * called is still an honest read surface rather than a hole. This list is what "unchanged owner
  * checks" is measured against after the strip.
  */
-const DASHBOARD_ROUTES = ['/api/overview', '/api/agents', '/api/approvals', '/api/policy', '/api/audit', '/api/treasury', '/api/ledger', '/api/payouts', '/api/payout-slots', '/api/withdraw', '/api/wallets', '/api/revenue', '/api/expenses', '/api/credentials', '/api/tools', '/api/resources', '/api/services', '/api/upgrades', '/api/work', '/api/reinvestment', '/api/specialists', '/api/self-management', '/api/reports', '/api/targets', '/api/bounty/programs', '/api/opportunity-catalog', '/api/agent-contracts'];
+const DASHBOARD_ROUTES = ['/api/overview', '/api/agents', '/api/approvals', '/api/policy', '/api/audit', '/api/treasury', '/api/ledger', '/api/payouts', '/api/payout-slots', '/api/withdraw', '/api/wallets', '/api/revenue', '/api/expenses', '/api/credentials', '/api/tools', '/api/resources', '/api/services', '/api/upgrades', '/api/work', '/api/reinvestment', '/api/specialists', '/api/self-management', '/api/reports', '/api/targets', '/api/bounty/programs', '/api/opportunity-catalog', '/api/agent-contracts', '/api/human-actions'];
 const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/kill-switch', { engage: true }],
   ['/api/policy', { maxDepth: 9 }],
@@ -110,6 +110,10 @@ const OWNER_ONLY_MUTATIONS: ReadonlyArray<[string, unknown]> = [
   ['/api/agent-contracts/prepare', { agentClass: 'bounty_research', limit: 1 }],
   ['/api/agent-contracts/approve', { proposalId: 'ccp_absent' }],
   ['/api/agent-contracts/approve-all', { agentClass: 'bounty_research', confirmSurface: 'ffffffffffffffff' }],
+  // The human-action queue. Reading it is open to a link; deciding an entry is not, so both verbs sit on
+  // this list: an approve that would grant a batch, and a reject that would cancel a marker.
+  ['/api/human-actions/hat_absent/approve', { confirmSurface: 'ffffffffffffffff' }],
+  ['/api/human-actions/hat_absent/reject', { reason: 'no such entry exists' }],
   ['/api/bounty/programs', { platform: 'x', programHandle: 'y', scopeUrl: 'https://scope.invalid', programTermsHash: 'a'.repeat(64) }],
 ];
 

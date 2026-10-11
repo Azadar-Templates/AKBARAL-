@@ -249,6 +249,20 @@ port 4322) — not production, and not the fixture itself:**
 | fresh-process read of the same file | 25 active contracts across 25 distinct agents, `purpose=class:bounty_research:5c4587d5`, `permissions=["report.submit"]`, `budget_cents=0`, one distinct `approved_by`; audit 35 `agent_contract.prepared`, 25 `agent_contract.activated`, 1 `agent_contract.bulk_approved` |
 | real `fleet:readiness` CLI on that copy | registered 16004 / executionReady 0 / blocked 16004, `agentsWithScopedContract` 25, `no_scoped_contract.agentsAffected` 15979 (= 16004 − 25), activation entry `cleared=True`, `how='dashboard control'`, `target='#contracts-block'`, action `already satisfied: 25 active scoped contract(s)` |
 
+> **Corrected 2026-10-11 — the queue below is now owner-resolvable, and this wart is half-fixed.**
+> The paragraph beneath it is left as written on 2026-10-10 because it is the record of what was measured
+> then. What changed since: `GET /api/human-actions` and the two owner-only POSTs in
+> `src/mission/human-action-queue.ts` (see `docs/MISSION_HUMAN_ACTION_QUEUE_2026-10-11.md`) render and
+> resolve the very entries this paragraph describes, so `owner_action_pending` is no longer a dead end for
+> an owner with no shell. What did **not** change: `approveAllClassContractProposals` still contains no
+> `resolveHumanActionTask` call — deliberately, so that a grant made from the CLI behaves exactly as it
+> measured on 2026-10-10 and the queue is the only place a decision on an *entry* is recorded. The effect
+> on the console is benign and now visible rather than silent: approve a whole batch from
+> **Approvals → Scoped agent contracts** and the matching queue entry drops to `pending 0`, which the panel
+> labels `stale — closable by the owner, never auto-closed`, one click on **Close as reviewed** away; approve
+> the batch *through* the queue entry instead and the grant and the close happen in the same action, with the
+> surface digest repeated back. No timer, sweep or scheduler closes anything in either path.
+
 **Known pre-existing wart, reported not fixed:** the per-batch `manual_approval` task
 (`agent-class-contracts.ts:286`–`:296`) is created by `prepareClassContractsForClass` and never
 resolved by approval — the module has no `resolveHumanActionTask` call. It behaved identically for

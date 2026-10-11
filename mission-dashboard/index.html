@@ -224,6 +224,23 @@
             <div id="contracts-pending" class="table-wrap"></div>
             <div id="contracts-confirm" hidden></div>
           </details>
+          <details class="control-block" id="human-actions-block">
+            <summary>Human-action queue — what the fleet is waiting on (owner only)</summary>
+            <p id="human-actions-note" class="small"></p>
+            <p class="muted small">
+              These are the entries agents filed because a human-only action stood in their way, and
+              <code>owner_action_pending</code> counts them. Nothing here closes by itself: there is no
+              expiry, no sweep and no bulk resolve, so an entry an agent filed stays open until a human owner
+              decides it. <strong>Approve</strong> on an entry that points at a scoped-contract batch grants
+              that batch through the contract module — the same surface digest, the same refusal of an empty
+              or over-broad permission set. <strong>Close as reviewed</strong> settles only the entry: it
+              records an owner attestation and writes no contract, no grant and no movement of money.
+              <strong>Reject</strong> needs a short reason and leaves every other row exactly as it was, which
+              is why a rejection can clear the entry without settling what it pointed at.
+            </p>
+            <div id="human-actions-list" class="table-wrap"></div>
+            <div id="human-actions-confirm" hidden></div>
+          </details>
           <details class="sub" data-view="policy"><summary>Policy, limits and kill switch</summary>
                       <h3>Mission policy</h3>
                       <div id="policy" class="table-wrap"></div>
