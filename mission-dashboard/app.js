@@ -204,6 +204,11 @@ function table(columns, rows, emptyMessage, options = {}) {
     else cell.textContent = ur(content === null || content === undefined ? '—' : String(content));
     return cell;
   }))));
+  // A table has one column per field the owner reads, and those columns have a price. Below it the
+  // cells wrap into paragraphs and a five-row table becomes a screen and a half of ragged text; above
+  // it the table simply takes its own width and scrolls inside its own wrap, which is the overflow
+  // contract this console already uses. Both measures come from the token layer, so the only number
+  // here is the column count, which is data rather than design.
   wrap.appendChild(el('table', {}, [thead, tbody]));
   if (rows.length > shown.length) {
     wrap.appendChild(el('p', { class: 'muted small', style: 'padding:6px 12px 0', text: `${rows.length - shown.length} more row(s) not rendered; the full list is in the API response and the database.` }));
@@ -1646,16 +1651,16 @@ async function loadTreasury() {
   });
   replace('#payout-slots', table([
     { label: 'Slot', key: 'slot' },
-    { label: 'Label', key: 'label' },
+    { wrap: true, label: 'Label', key: 'label' },
     { label: 'Type', render: (row) => row.destination_type || '—' },
     { label: 'Provider ref', render: (row) => row.provider_ref || '—' },
     { label: 'Masked destination', render: (row) => row.masked_account || '—' },
     { label: 'Status', render: (row) => pill(String(row.status), row.status === 'active' ? 'ok' : 'warn') },
     { label: 'Verification', render: (row) => pill(String(row.verificationStatus), row.verificationStatus === 'verified' ? 'ok' : 'warn') },
     { label: 'Expires', key: 'expires' },
-    { label: 'Blockers', key: 'blockers' },
+    { wrap: true, label: 'Blockers', key: 'blockers' },
     { label: 'Min payout', render: (row) => money(row.min_payout_cents, currency) },
-    { label: 'Actions', render: (row) => row.actions },
+    { wrap: true, label: 'Actions', render: (row) => row.actions },
   ], slotRows, 'Payout slots unavailable.'));
 
   renderSlotVerification(slots);
@@ -1809,16 +1814,16 @@ async function loadWithdraw() {
   });
   replace('#withdraw-slots', table([
     { label: 'Slot', key: 'slot' },
-    { label: 'Label', key: 'label' },
+    { wrap: true, label: 'Label', key: 'label' },
     { label: 'Type', render: (r) => r.destination_type || '—' },
     { label: 'Provider ref', render: (r) => r.provider_ref || '—' },
     { label: 'Masked destination', render: (r) => r.masked_account || '—' },
     { label: 'Status', render: (r) => pill(String(r.status), r.status === 'active' ? 'ok' : 'warn') },
     { label: 'Verification', render: (r) => pill(String(r.verificationStatus), r.verificationStatus === 'verified' ? 'ok' : 'warn') },
     { label: 'Expires', key: 'expires' },
-    { label: 'Blockers', key: 'blockers' },
+    { wrap: true, label: 'Blockers', key: 'blockers' },
     { label: 'Min payout', render: (r) => money(r.min_payout_cents, currency) },
-    { label: 'Actions', render: (r) => r.actions },
+    { wrap: true, label: 'Actions', render: (r) => r.actions },
   ], slotRows, 'Payout slots unavailable.'));
   const wHost = $('#withdraw-slot-verification');
   if (wHost) {
@@ -2438,13 +2443,13 @@ async function loadTools() {
       : null,
   }));
   replace('#tools', table([
-    { label: 'Tool', key: 'name' },
+    { wrap: true, label: 'Tool', key: 'name' },
     { label: 'Key', key: 'key' },
     { label: 'Category', key: 'category' },
     { label: 'Cost model', key: 'cost_model' },
     { label: 'Status', render: (row) => pill(String(row.status), String(row.status) === 'approved' ? 'ok' : String(row.status) === 'blocked' ? 'bad' : 'warn') },
-    { label: 'Provider terms', render: (row) => row.terms_url || '—' },
-    { label: 'Set status', render: (row) => row.actions },
+    { wrap: true, label: 'Provider terms', render: (row) => row.terms_url || '—' },
+    { wrap: true, label: 'Set status', render: (row) => row.actions },
   ], toolRows, 'No tools configured.'));
   $$('#tools button[data-tool]').forEach((button) => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
@@ -2466,14 +2471,14 @@ async function loadTools() {
   }));
   replace('#credentials', table([
     { label: 'Provider', key: 'provider' },
-    { label: 'Label', key: 'label' },
+    { wrap: true, label: 'Label', key: 'label' },
     { label: 'Masked', key: 'maskedHint' },
-    { label: 'Local permissions', render: row => (row.scope || []).join(', ') || 'None recorded' },
+    { wrap: true, label: 'Local permissions', render: row => (row.scope || []).join(', ') || 'None recorded' },
     { label: 'Env var', render: (row) => row.envVar || '—' },
     { label: 'Status', render: (row) => pill(String(row.status), String(row.status) === 'active' ? 'ok' : 'warn') },
     { label: 'Expires', render: (row) => (row.expiresAt ? `${when(row.expiresAt)} (${row.daysUntilExpiry} d)` : '—') },
     { label: 'Rotations', key: 'rotationCount' },
-    { label: 'Actions', render: (row) => row.actions },
+    { wrap: true, label: 'Actions', render: (row) => row.actions },
   ], credentialRows, 'No credentials stored. Vault state shown above.'));
   $$('#credentials button[data-rotate]').forEach((button) => button.addEventListener('click', async () => {
     if (!guardMutation()) return;
@@ -2498,15 +2503,15 @@ async function loadTools() {
   }));
 
   replace('#resources', table([
-    { label: 'Kind', key: 'kind' },
+    { wrap: true, label: 'Kind', key: 'kind' },
     { label: 'Provider', key: 'provider' },
     { label: 'Plan', render: (row) => row.plan || '—' },
     { label: 'Monthly cost', render: (row) => money(row.monthly_cost_cents, currency) },
     { label: 'Status', key: 'status' },
     { label: 'Renews', render: (row) => when(row.renews_at) },
     { label: 'Expires', render: (row) => when(row.expires_at) },
-    { label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
-    { label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
+    { wrap: true, label: 'Usability', render: (row) => row.readiness?.usable ? 'Ready according to recorded checks' : (row.readiness?.blockers || ['Not checked']).join('; ') },
+    { wrap: true, label: 'Provisioning ref', render: (row) => row.provisioning_ref || 'No evidence recorded' },
     { label: 'Billing periods', render: row => canMutate() ? el('button', { class: 'small', text: 'Review periods', 'data-resource-periods': row.id }) : 'Owner-only' },
     { label: 'Quota calls', render: row => canMutate() ? el('button', { class: 'small', text: 'Review calls', 'data-resource-calls': row.id }) : 'Owner-only' },
     { label: 'Credential binding', render: row => canMutate() && row.status !== 'retired' ? el('button', { class: 'small', text: 'Bind credential', 'data-bind-credential': row.id }) : (row.credential_id || 'Not bound') },

@@ -81,11 +81,28 @@ th { color: var(--text-dim); font-weight: 600; background: var(--bg-3); }
 tr:last-child td { border-bottom: 0; }
 td.wrap { white-space: normal; max-width: var(--login-max); }
 
+/* One price per column, paid from the token layer at every width: a plain column keeps room for a
+   value on one line and a prose column keeps the wrapping allowance. A wide table therefore takes
+   its own width and scrolls inside its own wrap — the overflow contract this console already has —
+   instead of squeezing every cell into a paragraph and turning one section into five screens. */
+.table-wrap th { min-width: var(--col-min-width); }
+.table-wrap td.wrap { min-width: var(--cell-wrap-max); }
+
 
 .inline-form { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; margin: var(--space-md) 0; }
 .inline-form input, .inline-form select { width: auto; min-width: var(--field-min-width); }
 .stack-form { display: grid; gap: var(--space-sm); background: var(--surface-strong); border: 1px solid var(--line); border-radius: var(--radius-control); padding: var(--space-lg); }
 .stack-form h3 { margin-top: 0; }
+
+/* Short, one-line fields do not need a screen to themselves. On a wide console a config form marked
+   for it flows in two columns, which is what keeps a section inside its screen budget; the heading,
+   the note and the control that submits the form keep the full width, so the block still reads as
+   one action. Forms without the mark stay single-column, because their labels are sentences. */
+@media (min-width: 900px) {
+  .stack-form--pairs { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-lg); }
+  .stack-form--pairs > :where(h3, h2, p, button, fieldset, .actions, .form-actions) { grid-column: 1 / -1; }
+}
+
 
 .footer { border-top: 1px solid var(--line); color: var(--text-dim); font-size: var(--fs-micro); padding: var(--space-lg) var(--panel-pad-m); }
 
@@ -167,10 +184,16 @@ html, body { max-width: 100%; overflow-x: hidden; }
 /* Global reflow contract: private controls wrap rather than overlap. */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { max-width: 100%; overflow-x: hidden; }
-:where(main, section, article, form, fieldset, .panel, .card, .grid, .grid-2, .inline-form, .stack-form) { min-width: 0; max-width: 100%; }
+:where(main, section, article, form, fieldset, details, .panel, .card, .grid, .grid-2, .inline-form, .stack-form) { min-width: 0; max-width: 100%; }
 :where(h1, h2, h3, h4, p, label, span, small, strong, code, pre, td, th) { overflow-wrap: anywhere; }
 :where(input, select, textarea, button) { min-width: 0; max-width: 100%; }
 :where(.inline-form, .toolbar, .actions, .button-row, header) { flex-wrap: wrap; }
+
+/* Console density. A heading inside a disclosure or a grid column already starts after the thing that
+   introduces it, so the inherited top margin is whitespace stacked on whitespace; the scale still owns
+   every value, the rule only says the first heading in a block is the block's job, not the heading's. */
+details.sub > :is(h2, h3, p):first-of-type,
+.grid-2 > * > :is(h2, h3):first-child { margin-top: 0; }
 pre, code { white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 720px) {
   .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); }
@@ -332,6 +355,17 @@ th {
 @media (max-width: 500px) {
   details.sub[open] {
     max-height: 58vh;
+    overflow: auto;
+  }
+}
+
+/* The same contract on a wide console, because the reasoning does not stop at 500px: an open folded
+   block is a data pane, so the block scrolls and the section stays the thing that fits on screen.
+   Nothing is paginated, capped or dropped to get there — same rows, same fields, same controls, all of
+   them still in the DOM and keyboard-reachable inside the pane. */
+@media (min-width: 501px) {
+  details.sub[open] {
+    max-height: 74vh;
     overflow: auto;
   }
 }

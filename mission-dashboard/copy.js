@@ -521,9 +521,7 @@ window.MISSION_COPY = {
   "Expires at": "Khatam hone ka waqt",
   "Environment variable": "Environment variable",
   "Store encrypted": "Encrypted mehfooz karein",
-  "This is verified mission cash, wallets and payouts. One action: request a payout only from a verified slot, then approve it here.": "Yeh verified mission cash, wallets aur payouts hain. Ek hi kaam: payout sirf verified slot se maangein, phir yahan manzoor karein.",
   "Provider-verified mission cash": "Provider se verified mission cash",
-  "No opening balance is imported from legacy accounting. Missing opportunities and providers remain blocked. A ledger is not a bank or a payment connection.": "Purane hisaab se koi opening balance nahi li jaati. Missing opportunities aur providers blocked rehte hain. Ledger koi bank ya payment connection nahi hai.",
   "Owner cash controls": "Owner ke cash control",
   "Amounts are integer minor units. Requesting/approving is not proof of payment. Dispatch may send real money only after provider setup.": "Raqame integer minor units mein hoti hain. Darkhwast ya manzoori payment ka saboot nahi. Provider setup ke baad hi dispatch asli paisa bhej sakti hai.",
   "Request JSON (never enter credentials)": "Request JSON (yahan kabhi credential na likhein)",
@@ -542,7 +540,6 @@ window.MISSION_COPY = {
   "Customer-revenue ledger — separate system of record": "Customer-aamdani ka ledger — alag record system",
   "Customer invoices and processor payments remain in the public customer-platform owner dashboard and customer database. They are never imported into mission revenue, agent wallets, or the five payout destinations. This mission console does not infer or duplicate customer-payment totals.": "Customer invoices aur processor payments public customer-platform ke owner dashboard aur customer database mein hi rehte hain. Yeh mission revenue, agent wallets ya paanch payout destinations mein kabhi nahi laaye jaate. Yeh mission console customer-payment ke total na anuman lagati hai na dohrati hai.",
   "Payout destinations (five configurable slots)": "Payout destinations (paanch set hone wale slots)",
-  "Slots can be labelled now and completed later. A slot must be verified before any payout can target it, and every payout needs an owner approval plus a provider settlement reference.": "Slots ab label kiye ja sakte hain aur baad mein poore kiye ja sakte hain. Kisi payout se pehle slot ki tasdeeq zaroori hai, aur har payout ke liye owner ki manzoori plus provider settlement reference chahiye.",
   "Configure a slot": "Slot set karein",
   "Destination type": "Destination ki qisam",
   "Holder name": "Holder ka naam",
@@ -561,7 +558,6 @@ window.MISSION_COPY = {
   ") or provider reference (e.g. Stripe": ") ya provider reference (masalan Stripe",
   "/ Payoneer account id) — raw banking credentials are never stored. Withdrawals of unverified, expected, contracted or synthetic revenue are refused; only": "/ Payoneer account id) mehfooz hota hai — banking ke kache credentials kabhi nahi rakte. Verified na ho, expected, contracted ya synthetic aamdani ka withdrawal refuse ho jata hai; sirf",
   "Payout destinations — up to # provider-tokenized slots (none required now)": "Payout destinations — # tak provider-tokenized slots (abhi koi zaroori nahi)",
-  "Slots can be labelled now and completed later. A slot must be verified (all control checks + #-char attestation) before it becomes payable. Configure a destination at withdrawal time if none is verified yet.": "Slots ab label kiye ja sakte hain aur baad mein poore kiye ja sakte hain. Slot tab tak payable nahi hota jab tak us ki tasdeeq na ho (saare control checks + # harf ka gawah). Koi bhi verified na ho to withdrawal ke waqt destination set kar lein.",
   "Add / select payout destination": "Payout destination jodein / chunein",
   "Store only masked details / provider reference; full numbers are refused.": "Sirf masked tafseelat / provider hawala mehfooz karein; poore number refuse ho jate hain.",
   "Save destination (masked only)": "Destination mehfooz karein (sirf masked)",
@@ -714,5 +710,7 @@ window.MISSION_COPY = {
   "Sandboxed repository execution and test running for one assigned bounty": "Ek diye gaye bounty ke liye sandbox mein repository chalana aur test chalana",
   "Independent verification of preserved execution evidence": "Mehfooz execution saboot ki azadana tasdeeq",
   "Fork, push and open a pull request with the owner credential": "Owner credential se fork, push aur pull request kholna",
-  "Release treasury payouts": "Treasury payouts jari karein"
+  "Release treasury payouts": "Treasury payouts jari karein",
+  "A slot must be verified before any payout can target it; every payout needs owner approval plus a provider settlement reference.": "Kisi bhi payout se pehle slot ki tasdeeq zaroori hai; har payout ke liye owner ki manzoori aur provider settlement reference chahiye.",
+  "One action: request a payout only from a verified slot, then approve it here. No opening balance is imported; missing opportunities and providers stay blocked, and a ledger is not a bank.": "Ek action: payout sirf ek verified slot se maangein, phir yahan approve karein. Koi opening balance legacy accounting se nahi aata; chhooti hui opportunities aur providers blocked hi rahenge, aur ledger koi bank nahi."
 };

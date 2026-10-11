@@ -314,12 +314,11 @@
         </section>
 
         <section data-panel="money" id="panel-money" class="panel" hidden>
-                              <p class="muted small">This is verified mission cash, wallets and payouts. One action: request a payout only from a verified slot, then approve it here.</p>
-<h2>Provider-verified mission cash</h2>
-          <p>No opening balance is imported from legacy accounting. Missing opportunities and providers remain blocked. A ledger is not a bank or a payment connection.</p>
+                              <h2>Provider-verified mission cash</h2>
+          <p class="muted small">One action: request a payout only from a verified slot, then approve it here. No opening balance is imported; missing opportunities and providers stay blocked, and a ledger is not a bank.</p>
           <div id="verified-cash-summary" class="cards"></div>
           <div id="verified-cash-operations" class="table-wrap"></div>
-          <form id="money-command-form" class="stack-form">
+          <form id="money-command-form" class="stack-form stack-form--pairs">
             <h3>Owner cash controls</h3>
             <p>Amounts are integer minor units. Requesting/approving is not proof of payment. Dispatch may send real money only after provider setup.</p>
             <label>Action <select name="action">
@@ -380,14 +379,13 @@
                       </div>
                       <h3>Payout destinations (five configurable slots)</h3>
                       <p class="muted small">
-                        Slots can be labelled now and completed later. A slot must be verified before any payout
-                        can target it, and every payout needs an owner approval plus a provider settlement
-                        reference.
+                        A slot must be verified before any payout can target it; every payout needs owner
+                        approval plus a provider settlement reference.
                       </p>
                       <div id="payout-slots" class="table-wrap"></div>
                       <div id="slot-verification"></div>
                       <div class="grid-2">
-                        <form id="slot-form" class="stack-form">
+                        <form id="slot-form" class="stack-form stack-form--pairs">
                           <h3>Configure a slot</h3>
                           <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>
                           <label>Label <input name="label" placeholder="Primary business account" /></label>
@@ -443,15 +441,11 @@
                       <div id="withdraw-notice" class="banner" hidden></div>
 
                       <h3>Payout destinations — up to 5 provider-tokenized slots (none required now)</h3>
-                      <p class="muted small">
-                        Slots can be labelled now and completed later. A slot must be verified (all control checks + 40-char
-                        attestation) before it becomes payable. Configure a destination at withdrawal time if none is verified yet.
-                      </p>
                       <div id="withdraw-slots" class="table-wrap"></div>
                       <div id="withdraw-slot-verification"></div>
 
                       <div class="grid-2">
-                        <form id="withdraw-slot-form" class="stack-form">
+                        <form id="withdraw-slot-form" class="stack-form stack-form--pairs">
                           <h3>Add / select payout destination</h3>
                           <p class="muted small">Store only masked details / provider reference; full numbers are refused.</p>
                           <label>Slot <input name="slot" type="number" min="1" max="5" value="1" required /></label>

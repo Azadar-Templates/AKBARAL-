@@ -10,6 +10,16 @@ import { chromium, expect, type Browser, type Page } from '@playwright/test';
 
 const evidenceDir = path.resolve(process.env.MISSION_BROWSER_EVIDENCE_DIR || `logs/browser/${Date.now()}`);
 fs.mkdirSync(evidenceDir, { recursive: true });
+// The console renders its human-facing copy through design-system/mission-copy.pairs.json, so a
+// control is looked up by the label the owner actually reads: the English source is the key, and a
+// label the dictionary does not carry is still English on screen. Resolving here instead of
+// hard-coding one language keeps this harness honest if a label is re-worded either way, and it
+// still fails loudly when a control disappears.
+const missionCopyPairs = JSON.parse(fs.readFileSync('design-system/mission-copy.pairs.json', 'utf8')) as Record<string, string>;
+function ui(english: string): string {
+  const key = english.replace(/\$\{[^{}]*\}/g, '#').replace(/\b\d+(?:[.,]\d+)?\b/g, '#').replace(/\s+/g, ' ').trim();
+  return missionCopyPairs[english] ?? missionCopyPairs[key] ?? english;
+}
 const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mission-browser-fixture-'));
 process.env.DATABASE_URL = ':memory:';
 process.env.ZA141251SA_DATABASE_URL = `file:${path.join(fixtureDir, 'mission.db')}`;
@@ -107,8 +117,8 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await credentialForm.locator('[name="label"]').fill(credentialLabel);
     await credentialForm.locator('[name="secret"]').fill(`synthetic-ui-${randomUUID()}`);
     await credentialForm.locator('[name="scope"]').selectOption('model.call');
-    await credentialForm.getByRole('button', { name: 'Store encrypted' }).click();
-    await expect(page.locator('#banner')).toContainText('Local permission does not activate or verify a provider');
+    await credentialForm.getByRole('button', { name: ui('Store encrypted') }).click();
+    await expect(page.locator('#banner')).toContainText(ui('Credential stored encrypted. Its value will never be displayed. Local permission does not activate or verify a provider.'));
     await expect(credentialForm.locator('[name="secret"]')).toHaveValue('');
     const stored = missionDb.get<{ id: string; scope: string }>('SELECT id, scope FROM mission_credentials WHERE label = ?', [credentialLabel])!;
     assert.equal(stored.scope, '["model.call"]');
@@ -116,23 +126,23 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     const binding = page.locator('#resource-credential');
     await binding.getByLabel('Stored provider credential').selectOption(stored.id);
     await binding.getByLabel('Binding reason without secrets').fill('Synthetic owner-approved locally scoped credential binding.');
-    await binding.getByRole('button', { name: 'Record credential binding' }).click();
-    await expect(binding).toContainText('not provider verification or a purchase');
+    await binding.getByRole('button', { name: ui('Record credential binding') }).click();
+    await expect(binding).toContainText(ui('Credential binding recorded. This is not provider verification or a purchase.'));
     checkpoint(name, 'explicit scoped credential creation and owner binding; secret cleared');
     await page.locator(`[data-resource-calls="${f.resourceId}"]`).click();
     const calls = page.locator('#resource-calls');
     await calls.locator(`[data-reconcile-call="${f.uncertain}"]`).click();
     const usageForm = calls.locator('form');
     await expect(usageForm.getByLabel('Actual requests')).toHaveValue('');
-    await usageForm.getByRole('button', { name: 'Record actual usage evidence' }).click();
+    await usageForm.getByRole('button', { name: ui('Record actual usage evidence') }).click();
     assert.equal(receiptPosts.length, 0, 'native required fields prevent a guessed-zero receipt');
     await usageForm.getByLabel('Actual provider outcome').selectOption('succeeded');
     await usageForm.getByLabel('Actual requests').fill('1');
     await usageForm.getByLabel('Actual tokens').fill('5');
     await usageForm.getByLabel('Provider usage reference').fill(`synthetic-${name}-usage`);
     await usageForm.getByLabel('Usage evidence without secrets').fill('Synthetic local evidence <img src=x onerror=alert(1)>; not a real provider receipt.');
-    await usageForm.getByRole('button', { name: 'Record actual usage evidence' }).click();
-    await expect(calls).toContainText('No provider verification, payment or refund');
+    await usageForm.getByRole('button', { name: ui('Record actual usage evidence') }).click();
+    await expect(calls).toContainText(ui('Usage evidence recorded. No provider verification, payment or refund was performed.'));
     assert.equal(receiptPosts.length, 1);
     checkpoint(name, 'native usage validation and actual-usage reconciliation');
     await calls.locator(`[data-record-call-cost="${f.uncertain}"]`).click();
@@ -143,11 +153,11 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await costForm.getByLabel('Actual charge in minor units').fill('25');
     await costForm.getByLabel('Provider charge reference').fill(`synthetic-${name}-cost`);
     await costForm.getByLabel('Financial evidence without secrets').fill('Synthetic test accounting evidence; no external payment.');
-    await costForm.getByRole('button', { name: 'Record evidenced charge — no external payment' }).click();
-    await expect(calls).toContainText('No external payment executed');
+    await costForm.getByRole('button', { name: ui('Record evidenced charge — no external payment') }).click();
+    await expect(calls).toContainText(ui('Owner-evidenced charge recorded in the private ledger. No external payment executed.'));
     assert.equal(getWallet(f.walletId)!.balanceCents, 75);
     await calls.locator(`[data-cancel-call="${f.held}"]`).click();
-    await expect(page.locator('#banner')).toContainText('Unstarted quota hold cancelled');
+    await expect(page.locator('#banner')).toContainText(ui('Unstarted quota hold cancelled. No provider call or money movement.'));
     await expect(calls.locator(`[data-cancel-call="${f.held}"]`)).toHaveCount(0);
     checkpoint(name, 'separate charge accounting and unstarted cancellation');
     await page.locator(`[data-resource-periods="${f.resourceId}"]`).click();
@@ -163,8 +173,8 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await periods.getByLabel('Starting tokens usage').fill('0');
     await periods.getByLabel('Renewal charge reference').fill(`synthetic-${name}-renewal`);
     await periods.getByLabel('Provider period evidence without secrets').fill('Synthetic free renewed period; no provider or payment was contacted.');
-    await periods.getByRole('button', { name: 'Record evidenced renewal — no purchase' }).click();
-    await expect(periods).toContainText('No purchase or external payment executed');
+    await periods.getByRole('button', { name: ui('Record evidenced renewal — no purchase') }).click();
+    await expect(periods).toContainText(ui('Evidenced period and private accounting recorded; previous usage archived. No purchase or external payment executed.'));
     await expect(periods).toContainText('{"requests":1,"tokens":5}');
     assert.equal(missionDb.get<{ usage: string }>('SELECT usage FROM mission_resources WHERE id = ?', [f.resourceId])!.usage, '{"requests":0,"tokens":0}');
     assert.equal(getWallet(f.walletId)!.balanceCents, 75, 'explicit free period creates no additional charge');
@@ -172,10 +182,10 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await page.screenshot({ path: path.join(evidenceDir, `${name}-resource-calls.png`), fullPage: true });
     await page.locator('[data-tab="bounties"]').click();
     await page.locator('details.sub[data-view="agents"] > summary').click();
-    await page.locator('#agent-list tr').filter({ hasText: f.agentId }).getByRole('button', { name: 'Open report' }).click();
+    await page.locator('#agent-list tr').filter({ hasText: f.agentId }).getByRole('button', { name: ui('Open report') }).click();
     // Both drill-down layers of the report are collapsed by default (that is what keeps the section
     // inside its screen budget), so the harness opens them the way an owner does before using them.
-    for (const disclosure of ['The record', 'Owner ↔ agent messages']) {
+    for (const disclosure of [ui('The record — children, revenue, receipts, work, expenses, resources and services'), ui('Owner ↔ agent messages and automatic replies')]) {
       await page.locator('#agent-report details.control-block').filter({ hasText: disclosure }).locator('> summary').click();
     }
     await page.locator(`[data-chat-config="${f.agentId}"]`).click();
@@ -188,13 +198,13 @@ async function viewportCheck(browser: Browser, base: string, name: string, owner
     await settings.getByLabel('Owner-reviewed cost basis').fill('Synthetic test pricing assumption, not a real provider rate.');
     await settings.getByLabel('Automatic replies enabled').selectOption('true');
     page.once('dialog', dialog => dialog.accept());
-    await settings.getByRole('button', { name: 'Save reply configuration' }).click();
-    await expect(page.locator('#banner')).toContainText('does not activate a provider or prove a live worker');
+    await settings.getByRole('button', { name: ui('Save reply configuration') }).click();
+    await expect(page.locator('#banner')).toContainText(ui('Reply configuration saved. This does not activate a provider or prove a live worker.'));
     const conversation = page.getByRole('region', { name: 'Private agent messages' });
     await conversation.getByLabel('Message to this agent').fill('Synthetic browser test message; no worker or provider is running.');
-    await conversation.getByRole('button', { name: 'Send owner message' }).click();
+    await conversation.getByRole('button', { name: ui('Send owner message') }).click();
     await expect(conversation).toContainText('Synthetic browser test message; no worker or provider is running.');
-    await settings.getByRole('button', { name: 'Refresh reply jobs' }).click();
+    await settings.getByRole('button', { name: ui('Refresh reply jobs') }).click();
     await expect(settings).toContainText('queued');
     checkpoint(name, 'explicit chat opt-in and durable message/job display');
     const dimensions = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }));
@@ -289,7 +299,7 @@ ${detail}`);
     const readPage: Page = await context.newPage();
     readPage.on('pageerror', error => errors.push(error.message));
     await readPage.goto(`${base}/#link=${encodeURIComponent(link.token)}`);
-    await expect(readPage.locator('#identity')).toContainText('read-only access link');
+    await expect(readPage.locator('#identity')).toContainText(ui('read-only access link'));
     assert.equal(new URL(readPage.url()).hash, '');
     await readPage.locator('[data-tab="overview"]').click();
     await readPage.locator('[data-tab="approvals"]').click();

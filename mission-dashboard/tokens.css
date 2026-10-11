@@ -247,6 +247,7 @@
   --card-min-width: 180px;
   --card-min-width-wide: 200px;
   --table-min-width: 560px;
+  --col-min-width: 132px;
   --cell-wrap-max: 460px;
   --login-max: 460px;
   --field-min-width: 130px;

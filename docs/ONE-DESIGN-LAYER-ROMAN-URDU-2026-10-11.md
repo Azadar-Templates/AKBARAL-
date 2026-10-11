@@ -140,11 +140,12 @@ one boot pass over the authored `index.html` text nodes and attributes (`localiz
 - Public pages already carry a one-line purpose above the fold on each of the six marketing pages
   and the four app pages (`audit:routes`, `src/app/public-six-page.test.ts`), so no second
   heading layer was added there; the shared sheet's `.ak-section-intro` is what any new page uses.
-- Limit, stated plainly: `scripts/mission-dashboard-heights.ts` and
-  `scripts/mission-browser-check.ts` need Playwright's Chromium, whose binary is not installed in
-  this sandbox and cannot be downloaded here. The numbers above are jsdom-measured, not
-  browser-measured, and `npm run mission:dashboard:heights -- --ref HEAD` is the command that
-  reproduces them in Chromium on a machine that has it.
+- Limit, corrected in §8: these heights were first measured in jsdom because Playwright's browser
+  download is blocked in this sandbox. `scripts/mission-browser-check.ts` has a second launch path
+  (`MISSION_BROWSER_NPM_RUNTIME=true`), which takes Chromium from the pinned
+  `@sparticuz/chromium` package already in `node_modules`, so the whole check — and with it the real
+  per-breakpoint numbers — *can* run here. They are in §8, and they are the authority; the jsdom
+  figures above are kept only to show the direction of travel per section.
 
 ## 5. Tests (PART 5)
 
@@ -237,3 +238,88 @@ result.
   for the SPA, the mask idiom inside both sheets) because the two products may not import each
   other's files; both read the shared `--glass-*` tokens, and
   `src/app/glass-application.test.ts` pins that every styled surface resolves to them.
+
+## 8. What CI caught after the first push, and what it changed
+
+The first push of this slice (`d9562b4`) went **green on `docker-publish`** and **red on `verify`**, in
+one step: *"Private mission Chromium desktop and mobile-viewport checks"*
+(`.github/workflows/verify.yml:85-89` → `npm run mission:browser-check`). Two causes, both real, both
+introduced here:
+
+1. **Eighteen text-derived lookups in that harness still expected the English label.** A run that
+   stopped at `locator.click: Timeout … getByRole('button', { name: 'Store encrypted' })` is the
+   console answering "Encrypted mehfooz karein". Every jsdom suite stayed green because jsdom fixtures
+   load `app.js` without `copy.js`, so none of them ever saw the localized DOM — the real browser was
+   the only gate that could catch it, and it did.
+2. **Three section states went over the three-viewport budget** that the same check enforces
+   (desktop limit 3,000px: `money:treasury` 4,905px, `money:withdraw` 4,651px, `approvals:tools`
+   3,069px). The retokenized console (44px targets, 16px inputs, scale steps instead of 6/8px
+   paddings) plus longer sentences is what bought that height; nothing was cut to give it back.
+
+Fixes, in order of what they touch:
+
+- `scripts/mission-browser-check.ts` — a `ui()` resolver reads `design-system/mission-copy.pairs.json`
+  and the harness looks a control up by the label the owner actually reads (10 `getByRole` names, one
+  `#identity` `toContainText`). The seven `#banner`/`#resource-*` assertions were re-pointed from an
+  English *fragment* to the complete sentence the console renders, which is strictly stronger: a
+  fragment matches any message that happens to contain it, the whole sentence matches that message.
+  No id, class, `data-*` or endpoint was changed, and no assertion was deleted or loosened.
+- `design-system/tokens.json` — new `console.px.colMinWidthPx: 132`, emitted as `--col-min-width` in
+  both generated sheets, so the price of a table column is a token and not a stylesheet's opinion.
+- `mission-dashboard/styles.css` — `.table-wrap th { min-width: var(--col-min-width) }` and
+  `.table-wrap td.wrap { min-width: var(--cell-wrap-max) }`: a wide table now takes its own width and
+  scrolls inside its own wrap (the contract that wrap already had) instead of squeezing a sentence
+  into 132px and turning a five-row table into five screens. `details` joined the
+  `min-width: 0; max-width: 100%` list — an open disclosure was sizing its grid track to the table
+  inside it and making the panel 1,480px wide on a 1,440px viewport, i.e. clipping, not scrolling.
+- `mission-dashboard/app.js` — the prose columns of the tables that hold a sentence rather than a
+  value are marked `wrap: true` (`#payout-slots`, `#withdraw-slots`, `#tools`, `#resources`,
+  `#credentials`), the convention `#ledger`'s Memo column already used.
+- `mission-dashboard/styles.css` — an open folded block becomes a scroll pane at ≥501px as well as at
+  ≤500px, with the reasoning the phone rule already spelled out in its own comment: same rows, same
+  fields, same controls, nothing paginated or dropped, and the section stays the thing that fits on
+  screen. The three short-field config forms (`#money-command-form`, `#slot-form`,
+  `#withdraw-slot-form`) take `.stack-form--pairs` and flow two-up at ≥900px; forms whose labels are
+  sentences deliberately keep one column, because two-up made those *taller*.
+- Prose reduced to one line where two blocks said the same thing: the treasury guidance sentence, the
+  duplicate paragraph in the withdraw view, and the money panel's two overlapping intro paragraphs
+  merged into one. `design-system/mission-copy.pairs.json` followed in the same commit — **707 → 705
+  pairs, 720 sink sites, 0 missing, 0 stale**, `mission:copy:check` green.
+
+Measured in Chromium on both viewports, all 22 checkpoints passing (exit 0):
+
+| state | as pushed | after | limit |
+| --- | --- | --- | --- |
+| desktop `money:treasury` | 4,905px | **2,018px** | 3,000px |
+| desktop `money:withdraw` | 4,651px | **2,018px** | 3,000px |
+| desktop `approvals:tools` | 3,069px | **1,795px** | 3,000px |
+| desktop `#payout-slots` (11-column table) | 1,302px | **424px** | — |
+| desktop `overview` / `bounties` / `money` closed | 888 / 1,049 / 1,316px | unchanged | 3,000px |
+| desktop `everything-open:worst` (recorded, not asserted) | — | 3,424px | — |
+| mobile `money:withdraw` / `expenses` / `audit` | not reached — the desktop failure aborted the run | **2,442px** | 2,532px |
+| mobile `overview` / `bounties` / `approvals` | — | 1,126 / 1,855 / 1,754px | 2,532px |
+
+The same suite also asserts `documentElement.scrollWidth <= innerWidth + 1` on both viewports (no
+horizontal page scroll), that the read-only link hides every owner control and denies the private call
+API to anonymous and link sessions, and that no page error is thrown while an owner drives credential,
+usage, charge, renewal, chat and message controls — all of them with the localized labels.
+
+**The gate that caught a mistake of mine, not of the code:** the first version of the two-column rule
+was written `column-gap: var(--space-l)`, a token that does not exist.
+`src/app/glass-design-system.test.ts:270-278` ("the console may not reference a token nothing defines")
+failed with `+ [ '--space-l' ]` before anyone looked at a screenshot. It is `var(--space-lg)` now, and
+the failure is the reason to trust the check.
+
+That is also the sensitivity measurement for the new token: with `colMinWidthPx` removed from
+`design-system/tokens.json` and both sheets regenerated, `glass-design-system` fails 1 of 27 on the
+same "nothing dangling" assertion — the console cannot reference `--col-min-width` unless the token
+file declares it. Restored, and both `tokens.css` files verified byte-identical to the state under
+test.
+
+Two limits remain, stated plainly. `npm run mission:dashboard:heights` and `npm run test:visual`
+resolve a Playwright browser their own way and still cannot run in this sandbox; the browser
+measurement that matters for these surfaces is the one above. And
+`scripts/verify-mission-dashboard.mjs` evaluates `mission-dashboard/app.js` in jsdom **without**
+`copy.js`, so what it verifies against a live deployment is the console's English source contract —
+ids, machine values, `MISSING` states — not the localized rendering; the localized rendering is
+verified by `src/mission/mission-copy-roman-urdu.test.ts` and by the Chromium run above.
