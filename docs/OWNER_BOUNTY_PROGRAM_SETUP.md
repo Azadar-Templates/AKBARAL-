@@ -37,7 +37,7 @@ Names only. Values never belong in Git, chat, or docs.
 | --- | --- | --- | --- | --- |
 | `ZA141251SA_GITHUB_TOKEN` | Owner's own GitHub personal access token for authenticated GitHub reads (optional for public reads). | GitHub → Settings → Developer settings → Personal access tokens. Use the least scope that works (read-only for discovery). | `src/mission/earning/github-bounty-client.ts:560` | Owner reports it is on Railway. **Not verifiable from the sandbox.** GitHub Actions needs it as a repository secret (see `.github/workflows/mission-bounty-worker.yml:29`). |
 | `ZA141251SA_OWNER_EMAIL` | The one identity-locked mission owner email. | Your own mission owner account. | `src/mission/identity-lock.ts:27`, `scripts/mission-bounty-worker.ts:26-28` | MISSING |
-| `ZA141251SA_DATABASE_URL` | Mission database connection (falls back to a local SQLite file). | Your production mission Postgres connection string. | `src/mission/database.ts:44` | MISSING |
+| `ZA141251SA_DATABASE_URL` | Mission database connection (falls back to `$DATA_DIR/mission.db`). It should be a database **only the mission uses**: the mission and the platform keeping one schema is what froze a production mission schema at 45 of 49 migration files (`docs/MISSION-MIGRATIONS-AT-BOOT-2026-10-12.md`). Migrations are applied on every boot by `scripts/start-prod.mjs`, and by hand with `npm run mission:migrate`. | Your production mission Postgres connection string. | `src/mission/database.ts:44`, `scripts/start-prod.mjs:506` | MISSING |
 | `ZA141251SA_SESSION_SECRET` | Session secret for mission sign-in. | Generate a long random value yourself and store it in your secret manager. | `src/mission/database.ts:47` | MISSING |
 | `ZA141251SA_CREDENTIAL_KEY` | Credential-vault encryption key. Must be at least 32 characters. | Generate yourself. Must match the key that encrypted any stored model credential. | `src/mission/auth.ts:311`, `auth.ts:323` | MISSING |
 | `ZA141251SA_BOUNTY_WORKER_ENABLED` | Must equal the exact string `true` to let the bounty worker run. | Set by you in GitHub repository variables. | `scripts/mission-bounty-worker.ts:22`, `.github/workflows/mission-bounty-worker.yml:22` | MISSING. Leave unset until the owner explicitly enables the worker. |
@@ -45,7 +45,7 @@ Names only. Values never belong in Git, chat, or docs.
 | `ZA141251SA_BOUNTY_SANDBOX_IMAGE_REPOSITORY` | Optional override of the sandbox image repository. Default `ghcr.io/azadar-templates/akbaral-bounty-sandbox`. Must not include a tag or digest. | `src/mission/earning/github-bounty-sandbox.ts` | Not set. Default applies. |
 | `ZA141251SA_BOUNTY_SANDBOX_RUNTIME` | Container runtime. Defaults to `docker`; `podman` is also accepted. | Set on the host that runs the sandbox. | `src/mission/earning/github-bounty-sandbox.ts:94` | Not set. Default `docker` applies. |
 | `ZA141251SA_CHAT_FREE_TIER` | Opt-in for the existing free-tier model configuration. Leave unset unless you have explicitly opted in. | Your own decision, through the existing owner flow. | `src/mission/chat-provider.ts:97` | MISSING (intentionally) |
-| `ZA141251SA_MISSION_SERVER_ENABLED` | Enables the mission server. **Keep it unset for this task.** | Not applicable here. | `scripts/start-prod.mjs:94` | Not set. Must stay unset. |
+| `ZA141251SA_MISSION_SERVER_ENABLED` | Enables the mission server. **Keep it unset for this task.** | Not applicable here. | `scripts/start-prod.mjs:96` | Not set. Must stay unset. |
 
 Notes:
 
@@ -400,7 +400,13 @@ to work until the owner has finished the separate work.
    relying on any payout.
 3. **Mission server is disabled.** Do not set
    `ZA141251SA_MISSION_SERVER_ENABLED`. The `/api/bounty/...` routes exist in code
-   but are only reachable when the server runs (`scripts/start-prod.mjs:94`).
+   but are only reachable when the server runs (`scripts/start-prod.mjs:96`).
+   The mission *schema*, by contrast, is maintained regardless: every start of a
+   tier that owns database writes applies `db/migrations-mission/` before anything
+   listens, and a migration that fails aborts that start non-zero rather than being
+   logged as a success (`scripts/start-prod.mjs:486-522`,
+   `scripts/mission-migrate.ts`). Nothing here needs the server flag, and nothing
+   here turns a worker on.
 4. **No auto-submission.** The control plane has no code path that submits a
    report to a platform. Reports require owner review (`bug-bounty-system.ts`,
    `reportWriter` and quality gates).

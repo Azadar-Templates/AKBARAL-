@@ -71,7 +71,7 @@ columns, both written by the existing verification flow (see §3).
    - `INSERT INTO mission_agent_contracts (…) VALUES (… status='active', approved_by, approved_at,
      expires_at, permissions, resource_limits, budget_cents)`;
    - `INSERT` audit rows `agent_contract.prepared` / `agent_contract.activated` through
-     `appendMissionAudit` (`src/mission/database.ts:364`, hash-chained, redacted).
+     `appendMissionAudit` (`src/mission/database.ts:458`, hash-chained, redacted).
 
 Every one of those writes is a plain SQL write the mission server already owns. The CLI added no
 capability — only a keyboard.
@@ -202,7 +202,7 @@ No new dependency, no credential printed (the console view contains no secret fi
      `status='active'`, `verified_at`, `verified_by`, `updated_at` (the two columns the blocker reads,
      table + `verified_at`/`verified_by` from `0001_….sql:114`/`:127`);
   3. `mission_audit` rows `payout_slot.verification_confirmed` and `payout_slot.verified`, through
-     `appendMissionAudit` (`src/mission/database.ts:364`) — hash-chained, `redactForAudit`, and
+     `appendMissionAudit` (`src/mission/database.ts:458`) — hash-chained, `redactForAudit`, and
      deliberately **never** storing attestation text.
   Any throw rolls all three back; there is no partial "verified but unaudited" state.
 - **Commit.** `missionDb.transaction` is the same single-writer transaction the money paths use

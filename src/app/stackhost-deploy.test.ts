@@ -73,6 +73,10 @@ interface HarnessSpawn {
 interface HarnessRecord {
   spawns: HarnessSpawn[];
   spawnSteps: string[][];
+  /** The environment each blocking step ran with, so a step can be pinned to a database. */
+  stepEnvs: Array<Record<string, string | undefined>>;
+  /** Every process boundary in the order the wrapper crossed it. */
+  order: string[];
   fetches: string[];
   kills: Array<{ kind: HarnessSpawn['kind']; signal: string }>;
 }
@@ -90,7 +94,13 @@ interface HarnessResult extends RunResult {
 function runMissionStartupHarness(
   scenario: 'ready' | 'missing-db' | 'missing-entry' | 'readiness-timeout' | 'unexpected-exit' | 'signal-exit',
   enabled = true,
+  databaseUrl: string | null = 'file:/tmp/not-allowed.db',
+  roles = 'both',
 ): HarnessResult {
+  // `null` means "the operator configured nothing": the wrapper must then fall back to the
+  // DATA_DIR default the mission code itself uses, which is what the file assertions below
+  // pin. A string is the hostile inherited value — it must be HONOURED, not replaced.
+  const databaseFile = databaseUrl === null ? '/data/mission.db' : databaseUrl.replace(/^file:/, '');
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'akbaral-mission-startup-'));
   const preloadPath = path.join(tmpDir, 'preload.mjs');
   const recordPath = path.join(tmpDir, 'record.json');
@@ -106,7 +116,11 @@ const { EventEmitter } = require('node:events');
 
 const scenario = process.env.AKBARAL_TEST_MISSION_SCENARIO;
 const recordPath = process.env.AKBARAL_TEST_MISSION_RECORD;
-const record = { spawns: [], spawnSteps: [], fetches: [], kills: [] };
+// The file the wrapper resolves as the mission database for this run: the configured URL's
+// file when an operator set one, the DATA_DIR default otherwise. The fake filesystem answers
+// for exactly that path, so a scenario cannot pass by checking a file nobody uses.
+const missionDbFile = process.env.AKBARAL_TEST_MISSION_DB_FILE;
+const record = { spawns: [], spawnSteps: [], stepEnvs: [], order: [], fetches: [], kills: [] };
 const originalExistsSync = fs.existsSync.bind(fs);
 const originalWriteFileSync = fs.writeFileSync.bind(fs);
 const originalSetTimeout = globalThis.setTimeout.bind(globalThis);
@@ -135,6 +149,7 @@ class FakeChild extends EventEmitter {
 childProcess.spawn = (command, args = [], options = {}) => {
   const kind = childKind(command, args);
   const env = options.env ?? {};
+  record.order.push('spawn:' + kind);
   record.spawns.push({
     kind,
     command: String(command),
@@ -151,14 +166,20 @@ childProcess.spawn = (command, args = [], options = {}) => {
   if (kind === 'mission') missionChild = child;
   return child;
 };
-childProcess.spawnSync = (_command, args = []) => {
-  record.spawnSteps.push(args.map(String));
+childProcess.spawnSync = (_command, args = [], options = {}) => {
+  const list = args.map(String);
+  record.spawnSteps.push(list);
+  record.stepEnvs.push({
+    ZA141251SA_DATABASE_URL: (options.env ?? {}).ZA141251SA_DATABASE_URL,
+    ZA141251SA_MISSION_SERVER_ENABLED: (options.env ?? {}).ZA141251SA_MISSION_SERVER_ENABLED,
+  });
+  record.order.push('step:' + list.join(' '));
   return { status: 0, signal: null };
 };
 
 fs.existsSync = (input) => {
   const value = String(input);
-  if (value === '/data/mission.db') return scenario !== 'missing-db';
+  if (value === missionDbFile) return scenario !== 'missing-db';
   if (value.endsWith('/dist/scripts/mission-serve.js')) return scenario !== 'missing-entry';
   if (value.endsWith('/dist/src/index.js') || value.endsWith('/.next/BUILD_ID')) return true;
   return originalExistsSync(input);
@@ -177,7 +198,7 @@ globalThis.fetch = async (url) => {
     return {
       ok: true,
       status: 200,
-      json: async () => ({ status: 'ok', service: 'mission', database: '/data/mission.db', audit: true, ledger: true, ownerAccounts: 0, vaultConfigured: false }),
+      json: async () => ({ status: 'ok', service: 'mission', database: missionDbFile, audit: true, ledger: true, ownerAccounts: 0, vaultConfigured: false }),
     };
   }
   if (scenario === 'unexpected-exit') {
@@ -189,7 +210,7 @@ globalThis.fetch = async (url) => {
   return {
     ok: true,
     status: 200,
-    json: async () => ({ status: 'ok', service: 'mission', database: '/data/mission.db', audit: true, ledger: true, ownerAccounts: 1, vaultConfigured: true }),
+    json: async () => ({ status: 'ok', service: 'mission', database: missionDbFile, audit: true, ledger: true, ownerAccounts: 1, vaultConfigured: true }),
   };
 };
 
@@ -209,24 +230,29 @@ process.on('exit', () => {
         NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${preloadPath}`.trim(),
         AKBARAL_TEST_MISSION_SCENARIO: scenario,
         AKBARAL_TEST_MISSION_RECORD: recordPath,
-        AKBARAL_ROLES: 'both',
+        AKBARAL_ROLES: roles,
         AKBARAL_AUTO_BUILD: 'false',
         DISABLE_BACKUP_CRON: 'true',
         PORT: '',
         AKBARAL_WEB_PORT: '',
         AKBARAL_API_PORT: '',
         SESSION_SECRET: 'x'.repeat(40),
+        // Deterministic, so the fallback below never depends on what this checkout has.
+        DATA_DIR: '/data',
+        AKBARAL_TEST_MISSION_DB_FILE: databaseFile,
         ZA141251SA_MISSION_SERVER_ENABLED: enabled ? 'true' : '',
-        // Deliberately hostile inherited values: the mission child must replace
-        // every one of them rather than forwarding them.
+        // Deliberately hostile inherited values: the bind host and port must be replaced by
+        // the wrapper's pins. The mission database URL is the operator's own configuration
+        // channel (src/mission/database.ts resolves it the same way) and must be HONOURED —
+        // overriding it here is what left a production Postgres mission database unmigrated.
         ZA141251SA_BIND_HOST: '0.0.0.0',
         ZA141251SA_PORT: '9999',
-        ZA141251SA_DATABASE_URL: 'file:/tmp/not-allowed.db',
+        ...(databaseUrl === null ? {} : { ZA141251SA_DATABASE_URL: databaseUrl }),
       },
     });
     const record: HarnessRecord = existsSync(recordPath)
       ? JSON.parse(readFileSync(recordPath, 'utf8'))
-      : { spawns: [], spawnSteps: [], fetches: [], kills: [] };
+      : { spawns: [], spawnSteps: [], stepEnvs: [], order: [], fetches: [], kills: [] };
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', record };
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
@@ -474,17 +500,78 @@ test('private mission startup hard-pins loopback, port and the existing database
     PORT: '',
     ZA141251SA_BIND_HOST: '127.0.0.1',
     ZA141251SA_PORT: '4200',
-    ZA141251SA_DATABASE_URL: 'file:/data/mission.db',
+    // The operator's configured mission database is honoured, not swapped for a path this
+    // file happens to prefer: the wrapper and the child must point at the same database.
+    ZA141251SA_DATABASE_URL: 'file:/tmp/not-allowed.db',
   });
   assert.match(run.stdout, /private mission readiness verified at http:\/\/127\.0\.0\.1:4200\/api\/health/);
 });
 
+test('mission migrations run as a blocking boot step, on the database the mission child then opens', () => {
+  const run = runMissionStartupHarness('ready');
+  assert.equal(run.status, 0, run.stderr);
+  // One order log across both process boundaries, so the sequence is pinned rather than
+  // inferred: platform migrations, then mission migrations, then the mission child, then
+  // the public tiers.
+  const order = run.record.order.join('\n');
+  assert.match(
+    order,
+    /step:.*dist\/src\/db\/migrate\.js[\s\S]*mission-migrate[\s\S]*spawn:mission[\s\S]*spawn:web/,
+    `boot must migrate the mission database after the platform step and before any tier: ${order}`,
+  );
+  const missionStep = run.record.spawnSteps.find((args) => args.some((arg) => arg.includes('mission-migrate')));
+  assert.ok(missionStep, 'the mission migration step must be a real, blocking runStep');
+  assert.match(missionStep.join(' '), /mission-run\.mjs mission-migrate --root /, 'the step resolves through the runtime-safe entry');
+  const index = run.record.spawnSteps.indexOf(missionStep);
+  assert.equal(
+    run.record.stepEnvs[index]?.ZA141251SA_DATABASE_URL,
+    run.record.spawns[0]?.env.ZA141251SA_DATABASE_URL,
+    'migrating one database and serving another is the failure this step exists to prevent',
+  );
+});
+
+test('a web-only tier does not migrate the mission database', () => {
+  const run = runMissionStartupHarness('ready', true, 'file:/tmp/not-allowed.db', 'web');
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(
+    run.record.spawnSteps,
+    [],
+    'the web tier owns no database writes: not the platform migrations, not the mission migrations',
+  );
+  assert.match(run.record.order.join('\n'), /spawn:mission/, 'the mission child is still supervised where it is enabled');
+});
+
+test('the mission migration step is skipped out loud, never as a success, when there is no mission database', () => {
+  const run = runMissionStartupHarness('missing-db', false);
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(
+    !run.record.spawnSteps.some((args) => args.some((arg) => arg.includes('mission-migrate'))),
+    'no mission database must mean no migration step, not a step that silently passes',
+  );
+  assert.match(
+    `${run.stdout}\n${run.stderr}`,
+    /no mission database at [^ ]+ — mission migrations skipped \(this deployment has no mission database; nothing was reported as migrated\)/,
+    'the skip must name the target it looked for and say nothing was reported as migrated',
+  );
+});
+
 test('private mission startup refuses a missing /data/mission.db without spawning any tier', () => {
-  const run = runMissionStartupHarness('missing-db');
+  // No configured URL at all: the wrapper falls back to the DATA_DIR default it shares with
+  // src/mission/database.ts, and refuses to invent a database.
+  const run = runMissionStartupHarness('missing-db', true, null);
   assert.equal(run.status, 1);
   assert.deepEqual(run.record.spawns, []);
   assert.deepEqual(run.record.fetches, []);
   assert.match(run.stderr, /\/data\/mission\.db does not exist/);
+  assert.match(run.stderr, /will not create or select an alternate database/);
+});
+
+test('a configured mission database that does not exist is refused by name, not replaced', () => {
+  const run = runMissionStartupHarness('missing-db');
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.record.spawns, []);
+  assert.deepEqual(run.record.spawnSteps, [], 'a refused boot may not even run the platform migration step first and continue');
+  assert.match(run.stderr, /\/tmp\/not-allowed\.db does not exist/, 'the refusal must name the database the operator configured');
   assert.match(run.stderr, /will not create or select an alternate database/);
 });
 

@@ -3318,20 +3318,60 @@ export function createMissionServer(): http.Server {
   });
 }
 
+/**
+ * A boot-time seed that cannot run must never look like a boot that succeeded. These
+ * seeds are deliberately non-fatal (a fresh or read-only deployment still has to answer
+ * the dashboard) but they were `try{…}catch{}` — silent. Every one now names itself and
+ * its reason on stderr, and nothing about the gates they feed changes: a missing seed is
+ * still reported by the readiness endpoints that read the same tables.
+ */
+function seedAtBoot(label: string, run: () => void): void {
+  try {
+    run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[mission] boot seed skipped (${label}): ${message}`);
+  }
+}
+
 export async function startMissionServer(options: { port?: number; host?: string } = {}): Promise<MissionServer> {
   const env = missionEnv();
-  applyMissionMigrations(missionDb);
+  // Migrations before the socket: every route below reads tables these files create, so
+  // a listen on an unmigrated database would answer the owner with SQL errors. A failure
+  // is fatal on purpose — the container must not report a mission service that cannot
+  // write. Nothing here catches and continues; see src/mission/database.ts for the
+  // per-migration transaction and the ledger that records only what applied.
+  let migration: { applied: string[]; total: number };
+  try {
+    migration = applyMissionMigrations(missionDb);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[mission] FATAL: mission database migrations failed on ${missionDb.engineName()} (${missionDb.path()}); ` +
+        `the mission server will not listen. Fix the failing migration — the ledger records only the files ` +
+        `that committed. Last error: ${message}`,
+    );
+    throw error;
+  }
+  process.stdout.write(
+    `[mission] migrations: ${migration.applied.length} applied, ${migration.total} files, engine ${missionDb.engineName()}, target ${missionDb.path()}\n`,
+  );
   ensurePolicy(env.currency);
   seedTools();
   ensurePayoutSlots();
-  try{ ensureMissionTreasury(); }catch{}
-  try{ ensureAgentWallets(); }catch{}
-  try{ PlatformDiscovery.seedPlatforms(); }catch{}
+  seedAtBoot('mission treasury', () => ensureMissionTreasury());
+  seedAtBoot('agent wallets', () => ensureAgentWallets());
+  seedAtBoot('platform discovery', () => PlatformDiscovery.seedPlatforms());
   // Runtime foundation — fail-safe seeds (idempotent, no fake revenue, no credentials)
-  try{ ProviderReadiness.seedProviderReadiness(); }catch{}
-  try{ Allocator.ensureCatalogPersisted(); }catch{}
-  try{ Scheduler.schedulerStatus(); }catch{} // ensures mission_scheduler_state row exists disabled=0
-  try{ const s = Scheduler.schedulerStatus(); if (s.enabled) Scheduler.disableScheduler({kind:'owner', id:'system-startup'} as any); }catch{}
+  seedAtBoot('provider readiness', () => ProviderReadiness.seedProviderReadiness());
+  seedAtBoot('allocator catalog', () => Allocator.ensureCatalogPersisted());
+  seedAtBoot('scheduler state row', () => void Scheduler.schedulerStatus()); // ensures mission_scheduler_state row exists disabled=0
+  seedAtBoot('scheduler startup override', () => {
+    // The scheduler stays off unless the owner turns it on: an unattended autonomous
+    // production run is not this service's default, and it is not a boot-time option.
+    const status = Scheduler.schedulerStatus();
+    if (status.enabled) Scheduler.disableScheduler({ kind: 'owner', id: 'system-startup' } as any);
+  });
   const host = options.host ?? env.bindHost;
   const port = options.port ?? env.port;
   const server = createMissionServer();

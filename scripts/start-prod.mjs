@@ -2,6 +2,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { missionDatabaseFile, missionDatabaseUrl, missionHealthDatabaseExpectation } from './mission-db-target.mjs';
 
 /**
  * Production start for the AKBARAL platform.
@@ -44,9 +46,9 @@ function launch(name, command, args, env) {
 }
 
 /** Run a command to completion before continuing startup; exits on failure. */
-function runStep(label, command, args) {
+function runStep(label, command, args, env = process.env) {
   log(`${label}…`);
-  const result = spawnSync(command, args, { stdio: 'inherit', env: process.env });
+  const result = spawnSync(command, args, { stdio: 'inherit', env });
   if (result.error) {
     fail(`${label} failed to start (${result.error.message}).`);
   }
@@ -94,9 +96,28 @@ if (!['both', 'web', 'api'].includes(ROLES)) {
 const MISSION_SERVER_ENABLED = process.env.ZA141251SA_MISSION_SERVER_ENABLED === 'true';
 const MISSION_HOST = '127.0.0.1';
 const MISSION_PORT = 4200;
-const MISSION_DATABASE_PATH = '/data/mission.db';
-const MISSION_DATABASE_URL = `file:${MISSION_DATABASE_PATH}`;
+// The mission database is wherever the mission code says it is, not wherever this
+// wrapper once assumed it would be. It used to be hardcoded to file:/data/mission.db,
+// which meant that on a deployment whose ZA141251SA_DATABASE_URL is a PostgreSQL
+// database — the managed production shape — this wrapper could only ever migrate and
+// health-check a SQLite file nobody was using. That is how production's mission schema
+// sat unmigrated while every boot logged a clean start. Same resolution order as
+// missionEnv() in src/mission/database.ts, in one shared file (scripts/mission-db-target.mjs).
+const MISSION_DATABASE_URL = missionDatabaseUrl(process.env);
+const MISSION_DATABASE_FILE = missionDatabaseFile(MISSION_DATABASE_URL);
+/** The database path the child's /api/health must report for this configuration. */
+const MISSION_HEALTH_DATABASE = missionHealthDatabaseExpectation(process.env);
+/**
+ * A file target only exists if the operator mounted it; a server target is configured,
+ * not mounted, so its existence is the configuration itself.
+ */
+const MISSION_DATABASE_PRESENT = MISSION_DATABASE_FILE === null ? existsEnv('ZA141251SA_DATABASE_URL') : existsSync(MISSION_DATABASE_FILE);
+function existsEnv(name) {
+  return String(process.env[name] ?? '').trim().length > 0;
+}
 const MISSION_HEALTH_URL = `http://${MISSION_HOST}:${MISSION_PORT}/api/health`;
+/** The resolver this wrapper uses to run a mission entry in whichever shape the tree has. */
+const MISSION_ENTRY_RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mission-run.mjs');
 const MISSION_READINESS_TIMEOUT_MS = 30_000;
 const MISSION_READINESS_POLL_MS = 250;
 const MISSION_READINESS_REQUEST_TIMEOUT_MS = 1_000;
@@ -154,10 +175,11 @@ if (process.argv.includes('--print-ports')) {
 // child if the operator explicitly requested mission startup without mounting
 // the existing private database. The mission bootstrap must never create an
 // alternate relative database as an accidental fallback.
-if (MISSION_SERVER_ENABLED && !existsSync(MISSION_DATABASE_PATH)) {
+if (MISSION_SERVER_ENABLED && MISSION_DATABASE_FILE !== null && !existsSync(MISSION_DATABASE_FILE)) {
   fail(
-    `private mission startup refused: ${MISSION_DATABASE_PATH} does not exist. ` +
-      'Mount the existing private mission database at that exact path; startup will not create or select an alternate database.',
+    `private mission startup refused: ${MISSION_DATABASE_FILE} does not exist. ` +
+      'Mount the existing private mission database at that exact path (or point ZA141251SA_DATABASE_URL at the ' +
+      'PostgreSQL database the mission owns); startup will not create or select an alternate database.',
   );
 }
 
@@ -359,7 +381,7 @@ function missionHealthIsReady(body) {
     typeof body === 'object' &&
     body.status === 'ok' &&
     body.service === 'mission' &&
-    body.database === MISSION_DATABASE_PATH &&
+    body.database === MISSION_HEALTH_DATABASE &&
     body.audit === true &&
     body.ledger === true &&
     Number.isInteger(body.ownerAccounts) &&
@@ -396,9 +418,13 @@ async function waitForMissionReadiness() {
 }
 
 async function startRequiredMission() {
-  // These child values deliberately override inherited environment values.
-  // The production wrapper supports one private listener and one existing
-  // database only; callers cannot widen or redirect either one.
+  // These child values deliberately override inherited environment values. The
+  // production wrapper supports one private listener and one existing database only;
+  // callers cannot widen or redirect either one. The database value is the one this
+  // wrapper just migrated above (resolved from the operator's ZA141251SA_DATABASE_URL,
+  // defaulting to the mounted volume file), so "what was migrated" and "what the server
+  // opens" cannot drift apart — which is precisely what they did while this line pointed
+  // at a hardcoded SQLite path.
   const mission = launch('mission', 'node', [DIST_MISSION_ENTRY], {
     NODE_ENV: 'production',
     ZA141251SA_BIND_HOST: MISSION_HOST,
@@ -455,6 +481,44 @@ if (ROLES !== 'web') {
   if (String(process.env.SEED_DATABASE ?? 'false').toLowerCase() === 'true') {
     runStep('seeding registry + plans (SEED_DATABASE=true)', 'node', [DIST_SEED_ENTRY]);
   }
+}
+
+/* ------------------------------------------------- mission database migrations
+ * The mission schema is applied here, on every start, before the mission server can
+ * listen and before either public tier binds. It used to be a side effect of
+ * `startMissionServer()` only — so on any deployment where the mission child is not
+ * launched by this wrapper (the flag is off, or the mission runs as its own service),
+ * nothing ever applied a mission migration, and nothing said so: the container logged a
+ * clean boot with 4 of 49 mission migration files unapplied behind it.
+ *
+ * It runs in the tier that owns database writes (the same gate as the platform step), and a
+ * web-only container says so rather than racing its sibling.
+ *
+ * Fatal by construction: runStep exits the container on a non-zero child, and
+ * `scripts/mission-migrate.ts` exits non-zero on any migration that throws, after
+ * rolling that one file back. A mission database that could not be migrated is never
+ * reported as migrated. The only skip is a deployment that has no mission database at
+ * all, and it says so out loud.
+ */
+// The tier that owns database writes migrates; a web-only container (the small-host
+// AKBARAL_ROLES=web split) must not race its api sibling for the same schema.
+if (ROLES !== 'web' && MISSION_DATABASE_PRESENT) {
+  runStep(
+    'applying mission database migrations',
+    'node',
+    // Absolute, and told which tree to resolve against: the deployment root this wrapper is
+    // running from, which is where dist/ and db/ live. Same rule DIST_MIGRATE_ENTRY follows.
+    [MISSION_ENTRY_RUNNER, 'mission-migrate', '--root', process.cwd()],
+    // The child gets the same explicit target, so what is migrated here is exactly what
+    // the mission server will open — no inherited value can point the two at different
+    // databases.
+    { ...process.env, NODE_ENV: process.env.NODE_ENV ?? 'production', ZA141251SA_DATABASE_URL: MISSION_DATABASE_URL },
+  );
+} else {
+  log(
+    `no mission database at ${MISSION_DATABASE_FILE ?? MISSION_DATABASE_URL} — mission migrations skipped ` +
+      '(this deployment has no mission database; nothing was reported as migrated).',
+  );
 }
 
 // When explicitly required, the private child must be healthy before either

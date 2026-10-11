@@ -315,7 +315,7 @@ export function ownerActivationPath(): OwnerActivationPath {
         ? `already satisfied: ${contracts} active scoped contract(s)`
         : 'prepare least-privilege proposals for a class the registry maps agents to, then approve one (or approve all of a class after repeating back the permission surface). Preparing grants nothing; a proposal that is empty or wider than its class is refused with the reason. From a shell the same two steps are `npm run fleet:readiness -- --contracts <class>` then `--contracts-approve=<id>`',
       verify: 'npm run fleet:readiness — the scoped contracts line counts "N active"; the console block reports the same gate beside its own counts',
-      evidence: 'mission-dashboard/index.html:198 (#contracts-block), src/mission/server.ts:1676 (the owner-only route), src/mission/earning/agent-class-contracts.ts:220 (prepare), :339 (approve), :674 (the empty/over-broad refusal), package.json:83 (fleet:readiness)',
+      evidence: 'mission-dashboard/index.html:198 (#contracts-block), src/mission/server.ts:1676 (the owner-only route), src/mission/earning/agent-class-contracts.ts:220 (prepare), :339 (approve), :674 (the empty/over-broad refusal), package.json:87 (fleet:readiness)',
       ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
     },
     {
@@ -326,7 +326,7 @@ export function ownerActivationPath(): OwnerActivationPath {
         ? `already satisfied: ${grants} agent(s) hold an active grant`
         : 'registry sync grants zero-spend authority; a grant with spend_limit_cents>0 is only needed for paid work and stays an owner decision',
       verify: 'npm run fleet:readiness — execution-ready counts agents with an active grant',
-      evidence: 'package.json:82 (mission:sync-registry), src/mission/money.ts (setMoneyGrant)',
+      evidence: 'package.json:86 (mission:sync-registry), src/mission/money.ts (setMoneyGrant)',
       ownerAction: HUMAN_ACTION_TYPES.MANUAL_APPROVAL,
     },
     {

@@ -1,8 +1,24 @@
 -- Multi-provider model control, public read-only platform adapters, and
 -- fail-closed quality/reputation discipline. No credentials, programs, targets,
 -- account records, or findings are seeded here.
+--
+-- WHY THIS TABLE IS CALLED mission_model_providers AND NOT model_providers:
+-- `model_providers` is already the platform's table (db/migrations/0002_platform.sql:255,
+-- db/migrations-pg/0002_platform.sql:267) and its shape is id,key,name,type,base_url,
+-- docs_url,api_version,auth_type,env_key,status,capabilities. The mission provider table
+-- has a different shape (provider_key,display_name,credential_vault_key,…). Under the
+-- original name, `CREATE TABLE IF NOT EXISTS` silently kept whichever table arrived first
+-- and the mission's own seed INSERT then died with
+-- `column "provider_key" of relation "model_providers" does not exist`, which is what
+-- stopped every mission migration at 0043 on any database the two systems shared —
+-- and a mission migration that throws aborts boot, so sharing one database silently froze
+-- the mission schema at 0042. The mission table now carries the mission_ prefix, like the
+-- other 173 tables in this set; the platform keeps its own. 0043 also remains the file that
+-- defines it, and applyMissionMigrations() renames the un-prefixed mission-shaped table on
+-- databases that applied this file before the rename (src/mission/database.ts,
+-- isolateMissionModelProviderTable).
 
-CREATE TABLE IF NOT EXISTS model_providers (
+CREATE TABLE IF NOT EXISTS mission_model_providers (
   id TEXT PRIMARY KEY,
   provider_key TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
@@ -25,7 +41,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
 
 CREATE TABLE IF NOT EXISTS model_health_events (
   id TEXT PRIMARY KEY,
-  provider_id TEXT NOT NULL REFERENCES model_providers(id) ON DELETE CASCADE,
+  provider_id TEXT NOT NULL REFERENCES mission_model_providers(id) ON DELETE CASCADE,
   occurred_at TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('ok','rate_limited','unauthorized','quota_exceeded','timeout','error')),
   latency_ms INTEGER,
@@ -36,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_model_health_provider_time ON model_health_events
 
 CREATE TABLE IF NOT EXISTS model_call_logs (
   id TEXT PRIMARY KEY,
-  provider_id TEXT NOT NULL REFERENCES model_providers(id),
+  provider_id TEXT NOT NULL REFERENCES mission_model_providers(id),
   provider_key TEXT NOT NULL,
   model TEXT NOT NULL,
   role_key TEXT,
@@ -162,7 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_run_logs_platform ON agent_run_logs(platfor
 
 -- Capability/provider metadata only. The credential names are vault lookup keys,
 -- never credential values.
-INSERT INTO model_providers (id,provider_key,display_name,base_url,credential_vault_key,models_available_json,default_model,priority,cost_per_1k_in,cost_per_1k_out,max_concurrency,rate_limit_per_min,health_status,enabled,supports_json_schema,created_at,updated_at) VALUES
+INSERT INTO mission_model_providers (id,provider_key,display_name,base_url,credential_vault_key,models_available_json,default_model,priority,cost_per_1k_in,cost_per_1k_out,max_concurrency,rate_limit_per_min,health_status,enabled,supports_json_schema,created_at,updated_at) VALUES
  ('mp-google','google','Google AI','https://generativelanguage.googleapis.com/v1beta','model.google.api_key','["gemini-3.5-flash","gemini-3.5-flash-lite"]','gemini-3.5-flash',10,0,0,2,10,'unknown',0,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
  ('mp-openai','openai','OpenAI','https://api.openai.com/v1','model.openai.api_key','["gpt-4o-mini","gpt-4o"]','gpt-4o-mini',20,0,0,2,10,'unknown',0,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
  ('mp-anthropic','anthropic','Anthropic','https://api.anthropic.com/v1','model.anthropic.api_key','["claude-sonnet"]','claude-sonnet',30,0,0,2,10,'unknown',0,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),

@@ -86,9 +86,9 @@ function publicProvider(row: Row): ModelProviderPublic {
   };
 }
 
-export function listModelProviders(): ModelProviderPublic[] { return missionDb.all<Row>('SELECT * FROM model_providers ORDER BY priority, provider_key').map(publicProvider); }
+export function listModelProviders(): ModelProviderPublic[] { return missionDb.all<Row>('SELECT * FROM mission_model_providers ORDER BY priority, provider_key').map(publicProvider); }
 export function getModelProvider(id: string): ModelProviderPublic | null {
-  const row = missionDb.get<Row>('SELECT * FROM model_providers WHERE id=? OR provider_key=?', [id, id]);
+  const row = missionDb.get<Row>('SELECT * FROM mission_model_providers WHERE id=? OR provider_key=?', [id, id]);
   return row ? publicProvider(row) : null;
 }
 function normalizeProviderInput(input: ModelProviderInput): Required<ModelProviderInput> {
@@ -111,13 +111,13 @@ function normalizeProviderInput(input: ModelProviderInput): Required<ModelProvid
 
 export function createModelProvider(input: ModelProviderInput, ownerId: string): ModelProviderPublic {
   const value = normalizeProviderInput(input); const id = missionId('mp'); const at = nowIso();
-  missionDb.run(`INSERT INTO model_providers (id,provider_key,display_name,base_url,credential_vault_key,models_available_json,default_model,priority,cost_per_1k_in,cost_per_1k_out,max_concurrency,rate_limit_per_min,enabled,supports_json_schema,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, value.providerKey, value.displayName, value.baseUrl, value.credentialVaultKey, JSON.stringify(value.modelsAvailable), value.defaultModel, value.priority, value.costPer1kIn, value.costPer1kOut, value.maxConcurrency, value.rateLimitPerMin, value.enabled ? 1 : 0, value.supportsJsonSchema ? 1 : 0, at, at]);
+  missionDb.run(`INSERT INTO mission_model_providers (id,provider_key,display_name,base_url,credential_vault_key,models_available_json,default_model,priority,cost_per_1k_in,cost_per_1k_out,max_concurrency,rate_limit_per_min,enabled,supports_json_schema,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, value.providerKey, value.displayName, value.baseUrl, value.credentialVaultKey, JSON.stringify(value.modelsAvailable), value.defaultModel, value.priority, value.costPer1kIn, value.costPer1kOut, value.maxConcurrency, value.rateLimitPerMin, value.enabled ? 1 : 0, value.supportsJsonSchema ? 1 : 0, at, at]);
   appendMissionAudit({ actorType: 'owner', actorId: ownerId, action: 'model_provider.created', subjectType: 'model_provider', subjectId: id, detail: { providerKey: value.providerKey, credentialVaultKey: value.credentialVaultKey } });
   return getModelProvider(id)!;
 }
 
 export function updateModelProvider(id: string, patch: Partial<ModelProviderInput>, ownerId: string): ModelProviderPublic {
-  const current = missionDb.get<Row>('SELECT * FROM model_providers WHERE id=? OR provider_key=?', [id, id]);
+  const current = missionDb.get<Row>('SELECT * FROM mission_model_providers WHERE id=? OR provider_key=?', [id, id]);
   if (!current) throw new ModelLayerError('not_found', 'model provider not found', 404);
   const merged: ModelProviderInput = {
     providerKey: patch.providerKey ?? String(current.provider_key), displayName: patch.displayName ?? String(current.display_name), baseUrl: patch.baseUrl ?? String(current.base_url),
@@ -126,14 +126,14 @@ export function updateModelProvider(id: string, patch: Partial<ModelProviderInpu
     maxConcurrency: patch.maxConcurrency ?? Number(current.max_concurrency), rateLimitPerMin: patch.rateLimitPerMin ?? Number(current.rate_limit_per_min), enabled: patch.enabled ?? Number(current.enabled) === 1, supportsJsonSchema: patch.supportsJsonSchema ?? Number(current.supports_json_schema) === 1,
   };
   const value = normalizeProviderInput(merged); const at = nowIso();
-  missionDb.run(`UPDATE model_providers SET provider_key=?,display_name=?,base_url=?,credential_vault_key=?,models_available_json=?,default_model=?,priority=?,cost_per_1k_in=?,cost_per_1k_out=?,max_concurrency=?,rate_limit_per_min=?,enabled=?,supports_json_schema=?,updated_at=? WHERE id=?`, [value.providerKey, value.displayName, value.baseUrl, value.credentialVaultKey, JSON.stringify(value.modelsAvailable), value.defaultModel, value.priority, value.costPer1kIn, value.costPer1kOut, value.maxConcurrency, value.rateLimitPerMin, value.enabled ? 1 : 0, value.supportsJsonSchema ? 1 : 0, at, String(current.id)]);
+  missionDb.run(`UPDATE mission_model_providers SET provider_key=?,display_name=?,base_url=?,credential_vault_key=?,models_available_json=?,default_model=?,priority=?,cost_per_1k_in=?,cost_per_1k_out=?,max_concurrency=?,rate_limit_per_min=?,enabled=?,supports_json_schema=?,updated_at=? WHERE id=?`, [value.providerKey, value.displayName, value.baseUrl, value.credentialVaultKey, JSON.stringify(value.modelsAvailable), value.defaultModel, value.priority, value.costPer1kIn, value.costPer1kOut, value.maxConcurrency, value.rateLimitPerMin, value.enabled ? 1 : 0, value.supportsJsonSchema ? 1 : 0, at, String(current.id)]);
   appendMissionAudit({ actorType: 'owner', actorId: ownerId, action: 'model_provider.updated', subjectType: 'model_provider', subjectId: String(current.id), detail: { providerKey: value.providerKey, credentialVaultKey: value.credentialVaultKey } });
   return getModelProvider(String(current.id))!;
 }
 export function deleteModelProvider(id: string, ownerId: string): void {
-  const row = missionDb.get<Row>('SELECT id,provider_key FROM model_providers WHERE id=? OR provider_key=?', [id, id]);
+  const row = missionDb.get<Row>('SELECT id,provider_key FROM mission_model_providers WHERE id=? OR provider_key=?', [id, id]);
   if (!row) throw new ModelLayerError('not_found', 'model provider not found', 404);
-  missionDb.run('UPDATE model_providers SET enabled=0,updated_at=? WHERE id=?', [nowIso(), String(row.id)]);
+  missionDb.run('UPDATE mission_model_providers SET enabled=0,updated_at=? WHERE id=?', [nowIso(), String(row.id)]);
   appendMissionAudit({ actorType: 'owner', actorId: ownerId, action: 'model_provider.disabled', subjectType: 'model_provider', subjectId: String(row.id), detail: { providerKey: String(row.provider_key) } });
 }
 
@@ -224,7 +224,7 @@ export class MissionModelClient implements ModelClient {
 
   private async call(request: ModelGenerateRequest, stream = false, onToken?: (token: string) => void): Promise<ModelGenerateResult> {
     assertInScope(request.scope.programId, request.scope.target, { agentType: request.scope.agentType, runId: request.scope.runId });
-    const providers = missionDb.all<Row>("SELECT * FROM model_providers WHERE enabled=1 AND health_status NOT IN ('unauthorized','quota_exceeded','rate_limited','timeout','error') ORDER BY priority, provider_key"); if (!providers.length) throw new ModelLayerError('no_provider_available', 'no healthy enabled model provider is configured', 409);
+    const providers = missionDb.all<Row>("SELECT * FROM mission_model_providers WHERE enabled=1 AND health_status NOT IN ('unauthorized','quota_exceeded','rate_limited','timeout','error') ORDER BY priority, provider_key"); if (!providers.length) throw new ModelLayerError('no_provider_available', 'no healthy enabled model provider is configured', 409);
     const chosen = request.model ? providers.filter((row) => parse(row.models_available_json, []).includes(request.model)) : providers; const candidates = chosen.length ? chosen : providers;
     let fallbackFrom: string | undefined; let last: unknown;
     for (const row of candidates) {
@@ -232,12 +232,12 @@ export class MissionModelClient implements ModelClient {
       try {
         enforceCaps(row, request); const release = acquireProvider(row);
         try {
-          const secret = credentialSecret(row); const result = await this.outbound(row, model, request, secret, stream ? onToken : undefined); result.fallbackFrom = fallbackFrom; missionDb.run('UPDATE model_providers SET health_status=\'ok\',last_health_check_at=?,updated_at=? WHERE id=?', [nowIso(), nowIso(), String(row.id)]);
+          const secret = credentialSecret(row); const result = await this.outbound(row, model, request, secret, stream ? onToken : undefined); result.fallbackFrom = fallbackFrom; missionDb.run('UPDATE mission_model_providers SET health_status=\'ok\',last_health_check_at=?,updated_at=? WHERE id=?', [nowIso(), nowIso(), String(row.id)]);
           missionDb.run('INSERT INTO model_call_logs (id,provider_id,provider_key,model,role_key,program_id,target,status,fallback_from_provider_id,input_tokens,output_tokens,cost_cents,schema_requested,schema_validated,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [missionId('mcl'), String(row.id), String(row.provider_key), model, request.roleKey ?? null, request.scope.programId, request.scope.target, 'succeeded', fallbackFrom ?? null, result.inputTokens, result.outputTokens, result.costCents, request.jsonSchema ? 1 : 0, request.jsonSchema ? 1 : 0, nowIso()]);
           return result;
         } finally { release(); }
       } catch (error) {
-        last = error; const cls = errorClass(error); const healthStatus = healthFromError(error); missionDb.run('UPDATE model_providers SET health_status=?,updated_at=? WHERE id=?', [healthStatus, nowIso(), String(row.id)]); missionDb.run('INSERT INTO model_health_events (id,provider_id,occurred_at,status,latency_ms,error_class,recovery_at) VALUES (?,?,?,?,?,?,?)', [missionId('mhe'), String(row.id), nowIso(), healthStatus, null, cls, null]); missionDb.run('INSERT INTO model_call_logs (id,provider_id,provider_key,model,role_key,program_id,target,status,fallback_from_provider_id,fallback_reason,error_class,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [missionId('mcl'), String(row.id), String(row.provider_key), model, request.roleKey ?? null, request.scope.programId, request.scope.target, 'failed', fallbackFrom ?? null, error instanceof ModelLayerError ? error.code : cls, cls, nowIso()]);
+        last = error; const cls = errorClass(error); const healthStatus = healthFromError(error); missionDb.run('UPDATE mission_model_providers SET health_status=?,updated_at=? WHERE id=?', [healthStatus, nowIso(), String(row.id)]); missionDb.run('INSERT INTO model_health_events (id,provider_id,occurred_at,status,latency_ms,error_class,recovery_at) VALUES (?,?,?,?,?,?,?)', [missionId('mhe'), String(row.id), nowIso(), healthStatus, null, cls, null]); missionDb.run('INSERT INTO model_call_logs (id,provider_id,provider_key,model,role_key,program_id,target,status,fallback_from_provider_id,fallback_reason,error_class,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [missionId('mcl'), String(row.id), String(row.provider_key), model, request.roleKey ?? null, request.scope.programId, request.scope.target, 'failed', fallbackFrom ?? null, error instanceof ModelLayerError ? error.code : cls, cls, nowIso()]);
         if (candidates.indexOf(row) < candidates.length - 1) { missionDb.run('INSERT INTO model_call_logs (id,provider_id,provider_key,model,role_key,program_id,target,status,fallback_from_provider_id,fallback_reason,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [missionId('mcl'), String(row.id), String(row.provider_key), model, request.roleKey ?? null, request.scope.programId, request.scope.target, 'fallback', String(row.id), cls, nowIso()]); fallbackFrom = String(row.provider_key); continue; }
       }
     }
@@ -255,7 +255,7 @@ export class MissionModelClient implements ModelClient {
 export function createMissionModelClient(options: ModelClientOptions = {}): ModelClient { return new MissionModelClient(options); }
 
 export async function checkModelHealth(input: { programId: string; target: string; providerId?: string }): Promise<Array<Record<string, unknown>>> {
-  const rows = missionDb.all<Row>(input.providerId ? 'SELECT * FROM model_providers WHERE id=? OR provider_key=?' : 'SELECT * FROM model_providers ORDER BY priority,provider_key', input.providerId ? [input.providerId, input.providerId] : []);
+  const rows = missionDb.all<Row>(input.providerId ? 'SELECT * FROM mission_model_providers WHERE id=? OR provider_key=?' : 'SELECT * FROM mission_model_providers ORDER BY priority,provider_key', input.providerId ? [input.providerId, input.providerId] : []);
   const results: Array<Record<string, unknown>> = [];
   for (const row of rows) {
     const started = Date.now(); let status: ModelHealthStatus = 'error'; let detail = 'health check failed';
@@ -264,7 +264,7 @@ export async function checkModelHealth(input: { programId: string; target: strin
       const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 10000); const response = await fetch(String(row.base_url), { method: 'GET', headers: { Authorization: `Bearer ${secret}`, 'x-api-key': secret, 'x-goog-api-key': secret }, redirect: 'error', signal: controller.signal }); clearTimeout(timer);
       status = response.ok ? 'ok' : response.status === 401 || response.status === 403 ? 'unauthorized' : response.status === 429 ? 'rate_limited' : 'error'; detail = response.ok ? 'provider endpoint responded' : `provider endpoint returned HTTP ${response.status}`;
     } catch (error) { status = error instanceof ModelLayerError && error.code === 'auth_required' ? 'unauthorized' : healthFromError(error); detail = error instanceof ModelLayerError ? error.message : 'health check failed'; }
-    const at = nowIso(); missionDb.run('UPDATE model_providers SET health_status=?,last_health_check_at=?,updated_at=? WHERE id=?', [status, at, at, String(row.id)]); missionDb.run('INSERT INTO model_health_events (id,provider_id,occurred_at,status,latency_ms,error_class,recovery_at) VALUES (?,?,?,?,?,?,?)', [missionId('mhe'), String(row.id), at, status, Date.now() - started, status === 'ok' ? null : status, status === 'ok' ? at : null]);
+    const at = nowIso(); missionDb.run('UPDATE mission_model_providers SET health_status=?,last_health_check_at=?,updated_at=? WHERE id=?', [status, at, at, String(row.id)]); missionDb.run('INSERT INTO model_health_events (id,provider_id,occurred_at,status,latency_ms,error_class,recovery_at) VALUES (?,?,?,?,?,?,?)', [missionId('mhe'), String(row.id), at, status, Date.now() - started, status === 'ok' ? null : status, status === 'ok' ? at : null]);
     results.push({ provider: publicProvider({ ...row, health_status: status, last_health_check_at: at }), status, detail });
   }
   return results;

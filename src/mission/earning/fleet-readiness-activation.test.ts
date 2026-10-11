@@ -103,8 +103,12 @@ it('each of the three named blockers names a real, existing control or variable 
   assert.ok(read('mission-dashboard/index.html').includes('id="human-actions-list"'), 'the human-action queue has a real host for its rows');
   assert.ok(read('src/mission/server.ts').includes("case 'human-actions'"), 'behind a real route');
   assert.match(read('mission-dashboard/app.js'), /\/human-actions\/\$\{encodeURIComponent\(taskId\)\}\/\$\{decision\}/, 'and both verbs, approve and reject, are wired to it');
-  assert.match(read('package.json'), /"fleet:readiness":\s*"tsx scripts\/mission-fleet-readiness\.ts"/);
-  assert.match(read('package.json'), /"mission:sync-registry":\s*"tsx scripts\/mission-sync-registry\.ts"/);
+  // These commands are the operator's own next step, and production runs the runtime image,
+  // which has dist/ and no src/. Bare `tsx scripts/…` resolved its `../src` imports to a
+  // directory the image never had, so both go through the resolver that prefers the
+  // compiled entry; the assertion follows the wiring rather than the old shape.
+  assert.match(read('package.json'), /"fleet:readiness":\s*"node scripts\/mission-run\.mjs mission-fleet-readiness"/);
+  assert.match(read('package.json'), /"mission:sync-registry":\s*"node scripts\/mission-run\.mjs mission-sync-registry"/);
   assert.match(read('src/mission/server.ts'), /body\.autonomousEnabled !== undefined/, 'the dashboard control has a server-side handler');
 });
 

@@ -30,7 +30,15 @@ and nothing in this document is exposed through them.
   static path.
 * **Separate database.** The mission runtime opens only
   `ZA141251SA_DATABASE_URL` (default `file:./mission.db`). It imports nothing
-  from the platform database layer.
+  from the platform database layer. The two schemas are still allowed to meet in
+  one PostgreSQL database — the mission set creates 173 tables where it is measured
+  (a mission-only SQLite database), 145 of them under the `mission_` prefix, and
+  exactly one of its names was also the platform's: `model_providers`, the collision
+  that is fixed and now pinned, see `docs/MISSION-MIGRATIONS-AT-BOOT-2026-10-12.md`)
+  — but the first mission
+  migration run of a process says so on stderr, because a shared schema is what
+  froze a production mission database at 45 of 49 files. Give the mission its
+  own database; do not treat the warning as noise.
 * **Separate authentication.** Mission owner accounts live in `mission_owner`
   with scrypt-hashed passwords; sessions are mission-local (hashed tokens,
   CSRF token, 12-hour expiry, rotation on every login). No platform session,
@@ -70,6 +78,17 @@ npm run mission:serve
 `mission:init` prints exactly what is missing rather than inventing it: with no
 owner variables it still migrates and reports `not provisioned — missing …`, and
 if the vault key is absent it reports `credential storage disabled`.
+
+**You do not have to remember step 2.** `scripts/start-prod.mjs` applies
+`db/migrations-mission/` on every boot, before the mission server can listen and
+before either public tier binds, through the same entry (`npm run mission:migrate`,
+`node dist/scripts/mission-migrate.js` in the runtime image). It is one
+transaction per file and the ledger records only what committed, so a failure
+leaves the database exactly as it was, exits non-zero, and aborts the boot — a
+mission database that could not be migrated is never reported as migrated. Every
+`mission:*` command resolves to the compiled entry when the tree has no `src/`
+(what the runtime image ships) and to the TypeScript source when it does, via
+`scripts/mission-run.mjs`.
 
 ## 4. Agent self-management
 

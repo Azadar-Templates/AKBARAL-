@@ -206,9 +206,100 @@ class MissionDatabase {
 
 export const missionDb = new MissionDatabase();
 
+/** Columns that belong to the mission's provider table and to no other. */
+const MISSION_PROVIDER_MARKER_COLUMN = 'provider_key';
+const MISSION_PROVIDER_TABLE = 'mission_model_providers';
+const LEGACY_PROVIDER_TABLE = 'model_providers';
+
+function tableColumns(target: MissionDatabase, table: string): string[] {
+  if (!target.tableExists(table)) return [];
+  if (target.engineName() === 'postgres') {
+    return target
+      .all<{ column_name: string }>(
+        'SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position',
+        [table],
+      )
+      .map((row) => String(row.column_name));
+  }
+  return target.all<{ name: string }>(`SELECT name FROM pragma_table_info('${table}')`).map((row) => String(row.name));
+}
+
+/**
+ * Rename the mission's provider table off the platform's name, once.
+ *
+ * 0043 used to create it as `model_providers`, which is also the platform's table
+ * (db/migrations/0002_platform.sql:255). In a database the two systems share, the
+ * mission's `CREATE TABLE IF NOT EXISTS` then no-oped onto the platform shape and the
+ * migration died on a missing `provider_key`, freezing the whole mission schema behind
+ * it. 0043 now creates `mission_model_providers`; databases that already applied the
+ * old version are renamed here so their rows stay reachable under the new name.
+ *
+ * Deliberately narrow, because this runs against real mission data:
+ *   · only a table that HAS the mission's marker column is renamed — a platform-shaped
+ *     `model_providers` is never touched, not renamed, not altered, not read from;
+ *   · if the target name is already taken, nothing moves and the mismatch is reported
+ *     to the caller's transaction so boot fails loudly instead of merging two tables.
+ */
+export function isolateMissionModelProviderTable(
+  target: MissionDatabase = missionDb,
+): { renamed: boolean; reason: string } {
+  if (target.tableExists(MISSION_PROVIDER_TABLE)) {
+    return { renamed: false, reason: `${MISSION_PROVIDER_TABLE} already exists` };
+  }
+  if (!target.tableExists(LEGACY_PROVIDER_TABLE)) {
+    return { renamed: false, reason: 'no legacy table to rename' };
+  }
+  const columns = tableColumns(target, LEGACY_PROVIDER_TABLE);
+  if (!columns.includes(MISSION_PROVIDER_MARKER_COLUMN)) {
+    // The platform's table by that name. It is not ours to move; 0043 will create the
+    // mission's own table alongside it.
+    return { renamed: false, reason: `${LEGACY_PROVIDER_TABLE} is not the mission's table (no ${MISSION_PROVIDER_MARKER_COLUMN} column); left untouched` };
+  }
+  target.exec(`ALTER TABLE ${LEGACY_PROVIDER_TABLE} RENAME TO ${MISSION_PROVIDER_TABLE}`);
+  // Both engines rewrite the FK targets in `model_health_events` / `model_call_logs`
+  // on rename (PostgreSQL by dependency, SQLite since 3.25), but a rename that left
+  // them dangling would be a silent data-integrity loss, so say what moved.
+  return {
+    renamed: true,
+    reason: `renamed ${LEGACY_PROVIDER_TABLE} -> ${MISSION_PROVIDER_TABLE} (mission-shaped, ${columns.length} columns)`,
+  };
+}
+
+let sharedSchemaWarned = false;
+
+/**
+ * The mission and the platform are separate systems and are meant to sit in separate
+ * databases (this file's header). Production proved what happens when they do not: the
+ * one shared table name froze the mission schema. Nothing here refuses that deployment
+ * — refusing would take a working console down — but it must never be silent, so the
+ * first migration run of a process says it out loud.
+ */
+function warnIfSharedWithPlatform(target: MissionDatabase): void {
+  if (sharedSchemaWarned) return;
+  sharedSchemaWarned = true;
+  if (!target.tableExists('_migrations')) return;
+  console.warn(
+    '[mission] WARNING: this mission database also carries the platform migration ledger (`_migrations`), ' +
+      'i.e. the mission and the platform share one schema. They are designed to be separate ' +
+      '(src/mission/database.ts header): give ZA141251SA_DATABASE_URL its own database. ' +
+      'Mission tables keep the mission_ prefix so the two can never collide.',
+  );
+}
+
 /** Apply every mission migration in order; idempotent. */
 export function applyMissionMigrations(target = missionDb): { applied: string[]; total: number } {
-  const dir = migrationsDir();
+  return applyMissionMigrationsFrom(migrationsDir(), target);
+}
+
+/**
+ * The same run against an explicit migration directory. Kept separate from
+ * applyMissionMigrations() so a test can plant a migration that throws and prove boot
+ * aborts on it, without writing into db/migrations-mission/.
+ */
+export function applyMissionMigrationsFrom(
+  dir: string,
+  target = missionDb,
+): { applied: string[]; total: number } {
   const files = fs
     .readdirSync(dir)
     .filter((file) => file.endsWith('.sql'))
@@ -219,6 +310,9 @@ export function applyMissionMigrations(target = missionDb): { applied: string[];
        applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
      )`,
   );
+  const isolation = isolateMissionModelProviderTable(target);
+  if (isolation.renamed) console.log(`[mission] schema: ${isolation.reason}`);
+  warnIfSharedWithPlatform(target);
   const applied: string[] = [];
   for (const file of files) {
     const already = target.get<{ name: string }>('SELECT name FROM mission_migrations WHERE name = ?', [file]);

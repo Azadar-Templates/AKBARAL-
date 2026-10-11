@@ -148,12 +148,12 @@ export function modelBackendReport(): ModelBackendReport {
   const agentsOnFreeTierBasis = count(
     "SELECT COUNT(*) AS c FROM mission_agent_chat_configs WHERE json_extract(config,'$.costBasis') LIKE '%free%tier%'",
   );
-  const providers = db.all<Row>('SELECT provider_key, enabled, credential_vault_key, models_available_json, default_model FROM model_providers ORDER BY priority, provider_key');
+  const providers = db.all<Row>('SELECT provider_key, enabled, credential_vault_key, models_available_json, default_model FROM mission_model_providers ORDER BY priority, provider_key');
   const fallback = {
     supported: providers.length > 1,
     how: providers.length > 0
-      ? 'model_providers rows are dispatched in priority order and a failed provider falls through to the next with status=fallback; register another free-tier provider to widen it'
-      : 'no model_providers rows exist, so dispatch uses the built-in provider configuration only',
+      ? 'mission_model_providers rows are dispatched in priority order and a failed provider falls through to the next with status=fallback; register another free-tier provider to widen it'
+      : 'no mission_model_providers rows exist, so dispatch uses the built-in provider configuration only',
     providersEnabled: providers.filter(row => Number(row.enabled) === 1).length,
     configured: providers.length,
   };
