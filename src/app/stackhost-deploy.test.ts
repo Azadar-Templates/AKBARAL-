@@ -96,6 +96,7 @@ function runMissionStartupHarness(
   enabled = true,
   databaseUrl: string | null = 'file:/tmp/not-allowed.db',
   roles = 'both',
+  extraEnv: Record<string, string> = {},
 ): HarnessResult {
   // `null` means "the operator configured nothing": the wrapper must then fall back to the
   // DATA_DIR default the mission code itself uses, which is what the file assertions below
@@ -245,9 +246,13 @@ process.on('exit', () => {
         // the wrapper's pins. The mission database URL is the operator's own configuration
         // channel (src/mission/database.ts resolves it the same way) and must be HONOURED —
         // overriding it here is what left a production Postgres mission database unmigrated.
+        // The private listener is pinned to loopback:4200 unless the operator names the
+        // mission-specific variable, so an injected platform PORT or a wildcard bind inherited
+        // from a compose file can neither expose nor relocate the owner dashboard by accident.
         ZA141251SA_BIND_HOST: '0.0.0.0',
         ZA141251SA_PORT: '9999',
         ...(databaseUrl === null ? {} : { ZA141251SA_DATABASE_URL: databaseUrl }),
+        ...extraEnv,
       },
     });
     const record: HarnessRecord = existsSync(recordPath)
@@ -555,24 +560,58 @@ test('the mission migration step is skipped out loud, never as a success, when t
   );
 });
 
-test('private mission startup refuses a missing /data/mission.db without spawning any tier', () => {
+test('private mission startup refuses a missing /data/mission.db without inventing one', () => {
   // No configured URL at all: the wrapper falls back to the DATA_DIR default it shares with
-  // src/mission/database.ts, and refuses to invent a database.
+  // src/mission/database.ts, and refuses to invent a database. The refusal is loud and named,
+  // no mission child is spawned and nothing is probed — but the public tiers are not held
+  // hostage by a private tier that was never configured correctly.
   const run = runMissionStartupHarness('missing-db', true, null);
-  assert.equal(run.status, 1);
-  assert.deepEqual(run.record.spawns, []);
-  assert.deepEqual(run.record.fetches, []);
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['web', 'api'], 'a refused private tier must not stop the public tiers');
+  assert.ok(
+    !run.record.spawns.some((spawn) => spawn.kind === 'mission'),
+    'the mission child must not be launched against a database the wrapper refused',
+  );
+  assert.deepEqual(run.record.fetches, [], 'no readiness probe may be sent to a tier that was refused');
   assert.match(run.stderr, /\/data\/mission\.db does not exist/);
   assert.match(run.stderr, /will not create or select an alternate database/);
+  assert.match(
+    `${run.stdout}\n${run.stderr}`,
+    /MISSION TIER UNAVAILABLE — the private mission server never became ready/,
+    'the refusal must be reported as a decision the container made, not as a line in a log nobody reads',
+  );
 });
 
 test('a configured mission database that does not exist is refused by name, not replaced', () => {
   const run = runMissionStartupHarness('missing-db');
-  assert.equal(run.status, 1);
-  assert.deepEqual(run.record.spawns, []);
-  assert.deepEqual(run.record.spawnSteps, [], 'a refused boot may not even run the platform migration step first and continue');
+  assert.equal(run.status, 0, run.stderr);
   assert.match(run.stderr, /\/tmp\/not-allowed\.db does not exist/, 'the refusal must name the database the operator configured');
   assert.match(run.stderr, /will not create or select an alternate database/);
+  // The platform migrations still run, because the public tiers need their own database; the
+  // mission migrations are skipped out loud, and the mission child is never started.
+  assert.ok(
+    !run.record.spawnSteps.some((args) => args.some((arg) => arg.includes('mission-migrate'))),
+    'a refused mission database must never be migrated, created, or selected as an alternate',
+  );
+  assert.ok(
+    run.record.spawnSteps.some((args) => args.some((arg) => arg.includes('db/migrate'))),
+    'the public tiers still get their own migration step even when the private tier is refused',
+  );
+});
+
+test('ZA141251SA_MISSION_REQUIRED=true restores the fail-closed container for a refused private tier', () => {
+  // The explicit opt-in keeps its original meaning: a deployment that refuses to serve without
+  // its private half exits non-zero. It is simply no longer the default.
+  const run = runMissionStartupHarness('missing-db', true, 'file:/tmp/not-allowed.db', 'both', {
+    ZA141251SA_MISSION_REQUIRED: 'true',
+  });
+  assert.equal(run.status, 1, 'the required variant must still terminate the container');
+  assert.match(run.stderr, /will not create or select an alternate database/);
+  assert.match(
+    run.stderr,
+    /ZA141251SA_MISSION_REQUIRED=true is set, so this container exits now/,
+    'the exit must say that the owner asked for it, not look like an unexplained crash',
+  );
 });
 
 test('an enabled private mission server requires the compiled production entry', () => {
@@ -582,33 +621,141 @@ test('an enabled private mission server requires the compiled production entry',
   assert.match(`${run.stdout}\n${run.stderr}`, /dist[/\\]scripts[/\\]mission-serve\.js/);
 });
 
-test('private readiness failure times out non-zero before public tiers start', () => {
-  const run = runMissionStartupHarness('readiness-timeout');
-  assert.equal(run.status, 1);
-  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission']);
-  assert.ok(run.record.fetches.length >= 1);
-  assert.ok(run.record.fetches.every((url) => url === 'http://127.0.0.1:4200/api/health'));
-  assert.deepEqual(run.record.kills, [{ kind: 'mission', signal: 'SIGTERM' }]);
-  assert.match(run.stderr, /private mission readiness timed out/);
+test('a mission tier that never becomes ready is retried loudly and never costs the public tiers', () => {
+  // The outage this pins: readiness used to be awaited BEFORE the public tiers were launched,
+  // with a 30 s budget, so a private tier that needed longer meant the container died before the
+  // web tier ever bound — and it died again on every restart. Now the public tiers are up, the
+  // probe is reported while it runs, a non-ready child is stopped and relaunched within a bounded
+  // budget, and giving up is an explicit, loud decision.
+  const run = runMissionStartupHarness('readiness-timeout', true, 'file:/tmp/not-allowed.db', 'both', {
+    ZA141251SA_MISSION_START_ATTEMPTS: '2',
+    ZA141251SA_MISSION_RESTART_DELAY_MS: '0',
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(
+    run.record.spawns.map((spawn) => spawn.kind),
+    ['mission', 'web', 'api', 'mission'],
+    'the public tiers must launch anyway, and the private tier must be retried within its budget',
+  );
+  assert.ok(run.record.fetches.length >= 1, 'the readiness probe must actually have been attempted');
+  assert.ok(
+    run.record.fetches.every((url) => url === 'http://127.0.0.1:4200/api/health'),
+    `every probe must go to the address the child was launched on: ${run.record.fetches.join(', ')}`,
+  );
+  assert.deepEqual(
+    run.record.kills,
+    [
+      { kind: 'mission', signal: 'SIGTERM' },
+      { kind: 'mission', signal: 'SIGTERM' },
+    ],
+    'a non-ready child is stopped before the next attempt — never a silent restart loop, and never the public tiers',
+  );
+  const out = `${run.stdout}\n${run.stderr}`;
+  assert.match(out, /private mission readiness timed out/);
+  assert.match(out, /health payload did not satisfy the private readiness contract/, 'the log must say WHY the probe was rejected, not just that it failed');
+  assert.match(out, /ownerAccounts=0/, 'the rejected payload must be quoted back verbatim');
+  assert.match(out, /MISSION TIER NOT READY — attempt 1\/2/);
+  assert.match(out, /MISSION TIER UNAVAILABLE/);
+  assert.match(out, /the public tiers stay up/, 'the report must say what is still serving');
+  assert.match(out, /ZA141251SA_MISSION_READINESS_TIMEOUT_MS/, 'the escape hatches must be named in the failure itself');
 });
 
-test('an unexpected required mission exit terminates non-zero and stops public siblings', () => {
-  const run = runMissionStartupHarness('unexpected-exit');
-  assert.equal(run.status, 1);
-  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission', 'web', 'api']);
-  assert.deepEqual(run.record.kills, [
-    { kind: 'mission', signal: 'SIGTERM' },
-    { kind: 'web', signal: 'SIGTERM' },
-    { kind: 'api', signal: 'SIGTERM' },
-  ]);
-  assert.match(run.stderr, /exited unexpectedly with code 0; terminating the container/);
+test('ZA141251SA_MISSION_REQUIRED=true makes a never-ready private tier a non-zero container exit', () => {
+  const run = runMissionStartupHarness('readiness-timeout', true, 'file:/tmp/not-allowed.db', 'both', {
+    ZA141251SA_MISSION_REQUIRED: 'true',
+    ZA141251SA_MISSION_START_ATTEMPTS: '1',
+    ZA141251SA_MISSION_RESTART_DELAY_MS: '0',
+  });
+  assert.equal(run.status, 1, 'the explicit fail-closed opt-in must still exit non-zero');
+  assert.match(run.stderr, /ZA141251SA_MISSION_REQUIRED=true is set, so this container exits now/);
+  assert.ok(
+    run.record.kills.some((kill) => kill.kind === 'web'),
+    'an operator-requested exit still stops the siblings it launched — no orphaned tiers',
+  );
 });
 
-test('signal termination of the required mission child is also a non-zero failure', () => {
-  const run = runMissionStartupHarness('signal-exit');
-  assert.equal(run.status, 1);
+test('an unexpected mission exit is retried without stopping the public tiers', () => {
+  const run = runMissionStartupHarness('unexpected-exit', true, 'file:/tmp/not-allowed.db', 'both', {
+    ZA141251SA_MISSION_START_ATTEMPTS: '2',
+    ZA141251SA_MISSION_RESTART_DELAY_MS: '0',
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission', 'web', 'api', 'mission']);
+  assert.deepEqual(
+    run.record.kills,
+    [],
+    'a private child that exited on its own is not killed again, and the public tiers are never killed for it — that sibling kill is exactly what took the product down',
+  );
+  const out = `${run.stdout}\n${run.stderr}`;
+  assert.match(out, /MISSION TIER RESTART — the ready private mission child exited unexpectedly with code 0/);
+  assert.match(out, /relaunching it \(the public tiers are unaffected\)/);
+  assert.match(out, /MISSION TIER UNAVAILABLE/);
+});
+
+test('signal termination of the mission child is reported and retried, not swallowed', () => {
+  const run = runMissionStartupHarness('signal-exit', true, 'file:/tmp/not-allowed.db', 'both', {
+    ZA141251SA_MISSION_START_ATTEMPTS: '1',
+    ZA141251SA_MISSION_RESTART_DELAY_MS: '0',
+  });
+  assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(run.record.spawns.map((spawn) => spawn.kind), ['mission', 'web', 'api']);
-  assert.match(run.stderr, /terminated by signal SIGTERM; terminating the container/);
+  assert.ok(run.record.kills.every((kill) => kill.kind === 'mission'), 'the public tiers are never killed for the private tier');
+  assert.match(
+    run.stderr,
+    /MISSION TIER RESTART — the ready private mission child was terminated by signal SIGTERM/,
+    'the signal must be named in the report, not swallowed as an anonymous restart',
+  );
+  assert.match(
+    run.stderr,
+    /the 1-launch budget is used up/,
+    'the report must state how much supervision it attempted before giving up',
+  );
+});
+
+test('the wrapper probes exactly the address it launched the child on, and never a wider one', () => {
+  // The drift this pins was the second half of the outage: the readiness probe used literals that
+  // were also *forced* onto the child, so "what is bound" and "what is probed" agreed only by
+  // accident. Both now come from missionBindTarget(), and this asserts the agreement on the real
+  // spawn env and the real probe URL — not on a re-derived copy of either.
+  const moved = runMissionStartupHarness('ready', true, 'file:/tmp/not-allowed.db', 'both', {
+    ZA141251SA_MISSION_PORT: '4321',
+  });
+  assert.equal(moved.status, 0, moved.stderr);
+  const child = moved.record.spawns.find((spawn) => spawn.kind === 'mission');
+  assert.ok(child, 'the mission child must have been launched');
+  assert.equal(child.env.ZA141251SA_PORT, '4321', 'an explicit ZA141251SA_MISSION_PORT moves the child');
+  assert.deepEqual(
+    moved.record.fetches,
+    ['http://127.0.0.1:4321/api/health'],
+    '…and the probe follows it to the same address; a probe pointed elsewhere is indistinguishable from a dead service',
+  );
+});
+
+test('an inherited wildcard bind or injected platform port cannot move the private listener', () => {
+  // Deliberately hostile inherited values are part of the harness for exactly this reason: the
+  // private tier must stay loopback:4200 unless the operator names the mission-specific variable.
+  const run = runMissionStartupHarness('ready');
+  assert.equal(run.status, 0, run.stderr);
+  const child = run.record.spawns.find((spawn) => spawn.kind === 'mission');
+  assert.ok(child, 'the mission child must have been launched in this scenario too');
+  assert.equal(child.env.ZA141251SA_BIND_HOST, '127.0.0.1', 'ZA141251SA_BIND_HOST=0.0.0.0 must not expose the owner dashboard');
+  assert.equal(child.env.ZA141251SA_PORT, '4200', 'an injected platform PORT/Z141251SA_PORT must not move the private listener');
+  assert.deepEqual(run.record.fetches, ['http://127.0.0.1:4200/api/health']);
+});
+
+test('the readiness budget is sized for a real boot, not for a fast laptop', () => {
+  // Measured on the production shape (PostgreSQL, 4,001 imported agents, no network latency): the
+  // mission child needed ~38 s to reach its own listener. The old 30 s window with a 1 s per-request
+  // timeout therefore could never be satisfied — every boot was a timeout. These floors encode that
+  // lesson so the numbers cannot be "tidied" back down.
+  const missionSource = readFileSync('src/mission/database.ts', 'utf8');
+  assert.match(missionSource, /ZA141251SA_BIND_HOST[\s\S]{0,160}?'127\.0\.0\.1'/, "the mission server's own default bind must stay loopback");
+  assert.match(missionSource, /ZA141251SA_PORT[\s\S]{0,120}?4200/, 'the mission server must keep defaulting to port 4200');
+  const resolver = readFileSync('scripts/mission-db-target.mjs', 'utf8');
+  assert.match(resolver, /ZA141251SA_MISSION_READINESS_TIMEOUT_MS, 180_000/, 'the default readiness budget must stay generous');
+  assert.match(resolver, /ZA141251SA_MISSION_HEALTH_TIMEOUT_MS, 5_000/, 'the per-request timeout must survive a busy event loop');
+  assert.match(resolver, /ZA141251SA_MISSION_START_ATTEMPTS, 5/);
+  assert.match(resolver, /ZA141251SA_MISSION_REQUIRED[\s\S]{0,120}=== 'true'|required: [\s\S]{0,80}=== 'true'/, 'terminating the container must remain an explicit opt-in');
 });
 
 test('mission startup never wires workers, a public route, or a proxy', () => {

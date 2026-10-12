@@ -150,6 +150,8 @@ function runSync(options: {
    * tree that looks like the runtime image: dist/, db/, scripts/, no src/. */
   mode?: 'source' | 'image';
   cwd?: string;
+  /** Extra variables, for tests that exercise a documented knob rather than the default path. */
+  extraEnv?: Record<string, string | undefined>;
 }): SyncRun {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -163,6 +165,7 @@ function runSync(options: {
     // these tests is which target the command resolves on its own.
     MISSION_DATABASE_URL: undefined,
     AKBARAL_ROLES: undefined,
+    ...options.extraEnv,
   };
   if (options.mode === 'image') {
     // The runtime image shape: the compiled output, the migration directory, the plain-JS
@@ -278,6 +281,56 @@ it('is idempotent: a second run writes nothing and reports already in sync', () 
     assert.equal(valueInFile(file, `SELECT COUNT(*) AS n FROM mission_agents WHERE slug LIKE 'sync-${prefix}-%'`), 5, 'no duplicate identity rows');
     assert.equal(valueInFile(file, `SELECT COUNT(*) AS n FROM mission_agent_tools`), 7, 'no duplicate grant rows');
   }
+});
+
+it('the sync reports its bounds, its per-batch cost and the fleet rails it provisioned', () => {
+  // Measured reason for this test: a full-fleet run used to take 66.8 s with no output between the
+  // first line and the last, so when the container restarted it, nobody could tell how far it had
+  // got, whether the database was slow or the code was, or whether any of the money-control rows
+  // had been written. Every clause below is something an operator needed and did not have.
+  const prefix = `t9${Date.now().toString(36).slice(-5)}`;
+  const platform = platformFixture(prefix);
+  const mission = missionFile(prefix);
+
+  const run = runSync({ missionUrl: mission.url, platformUrl: platform.url });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(run.stdout, /probing it before any write/, 'the run must prove the database answered before it opened a transaction');
+  assert.match(run.stdout, /batch 500 agents per transaction/, 'the batch size is part of the report, not an implementation detail');
+  assert.match(run.stdout, /batch 1\/1 in \d+ ms: 5 created/, `each batch must be timed and counted:\n${run.stdout}`);
+  assert.match(run.stdout, /5 fleet rails provisioned \(0 already present\)/, 'cash account + grant provisioning for the imported identities is reported, per batch');
+  assert.match(run.stdout, /fleet rails 5 provisioned\/0 already present/, 'and totalled in the summary, so a zero can be seen as a zero');
+});
+
+it('ZA141251SA_SYNC_BATCH really changes the batches, and a nonsense value is a refusal rather than a clamp', () => {
+  const prefix = `ta${Date.now().toString(36).slice(-5)}`;
+  const platform = platformFixture(prefix);
+  const mission = missionFile(prefix);
+
+  const small = runSync({ missionUrl: mission.url, platformUrl: platform.url, extraEnv: { ZA141251SA_SYNC_BATCH: '2' } });
+  assert.equal(small.status, 0, small.stdout + small.stderr);
+  // 5 platform-owned identities in batches of 2 is three batches, and the last one is the remainder.
+  assert.match(small.stdout, /batch 2 agents per transaction/, small.stdout);
+  assert.match(small.stdout, /batch 1\/3 in \d+ ms: 2 created/, small.stdout);
+  assert.match(small.stdout, /batch 3\/3 in \d+ ms: 1 created/, small.stdout);
+
+  // Negative control, in the same run: an idempotent second pass must report the same rows as
+  // "unchanged" and provision no new rails, so a "0 created" line means "already synced" here and
+  // can never be read as a silent failure.
+  const again = runSync({ missionUrl: mission.url, platformUrl: platform.url, extraEnv: { ZA141251SA_SYNC_BATCH: '2' } });
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.match(again.stdout, /ALREADY IN SYNC/, again.stdout);
+  assert.match(again.stdout, /batch 1\/3 in \d+ ms: 0 created, 0 updated, 2 already matching/, again.stdout);
+  assert.match(again.stdout, /fleet rails 0 provisioned\/0 already present/, 'a re-run must say it provisioned nothing, out loud');
+
+  // And the guard: 0 is not clamped to 1 and 5000 is not clamped to 1000. A typo in a knob that
+  // decides how many rows go into one transaction has to stop the run, not reshape it.
+  const zero = runSync({ missionUrl: mission.url, platformUrl: platform.url, extraEnv: { ZA141251SA_SYNC_BATCH: '0' } });
+  assert.equal(zero.status, 1, `ZA141251SA_SYNC_BATCH=0 must refuse to run:\n${zero.stdout}\n${zero.stderr}`);
+  assert.match(`${zero.stdout}\n${zero.stderr}`, /ZA141251SA_SYNC_BATCH must be a whole number of agents per transaction between 1 and 1000/);
+  assert.match(`${zero.stdout}\n${zero.stderr}`, /got "0"/, 'the refusal must quote the value that was set');
+  const huge = runSync({ missionUrl: mission.url, platformUrl: platform.url, extraEnv: { ZA141251SA_SYNC_BATCH: '5000' } });
+  assert.equal(huge.status, 1, huge.stdout + huge.stderr);
+  assert.match(`${huge.stdout}\n${huge.stderr}`, /got "5000"/);
 });
 
 it('a platform database that cannot be opened exits non-zero with the reason — never silent', () => {

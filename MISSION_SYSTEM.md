@@ -218,6 +218,18 @@ statements are filtered out for PostgreSQL. Verify with:
 npm run mission:pg-check     # real PostgreSQL (pglite wire protocol) end-to-end: 10 checks, 0 failures
 ```
 
+Booting it under the production wrapper, added 2026-10-12 after a container crash-looped on a
+PostgreSQL mission database: the wrapper (`ZA141251SA_MISSION_SERVER_ENABLED=true`) launches the
+private child first, launches the public tiers without waiting for it, and then verifies readiness
+against `missionBindTarget()` — the same address it gave the child, loopback:4200 unless
+`ZA141251SA_MISSION_PORT` says otherwise. A private tier that never becomes ready is reported loudly
+and retried within `ZA141251SA_MISSION_START_ATTEMPTS` (5) × `ZA141251SA_MISSION_READINESS_TIMEOUT_MS`
+(180 s), and the container keeps serving. It only ends the container when the owner opts in with
+`ZA141251SA_MISSION_REQUIRED=true`. The readiness payload must be genuinely usable — `audit: true`,
+`ledger: true`, `vaultConfigured: true` and at least one owner account — because "listening" was never
+the property that mattered. Full record with measurements:
+[docs/MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md](docs/MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md).
+
 ## 6e. Fleet readiness, admission and evidence-gated verification (added 2026-10-09)
 
 Registering 4,001 specialists is not the same as being able to earn with them, so the

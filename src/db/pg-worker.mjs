@@ -43,6 +43,25 @@ if (!isMainThread && parentPort && workerData) {
     Atomics.notify(stateArr, 0);
   };
 
+  // The knobs below exist because a serialized bridge has no second chance: every query in the
+  // process goes through this one client, so an unbounded connect, a statement that waits on a lock
+  // forever, or an idle-in-transaction session that a pooler will not release is not a slow boot —
+  // it is the boot. Measured on 2026-10-12, a container was killed for being "unready" at 38 s
+  // while this client was still doing real work; nothing here changes the work, it makes the wait
+  // bounded, observable and survivable.
+  const intEnv = (name, fallback) => {
+    const raw = String(process.env[name] ?? '').trim();
+    if (raw.length === 0) return fallback;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+  const connectTimeoutMs = intEnv('AKBARAL_PG_CONNECT_TIMEOUT_MS', 30_000) || 30_000;
+  const connectAttempts = Math.max(1, intEnv('AKBARAL_PG_CONNECT_ATTEMPTS', 3) || 1);
+  const statementTimeoutMs = intEnv('AKBARAL_PG_STATEMENT_TIMEOUT_MS', 300_000);
+  const lockTimeoutMs = intEnv('AKBARAL_PG_LOCK_TIMEOUT_MS', 60_000);
+  const idleInTransactionMs = intEnv('AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS', 120_000);
+  const applicationName = String(process.env.AKBARAL_PG_APPLICATION_NAME ?? 'akbaral').trim() || 'akbaral';
+
   let client;
   try {
     const pg = await import('pg');
@@ -59,10 +78,63 @@ if (!isMainThread && parentPort && workerData) {
     // warning, and refuses plaintext/unverified remote connections. The
     // normalized string is never logged.
     const { connectionString: normalized } = normalizeSslMode(connectionString);
-    client = new Client({ connectionString: normalized });
-    await client.connect();
+    const options = {
+      connectionString: normalized,
+      // Without this, a black-holed DNS/TCP connect hangs on the kernel's own schedule
+      // (minutes), which is longer than any readiness budget a container platform gives.
+      connectionTimeoutMillis: connectTimeoutMs,
+      // A pooler/idle-reaper sees a healthy keepalive instead of a quiet socket, which is the
+      // difference between "connection terminated unexpectedly" at random and a stable session.
+      keepAlive: true,
+      // Shows up in pg_stat_activity: whose session is this, when the only shared resource in
+      // the account is a database. Never contains a credential.
+      application_name: applicationName,
+    };
+    // Bounded retry, because the platform can start this container while a suspended serverless
+    // Postgres is still waking. Each attempt is individually bounded above, so the total is
+    // bounded too — this is a reschedule of the failure, not an unbounded wait for it.
+    let lastError = null;
+    for (let attempt = 1; attempt <= connectAttempts; attempt += 1) {
+      try {
+        client = new Client(options);
+        await client.connect();
+        break;
+      } catch (error) {
+        lastError = error;
+        try { client?.end(); } catch { /* the connection is the problem, not the cleanup */ }
+        client = null;
+        if (attempt < connectAttempts) {
+          const waitMs = Math.min(5_000, 250 * 2 ** (attempt - 1));
+          process.stderr.write(
+            `postgres connect attempt ${attempt}/${connectAttempts} failed (${error instanceof Error ? error.message : String(error)}); retrying in ${waitMs} ms\n`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+      }
+    }
+    if (!client) throw lastError ?? new Error('postgres connect failed without an error from the driver');
+    // Session-level bounds, best effort on purpose: under a transaction-mode pooler these are not
+    // guaranteed to pin, and a proxy that rejects one must never turn into a failed boot. The bound
+    // that cannot be bypassed is the client-side wait in src/db/driver.ts; these stop a query this
+    // process abandoned (or a lock it is stuck on) from outliving it on the server.
+    for (const statement of [
+      statementTimeoutMs > 0 ? `SET statement_timeout = ${statementTimeoutMs}` : null,
+      lockTimeoutMs > 0 ? `SET lock_timeout = ${lockTimeoutMs}` : null,
+      idleInTransactionMs > 0 ? `SET idle_in_transaction_session_timeout = ${idleInTransactionMs}` : null,
+    ]) {
+      if (!statement) continue;
+      try {
+        await client.query(statement);
+      } catch {
+        /* the pooler refused it; the client-side deadline still applies */
+      }
+    }
   } catch (error) {
-    fatal(`postgres connect failed: ${error instanceof Error ? error.message : String(error)}`);
+    fatal(
+      `postgres connect failed: ${error instanceof Error ? error.message : String(error)} ` +
+        `(after ${connectAttempts} bounded attempt(s), ${connectTimeoutMs} ms each — the database host and port come from ` +
+        'ZA141251SA_DATABASE_URL; AKBARAL_PG_CONNECT_ATTEMPTS / AKBARAL_PG_CONNECT_TIMEOUT_MS change this budget)',
+    );
     process.exit(1); // eslint-disable-line n/no-process-exit
   }
 

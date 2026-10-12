@@ -251,3 +251,19 @@ database. `ZA141251SA_DATABASE_URL` currently points at a database that also hol
 schema, which is what made this migration fail at all and which the boot now warns about on every
 start. Separating them is an environment change on the owner's side; this change makes the shared
 shape survivable, not correct.
+
+## Amendment, later the same day
+
+This document's fix made the mission schema reachable at boot on PostgreSQL. Booting it then met a
+different limit: the wrapper gave the private child 30 s to answer `/api/health`, the child needed
+~38 s to finish the migrations *and* provision wallets for the 4,001-agent fleet that had just been
+imported, and the wrapper `await`ed that window before starting the public tiers — so the fix's first
+production effect was a crash loop that also took the public product down, and a
+`mission:sync-registry` killed mid-batch.
+
+Nothing in this document is reversed: migrations still run as a blocking step **before** the mission
+server is launched, still on exactly the database the child will open, and a failed migration still
+stops the boot. What changed is everything *after* that step — the boot's own slow work was made
+54× cheaper (set-based wallet provisioning), and readiness became a loud, bounded, non-fatal-by-
+default gate instead of an unannounced 30 s cliff. See
+[MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md](MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md).

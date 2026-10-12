@@ -107,32 +107,67 @@ export function scoreAgentForOpportunity(agent: Row, opportunity: Row): Allocati
   };
 }
 
+/**
+ * Materialize the specialist catalog into `mission_agents` so the allocator has a fleet to score.
+ *
+ * Rewritten on 2026-10-12 for two reasons, both of which were visible only on PostgreSQL:
+ *
+ *  · It used to run `INSERT OR IGNORE INTO mission_money_grants (id, …)` inside a `try { … } catch {}`
+ *    in the middle of its own transaction. Two independent defects in one line: `INSERT OR IGNORE` is
+ *    SQLite syntax the PostgreSQL engine does not have, and `mission_money_grants` has no `id` column
+ *    at all (its primary key is `agent_id`) — so the statement failed on **both** engines and was
+ *    swallowed on both. On SQLite a swallowed statement is merely a no-op; inside an open PostgreSQL
+ *    transaction it aborts the transaction, and every later statement in it then fails with
+ *    "current transaction is aborted, commands ignored until end of transaction block". That is what
+ *    made a warmed production-shaped mission database hang at boot instead of reporting anything:
+ *    the next `SELECT` in the loop failed, and the one after that, until the boot was waiting on a
+ *    health endpoint that could not answer. The grants this line tried to mint are provisioned
+ *    properly by `provisionMoneyAgents()` in the registry sync, so removing it changes no working
+ *    behavior — only the failure it caused.
+ *  · The loop asked the database for `COUNT(*)` and for the agent's slug once per catalog entry —
+ *    ~8,000 serialized round trips on a 4,001-agent catalog. Both sets are now read once and the
+ *    inserts go out in chunks of 200, which is the same change `ensureAgentWallets()` got.
+ *
+ * `maxAgents` from the policy is still a hard ceiling, and a catalog that is already materialized
+ * (>= 4,000 registry rows) still returns immediately without writing.
+ */
 export function ensureCatalogPersisted(): number {
-  const count = Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_agents WHERE origin_platform=\'akbaral-registry\'')?.c ?? 0);
+  const registryCount = (): number =>
+    Number(db.get<Row>(`SELECT COUNT(*) as c FROM mission_agents WHERE origin_platform='akbaral-registry'`)?.c ?? 0);
+  const count = registryCount();
   if (count >= 4000) return count;
-  // Need to sync catalog — bulk insert via transaction (bounded by maxAgents)
   const policy = currentPolicy();
-  const remaining = Math.max(0, policy.maxAgents - Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_agents')?.c ?? 0));
+  const totalAgents = Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_agents')?.c ?? 0);
+  const remaining = Math.max(0, policy.maxAgents - totalAgents);
   if (remaining < 100) return count;
   const catalog = generateAgentDefinitions();
-  let synced = 0;
-  db.transaction(()=>{
-    for (const def of catalog) {
-      if (db.get('SELECT id FROM mission_agents WHERE slug=?',[def.slug])) continue;
-      if (Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_agents')?.c ?? 0) >= policy.maxAgents) break;
-      const id = `agt_reg_${def.slug.slice(0,60).replace(/[^a-z0-9]/g,'').slice(0,24)}_${Math.random().toString(36).slice(2,6)}`;
-      try {
-        db.run("INSERT INTO mission_agents (id,slug,name,category,role_key,parent_id,depth,generation,status,mission_role,origin_platform,capabilities) VALUES (?,?,?,?,'specialist',NULL,0,'registry','active','worker','akbaral-registry',?)",
-          [id, def.slug, def.name.slice(0,200), def.categorySlug, JSON.stringify(def.capabilities)]);
-        // provision money agent minimal
-        try { db.run('INSERT OR IGNORE INTO mission_money_grants (id, agent_id, spend_limit_cents, delegation_cents, can_create, expires_at, status, created_at) VALUES (?,?,?,?,?,?,?,?)',
-          [missionId('grant'), id, 0, 0, 0, new Date(Date.now()+86400000*30).toISOString(), 'active', nowIso()]); } catch {}
-        synced++;
-        if (synced >= Math.min(4001, remaining)) break;
-      } catch {}
+  const budget = Math.min(catalog.length, 4001, remaining);
+  // One read instead of one per candidate: the slugs already in the database, and nothing else.
+  const taken = new Set<string>(
+    db.all<Row>('SELECT slug FROM mission_agents').map((row) => String(row.slug)),
+  );
+  const missing = catalog.filter((def) => !taken.has(def.slug)).slice(0, budget);
+  if (missing.length === 0) return registryCount();
+  db.transaction(() => {
+    const CHUNK = 200;
+    for (let start = 0; start < missing.length; start += CHUNK) {
+      const slice = missing.slice(start, start + CHUNK);
+      const params: Array<string | number> = [];
+      for (const def of slice) {
+        const id = `agt_reg_${def.slug.slice(0, 60).replace(/[^a-z0-9]/g, '').slice(0, 24)}_${Math.random().toString(36).slice(2, 6)}`;
+        params.push(id, def.slug, def.name.slice(0, 200), def.categorySlug, JSON.stringify(def.capabilities));
+      }
+      // Five bound values per row (id, slug, name, category, capabilities) and seven literals that
+      // are constant for a registry import — same shape the registry sync writes, so a boot-seeded
+      // agent and a synced agent are indistinguishable rows.
+      const row = '(?,?,?,?,\'specialist\',NULL,0,\'registry\',\'active\',\'worker\',\'akbaral-registry\',?)';
+      db.run(
+        `INSERT INTO mission_agents (id,slug,name,category,role_key,parent_id,depth,generation,status,mission_role,origin_platform,capabilities) VALUES ${slice.map(() => row).join(', ')}`,
+        params,
+      );
     }
   });
-  return Number(db.get<Row>('SELECT COUNT(*) as c FROM mission_agents WHERE origin_platform=\'akbaral-registry\'')?.c ?? 0);
+  return registryCount();
 }
 
 /** Get all active agents — from DB plus catalog fallback so 4,001 are always considered. */

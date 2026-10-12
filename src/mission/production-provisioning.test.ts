@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 
 const TEST_DB = resolve(process.cwd(), 'test-production-e2e.db');
 
+
 describe('production provisioning — full e2e', () => {
   before(() => {
     process.env.ZA141251SA_DATABASE_URL = `file:${TEST_DB}`;
@@ -308,5 +309,131 @@ describe('production provisioning — full e2e', () => {
     assert.ok(moneyGrants >= 4001);
     assert.ok(cashAccounts >= 4001);
     assert.equal(revenue, 0);
+  });
+
+  it('bulk fleet provisioning writes the same rows as the per-agent loop it replaced', () => {
+    // The set-based path in ensureAgentWallets()/provisionMoneyAgents() exists for one reason: the
+    // per-agent loop cost ~30 s of serialized round trips for the imported 4,001-agent fleet inside
+    // the mission server's pre-listen boot, which is what made the container miss its readiness
+    // window and restart forever. Speed alone is not the acceptance criterion — wallets and grants
+    // are the money-control surface, so the bulk path is asserted to produce the SAME rows, the SAME
+    // audit payloads and the SAME chain, not merely a similar outcome.
+    const { missionDb, missionId, verifyMissionAudit } = require('./database');
+    // `require` keeps this file free of import-time coupling to one database; the rows below are
+    // read through a loosely typed handle on purpose, because the assertion is about content.
+    const db = missionDb as unknown as {
+      get: (sql: string, params?: unknown[]) => Record<string, unknown> | undefined;
+      all: (sql: string, params?: unknown[]) => Record<string, unknown>[];
+      run: (sql: string, params?: unknown[]) => unknown;
+    };
+    const { ensureAgentWallet, ensureAgentWallets } = require('./treasury');
+    const { provisionMoneyAgent, provisionMoneyAgents } = require('./money');
+
+    const makeAgent = (path: string, index: number) => {
+      const id = missionId('agt');
+      const name = `Equivalence ${path} ${index}`;
+      db.run(
+        "INSERT INTO mission_agents (id,slug,name,category,role_key,parent_id,depth,generation,status,mission_role,origin_platform,capabilities) VALUES (?,?,?,?,'specialist',NULL,0,'registry','active','worker','equivalence-test','[]')",
+        [id, `equivalence-${path}-${index}`, name, 'equivalence'],
+      );
+      return { id, name };
+    };
+    const serialAgents = Array.from({ length: 5 }, (_, i) => makeAgent('serial', i));
+    const bulkAgents = Array.from({ length: 5 }, (_, i) => makeAgent('bulk', i));
+
+    // Path 1 — the loop: one transaction and one audit append per agent, exactly as it ran until now.
+    for (const agent of serialAgents) {
+      ensureAgentWallet(agent.id, `${agent.name} wallet`, 0);
+      provisionMoneyAgent(agent.id, 'owner_test');
+    }
+    // Path 2 — the bulk form the boot and mission:sync-registry now use, over the same kind of input.
+    const bulkWalletRun = ensureAgentWallets();
+    const bulkMoneyRun = provisionMoneyAgents(bulkAgents.map((agent) => agent.id), 'owner_test');
+    assert.equal(bulkMoneyRun.created, bulkAgents.length, 'the bulk money path must provision exactly the agents asked for');
+    assert.equal(bulkMoneyRun.alreadyProvisioned, 0);
+    assert.ok(bulkWalletRun.created >= bulkAgents.length, 'the set-based wallet pass must find and provision the bulk agents');
+
+    // Row content, agent by agent. Ids and timestamps are random per row by construction; everything
+    // the fleet's money depends on must be identical.
+    const walletShape = (agent: { id: string; name: string }) => {
+      const row = db.get('SELECT kind, label, currency, budget_cents, status FROM mission_wallets WHERE agent_id = ?', [agent.id]);
+      // Both paths name the wallet after its agent, so the agent's own name is normalized out.
+      // Everything else about the label — the `… wallet` form, the casing, the 160-character cap —
+      // has to match, and that is what this comparison actually pins.
+      return row ? { ...row, agent_id: '<agent>', label: String(row.label).split(agent.name).join('<name>') } : null;
+    };
+    const grantShape = (agent: { id: string; name: string }) => {
+      const row = db.get(
+        'SELECT parent_id, spend_limit_cents, delegation_cents, granted_by, opportunity_id FROM mission_money_grants WHERE agent_id = ?',
+        [agent.id],
+      );
+      const expiry = db.get('SELECT expires_at FROM mission_money_grants WHERE agent_id = ?', [agent.id]);
+      // The no-parent path mints its own expiry, so only the resolved duration is comparable:
+      // 365 days on both paths, to the day.
+      const days = expiry ? Math.round((new Date(String(expiry.expires_at)).getTime() - Date.now()) / 86_400_000) : null;
+      return row ? { ...row, agent_id: '<agent>', expiryDaysFromNow: days } : null;
+    };
+    const cashShape = (agent: { id: string; name: string }) => {
+      const row = db.get(
+        'SELECT currency, available_cents, held_cents, frozen FROM mission_cash_accounts WHERE id = ?',
+        [agent.id],
+      );
+      return row ?? null;
+    };
+    const auditFor = (agent: { id: string; name: string }) => {
+      const wallet = db.get('SELECT id FROM mission_wallets WHERE agent_id = ?', [agent.id]);
+      if (!wallet) return null;
+      return db
+        .all(
+          'SELECT action, actor_type, actor_id, subject_type, detail FROM mission_audit WHERE subject_id = ? ORDER BY seq ASC',
+          [String(wallet.id)],
+        )
+        .map((row) => ({
+          ...row,
+          subject_id: '<subject>',
+          detail: String(row.detail ?? '').split(agent.id).join('<agent>').split(agent.name).join('<name>'),
+        }));
+    };
+
+    for (let i = 0; i < serialAgents.length; i += 1) {
+      assert.deepEqual(walletShape(bulkAgents[i]), walletShape(serialAgents[i]), `wallet row for bulk agent #${i} must equal the loop-built row`);
+      assert.deepEqual(grantShape(bulkAgents[i]), grantShape(serialAgents[i]), `money grant for bulk agent #${i} must equal the loop-built grant`);
+      assert.deepEqual(cashShape(bulkAgents[i]), cashShape(serialAgents[i]), `cash account for bulk agent #${i} must equal the loop-built account`);
+      // The label is the row a human reads in the dashboard; a bulk path that quietly reformatted it
+      // would pass every count assertion in this file and still be wrong.
+      const wallet = db.get('SELECT label FROM mission_wallets WHERE agent_id = ?', [bulkAgents[i].id]);
+      assert.equal(String(wallet?.label), `${bulkAgents[i].name} wallet`, 'the label format must be preserved verbatim');
+      const serialRows = auditFor(serialAgents[i]);
+      const bulkRows = auditFor(bulkAgents[i]);
+      assert.ok(serialRows && bulkRows, 'both paths must have created a wallet, and audited it');
+      assert.ok(bulkRows.length >= 1, 'wallet creation must be audited on the bulk path');
+      assert.deepEqual(bulkRows, serialRows, `wallet audit rows for bulk agent #${i} must equal the loop-built rows (action, actor, subject type, detail)`);
+
+      // The verified-cash trail is keyed by the agent id, so it needs no id normalization — and the
+      // action names are the part most easily broken by a bulk rewrite: money.ts writes them through
+      // its own `audit()` helper, which prefixes `money.` and records a provider actor. A bulk path
+      // that logged `account_created` instead of `money.account_created`, or a `system` actor instead
+      // of a `provider` one, would still reconcile and still count, and would silently be a different
+      // audit story for the same fleet.
+      const moneyAudit = (agentId: string) =>
+        db.all(
+          'SELECT action, actor_type, actor_id, subject_type, detail FROM mission_audit WHERE subject_type = ? AND subject_id = ? ORDER BY seq ASC',
+          ['verified_cash', agentId],
+        );
+      const serialMoney = moneyAudit(serialAgents[i].id);
+      const bulkMoney = moneyAudit(bulkAgents[i].id);
+      assert.deepEqual(
+        bulkMoney.map((row) => ({ ...row, detail: String(row.detail ?? '').split(bulkAgents[i].id).join('<agent>') })),
+        serialMoney.map((row) => ({ ...row, detail: String(row.detail ?? '').split(serialAgents[i].id).join('<agent>') })),
+        `verified-cash audit rows for bulk agent #${i} must equal the loop-built rows`,
+      );
+      assert.equal(bulkMoney.length, 2, 'one account_created row and one agent_authorized row, in that order, like the loop');
+    }
+    const chain = verifyMissionAudit() as { ok: boolean; rows: number; brokenAtSeq: number | null; detail: string };
+    assert.equal(chain.ok, true, `the audit chain must still verify after a bulk pass; it broke at seq ${chain.brokenAtSeq}`);
+    console.log(
+      `[EVIDENCE] Equivalence: 5 loop-built and 5 bulk-built agents produced identical wallet/grant/cash/audit rows ` +
+        `(bulk wallets created this pass: ${bulkWalletRun.created}, bulk grants: ${bulkMoneyRun.created}); audit chain verifies over ${chain.rows} rows`,
+    );
   });
 });

@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'n
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { missionDatabaseFile, missionDatabaseUrl, missionHealthDatabaseExpectation } from './mission-db-target.mjs';
+import { missionBindTarget, missionDatabaseFile, missionDatabaseUrl, missionHealthDatabaseExpectation, missionReadinessPolicy } from './mission-db-target.mjs';
+import { waitForMissionReadiness } from './mission-readiness.mjs';
 
 /**
  * Production start for the AKBARAL platform.
@@ -94,8 +95,13 @@ if (!['both', 'web', 'api'].includes(ROLES)) {
 // selection. Only this exact operator opt-in starts it. The mission workers
 // remain separate and retain their own independent enablement gates.
 const MISSION_SERVER_ENABLED = process.env.ZA141251SA_MISSION_SERVER_ENABLED === 'true';
-const MISSION_HOST = '127.0.0.1';
-const MISSION_PORT = 4200;
+// The address the private tier will bind and the address its readiness is probed at are the same
+// value, from one resolver (scripts/mission-db-target.mjs) that mirrors `missionEnv()` in
+// src/mission/database.ts. They used to be two literals here that were also forced onto the
+// child, so an operator-configured ZA141251SA_PORT was silently replaced and probe and service
+// agreed only by accident. Defaults unchanged: loopback, 4200.
+const MISSION_BIND = missionBindTarget(process.env);
+const MISSION_POLICY = missionReadinessPolicy(process.env);
 // The mission database is wherever the mission code says it is, not wherever this
 // wrapper once assumed it would be. It used to be hardcoded to file:/data/mission.db,
 // which meant that on a deployment whose ZA141251SA_DATABASE_URL is a PostgreSQL
@@ -115,12 +121,25 @@ const MISSION_DATABASE_PRESENT = MISSION_DATABASE_FILE === null ? existsEnv('ZA1
 function existsEnv(name) {
   return String(process.env[name] ?? '').trim().length > 0;
 }
-const MISSION_HEALTH_URL = `http://${MISSION_HOST}:${MISSION_PORT}/api/health`;
+const MISSION_HEALTH_URL = MISSION_BIND.healthUrl;
 /** The resolver this wrapper uses to run a mission entry in whichever shape the tree has. */
 const MISSION_ENTRY_RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mission-run.mjs');
-const MISSION_READINESS_TIMEOUT_MS = 30_000;
 const MISSION_READINESS_POLL_MS = 250;
-const MISSION_READINESS_REQUEST_TIMEOUT_MS = 1_000;
+/**
+ * The one condition under which a private-tier problem is allowed to end this container. It is an
+ * explicit owner choice, not a default: measured production had a 30 s readiness window, a mission
+ * child that needed ~38 s to open its listener on a PostgreSQL database holding 4,001 imported
+ * agents, and `await`ed readiness before either public tier was launched — so every boot took the
+ * public product down with the private tier, in a loop. The public tiers are no longer that
+ * trade's collateral; `ZA141251SA_MISSION_REQUIRED=true` restores fail-closed for a deployment
+ * that wants a container to die rather than serve without its private half.
+ */
+const MISSION_PRECONDITION_FAILURE =
+  MISSION_SERVER_ENABLED && MISSION_DATABASE_FILE !== null && !existsSync(MISSION_DATABASE_FILE)
+    ? `private mission startup refused: ${MISSION_DATABASE_FILE} does not exist. ` +
+      'Mount the existing private mission database at that exact path (or point ZA141251SA_DATABASE_URL at the ' +
+      'PostgreSQL database the mission owns); startup will not create or select an alternate database.'
+    : null;
 
 /* ------------------------------------------------------------------ ports
  * The PUBLIC entry point is the Next.js tier: it serves the app and rewrites
@@ -170,17 +189,13 @@ if (process.argv.includes('--print-ports')) {
   process.exit(0);
 }
 
-// The mission process is allowed to open exactly one pre-provisioned database.
-// Refuse startup before generating any public-session state or launching any
-// child if the operator explicitly requested mission startup without mounting
-// the existing private database. The mission bootstrap must never create an
-// alternate relative database as an accidental fallback.
-if (MISSION_SERVER_ENABLED && MISSION_DATABASE_FILE !== null && !existsSync(MISSION_DATABASE_FILE)) {
-  fail(
-    `private mission startup refused: ${MISSION_DATABASE_FILE} does not exist. ` +
-      'Mount the existing private mission database at that exact path (or point ZA141251SA_DATABASE_URL at the ' +
-      'PostgreSQL database the mission owns); startup will not create or select an alternate database.',
-  );
+// The mission process is allowed to open exactly one pre-provisioned database, and the
+// mission bootstrap must never create an alternate relative database as an accidental
+// fallback. That is still refused — but the refusal is *decided* here and *acted on* where the
+// private tier is supervised, because ending the public product is not this condition's job
+// unless the owner asked for it with ZA141251SA_MISSION_REQUIRED=true (see MISSION_POLICY).
+if (MISSION_PRECONDITION_FAILURE) {
+  console.error(`[akbaral] ${MISSION_PRECONDITION_FAILURE}`);
 }
 
 /* ----------------------------------------------------- session secret
@@ -375,96 +390,127 @@ function scheduleBackup() {
   scheduleNext();
 }
 
-function missionHealthIsReady(body) {
-  return (
-    body !== null &&
-    typeof body === 'object' &&
-    body.status === 'ok' &&
-    body.service === 'mission' &&
-    body.database === MISSION_HEALTH_DATABASE &&
-    body.audit === true &&
-    body.ledger === true &&
-    Number.isInteger(body.ownerAccounts) &&
-    body.ownerAccounts >= 1 &&
-    body.vaultConfigured === true
-  );
+/**
+ * Wait for the private tier using the ONE readiness contract the platform has
+ * (`scripts/mission-readiness.mjs`, imported by the boot tests and any operator probe as well).
+ *
+ * `fetch failed` used to be ambiguous here, and the ambiguity cost a production outage: it is what
+ * a healthy-but-busy service returns when the per-request timeout is 1000 ms, just as much as what
+ * a dead one returns. The message therefore now says which of the two it looked like, and the
+ * progress line below means a slow boot is visible as a slow boot while it is happening rather than
+ * only in the post-mortem.
+ */
+async function waitForMissionReady() {
+  return waitForMissionReadiness({
+    healthUrl: MISSION_HEALTH_URL,
+    expectedDatabase: MISSION_HEALTH_DATABASE,
+    timeoutMs: MISSION_POLICY.timeoutMs,
+    requestTimeoutMs: MISSION_POLICY.requestTimeoutMs,
+    pollMs: MISSION_READINESS_POLL_MS,
+    progress: (info) =>
+      log(
+        `private mission tier still starting: ${Math.round(info.elapsedMs / 1000)} s of ` +
+          `${Math.round(info.timeoutMs / 1000)} s used (last probe: ${info.lastFailure}).`,
+      ),
+  });
 }
 
-async function waitForMissionReadiness() {
-  const deadline = Date.now() + MISSION_READINESS_TIMEOUT_MS;
-  let lastFailure = 'no health response received';
-
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(MISSION_HEALTH_URL, {
-        redirect: 'error',
-        signal: AbortSignal.timeout(MISSION_READINESS_REQUEST_TIMEOUT_MS),
-      });
-      if (!response.ok) {
-        lastFailure = `health endpoint returned HTTP ${response.status}`;
-      } else {
-        const body = await response.json();
-        if (missionHealthIsReady(body)) return;
-        lastFailure = 'health payload did not satisfy the private readiness contract';
-      }
-    } catch (error) {
-      lastFailure = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, MISSION_READINESS_POLL_MS));
-  }
-
-  throw new Error(`private mission readiness timed out after ${MISSION_READINESS_TIMEOUT_MS}ms (${lastFailure})`);
-}
-
-async function startRequiredMission() {
+function spawnMissionChild() {
   // These child values deliberately override inherited environment values. The
   // production wrapper supports one private listener and one existing database only;
   // callers cannot widen or redirect either one. The database value is the one this
   // wrapper just migrated above (resolved from the operator's ZA141251SA_DATABASE_URL,
   // defaulting to the mounted volume file), so "what was migrated" and "what the server
   // opens" cannot drift apart — which is precisely what they did while this line pointed
-  // at a hardcoded SQLite path.
-  const mission = launch('mission', 'node', [DIST_MISSION_ENTRY], {
+  // at a hardcoded SQLite path. The bind host and port are the values the readiness probe
+  // uses, from the same resolver, so the two can never disagree.
+  return launch('mission', 'node', [DIST_MISSION_ENTRY], {
     NODE_ENV: 'production',
-    ZA141251SA_BIND_HOST: MISSION_HOST,
-    ZA141251SA_PORT: String(MISSION_PORT),
+    ZA141251SA_BIND_HOST: MISSION_BIND.host,
+    ZA141251SA_PORT: String(MISSION_BIND.port),
     ZA141251SA_DATABASE_URL: MISSION_DATABASE_URL,
   });
+}
 
-  let missionReady = false;
-  let rejectStartup;
-  const startupFailure = new Promise((_, reject) => {
-    rejectStartup = reject;
+/** One launch of the private tier plus the two things worth knowing about it: when it is ready, and when it is gone. */
+function startMissionAttempt(attempt) {
+  if (attempt === 1 && MISSION_PRECONDITION_FAILURE) {
+    return { attempt, preflightFailure: MISSION_PRECONDITION_FAILURE };
+  }
+  const child = spawnMissionChild();
+  const death = new Promise((resolve) => {
+    child.once('error', (error) => resolve(`failed to run (${error instanceof Error ? error.message : String(error)})`));
+    child.once('exit', (code, signal) => {
+      resolve(signal ? `was terminated by signal ${signal}` : `exited unexpectedly with code ${code ?? 'unknown'}`);
+    });
   });
+  const readiness = waitForMissionReady().then(
+    () => null,
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  return { attempt, child, death, outcome: Promise.race([death, readiness]) };
+}
 
-  const failRequiredMission = (reason) => {
-    const error = new Error(`required private mission child ${reason}`);
-    if (!missionReady) {
-      rejectStartup(error);
-      return;
+function stopMissionChild(child) {
+  if (child && !child.killed) {
+    try { child.kill('SIGTERM'); } catch { /* already gone */ }
+  }
+}
+
+/**
+ * The loud end of the line for the private tier. Never a silent restart loop and never an
+ * unlabelled exit: the reason, what was probed, how many tries it took, and the owner-facing
+ * switches that change this decision are printed together every time.
+ */
+function giveUpMissionTier(reason) {
+  const lines = [
+    'MISSION TIER UNAVAILABLE — the private mission server never became ready, and it is not being launched again by this container.',
+    `  reason: ${reason}`,
+    `  probed: ${MISSION_HEALTH_URL} — ${MISSION_POLICY.attempts} attempt(s), ${MISSION_POLICY.timeoutMs} ms each, ${MISSION_POLICY.restartDelayMs} ms apart`,
+    `  database the child was given: ${MISSION_HEALTH_DATABASE}`,
+    MISSION_POLICY.required
+      ? '  ZA141251SA_MISSION_REQUIRED=true is set, so this container exits now rather than serve without its private tier.'
+      : '  the public tiers stay up: a private-tier failure is not allowed to take the public product down. The mission dashboard stays unavailable until this is fixed.',
+    '  to change this decision: ZA141251SA_MISSION_REQUIRED=true (exit the container instead of continuing),',
+    '    ZA141251SA_MISSION_READINESS_TIMEOUT_MS / _ATTEMPTS / _RESTART_DELAY_MS / ZA141251SA_MISSION_HEALTH_TIMEOUT_MS (budget),',
+    '    plus the mission server log lines above, which name the migration or seed that did not finish.',
+  ];
+  console.error(`[akbaral] ${lines.join('\n[akbaral] ')}`);
+  if (MISSION_POLICY.required) {
+    log('terminating the container: the private mission tier is required by ZA141251SA_MISSION_REQUIRED=true.');
+    shutdown();
+    process.exit(1);
+  }
+}
+
+/**
+ * Supervise the private tier after the public tiers are already coming up. The child is launched
+ * before them (so it gets its head start on database work), but nothing here delays a public
+ * listener by a millisecond: readiness, restart and giving up all happen on this side.
+ */
+async function superviseMissionTier(first) {
+  let current = first;
+  for (;;) {
+    const failure = await current.outcome;
+    if (failure === null) {
+      log(`private mission readiness verified at ${MISSION_HEALTH_URL}.`);
+      const reason = await current.death;
+      console.error(`[akbaral] MISSION TIER RESTART — the ready private mission child ${reason}; relaunching it (the public tiers are unaffected).`);
+      if (current.attempt >= MISSION_POLICY.attempts) {
+        return giveUpMissionTier(`the mission child ${reason}, and the ${MISSION_POLICY.attempts}-launch budget is used up`);
+      }
+    } else {
+      stopMissionChild(current.child);
+      console.error(`[akbaral] MISSION TIER NOT READY — attempt ${current.attempt}/${MISSION_POLICY.attempts}: ${failure}`);
+      if (current.attempt >= MISSION_POLICY.attempts) {
+        return giveUpMissionTier(failure);
+      }
     }
-    console.error(`[akbaral] ${error.message}; terminating the container.`);
-    shutdown();
-    process.exit(1);
-  };
-
-  mission.once('error', (error) => {
-    failRequiredMission(`failed to run (${error instanceof Error ? error.message : String(error)})`);
-  });
-  mission.once('exit', (code, signal) => {
-    const reason = signal ? `was terminated by signal ${signal}` : `exited unexpectedly with code ${code ?? 'unknown'}`;
-    failRequiredMission(reason);
-  });
-
-  try {
-    await Promise.race([waitForMissionReadiness(), startupFailure]);
-    missionReady = true;
-    log(`private mission readiness verified at ${MISSION_HEALTH_URL}.`);
-  } catch (error) {
-    console.error(`[akbaral] private mission startup failed: ${error instanceof Error ? error.message : String(error)}`);
-    shutdown();
-    process.exit(1);
+    if (MISSION_POLICY.restartDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, MISSION_POLICY.restartDelayMs));
+    }
+    log(`relaunching the private mission child (attempt ${current.attempt + 1} of ${MISSION_POLICY.attempts}).`);
+    current = startMissionAttempt(current.attempt + 1);
   }
 }
 
@@ -521,12 +567,11 @@ if (ROLES !== 'web' && MISSION_DATABASE_PRESENT) {
   );
 }
 
-// When explicitly required, the private child must be healthy before either
-// public tier can bind. A missing database, failed spawn, early/signal exit or
-// bounded readiness failure terminates this wrapper non-zero first.
-if (MISSION_SERVER_ENABLED) {
-  await startRequiredMission();
-}
+// The private child is launched here — before the public tiers, so its database work and their
+// startup overlap — but it is not awaited. Readiness, restart and giving up are handled by
+// `superviseMissionTier` at the end of this file, after the public tiers have been launched, so
+// a private tier that is slow, sick or entirely absent cannot take the public product down.
+const MISSION_ATTEMPT = MISSION_SERVER_ENABLED ? startMissionAttempt(1) : null;
 
 // Backup scheduler must be started before the public tiers so StackHost's
 // direct `node scripts/start-prod.mjs` still gets nightly backups without the
@@ -550,6 +595,22 @@ if (ROLES !== 'web') {
     console.log(`[akbaral] api exited with code ${code}`);
     shutdown();
     process.exit(code ?? 0);
+  });
+}
+if (MISSION_ATTEMPT) {
+  // Deliberately not awaited. The supervisor never resolves while the private tier stays
+  // healthy — it is the thing that notices a death and relaunches — and an unsettled top-level
+  // await is a hard exit 13 in ESM, which would itself become a boot failure. Every outcome this
+  // function can end in (ready, or given up on loudly) is logged from inside it; the only way it
+  // ends the container is the explicit ZA141251SA_MISSION_REQUIRED=true path in giveUpMissionTier.
+  const supervision = MISSION_ATTEMPT.preflightFailure
+    ? Promise.resolve(giveUpMissionTier(MISSION_ATTEMPT.preflightFailure))
+    : superviseMissionTier(MISSION_ATTEMPT);
+  supervision.catch((error) => {
+    console.error(
+      `[akbaral] MISSION TIER SUPERVISION FAILED — ${error instanceof Error ? error.message : String(error)}; ` +
+        'the public tiers are unaffected.',
+    );
   });
 }
 console.log(

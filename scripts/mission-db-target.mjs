@@ -56,3 +56,66 @@ export function missionHealthDatabaseExpectation(env = process.env) {
   const file = missionDatabaseFile(url);
   return file === null ? displayMissionDatabaseTarget(url) : file;
 }
+
+/**
+ * Where the mission server will listen, and where its readiness must therefore be probed.
+ *
+ * This is the single source of truth for both halves of that pair. It used to be two hardcoded
+ * literals in `scripts/start-prod.mjs` (`127.0.0.1` and `4200`) that were also *forced* onto the
+ * child, which meant a deployment that configured `ZA141251SA_PORT` had its value silently
+ * replaced and the prober and the probed could only agree by accident. The defaults and the
+ * parsing are the ones the mission server itself uses (`missionEnv()` in
+ * src/mission/database.ts); a test pins that agreement, because a probe pointed at an address
+ * the service never binds is indistinguishable from a service that failed to start.
+ *
+ * Nothing here widens a bind: an unset `ZA141251SA_BIND_HOST` stays loopback, and a wildcard bind
+ * is probed over loopback (which is where a wildcard listener also answers).
+ */
+export function missionBindTarget(env = process.env) {
+  // Loopback, always, for anything this wrapper launches. An inherited
+  // ZA141251SA_BIND_HOST=0.0.0.0 must not become a public owner dashboard, and an injected
+  // ZA141251SA_PORT must not collide with the platform's public tier — that pin is deliberate
+  // and predates this file. What this resolver adds is that the readiness probe now uses the
+  // SAME value the wrapper passes to the child, so the two can never disagree: a deployment that
+  // genuinely needs another port sets ZA141251SA_MISSION_PORT, and the probe follows. To bind
+  // the private listener somewhere else, run `npm run mission:serve` yourself — this wrapper will
+  // not do it.
+  const host = '127.0.0.1';
+  const requested = String(env.ZA141251SA_MISSION_PORT ?? '').trim();
+  if (requested.length > 0 && !/^\d+$/.test(requested)) {
+    throw new Error(`ZA141251SA_MISSION_PORT must be a port number, got "${requested}"`);
+  }
+  const port = requested.length > 0 ? Number.parseInt(requested, 10) : 4200;
+  if (port < 1 || port > 65_535) {
+    throw new Error(`ZA141251SA_MISSION_PORT must be between 1 and 65535, got ${port}`);
+  }
+  return { host, port, healthUrl: `http://${host}:${port}/api/health` };
+}
+
+/**
+ * How long the private tier is given, and what happens when it does not answer.
+ *
+ * The measured production shape of this decision: the mission child needed ~38 s to reach its own
+ * readiness on a PostgreSQL database holding the imported 4,001-agent fleet, and the wrapper's
+ * window was 30 s — so every boot declared the private tier dead, exited the container, and the
+ * public web tier went down with it, forever. The budget is now large and configurable, and the
+ * choice to terminate the container is an explicit owner opt-in (`ZA141251SA_MISSION_REQUIRED`)
+ * rather than the default. A slow private tier must never be a public outage.
+ */
+export function missionReadinessPolicy(env = process.env) {
+  const positiveInt = (value, fallback) => {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  const nonNegativeInt = (value, fallback) => {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+  return {
+    timeoutMs: positiveInt(env.ZA141251SA_MISSION_READINESS_TIMEOUT_MS, 180_000),
+    requestTimeoutMs: positiveInt(env.ZA141251SA_MISSION_HEALTH_TIMEOUT_MS, 5_000),
+    attempts: positiveInt(env.ZA141251SA_MISSION_START_ATTEMPTS, 5),
+    restartDelayMs: nonNegativeInt(env.ZA141251SA_MISSION_RESTART_DELAY_MS, 15_000),
+    required: String(env.ZA141251SA_MISSION_REQUIRED ?? '').trim().toLowerCase() === 'true',
+  };
+}

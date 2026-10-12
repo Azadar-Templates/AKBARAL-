@@ -134,6 +134,7 @@ import {
   nowIso,
   type Row,
 } from './database';
+import { ABORTED_SESSION_HINT, isAbortedSessionError } from './boot-session-state';
 import {
   MissionAuthError,
   assertCanMutate,
@@ -3319,17 +3320,33 @@ export function createMissionServer(): http.Server {
 }
 
 /**
- * A boot-time seed that cannot run must never look like a boot that succeeded. These
- * seeds are deliberately non-fatal (a fresh or read-only deployment still has to answer
- * the dashboard) but they were `try{…}catch{}` — silent. Every one now names itself and
- * its reason on stderr, and nothing about the gates they feed changes: a missing seed is
- * still reported by the readiness endpoints that read the same tables.
+ * A boot-time seed that cannot run must never look like a boot that succeeded. These seeds stay
+ * deliberately non-fatal (a fresh or read-only deployment still has to answer the dashboard), but
+ * they used to be `try{…}catch{}` — silent — and after 2026-10-12 they got two more properties:
+ *
+ *  · **Each seed runs inside its own transaction boundary.** On PostgreSQL a failed statement aborts
+ *    the whole transaction, so a seed that swallows an internal error hands a poisoned session to the
+ *    next one — which is how a boot printed "skipped" and then hung instead of failing. Owning the
+ *    boundary means a swallowed failure cannot be inherited, and a partially applied seed is
+ *    discarded rather than half-committed: "skipped" then means skipped.
+ *  · **A session that is already aborted is fatal.** The boot stops with the reason instead of
+ *    walking into a hang, because a mission server that never listens costs the container its whole
+ *    restart budget and reads, from outside, like a slow database.
+ *
+ * Nothing about the gates these seeds feed changes: a missing seed is still reported by the readiness
+ * endpoints that read the same tables.
  */
 function seedAtBoot(label: string, run: () => void): void {
   try {
-    run();
+    missionDb.transaction(() => {
+      run();
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isAbortedSessionError(message)) {
+      console.error(`[mission] FATAL boot seed failure (${label}): ${message}. ${ABORTED_SESSION_HINT}`);
+      throw error;
+    }
     console.error(`[mission] boot seed skipped (${label}): ${message}`);
   }
 }

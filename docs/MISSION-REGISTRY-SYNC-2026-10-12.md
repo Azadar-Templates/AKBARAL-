@@ -304,3 +304,45 @@ this file does not claim otherwise. The counts it prints (`platform-owned 4001` 
 `grants 7203`) are the number to compare against the owner's measurement above; if production's
 fleet has been assigned to users, the run will now exit 1 and say so, which is the correct answer
 rather than a silent zero.
+
+## 9. Second entry, same day: the sync that was being killed by a crash loop
+
+The command in §1–§8 was correct and still lost. Its first full production run was started inside a
+container whose mission tier could not become ready within the wrapper's 30 s window, so the container
+was SIGTERM'd mid-run; batches are transactional, which means the kill rolled the current batch back
+whole and left **zero rows and no exit code anyone could see**. The full diagnosis, the measurements
+and the wrapper's new contract are in
+[MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md](MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md). What changed
+here:
+
+* **Money provisioning is bulk now, per batch.** `syncMissionRegistry` used to call
+  `provisionMoneyAgent()` once per imported identity — ~44,000 statements for 4,001 agents inside one
+  transaction. It calls `provisionMoneyAgents()` (`src/mission/money.ts:121`) once per batch, which
+  reads the existing rows in `IN (…)` chunks, inserts cash accounts and grants in chunks of 200, and
+  appends the audit rows through `appendMissionAuditBatch`. Only the flat, unparented grant is
+  available in bulk on purpose: delegation reads a parent's authority and moves cents, and no set
+  operation may decide that. Measured full import: **66,800 ms → 21,700 ms**, still
+  11,204 rows, still exactly 4,001 identities and 7,203 grants.
+* **Every batch says what it did and how long it took**:
+  `batch 3/9 in 2264 ms: 500 created, 0 updated, 0 already matching, 800 grant rows written, 500
+  fleet rails provisioned (0 already present)`. Per-batch milliseconds are what separates "the
+  database is slow" from "the command is hung", which was unanswerable before.
+* **The target and the probe come first.** Before any write the command prints the resolved mission
+  target and runs a `SELECT 1` pre-flight; a database that does not answer is reported with a
+  classification (refused / reset / out of time / answered-but-not-Postgres) and a note that nothing
+  was written and no batch was started.
+* **`ZA141251SA_SYNC_BATCH`** (default 500, 1–1000) sizes a batch. It exists for a managed database
+  that needs smaller transactions; `0` and `5000` are refusals that quote the value back, not clamps,
+  because clamping would let an operator read the log of a run they did not configure.
+  `--print-registry-sync-bounds` prints the choice and the target without touching a database.
+* **The report now includes the fleet rails** (`fleet rails 5 provisioned/0 already present` in the
+  summary, per batch as well), so a run that imported identities but provisioned no money-control
+  rows cannot be read as a complete import. A second run reports `ALREADY IN SYNC` and
+  `fleet rails 0 provisioned/0 already present`: the same zeros, with the reason attached.
+
+Pinned by `src/mission/registry-sync-production-shape.test.ts` (both engines: SQLite standalone,
+PostgreSQL under `npm run mission:pg-check`) and `src/mission/registry-sync-config.test.ts`.
+
+Production remains as the owner measured it until the command is run there — from a shell that is not
+inside a restarting container. The killed run wrote nothing, so re-running it is still the whole
+action.

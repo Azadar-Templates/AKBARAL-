@@ -1,5 +1,5 @@
 /** Verified mission cash only. Never imports platform DB or trusts legacy balances. */
-import { missionDb as db, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
+import { missionDb as db, missionId, nowIso, sha256, appendMissionAudit, appendMissionAuditBatch, type Row } from './database';
 import { moneyOperationFingerprint, reconcileLedger } from './ledger-reconciliation';
 import { currentPolicy, checkActivity, setKillSwitch } from './policy';
 import { destinationFingerprint, payoutSlotVerificationStatus } from './payout-verification';
@@ -105,6 +105,77 @@ export function provisionMoneyAgent(agentId: string, ownerId: string, parentId?:
     return db.get<Row>('SELECT * FROM mission_money_grants WHERE agent_id=?',[agentId])!;
   });
 }
+/**
+ * Bulk form of `provisionMoneyAgent` for the no-parent fleet path — the one `mission:sync-registry`
+ * uses for every identity it imports. Same rows, same zero balances, same expiry, same audit rows
+ * in the same order; the difference is that the reads and the writes go out per set instead of per
+ * agent. With a 4,001-agent fleet the loop cost roughly 44,000 statements (~67 s against a local
+ * PostgreSQL, minutes against a managed one behind a pooler), which is why a sync could be caught by
+ * a container restart with nothing written and nothing said.
+ *
+ * Only the flat, unparented grant is available here on purpose: delegation is the part of
+ * `provisionMoneyAgent` that reads the parent's authority, checks the policy gates and moves
+ * delegation cents, and none of that can be decided by a set operation. Anything with a parent must
+ * keep going through the single-agent function, with its gates intact.
+ */
+export function provisionMoneyAgents(agentIds: string[], ownerId: string): { created: number; alreadyProvisioned: number } {
+  return db.transaction(() => {
+    const unique = [...new Set(agentIds.map((id) => String(id)).filter(Boolean))];
+    if (unique.length === 0) return { created: 0, alreadyProvisioned: 0 };
+    cents(0);
+    const currency = currentPolicy().currency;
+    const expiry = new Date(Date.now() + 365 * 86400000).toISOString();
+    const LOOKUP = 500; // both engines' parameter limits are comfortable here
+    const inSet = (column: string, chunk: string[]) => `${column} IN (${chunk.map(() => '?').join(', ')})`;
+    const known = new Set<string>();
+    for (let start = 0; start < unique.length; start += LOOKUP) {
+      const chunk = unique.slice(start, start + LOOKUP);
+      for (const row of db.all<Row>(`SELECT id FROM mission_agents WHERE ${inSet('id', chunk)}`, chunk)) known.add(String(row.id));
+    }
+    // The same fail-closed check the single-agent path applies through ensureCashAccount(): a
+    // grant for an agent that does not exist is never written, and the run says so.
+    for (const id of unique) if (!known.has(id)) deny('agent_missing');
+    const withGrant = new Set<string>();
+    const withAccount = new Set<string>();
+    for (let start = 0; start < unique.length; start += LOOKUP) {
+      const chunk = unique.slice(start, start + LOOKUP);
+      for (const row of db.all<Row>(`SELECT agent_id FROM mission_money_grants WHERE ${inSet('agent_id', chunk)}`, chunk)) withGrant.add(String(row.agent_id));
+      for (const row of db.all<Row>(`SELECT id FROM mission_cash_accounts WHERE ${inSet('id', chunk)}`, chunk)) withAccount.add(String(row.id));
+    }
+    const missing = unique.filter((id) => !withGrant.has(id));
+    if (missing.length === 0) return { created: 0, alreadyProvisioned: unique.length };
+    // `audit(action, null, id, …)` in the single-agent path writes a provider-actor row with an
+    // empty detail object; matching that byte for byte is the point — a bulk run must not leave a
+    // trail that differs from a serial one.
+    const audit: Array<{ actorType: 'provider'; actorId: null; action: string; subjectType: string; subjectId: string; detail: Record<string, unknown> }> = [];
+    const accounts = missing.filter((id) => !withAccount.has(id));
+    for (let start = 0; start < accounts.length; start += 200) {
+      const chunk = accounts.slice(start, start + 200);
+      db.run(
+        `INSERT INTO mission_cash_accounts (id, agent_id, currency) VALUES ${chunk.map(() => '(?, ?, ?)').join(', ')}`,
+        chunk.flatMap((id) => [id, id, currency]),
+      );
+    }
+    for (let start = 0; start < missing.length; start += 200) {
+      const chunk = missing.slice(start, start + 200);
+      db.run(
+        `INSERT INTO mission_money_grants (agent_id, parent_id, spend_limit_cents, expires_at, granted_by)
+         VALUES ${chunk.map(() => '(?, NULL, 0, ?, ?)').join(', ')}`,
+        chunk.flatMap((id) => [id, expiry, ownerId]),
+      );
+    }
+    // Audit rows are appended in the order the single-agent path would have written them —
+    // account created, then agent authorized — so a fleet provisioned in bulk leaves the same
+    // trail as one provisioned one at a time. Nothing here invents an event.
+    for (const id of missing) {
+      if (!withAccount.has(id)) audit.push({ actorType: 'provider', actorId: null, action: 'money.account_created', subjectType: 'verified_cash', subjectId: id, detail: {} });
+      audit.push({ actorType: 'provider', actorId: null, action: 'money.agent_authorized', subjectType: 'verified_cash', subjectId: id, detail: { parentId: null, spendLimitCents: 0, opportunity: 'blocked_until_assigned', canCreate: false } });
+    }
+    appendMissionAuditBatch(audit);
+    return { created: missing.length, alreadyProvisioned: unique.length - missing.length };
+  });
+}
+
 export function grant(id: string): Row {
   const seen = new Set<string>(); let cursor: string | null = id; let first: Row | undefined;
   while (cursor) {

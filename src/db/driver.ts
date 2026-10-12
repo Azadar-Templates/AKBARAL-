@@ -23,8 +23,26 @@ export function resolveDbEngine(databaseUrl: string): DbEngine {
 
 const REQ_CAPACITY = 8 * 1024 * 1024;
 const RES_CAPACITY = 64 * 1024 * 1024;
-const PG_CONNECT_TIMEOUT_MS = 30_000;
-const PG_QUERY_TIMEOUT_MS = 120_000;
+/**
+ * The two budgets of the synchronous PostgreSQL bridge, in milliseconds.
+ *
+ * These used to be immutable literals, which meant an operator on a cold serverless database had
+ * exactly one experience of it: the process waited the full 30 s connect budget on every attempt,
+ * inside a container whose readiness window was shorter than that. Both are now configurable, and
+ * pg-worker.mjs honors the connect one too, so the client-side wait and the driver's own connect
+ * timeout cannot disagree about how long "too long" is.
+ */
+function pgBudgetEnv(name: string, fallback: number): number {
+  const raw = String(process.env[name] ?? '').trim();
+  if (raw.length === 0) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  // 0 or a nonsense value means "use the default", never "wait forever" and never "give up
+  // instantly": both of those are far more destructive than a typo deserves.
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const PG_CONNECT_TIMEOUT_MS = pgBudgetEnv('AKBARAL_PG_CONNECT_TIMEOUT_MS', 30_000);
+const PG_QUERY_TIMEOUT_MS = pgBudgetEnv('AKBARAL_PG_QUERY_TIMEOUT_MS', 120_000);
 
 /**
  * Translate the repository layer's portable SQL dialect into PostgreSQL.

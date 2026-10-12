@@ -34,24 +34,56 @@ or an unset variable remain disabled. Merely starting the AKBARAL! `both`,
 `web`, or `api` role never implies this opt-in, and the disabled path preserves
 the existing public startup sequence and diagnostics.
 
-When explicitly enabled, all of the following are fixed startup invariants:
+When explicitly enabled, these are the startup invariants:
 
-- The compiled `dist/scripts/mission-serve.js` entry must exist.
-- The existing mission database must already be mounted at
-  `/data/mission.db`. The wrapper refuses a missing file; it never creates or
-  selects an alternate mission database. Inherited
-  `ZA141251SA_DATABASE_URL` values are ignored and the child always receives
-  `file:/data/mission.db`.
-- The child always receives `ZA141251SA_BIND_HOST=127.0.0.1` and
-  `ZA141251SA_PORT=4200`. Inherited host/port values are ignored. A wider bind,
-  alternate port, public exposure, proxy, and rewrite are prohibited.
-- Before either public web/API tier starts, the wrapper polls the private
-  `http://127.0.0.1:4200/api/health` endpoint for at most 30 seconds. Readiness
-  requires `status: ok`, `service: mission`, verified audit and ledger chains,
-  at least one owner account, and a configured credential vault.
-- A spawn error, early exit, signal exit, invalid/unhealthy readiness response,
-  or readiness timeout terminates startup non-zero. Any later mission exit is
-  also fatal and stops the public sibling processes.
+- The compiled `dist/scripts/mission-serve.js` entry must exist. A missing build
+  fails the whole container with the usual actionable message, because the
+  public tiers need that build too.
+- The mission database is the one the operator configured. `ZA141251SA_DATABASE_URL`
+  is honoured, exactly as the mission code resolves it (default
+  `file:$DATA_DIR/mission.db`), and it is the same database the wrapper
+  migrates as a blocking boot step immediately before launching the child.
+  A file target that does not exist is refused **by name** and is never created
+  or substituted; a PostgreSQL target is validated by configuration, not by
+  mounting. (The wrapper used to hand the child a hardcoded `file:/data/mission.db`
+  regardless; that is what left a production PostgreSQL mission schema unmigrated.)
+- The child listens on loopback: `ZA141251SA_BIND_HOST=127.0.0.1` is forced, and
+  an inherited `0.0.0.0` cannot widen it. The port is 4200 unless the operator
+  sets `ZA141251SA_MISSION_PORT`, and the readiness probe uses the same resolved
+  address — one resolver (`scripts/mission-db-target.mjs`) for both, so a probe
+  pointed at an address the service never binds is no longer possible. Public
+  exposure, proxies and rewrites of the private tier remain prohibited.
+- The public tiers are **not** gated on the private tier. The mission child is
+  launched first (so its database work overlaps public startup), then `web` and
+  `api` are launched without waiting, and only then does the wrapper verify
+  readiness by polling `http://127.0.0.1:<port>/api/health`. Readiness means a
+  usable service, not a socket: `status: ok`, `service: mission`, the database
+  this boot was told to open, `audit: true`, `ledger: true`, at least one owner
+  account and a configured credential vault.
+- A spawn error, early exit, signal exit, contract mismatch or timeout is
+  reported with its reason, the child is stopped, and it is relaunched within a
+  bounded budget. Progress is logged every 10 s while waiting, so a slow boot is
+  visible as a slow boot. Giving up prints a `MISSION TIER UNAVAILABLE` banner
+  naming the budget, the database, and the variables that change the decision —
+  then the container keeps serving the public tiers.
+- Only `ZA141251SA_MISSION_REQUIRED=true` makes the private tier fatal: with it,
+  a failed mission tier exits the container non-zero and stops the siblings it
+  launched. That is the operator asking for fail-closed; it is not the default,
+  because a slow private tier must not be a public outage
+  ([docs/MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md](MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md)).
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `ZA141251SA_MISSION_READINESS_TIMEOUT_MS` | 180000 | total health-probe budget per launch (a full-fleet boot measured 38 s on PostgreSQL) |
+| `ZA141251SA_MISSION_HEALTH_TIMEOUT_MS` | 5000 | per-request timeout; a boot that is busy in database work needs more than 1 s |
+| `ZA141251SA_MISSION_START_ATTEMPTS` | 5 | launches before the wrapper gives up |
+| `ZA141251SA_MISSION_RESTART_DELAY_MS` | 15000 | pause between launches |
+| `ZA141251SA_MISSION_PORT` | 4200 | the private listener's port; the probe follows automatically |
+| `ZA141251SA_MISSION_REQUIRED` | off | exit the container instead of continuing without the private tier |
+| `ZA141251SA_SYNC_BATCH` | 500 | agents per `mission:sync-registry` transaction (1–1000) |
+| `AKBARAL_PG_CONNECT_TIMEOUT_MS` / `AKBARAL_PG_CONNECT_ATTEMPTS` | 30000 / 3 | the bridge's connect budget, per attempt |
+| `AKBARAL_PG_QUERY_TIMEOUT_MS` | 120000 | client-side per-query bound, the one that cannot be bypassed by a pooler |
+| `AKBARAL_PG_STATEMENT_TIMEOUT_MS` / `AKBARAL_PG_LOCK_TIMEOUT_MS` / `AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 300000 / 60000 / 120000 | best-effort server-side bounds (a transaction-mode pooler may not pin them) |
 
 The mission bootstrap continues to own its private migrations and identity
 lockdown. The production wrapper does not generate a mission secret and does

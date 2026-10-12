@@ -484,6 +484,62 @@ export function appendMissionAudit(input: AuditInput, target = missionDb): { id:
   });
 }
 
+/**
+ * Append a run of audit rows in one pass.
+ *
+ * `appendMissionAudit` is one SELECT (the head of the chain) plus one INSERT per row: right for
+ * a request, ruinous for a fleet. Provisioning 4,001 imported agents meant ~8,000 statements of
+ * audit alone, and on a managed PostgreSQL that is minutes of round trips — work this service
+ * does before it is allowed to listen. The chain rules are byte-identical (same payload order,
+ * same prev-hash link, same sequence), only the statement count changes: read the head once,
+ * write the rows in chunks. The caller keeps its transaction, so a failure mid-run rolls the
+ * whole batch back with it — this function cannot leave half a chain behind.
+ */
+export function appendMissionAuditBatch(
+  inputs: AuditInput[],
+  target = missionDb,
+): Array<{ id: string; seq: number; hash: string }> {
+  if (inputs.length === 0) return [];
+  const previous = target.get<{ seq: number; hash: string }>('SELECT seq, hash FROM mission_audit ORDER BY seq DESC LIMIT 1');
+  let seq = Number(previous?.seq ?? 0);
+  let previousHash = previous?.hash ?? '';
+  const createdAt = nowIso();
+  const written: Array<{ id: string; seq: number; hash: string }> = [];
+  const rows: SqlValue[][] = [];
+  for (const input of inputs) {
+    seq += 1;
+    const id = missionId('aud');
+    const detail = input.detail ? JSON.stringify(redactForAudit(input.detail)) : null;
+    const payload = [
+      seq,
+      id,
+      input.actorType,
+      input.actorId ?? '',
+      input.action,
+      input.subjectType ?? '',
+      input.subjectId ?? '',
+      detail ?? '',
+      previousHash,
+      createdAt,
+    ].join('|');
+    const hash = sha256(payload);
+    rows.push([id, seq, input.actorType, input.actorId ?? null, input.action, input.subjectType ?? null, input.subjectId ?? null, detail, previousHash || null, hash, createdAt]);
+    written.push({ id, seq, hash });
+    previousHash = hash;
+  }
+  const CHUNK = 200; // 200 rows x 11 columns is far below both engines' parameter limits
+  for (let start = 0; start < rows.length; start += CHUNK) {
+    const slice = rows.slice(start, start + CHUNK);
+    const placeholders = slice.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+    target.run(
+      `INSERT INTO mission_audit (id, seq, actor_type, actor_id, action, subject_type, subject_id, detail, prev_hash, hash, created_at)
+       VALUES ${placeholders}`,
+      slice.flat(),
+    );
+  }
+  return written;
+}
+
 export interface AuditVerification {
   ok: boolean;
   rows: number;

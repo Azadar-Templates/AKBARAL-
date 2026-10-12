@@ -1,7 +1,7 @@
 /** Registry metadata import only. Never accepts balances, permissions or work assignments. */
 import { missionDb as db, nowIso, sha256, appendMissionAudit, type Row } from './database';
 import { currentPolicy } from './policy';
-import { MoneyError, provisionMoneyAgent } from './money';
+import { MoneyError, provisionMoneyAgents } from './money';
 export interface RegistryAgentMetadata {
   slug:string; name:string; category:string|null; capabilities?:string[];
 }
@@ -34,6 +34,9 @@ export interface RegistrySyncResult {
   configPayloadsSkipped: number;
   /** Grants that named an agent this run did not import — reported, never discarded. */
   orphanGrants: number;
+  /** Zero-cash subledgers (cash account + flat grant) this batch provisioned for newly imported identities. */
+  moneyProvisioned: number;
+  moneyAlreadyPresent: number;
   skipped: Array<{ reason: string; count: number }>;
 }
 export function syncMissionRegistry(
@@ -54,6 +57,7 @@ export function syncMissionRegistry(
     if(newCount&&count+newCount>currentPolicy().maxAgents)throw new MoneyError('registry_agent_ceiling');
     let created=0,updated=0,unchanged=0;
     const importedBySlug=new Map<string,string>();
+    const provisionedForThisBatch:string[]=[];
     for(const agent of agents){
       const prior=db.get<Row>('SELECT id FROM mission_agents WHERE slug=?',[agent.slug]);
       const id=prior?String(prior.id):`agt_reg_${sha256(agent.slug).slice(0,32)}`;
@@ -73,7 +77,12 @@ export function syncMissionRegistry(
       } else {
         db.run("INSERT INTO mission_agents (id,slug,name,category,role_key,parent_id,depth,generation,status,mission_role,origin_platform,capabilities) VALUES (?,?,?,?,'specialist',NULL,0,'registry','active','worker','akbaral-registry',?)",[id,agent.slug,name,agent.category,capabilities]);created++;
         importedBySlug.set(agent.slug,id);
-        provisionMoneyAgent(id,'registry-sync');
+        // The identity's zero-cash subledger is provisioned for the whole batch at once (same
+        // rows, same gates, same audit trail) instead of once per agent: per-agent provisioning
+        // made a 4,001-identity import roughly 44,000 statements inside one transaction, which is
+        // how a sync against a managed database could be caught by a container restart with
+        // nothing committed and nothing said about it.
+        provisionedForThisBatch.push(id);
       }
     }
     // Tool grants, same transaction, same idempotence rule. A grant naming an agent that
@@ -100,11 +109,20 @@ export function syncMissionRegistry(
         toolGrantsUpdated++;
       }
     }
+    // Reported, not assumed: a batch that provisioned 4,001 zero-cash subledgers and a batch that
+    // provisioned none both leave `mission_money_grants` non-empty, and the operator reading the
+    // log needs to know which one just happened.
+    let moneyProvisioned=0,moneyAlreadyPresent=0;
+    if(provisionedForThisBatch.length>0){
+      const money=provisionMoneyAgents(provisionedForThisBatch,'registry-sync');
+      moneyProvisioned=money.created;
+      moneyAlreadyPresent=money.alreadyProvisioned;
+    }
     const skipped:Array<{reason:string;count:number}>=[];
     if(configPayloadsSkipped>0)skipped.push({reason:'agent_tools.config payload not copied: the bridge is metadata-only and that column can carry endpoints or credential references',count:configPayloadsSkipped});
     if(orphanGrants>0)skipped.push({reason:'grant names an agent this run did not import, so there is no mission row to attach it to',count:orphanGrants});
     if(unchanged>0)skipped.push({reason:'mission row already carries exactly the exported values',count:unchanged});
-    appendMissionAudit({actorType:'system',action:'registry.synced',subjectType:'mission',subjectId:'registry',detail:{created,updated,unchanged,toolGrantsCreated,toolGrantsUpdated,toolGrantsUnchanged,configPayloadsSkipped,orphanGrants,total:agents.length,source:'akbaral-registry (read-only metadata export)',openingCashCents:0,assignmentsInvented:false}});
-    return {created,updated,unchanged,total:count+created,toolGrantsCreated,toolGrantsUpdated,toolGrantsUnchanged,configPayloadsSkipped,orphanGrants,skipped};
+    appendMissionAudit({actorType:'system',action:'registry.synced',subjectType:'mission',subjectId:'registry',detail:{created,updated,unchanged,toolGrantsCreated,toolGrantsUpdated,toolGrantsUnchanged,configPayloadsSkipped,orphanGrants,moneyProvisioned,moneyAlreadyPresent,total:agents.length,source:'akbaral-registry (read-only metadata export)',openingCashCents:0,assignmentsInvented:false}});
+    return {created,updated,unchanged,total:count+created,toolGrantsCreated,toolGrantsUpdated,toolGrantsUnchanged,configPayloadsSkipped,orphanGrants,moneyProvisioned,moneyAlreadyPresent,skipped};
   });
 }

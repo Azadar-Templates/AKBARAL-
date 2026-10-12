@@ -40,11 +40,11 @@ import fs from 'node:fs';
 import { applyMissionMigrations, missionDb } from '../src/mission/database';
 import { currentPolicy, ensurePolicy } from '../src/mission/policy';
 import { syncMissionRegistry, type RegistryAgentMetadata, type RegistryToolGrantMetadata } from '../src/mission/registry-sync';
+import { PG_SYNC_PROBE_BUDGET_NOTE, probeDiagnosis, syncBatchSize } from '../src/mission/registry-sync-config';
 import { env } from '../src/config/env';
 import { resolveDatabasePath } from '../src/db/path';
 
 const TAG = 'mission:sync-registry';
-const BATCH_AGENTS = 500;
 const PAGE = 200;
 
 /**
@@ -107,19 +107,84 @@ async function platformModule(): Promise<PlatformReads> {
   }
 }
 
+/**
+ * How this run refers to its mission target. The driver's own display form is credential-free;
+ * before a connection exists there is nothing credential-free to show, so the failure path names
+ * the variable instead of echoing its value — a PostgreSQL URL can carry a password, and a sync log
+ * is not where that belongs.
+ */
+function displayTarget(): string {
+  let shown = '';
+  try {
+    shown = missionDb.path();
+  } catch {
+    shown = '';
+  }
+  if (shown.length === 0) {
+    const configured = String(process.env.ZA141251SA_DATABASE_URL ?? '').trim();
+    shown =
+      configured.length > 0
+        ? 'the mission database named by ZA141251SA_DATABASE_URL (value not repeated here: it can carry a credential)'
+        : 'the DATA_DIR mission default resolved by scripts/mission-db-target.mjs';
+  }
+  let engine = 'unknown';
+  try {
+    engine = missionDb.engineName();
+  } catch {
+    /* engine resolution is what failed; the label above is still the useful half */
+  }
+  return `${engine} ${shown}`;
+}
+
+function printBounds(batch: number): void {
+  // A diagnostics flag in the same style as the rest of this repo's `--print-*` flags: it answers
+  // "what will this run do and where" from the environment alone, without touching a database.
+  say(
+    `${TAG} — bounds: batch ${batch} agents/transaction (ZA141251SA_SYNC_BATCH, 1-1000), ` +
+      `page ${PAGE}, target ${displayTarget()}, timeouts ${PG_SYNC_PROBE_BUDGET_NOTE}`,
+  );
+}
+
 async function main(): Promise<void> {
   const startedAt = Date.now();
   const skipPlatform = process.argv.includes('--skip-platform');
+  // The batch knob is validated first, on purpose: a typo in it must be a one-line refusal that
+  // names the variable, not a stack trace after the platform has already been opened and read.
+  let batchSize: number;
+  try {
+    batchSize = syncBatchSize();
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  if (process.argv.includes('--print-registry-sync-bounds')) {
+    printBounds(batchSize);
+    return;
+  }
+
+  // Say where this run is going BEFORE the first database call, then prove the database answers.
+  // Order matters: a boot that dies inside the migration step used to look identical to a boot
+  // that never started, which is how a killed `mission:sync-registry` produced no output, no
+  // error and no rows.
+  say(`${TAG} — target ${displayTarget()}; probing it before any write (${PG_SYNC_PROBE_BUDGET_NOTE}).`);
+  try {
+    const probe = missionDb.get<{ n: number }>('SELECT 1 AS n');
+    if (Number(probe?.n ?? 0) !== 1) throw new Error(`SELECT 1 returned ${JSON.stringify(probe)}`);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    fail(
+      `the mission database did not answer a trivial probe: ${reason}. Target was ${displayTarget()}. ${probeDiagnosis(reason)}`,
+    );
+  }
 
   // The targets, stated before anything is written, so a run can be interpreted from its
-  // first three lines alone. No URL is ever printed whole for the mission side: the path
-  // form the mission driver displays is already credential-free.
+  // first three lines alone. Nothing prints the configured URL: `displayTarget()` uses the
+  // driver's credential-free display form, and falls back to naming the variable.
   applyMissionMigrations();
   ensurePolicy(currentPolicy().currency);
   say(
-    `${TAG} — mission ${missionDb.engineName()} ${missionDb.path()}; ` +
+    `${TAG} — mission ${displayTarget()}; ` +
       `ledger ${missionDb.get<{ n: number }>('SELECT COUNT(*) AS n FROM mission_migrations')?.n ?? 0} migrations; ` +
-      `batch ${BATCH_AGENTS} agents per transaction`,
+      `batch ${batchSize} agents per transaction, per-batch timing below so a slow database is never mistaken for a hung command`,
   );
 
   const platformUrl = env.databaseUrl;
@@ -244,14 +309,17 @@ async function main(): Promise<void> {
     toolGrantsUnchanged: 0,
     configPayloadsSkipped: 0,
     orphanGrants: 0,
+    moneyProvisioned: 0,
+    moneyAlreadyPresent: 0,
     total: 0,
   };
   const skipReasons = new Map<string, number>();
   let batch = 0;
-  const batches = Math.ceil(collected.length / BATCH_AGENTS);
-  for (let start = 0; start < collected.length; start += BATCH_AGENTS) {
+  const batches = Math.ceil(collected.length / batchSize);
+  for (let start = 0; start < collected.length; start += batchSize) {
+    const batchStartedAt = Date.now();
     batch += 1;
-    const slice = collected.slice(start, start + BATCH_AGENTS);
+    const slice = collected.slice(start, start + batchSize);
     const slugs = new Set(slice.map((agent) => agent.slug));
     const sliceGrants = grants.filter((grant) => slugs.has(grant.agentSlug));
     let result;
@@ -273,11 +341,14 @@ async function main(): Promise<void> {
     totals.toolGrantsUnchanged += result.toolGrantsUnchanged;
     totals.configPayloadsSkipped += result.configPayloadsSkipped;
     totals.orphanGrants += result.orphanGrants;
+    totals.moneyProvisioned += result.moneyProvisioned;
+    totals.moneyAlreadyPresent += result.moneyAlreadyPresent;
     totals.total = result.total;
     for (const entry of result.skipped) skipReasons.set(entry.reason, (skipReasons.get(entry.reason) ?? 0) + entry.count);
     say(
-      `${TAG} — batch ${batch}/${batches}: ${result.created} created, ${result.updated} updated, ` +
-        `${result.unchanged} already matching, ${result.toolGrantsCreated + result.toolGrantsUpdated} grant rows written`,
+      `${TAG} — batch ${batch}/${batches} in ${Date.now() - batchStartedAt} ms: ${result.created} created, ${result.updated} updated, ` +
+        `${result.unchanged} already matching, ${result.toolGrantsCreated + result.toolGrantsUpdated} grant rows written, ` +
+        `${result.moneyProvisioned} fleet rails provisioned (${result.moneyAlreadyPresent} already present)`,
     );
   }
 
@@ -288,7 +359,7 @@ async function main(): Promise<void> {
       `source ${inventory.platformAgents} identities / ${inventory.platformToolGrants} grants, ` +
       `written ${written} (agents ${totals.created} created, ${totals.updated} updated, ${totals.unchanged} unchanged; ` +
       `grants ${totals.toolGrantsCreated} created, ${totals.toolGrantsUpdated} updated, ${totals.toolGrantsUnchanged} unchanged), ` +
-      `mission identities now ${totals.total}, in ${seconds}s`,
+      `mission identities now ${totals.total}, fleet rails ${totals.moneyProvisioned} provisioned/${totals.moneyAlreadyPresent} already present, in ${seconds}s`,
   );
   if (skipReasons.size > 0) {
     for (const [reason, count] of skipReasons) say(`${TAG} — skipped ${count}: ${reason}`);

@@ -8920,3 +8920,36 @@ frozen-state case asserted a never-applied file was already applied and failed 4
 now compares the migration number (`Number(f.slice(0, 4)) <= 42`) and names the files the frozen
 set ends with; the pinned count (45) and the pinned behaviour (boot applies the rest, exits 0) are
 unchanged. Full record: `docs/MISSION-REGISTRY-SYNC-2026-10-12.md` §6b.
+
+## Mission boot on PostgreSQL — 2026-10-12 (this session, measured)
+
+Evidence, not narrative. Local fixture: PGlite wire server (`scripts/pg-test-server.mjs`) holding the
+imported fleet — 4,001 agents, 7,203 grants — production-shaped schema, zero network latency.
+
+| measured | before | after |
+| --- | --- | --- |
+| `ensureAgentWallets()` first run | 30,120 ms | 558 ms |
+| `ensureAgentWallets()` no-op (every later boot) | 2,895 ms | 16 ms |
+| `mission:sync-registry` full import (11,204 rows) | 66,800 ms | 21,700 ms |
+| process start → first HTTP 200 | 38,362 ms against a 30,000 ms budget | 6,063 ms |
+| boot → readiness, asserted in CI | not assertable (the gate was the failure) | 4,537 ms, `src/mission/mission-boot-readiness-on-postgres.test.ts` |
+
+Causes, each with its address in the commit: per-agent SQL inside one pre-`listen()` transaction
+(`ensureAgentWallets`, `provisionMoneyAgent`); a readiness budget shorter than the work, `await`ed
+before the public tiers launched; `fetch failed` ambiguous because the per-request timeout was 1,000 ms;
+the wrapper and the probe agreeing only by hardcoded accident; no `connectionTimeoutMillis`, no
+server-side timeouts, no retry on the single `pg.Client`; a sync with no per-batch timing, so a killed
+transactional batch looked like a command that had not started.
+
+Owner-visible decisions, all default-off or default-safe: `ZA141251SA_MISSION_REQUIRED=true` restores
+fail-closed; `ZA141251SA_MISSION_PORT` moves the private listener and the probe together;
+`ZA141251SA_SYNC_BATCH` sizes a sync transaction; `AKBARAL_PG_*` bound the bridge. The loopback pin,
+the single-database rule, the exact `'true'` opt-in and the metadata-only one-way export were kept as
+they were; three tests that had pinned the old "the private tier gates the container" doctrine were
+rewritten to pin the new one, each keeping its original substance and adding the public-tier guarantee,
+with `ZA141251SA_MISSION_REQUIRED=true` covered as its own case.
+
+Full record: [MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md](MISSION-BOOT-ON-POSTGRESQL-2026-10-12.md),
+plus §9 of [MISSION-REGISTRY-SYNC-2026-10-12.md](MISSION-REGISTRY-SYNC-2026-10-12.md). No production
+action was taken: nothing deployed, no row written, no setting changed. The production mission
+database still holds 0 imported identities until the owner runs the sync there.

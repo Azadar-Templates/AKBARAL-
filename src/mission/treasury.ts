@@ -1,7 +1,7 @@
 import { heldResourceBudget } from './resource-budget-state';
 import { destinationFingerprint, payoutSlotVerificationStatus } from './payout-verification';
 import { DESTINATION_SAFETY_RULE, looksLikeInstrumentCredential } from './destination-safety';
-import { missionDb, missionId, nowIso, sha256, appendMissionAudit, type Row } from './database';
+import { missionDb, missionId, nowIso, sha256, appendMissionAudit, appendMissionAuditBatch, type Row, type SqlValue } from './database';
 import { canAgentSpend, currentPolicy, dailySpendCents, requestApproval, type MissionPolicy } from './policy';
 
 /**
@@ -777,30 +777,76 @@ export function ensureMissionTreasury(): Wallet {
  * Ensure every active agent has an individual internal wallet/ledger.
  * Idempotent: creates a 0-balance wallet only where missing, never funds it.
  * Returns counts for reporting and audit.
+ *
+ * Why this is set-based rather than a loop over agents. One SELECT decides who is missing a
+ * wallet, then the inserts and their audit rows go out in chunks. The previous shape asked
+ * "does this agent have a wallet?" once per agent and then asked it *again* inside
+ * `ensureAgentWallet`, so a fleet of 4,001 imported identities cost roughly 28,000 statements
+ * before the mission server was allowed to listen — about 30 s against a local PostgreSQL and
+ * minutes against a managed one. That single function, not any database fault, is what pushed
+ * the container past its own startup-readiness window and made every boot restart.
+ *
+ * Nothing about the outcome changed: the same rows, the same zero balances, the same one audit
+ * row per wallet plus the summary row, in the same order, inside one transaction. The
+ * steady-state path — the one that runs on every boot of an already-provisioned deployment —
+ * is now one query instead of 4,001.
  */
 export function ensureAgentWallets(): { created: number; totalActive: number; totalWallets: number } {
   return missionDb.transaction(() => {
     ensureMissionTreasury();
-    const active = missionDb.all<Row>(`SELECT id, slug, name FROM mission_agents WHERE status = 'active'`);
-    let created = 0;
-    for (const agent of active) {
-      const id = String(agent.id);
-      if (!walletForAgent(id)) {
-        ensureAgentWallet(id, `${String(agent.name ?? agent.slug)} wallet`);
-        created += 1;
+    const totalActive = Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_agents WHERE status = 'active'`)?.c ?? 0);
+    const missing = missionDb.all<Row>(
+      `SELECT a.id, a.slug, a.name
+         FROM mission_agents a
+        WHERE a.status = 'active'
+          AND NOT EXISTS (
+            SELECT 1 FROM mission_wallets w
+             WHERE w.agent_id = a.id AND w.kind IN ('agent','worker') AND w.status != 'closed'
+          )
+        ORDER BY a.id`,
+    );
+    const currency = currentPolicy().currency;
+    const createdIds: string[] = [];
+    const auditRows: Parameters<typeof appendMissionAuditBatch>[0] = [];
+    const CHUNK = 200;
+    for (let start = 0; start < missing.length; start += CHUNK) {
+      const slice = missing.slice(start, start + CHUNK);
+      const params: SqlValue[] = [];
+      for (const agent of slice) {
+        const walletId = missionId('wal');
+        // Same label expression and the same asymmetry as the loop it replaces: `createWallet`
+        // stores a sliced label but audits the label it was given. Reproduced exactly, because the
+        // audit trail is evidence and an "equivalent" path that rewrites the evidence is not.
+        const label = `${String(agent.name ?? agent.slug)} wallet`;
+        createdIds.push(walletId);
+        params.push(walletId, 'agent', String(agent.id), label.slice(0, 160), currency, 0);
+        auditRows.push({
+          actorType: 'system',
+          action: 'wallet.created',
+          subjectType: 'wallet',
+          subjectId: walletId,
+          detail: { kind: 'agent', label, budgetCents: 0 },
+        });
       }
+      const placeholders = slice.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+      missionDb.run(
+        `INSERT INTO mission_wallets (id, kind, agent_id, label, currency, budget_cents) VALUES ${placeholders}`,
+        params,
+      );
     }
     const totalWallets = Number(missionDb.get<Row>(`SELECT COUNT(*) AS c FROM mission_wallets WHERE kind IN ('agent','worker')`)?.c ?? 0);
+    const created = createdIds.length;
     if (created > 0) {
-      appendMissionAudit({
+      auditRows.push({
         actorType: 'system',
         action: 'wallet.ensure_agent_wallets',
         subjectType: 'wallet',
         subjectId: 'agent_wallets',
-        detail: { created, totalActive: active.length, totalWallets },
+        detail: { created, totalActive, totalWallets },
       });
     }
-    return { created, totalActive: active.length, totalWallets };
+    if (auditRows.length > 0) appendMissionAuditBatch(auditRows);
+    return { created, totalActive, totalWallets };
   });
 }
 
