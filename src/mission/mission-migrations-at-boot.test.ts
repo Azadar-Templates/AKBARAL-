@@ -120,11 +120,15 @@ it('a boot against a database frozen at 0042 ends with the whole set applied, th
   }
   const dir = migrationsDir();
   const files = allFiles();
-  const upTo0042 = files.filter((f) => !/^004[3-9]/.test(f));
+  // The frozen state is "every migration numbered 0042 or lower". Comparing the number rather
+  // than matching 0043-0049 keeps this fixture honest as the set grows: a filter written against
+  // one release's numbering silently starts treating the next release's files as already applied,
+  // which is how this case would have begun asserting the wrong thing the day 0050 shipped.
+  const upTo0042 = files.filter((f) => Number(f.slice(0, 4)) <= 42);
   assert.equal(
     upTo0042.length,
     45,
-    'the stuck production ledger is 45 rows: the 42 numbered migrations up to 0042 plus the three shared-number files',
+    `the stuck production ledger is 45 rows: the 42 numbered migrations up to 0042 plus the three shared-number files (observed ${upTo0042.length} of ${files.length}, latest in the frozen set: ${upTo0042.slice(-3).join(', ')})`,
   );
 
   const root = makeTemp('mission-boot-root-');

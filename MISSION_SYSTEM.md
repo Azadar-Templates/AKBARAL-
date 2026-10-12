@@ -70,6 +70,14 @@ npm run mission:init
 #    (reads the platform registry read-only, never writes to the platform, never
 #     joins platform customer data at runtime)
 DATABASE_URL="file:./<platform>.db" npm run mission:sync-registry
+```
+
+The command reports the engine, both resolved targets, the source counts, the rows written and
+every row skipped with its reason, and exits non-zero on any failure — `npm run
+mission:sync-registry:readout` reads the same numbers back from the mission database, and
+`docs/MISSION-REGISTRY-SYNC-2026-10-12.md` records why that output is mandatory.
+
+```
 
 # 4. Run the private app
 npm run mission:serve

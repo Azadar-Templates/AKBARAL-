@@ -8868,3 +8868,55 @@ These are workflow failures, not automatically application failures. The named s
 PR #3 mentions an earlier requested SHA `ecca9bec1eb5e0f012a2413b608deb8064a74fba`. A fresh GitHub commit lookup returned HTTP 422 “No commit found for SHA”; it is not in the recovered branch graph. Its contents remain genuinely unrecoverable from the available sources; the PR records `a860be7` as the implemented replacement, not proof the missing SHA was identical.
 
 Latest keep-alive run [35447924080](https://github.com/Azadar-Templates/AKBARAL-/actions/runs/35447924080) is green **with both production ping steps skipped** and the “Not configured yet” step executed. It supplies no production-health proof.
+
+# `mission:sync-registry` synced zero agents — the silent no-op and its fix
+
+Date: 2026-10-12. Scope: the mission registry bridge, one new mission migration, the CI chain.
+Full record: `docs/MISSION-REGISTRY-SYNC-2026-10-12.md`.
+
+The owner's production read was unambiguous — 4,001 agents and 7,203 `agent_tools` rows in
+`/data/akbaral.db`, `mission_agents` 0, `mission_money_grants` 0 — and the command meant to close
+that gap printed one line, exited 0 and synced nothing. The audit found no swallowed exception:
+the pre-fix script had no output contract at all (`scripts/mission-sync-registry.ts:69` was the
+only success print), treated a zero-row export as success (`:58-65`, same branch as
+`--skip-platform`), and the `owner_id IS NULL` filter that can turn a 4,001-agent fleet into zero
+rows (`src/agents/registry.ts:233-234`) was never counted, so filter and data were
+indistinguishable. Grants were not in the contract either — `syncMissionRegistry(agents)` at
+`src/mission/registry-sync.ts:8` had no parameter that could carry one, and no table in
+`db/migrations-mission/` could have held it. Two mechanical faults hid the rest: buffered
+`process.stdout.write` before `process.exit` loses output on a pipe (measured 65,536 of 200,000
+bytes), and opening a platform file that does not exist creates it empty instead of reporting it.
+
+Fix: `db/migrations-mission/0050_registry_tool_grants.sql` adds `mission_agent_tools`;
+`src/agents/registry.ts` gains `registryInventory()` and `discoverAgentToolGrants()` (paged,
+read-only); `syncMissionRegistry` now imports agent **and** grant rows compare-before-write inside
+the existing transaction and returns a result object with per-category counts and named skip
+reasons; `scripts/mission-sync-registry.ts` prints engine, both targets, source counts, batches,
+rows written, rows skipped with reasons, and exits 1 with the error text on every failure path.
+`agent_tools.config` is deliberately not copied and the number withheld is reported. No gate was
+touched: `assertInScope`, both approval gates, the owner-only checks, `ZA141251SA_BIND_HOST` and
+the payout/settlement gates are unchanged, and the ceiling and owner filter are now enforced
+*and* reported.
+
+Proof added: `src/mission/registry-sync-production-shape.test.ts` (10 cases — exact counts from a
+seeded platform into an empty mission DB, idempotent re-run, unopenable platform DB, unreachable
+mission DB, mid-copy ceiling failure rolled back whole, `dist/`-only sufficiency, platform
+byte-identity, rails unchanged, honest `--skip-platform`, and the all-user-owned refusal; 10/10
+on SQLite and 10/10 again on PostgreSQL through `mission:pg-check`) and
+`scripts/mission-registry-sync-e2e.mjs` + `scripts/mission-registry-sync-readout.mjs`, wired in as
+the CI step "Registry sync end to end (seeded SQLite platform into PostgreSQL mission)" (which
+builds the backend first so the step also executes `node dist/scripts/mission-sync-registry.js`
+directly) — 18/18 assertions on both engines with the real 4,001/7,203 seed, including a per-agent
+grant-set comparison across the two database engines and a sha256 check that the platform file is
+untouched.
+
+Production remains as the owner measured it until the owner runs `npm run mission:sync-registry`
+against it; this records the command being fixed and proved, not a fleet imported.
+
+One pre-existing fixture had to change: `src/mission/mission-migrations-at-boot.test.ts` selected
+production's stuck migration state with the filename pattern `!/^004[3-9]/`, written when 0049 was
+the newest file. Adding 0050 made that "already applied" set include the new migration, so the
+frozen-state case asserted a never-applied file was already applied and failed 46 != 45. The filter
+now compares the migration number (`Number(f.slice(0, 4)) <= 42`) and names the files the frozen
+set ends with; the pinned count (45) and the pinned behaviour (boot applies the rest, exits 0) are
+unchanged. Full record: `docs/MISSION-REGISTRY-SYNC-2026-10-12.md` §6b.

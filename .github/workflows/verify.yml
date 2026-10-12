@@ -54,6 +54,16 @@ jobs:
         run: npm run test:pg
       - name: Standalone mission PostgreSQL parity
         run: npm run mission:pg-check
+      # The registry sync is the one mission command that has to reach across both databases:
+      # a SQLite platform registry and the PostgreSQL mission database. It used to exit 0 while
+      # importing nothing, because it reported nothing. This step runs the operator's own entry
+      # against a seeded platform registry and a PostgreSQL mission target, and fails unless the
+      # exit code is 0 AND the summary's row counts match what the databases actually hold, on
+      # both the first run and the idempotent re-run. Silence, or a quiet no-op, fails the build.
+      - name: Registry sync end to end (seeded SQLite platform into PostgreSQL mission)
+        run: |
+          npm run build:backend
+          npm run mission:registry-sync:e2e:pg
       - name: Verified mission cash on native PostgreSQL, including multi-process contention
         run: |
           sudo systemctl start postgresql

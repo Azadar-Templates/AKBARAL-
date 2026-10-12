@@ -457,6 +457,78 @@ function parseEvalConfig(value: unknown): AgentView['evaluationConfig'] {
   };
 }
 
+/**
+ * The platform-side inventory the registry sync has to report before it writes
+ * anything. `platformOnly` in `discoverAgents` means `owner_id IS NULL`, so the same
+ * predicate is used here: a count of 4,001 agents against 0 platform-owned agents is a
+ * configuration answer, not a bug in the sync, and it is only visible if both numbers
+ * are printed. Read-only, no join into mission tables.
+ */
+export function registryInventory(): { agents: number; platformAgents: number; toolGrants: number; platformToolGrants: number } {
+  const one = (sql: string): number => Number(db.get<{ n: number }>(sql)?.n ?? 0);
+  return {
+    agents: one('SELECT COUNT(*) AS n FROM agents'),
+    platformAgents: one('SELECT COUNT(*) AS n FROM agents WHERE owner_id IS NULL'),
+    toolGrants: one('SELECT COUNT(*) AS n FROM agent_tools'),
+    platformToolGrants: one(
+      `SELECT COUNT(*) AS n FROM agent_tools at JOIN agents a ON a.id = at.agent_id WHERE a.owner_id IS NULL`,
+    ),
+  };
+}
+
+export interface AgentToolGrantView {
+  agentId: string;
+  agentSlug: string;
+  toolKey: string;
+  toolName: string;
+  kind: string;
+  permission: string;
+  /** Whether the platform row carries a `config` payload. The value itself is never
+   * exported: it can hold endpoints or credential references, and this bridge is
+   * metadata-only. The count of skipped configs is reported, never hidden. */
+  hasConfig: boolean;
+}
+
+/**
+ * Paged, read-only export of the tool grants attached to platform-owned agents.
+ * Ordered by (agent slug, tool key) so two runs produce the same sequence and a
+ * resumed run can be compared with the previous one.
+ */
+export function discoverAgentToolGrants(
+  filter: { limit?: number; offset?: number } = {},
+): { grants: AgentToolGrantView[]; total: number } {
+  const limit = Math.min(filter.limit ?? 200, 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
+  const total = Number(
+    db.get<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM agent_tools at JOIN agents a ON a.id = at.agent_id WHERE a.owner_id IS NULL`,
+    )?.count ?? 0,
+  );
+  const rows = db.all<Record<string, unknown>>(
+    `SELECT a.id AS agent_id, a.slug AS agent_slug, t.key AS tool_key, t.name AS tool_name,
+            t.kind AS kind, at.permission AS permission,
+            CASE WHEN at.config IS NULL OR at.config = '' THEN 0 ELSE 1 END AS has_config
+       FROM agent_tools at
+       JOIN agents a ON a.id = at.agent_id
+       JOIN tools t ON t.id = at.tool_id
+      WHERE a.owner_id IS NULL
+      ORDER BY a.slug ASC, t.key ASC LIMIT ? OFFSET ?`,
+    [limit, offset],
+  );
+  return {
+    grants: rows.map((row) => ({
+      agentId: String(row.agent_id),
+      agentSlug: String(row.agent_slug),
+      toolKey: String(row.tool_key),
+      toolName: String(row.tool_name),
+      kind: row.kind == null ? 'knowledge' : String(row.kind),
+      permission: String(row.permission ?? 'read'),
+      hasConfig: Number(row.has_config ?? 0) === 1,
+    })),
+    total,
+  };
+}
+
 export function registryIsSeeded(): boolean {
   const count = countAgentRegistry();
   return count >= agentDefinitionCount();
