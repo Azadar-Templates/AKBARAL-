@@ -57,9 +57,18 @@ if (!isMainThread && parentPort && workerData) {
   };
   const connectTimeoutMs = intEnv('AKBARAL_PG_CONNECT_TIMEOUT_MS', 30_000) || 30_000;
   const connectAttempts = Math.max(1, intEnv('AKBARAL_PG_CONNECT_ATTEMPTS', 3) || 1);
-  const statementTimeoutMs = intEnv('AKBARAL_PG_STATEMENT_TIMEOUT_MS', 300_000);
-  const lockTimeoutMs = intEnv('AKBARAL_PG_LOCK_TIMEOUT_MS', 60_000);
-  const idleInTransactionMs = intEnv('AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS', 120_000);
+  // These three are 0 — not applied — by default, on purpose, and that decision is worth the
+  // sentence it takes to explain. A `SET statement_timeout`/`lock_timeout` also caps the *legitimate*
+  // waits this fleet depends on: rows are contended across processes on purpose (the money path
+  // serializes on `pg_advisory_xact_lock` and on row locks), and a maintenance statement on a
+  // 4,001-agent database is expected to take minutes. A default-on cap would convert contention into
+  // errors, and a slow database into a second, self-inflicted outage. The bound that must always
+  // hold is the client-side one in src/db/driver.ts, which cannot be bypassed by a pooler and cannot
+  // fire while the application is merely waiting its turn. Operators who want the server-side nets set
+  // these explicitly (milliseconds; 0 keeps them off).
+  const statementTimeoutMs = intEnv('AKBARAL_PG_STATEMENT_TIMEOUT_MS', 0);
+  const lockTimeoutMs = intEnv('AKBARAL_PG_LOCK_TIMEOUT_MS', 0);
+  const idleInTransactionMs = intEnv('AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS', 0);
   const applicationName = String(process.env.AKBARAL_PG_APPLICATION_NAME ?? 'akbaral').trim() || 'akbaral';
 
   let client;

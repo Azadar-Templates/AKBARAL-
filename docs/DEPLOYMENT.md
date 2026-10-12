@@ -83,7 +83,7 @@ When explicitly enabled, these are the startup invariants:
 | `ZA141251SA_SYNC_BATCH` | 500 | agents per `mission:sync-registry` transaction (1–1000) |
 | `AKBARAL_PG_CONNECT_TIMEOUT_MS` / `AKBARAL_PG_CONNECT_ATTEMPTS` | 30000 / 3 | the bridge's connect budget, per attempt |
 | `AKBARAL_PG_QUERY_TIMEOUT_MS` | 120000 | client-side per-query bound, the one that cannot be bypassed by a pooler |
-| `AKBARAL_PG_STATEMENT_TIMEOUT_MS` / `AKBARAL_PG_LOCK_TIMEOUT_MS` / `AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 300000 / 60000 / 120000 | best-effort server-side bounds (a transaction-mode pooler may not pin them) |
+| `AKBARAL_PG_STATEMENT_TIMEOUT_MS` / `AKBARAL_PG_LOCK_TIMEOUT_MS` / `AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 0 (off) | opt-in server-side bounds. Off by default because they would also cap the contention the money path uses to take turns, and multi-minute maintenance writes; the client-side `AKBARAL_PG_QUERY_TIMEOUT_MS` is the bound that always applies |
 
 The mission bootstrap continues to own its private migrations and identity
 lockdown. The production wrapper does not generate a mission secret and does

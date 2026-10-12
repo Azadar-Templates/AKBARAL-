@@ -168,9 +168,9 @@ ZA141251SA_SYNC_BATCH                     agents per sync transaction     defaul
 AKBARAL_PG_CONNECT_TIMEOUT_MS             pg connect budget               default 30000
 AKBARAL_PG_CONNECT_ATTEMPTS               pg connect tries                default 3
 AKBARAL_PG_QUERY_TIMEOUT_MS               client-side per-query budget     default 120000
-AKBARAL_PG_STATEMENT_TIMEOUT_MS           server-side statement_timeout    default 300000
-AKBARAL_PG_LOCK_TIMEOUT_MS                server-side lock_timeout         default 60000
-AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS server-side idle-in-transaction   default 120000
+AKBARAL_PG_STATEMENT_TIMEOUT_MS           server-side statement_timeout    default 0 (off)
+AKBARAL_PG_LOCK_TIMEOUT_MS                server-side lock_timeout          default 0 (off)
+AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS server-side idle-in-transaction   default 0 (off)
 ```
 
 Behavior, precisely:
@@ -213,11 +213,18 @@ as a stand-in for the wire protocol. No credential, URL or token is logged anywh
   mission boot fail with "connection terminated unexpectedly" at 04:00 and succeed at 04:05.
   **`application_name`** (`AKBARAL_PG_APPLICATION_NAME`, default `akbaral`) was added so that a
   session is identifiable in `pg_stat_activity` on a shared account.
-* **Server-side timeouts are best effort, on purpose.** `SET statement_timeout` / `lock_timeout` /
-  `idle_in_transaction_session_timeout` are applied after connect and each failure is swallowed.
-  Under a *transaction-mode* pooler these settings are not pinned to a session, so they cannot be the
-  primary bound — and a proxy that rejects a `SET` must not turn into a failed boot. The bound that
-  cannot be bypassed stays client-side, in `pgBridge`.
+* **Server-side timeouts exist but are off by default.** `AKBARAL_PG_STATEMENT_TIMEOUT_MS`,
+  `AKBARAL_PG_LOCK_TIMEOUT_MS` and `AKBARAL_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS` are applied after
+  connect when set to a positive number, and each `SET` is individually best-effort: under a
+  *transaction-mode* pooler such settings are not pinned to a session, so they cannot be the primary
+  bound, and a proxy that rejects a `SET` must not turn into a failed boot. They are also *0 by
+  default* — an earlier revision of this fix shipped them as 300 s / 60 s / 120 s and that was wrong:
+  the same statement timeout caps the waiting the money path does on purpose (row locks and the
+  advisory transaction lock are how two processes take turns), and a multi-minute maintenance write on
+  a 4,001-agent fleet is a healthy statement, not a hung one. A boot-hardening change must not
+  convert contention into errors. The bound that always applies stays client-side, in `pgBridge`
+  (`AKBARAL_PG_QUERY_TIMEOUT_MS` per statement, `AKBARAL_PG_CONNECT_TIMEOUT_MS` per attempt): a pooler
+  cannot bypass it, and it never fires while the application is simply waiting its turn.
 * **TLS was already correct and was left alone**: remote `sslmode=require` is upgraded to an explicit
   `verify-full`, `disable` and `no-verify` are refused for remote hosts (`normalizeSslMode`).
 * **Not done, and why**: no `Pool`, no per-request concurrency, no async rewrite of the repository
